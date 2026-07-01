@@ -1,6 +1,6 @@
 # 家用 NAS 系统 — 产品技术手册
 
-> 版本: v1.1  
+> 版本: v1.2  
 > 最后更新: 2026-06-30  
 > 适用系统: Debian GNU/Linux 13 (trixie), 内核 6.12.94+
 
@@ -46,6 +46,7 @@
 | FTP     | vsftpd             | 传统文件传输                  | 21, 30000-31000  |
 | WebDAV  | rclone serve       | 浏览器/移动端文件管理         | 8080             |
 | Web UI  | FileBrowser        | Web 文件管理界面（浏览/上传/下载/编辑） | 8081    |
+| S3 对象存储 | MinIO          | S3 兼容对象存储                   | 9000, 9002       |
 
 **设计原则：**
 
@@ -148,6 +149,7 @@ Samba、NFS 都是内核级服务（NFS 直接在内核空间运行），用 Doc
 | nfs-common          | 1:2.8.3-1               | NFS 通用工具           | ~3 MB          |
 | vsftpd              | 3.0.5-0.2               | FTP 服务器             | ~1.5 MB        |
 | rclone              | 1.60.1+dfsg-4           | WebDAV 服务 (serve 模式)| ~15 MB         |
+| minio               | RELEASE.2025-09-07 | MinIO 对象存储 (S3 兼容) | ~106 MB (单文件) |
 | filebrowser         | v2.63.17                | Web 文件管理器          | ~15 MB (单文件)|
 | rpcbind             | 1.2.7-1                 | RPC 端口映射 (NFS 依赖)| ~0.5 MB        |
 
@@ -218,7 +220,8 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
 │   ├── vsftpd.conf             ← FTP 配置
 │   ├── jail.local              ← Fail2ban 配置
 │   ├── rclone-webdav.service   ← WebDAV systemd 单元文件
-│   └── filebrowser.service     ← FileBrowser systemd 单元文件
+│   ├── filebrowser.service     ← FileBrowser systemd 单元文件
+│   └── minio.service           ← MinIO systemd 单元文件
 └── scripts/                    ← 管理脚本
     ├── setup.sh                ← 一键部署脚本
     ├── add-user.sh             ← 添加用户
@@ -235,6 +238,7 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
 | /opt/nas/configs/jail.local          | /etc/fail2ban/jail.local                 |
 | /opt/nas/configs/rclone-webdav.service | /etc/systemd/system/rclone-webdav.service |
 | /opt/nas/configs/filebrowser.service  | /etc/systemd/system/filebrowser.service  |
+| /opt/nas/configs/minio.service        | /etc/systemd/system/minio.service        |
 | /opt/nas/scripts/*.sh                | 保留原位，直接执行                        |
 
 ---
@@ -418,7 +422,27 @@ sudo systemctl enable filebrowser
 sudo systemctl start filebrowser
 ```
 
-### 步骤 9：配置防火墙
+### 步骤 9：安装 MinIO
+
+```bash
+# 下载并安装 MinIO
+sudo curl -fsSL https://dl.min.io/server/minio/release/linux-amd64/minio -o /usr/local/bin/minio
+sudo chmod +x /usr/local/bin/minio
+
+# 创建数据目录
+sudo mkdir -p /data/minio
+sudo chown jacky:jacky /data/minio
+
+# 复制 systemd 服务文件（详见 7.5 节）
+sudo cp /opt/nas/configs/minio.service /etc/systemd/system/
+
+# 启动服务
+sudo systemctl daemon-reload
+sudo systemctl enable minio
+sudo systemctl start minio
+```
+
+### 步骤 10：配置防火墙
 
 ```bash
 # 重置并配置 ufw
@@ -436,13 +460,15 @@ sudo ufw allow 21/tcp                 # FTP
 sudo ufw allow 30000:31000/tcp        # FTP 被动模式
 sudo ufw allow 8080/tcp               # WebDAV
 sudo ufw allow 8081/tcp               # FileBrowser
+sudo ufw allow 9000/tcp               # MinIO S3 API
+sudo ufw allow 9002/tcp               # MinIO Web Console
 
 # 启用防火墙
 sudo ufw --force enable
 sudo ufw status verbose
 ```
 
-### 步骤 10：配置 Fail2ban
+### 步骤 11：配置 Fail2ban
 
 ```bash
 # 写入配置（详见 8.2 节）
@@ -453,11 +479,11 @@ sudo systemctl enable fail2ban
 sudo systemctl restart fail2ban
 ```
 
-### 步骤 11：验证部署
+### 步骤 12：验证部署
 
 ```bash
 # 检查所有服务状态
-for svc in smbd nmbd nfs-kernel-server vsftpd rclone-webdav filebrowser fail2ban; do
+for svc in smbd nmbd nfs-kernel-server vsftpd rclone-webdav filebrowser minio fail2ban; do
     echo "$svc: $(systemctl is-active $svc)"
 done
 
@@ -475,6 +501,13 @@ curl -u jacky:[REDACTED] http://localhost:8080/
 
 # 测试 FileBrowser
 curl -s http://localhost:8081/ | head -5
+
+# 测试 MinIO API
+curl -s http://localhost:9000/minio/health/live
+echo  # 添加换行
+
+# 测试 MinIO Console
+curl -s http://localhost:9002/login | head -3
 
 # 测试防火墙
 sudo ufw status verbose
@@ -748,7 +781,123 @@ rclone obscure "[REDACTED]"
 - 性能对家用场景完全足够
 - 进程挂了 systemd 自动重启，运维成本极低
 
-### 7.5 FileBrowser — Web 文件管理器
+### 7.5 MinIO — S3 兼容对象存储
+
+**简介：** MinIO 是一个高性能、S3 兼容的对象存储服务器，单二进制文件部署，提供 Web 管理控制台和完整的 S3 API。适合对接云存储、应用开发和备份场景。
+
+**安装位置：** `/usr/local/bin/minio`
+**版本：** RELEASE.2025-09-07T16-13-09Z (go1.24.6 linux/amd64)
+**数据目录：** `/data/minio`
+**许可证：** GNU AGPLv3
+
+**Systemd 服务文件：** `/etc/systemd/system/minio.service`
+
+```ini
+[Unit]
+Description=MinIO Object Storage
+Documentation=https://docs.min.io
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=jacky
+Group=jacky
+Environment=MINIO_ROOT_USER=admin
+Environment=MINIO_ROOT_PASSWORD=***
+ExecStart=/usr/local/bin/minio server /data/minio --console-address ":9002"
+Restart=always
+RestartSec=5
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+```
+
+**端口说明：**
+
+| 端口 | 用途                  |
+|------|----------------------|
+| 9000 | S3 API 端点           |
+| 9002 | Web 管理控制台         |
+
+**安装步骤：**
+
+```bash
+# 1. 下载 MinIO 二进制文件
+curl -fsSL https://dl.min.io/server/minio/release/linux-amd64/minio -o /usr/local/bin/minio
+# 国内网络可用镜像:
+# curl -fsSL https://ghfast.top/https://dl.min.io/server/minio/release/linux-amd64/minio -o /usr/local/bin/minio
+
+sudo chmod +x /usr/local/bin/minio
+
+# 2. 创建数据目录
+sudo mkdir -p /data/minio
+sudo chown -R jacky:jacky /data/minio
+
+# 3. 部署 systemd 服务（见上方配置）
+sudo systemctl daemon-reload
+sudo systemctl enable minio
+sudo systemctl start minio
+
+# 4. 开放防火墙端口
+sudo ufw allow 9000/tcp   # S3 API
+sudo ufw allow 9002/tcp   # Web Console
+```
+
+**访问方式：**
+
+- Web 控制台: `http://192.168.213.85:9002`
+- S3 API: `http://192.168.213.85:9000`
+- 用户名: `admin`
+- 密码: `[REDACTED]`
+
+**使用 mc 客户端：**
+
+```bash
+# 下载 mc (MinIO Client)
+curl -fsSL https://dl.min.io/client/mc/release/linux-amd64/mc -o mc
+chmod +x mc
+
+# 配置别名
+./mc alias set mynas http://192.168.213.85:9000 admin [REDACTED]
+
+# 常用操作
+./mc ls mynas/                          # 列出存储桶
+./mc mb mynas/backups                   # 创建存储桶
+./mc cp localfile.txt mynas/backups/    # 上传文件
+./mc cp -r mynas/backups/ ./restore/    # 下载文件
+./mc mirror mynas/backups /local/backup # 双向同步
+```
+
+**S3 SDK 对接示例（Python boto3）：**
+
+```python
+import boto3
+
+s3 = boto3.client(
+    's3',
+    endpoint_url='http://192.168.213.85:9000',
+    aws_access_key_id='admin',
+    aws_secret_access_key='***'
+)
+
+# 创建存储桶
+s3.create_bucket(Bucket='backups')
+
+# 上传文件
+s3.upload_file('localfile.txt', 'backups', 'remotefile.txt')
+```
+
+**安全建议：**
+- 部署后立即修改默认密码（在 Web 控制台中修改）
+- 生产环境建议启用 HTTPS
+- 可通过 bucket policy 限制访问权限
+
+**资源占用：** 内存 ~140MB，二进制 ~106MB
+
+---
+
+### 7.6 FileBrowser — Web 文件管理器
 
 **简介：** FileBrowser 是一个轻量级 Web 文件管理器，单二进制文件，内存占用极低（< 50 MB），提供浏览器端的文件浏览、上传、下载、编辑、分享等功能。
 
@@ -1439,6 +1588,7 @@ sudo /opt/nas/scripts/setup.sh
 | FTP 服务            | `systemctl is-active vsftpd`                     | active         |
 | WebDAV 服务         | `systemctl is-active rclone-webdav`              | active         |
 | FileBrowser 服务    | `systemctl is-active filebrowser`                | active         |
+| MinIO 服务          | `systemctl is-active minio`                      | active         |
 | Fail2ban            | `systemctl is-active fail2ban`                   | active         |
 | UFW 防火墙          | `sudo ufw status`                                | active         |
 | Samba 共享列表      | `smbclient -L localhost -U jacky%[REDACTED]`      | 显示共享列表    |
@@ -1474,6 +1624,7 @@ sudo /opt/nas/scripts/setup.sh
 | 4 | `configs/jail.local`                  | Fail2ban 配置模板        |
 | 5 | `configs/rclone-webdav.service`       | WebDAV 服务单元模板      |
 | 6 | `configs/filebrowser.service`        | FileBrowser 服务单元模板 |
+| 7 | `configs/minio.service`              | MinIO 服务单元模板       |
 | 7 | `scripts/setup.sh`                    | 一键部署脚本             |
 | 8 | `scripts/add-user.sh`                 | 添加用户脚本             |
 | 9 | `scripts/remove-user.sh`              | 删除用户脚本             |
@@ -1493,6 +1644,8 @@ sudo /opt/nas/scripts/setup.sh
 | 30000-31000  | TCP   | FTP         | 入站  | FTP 被动模式数据通道        |
 | 8080         | TCP   | WebDAV      | 入站  | WebDAV HTTP 服务            |
 | 8081         | TCP   | FileBrowser | 入站  | Web 文件管理器              |
+| 9000         | TCP   | MinIO       | 入站  | S3 API 端点                |
+| 9002         | TCP   | MinIO       | 入站  | Web 管理控制台              |
 
 ## 附录 B：Systemd 服务清单
 
@@ -1505,6 +1658,7 @@ sudo /opt/nas/scripts/setup.sh
 | vsftpd             | 系统服务 | enabled | FTP 服务器                     |
 | rclone-webdav      | 自定义   | enabled | WebDAV 服务（rclone serve）    |
 | filebrowser        | 自定义   | enabled | Web 文件管理器                 |
+| minio              | 自定义   | enabled | MinIO 对象存储 (S3 API + Web Console) |
 | fail2ban           | 系统服务 | enabled | 入侵检测与自动封禁            |
 | ufw                | 系统服务 | enabled | 防火墙                         |
 | unattended-upgrades| 系统服务 | enabled | 自动安全更新                   |

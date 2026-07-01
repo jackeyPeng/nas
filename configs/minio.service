@@ -1,0 +1,19 @@
+[Unit]
+Description=MinIO Object Storage
+Documentation=https://docs.min.io
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=jacky
+Group=jacky
+Environment=MINIO_ROOT_USER=admin
+Environment=MINIO_ROOT_PASSWORD=[REDACTED]
+ExecStart=/usr/local/bin/minio server /data/minio --console-address :9002
+Restart=always
+RestartSec=5
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+
