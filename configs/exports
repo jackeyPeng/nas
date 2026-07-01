@@ -1,0 +1,5 @@
+/data/shared    [REDACTED]/24(rw,sync,no_subtree_check,no_root_squash)
+/data/media     [REDACTED]/24(ro,sync,no_subtree_check)
+/data/documents [REDACTED]/24(rw,sync,no_subtree_check,no_root_squash)
+/data/photos    [REDACTED]/24(rw,sync,no_subtree_check,no_root_squash)
+/data/backups   [REDACTED]/24(rw,sync,no_subtree_check,no_root_squash)
