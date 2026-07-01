@@ -1,0 +1,5 @@
+/data/shared    192.168.213.0/24(rw,sync,no_subtree_check,no_root_squash)
+/data/media     192.168.213.0/24(ro,sync,no_subtree_check)
+/data/documents 192.168.213.0/24(rw,sync,no_subtree_check,no_root_squash)
+/data/photos    192.168.213.0/24(rw,sync,no_subtree_check,no_root_squash)
+/data/backups   192.168.213.0/24(rw,sync,no_subtree_check,no_root_squash)
