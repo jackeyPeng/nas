@@ -166,9 +166,9 @@ if command -v filebrowser &>/dev/null; then
     echo "  FileBrowser 已安装，跳过"
 else
     download_file /tmp/filebrowser.tar.gz \
+        "https://file.abwen.com/filebroswer/linux-amd64-filebrowser.tar.gz" \
         "https://github.com/filebrowser/filebrowser/releases/download/${FILEBROWSER_VERSION}/linux-amd64-filebrowser.tar.gz" \
-        "https://ghfast.top/https://github.com/filebrowser/filebrowser/releases/download/${FILEBROWSER_VERSION}/linux-amd64-filebrowser.tar.gz" \
-        "https://mirror.ghproxy.com/https://github.com/filebrowser/filebrowser/releases/download/${FILEBROWSER_VERSION}/linux-amd64-filebrowser.tar.gz"
+        "https://ghfast.top/https://github.com/filebrowser/filebrowser/releases/download/${FILEBROWSER_VERSION}/linux-amd64-filebrowser.tar.gz"
     cd /tmp && tar xzf filebrowser.tar.gz && mv filebrowser /usr/local/bin/ && cd -
     chmod +x /usr/local/bin/filebrowser
 fi
@@ -213,9 +213,9 @@ if command -v minio &>/dev/null; then
     echo "  MinIO 已安装，跳过"
 else
     download_file /usr/local/bin/minio \
+        "https://file.abwen.com/minio/minio.linux-amd64.RELEASE.2025-09-07T16-13-09Z" \
         "https://dl.min.io/server/minio/release/linux-amd64/minio" \
-        "https://ghfast.top/https://dl.min.io/server/minio/release/linux-amd64/minio" \
-        "https://mirror.ghproxy.com/https://dl.min.io/server/minio/release/linux-amd64/minio"
+        "https://ghfast.top/https://dl.min.io/server/minio/release/linux-amd64/minio"
     chmod +x /usr/local/bin/minio
 fi
 
