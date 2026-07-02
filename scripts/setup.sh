@@ -235,7 +235,7 @@ write_minio_service() {
     echo "User=$NAS_USER" >> "$svc_file"
     echo "Group=$NAS_USER" >> "$svc_file"
     echo "Environment=MINIO_ROOT_USER=admin" >> "$svc_file"
-    echo "Environment=MINIO_ROOT_PASSWORD=*** "$svc_file"
+    echo "Environment=MINIO_ROOT_PASSWORD=[REDACTED]" >> "$svc_file"
     echo "ExecStart=/usr/local/bin/minio server $DATA_DIR/minio --console-address :9002" >> "$svc_file"
     echo "Restart=always" >> "$svc_file"
     echo "RestartSec=5" >> "$svc_file"
