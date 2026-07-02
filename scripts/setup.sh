@@ -2,6 +2,9 @@
 # NAS 一键部署脚本
 # 用于在新机器上部署完整的 NAS 系统
 # 用法: sudo ./setup.sh
+#
+# 包含服务: Samba, NFS, FTP, WebDAV, FileBrowser, MinIO
+# 安全: Fail2ban, UFW 防火墙, unattended-upgrades
 
 set -e
 
@@ -16,35 +19,57 @@ echo "家用 NAS 一键部署脚本"
 echo "========================================="
 echo ""
 
-# 配置变量
+# ==================== 配置变量 ====================
 NAS_USER="jacky"
 NAS_PASS="[REDACTED]"
 DATA_DIR="/data"
 NAS_DIR="/opt/nas"
+FILEBROWSER_VERSION="v2.63.17"
 
-echo "[1/7] 安装基础软件包..."
+# 通用下载函数：尝试多个源，第一个成功就返回
+download_file() {
+    local dest="$1"
+    shift
+    for url in "$@"; do
+        echo "    尝试下载: $url"
+        if curl -fsSL --connect-timeout 15 --max-time 120 -o "$dest" "$url" 2>/dev/null; then
+            if [ -s "$dest" ] && ! head -c 20 "$dest" | grep -q "<!DOCTYPE\|<html\|Not Found"; then
+                echo "    ✓ 下载成功"
+                return 0
+            fi
+        fi
+        echo "    ✗ 失败，尝试下一个源..."
+    done
+    echo "    ✗ 所有下载源均失败"
+    return 1
+}
+
+# ==================== [1/9] 安装基础软件包 ====================
+echo "[1/9] 安装基础软件包..."
 apt-get update
 DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    samba nfs-kernel-server vsftpd rclone \
+    curl samba nfs-kernel-server vsftpd rclone \
     fail2ban ufw smartmontools unattended-upgrades \
     smbclient nfs-common
 echo "  ✓ 软件包安装完成"
 
+# ==================== [2/9] 创建数据目录结构 ====================
 echo ""
-echo "[2/7] 创建数据目录结构..."
+echo "[2/9] 创建数据目录结构..."
 mkdir -p "$DATA_DIR"/{shared,media/{movies,tv,music},documents,photos,backups,downloads,private/$NAS_USER}
+mkdir -p "$DATA_DIR"/minio
 chown -R "$NAS_USER:$NAS_USER" "$DATA_DIR"
 chmod 755 "$DATA_DIR"
 chmod 775 "$DATA_DIR"/{shared,media,documents,photos}
 echo "  ✓ 目录结构创建完成"
 
+# ==================== [3/9] 配置 Samba ====================
 echo ""
-echo "[3/7] 配置 Samba..."
-# 复制配置文件（假设当前目录有 configs/smb.conf）
+echo "[3/9] 配置 Samba..."
 if [ -f "$NAS_DIR/configs/smb.conf" ]; then
     cp "$NAS_DIR/configs/smb.conf" /etc/samba/smb.conf
 else
-    echo "  警告: 未找到 $NAS_DIR/configs/smb.conf，请手动配置"
+    echo "  警告: 未找到 $NAS_DIR/configs/smb.conf，使用默认配置"
 fi
 (echo "$NAS_PASS"; echo "$NAS_PASS") | smbpasswd -a "$NAS_USER" -s
 smbpasswd -e "$NAS_USER"
@@ -52,30 +77,35 @@ systemctl enable smbd nmbd
 systemctl restart smbd nmbd
 echo "  ✓ Samba 配置完成"
 
+# ==================== [4/9] 配置 NFS ====================
 echo ""
-echo "[4/7] 配置 NFS..."
+echo "[4/9] 配置 NFS..."
+if [ -f "$NAS_DIR/configs/nfs.conf" ]; then
+    cp "$NAS_DIR/configs/nfs.conf" /etc/nfs.conf
+fi
 if [ -f "$NAS_DIR/configs/exports" ]; then
     cp "$NAS_DIR/configs/exports" /etc/exports
 else
-    cat > /etc/exports << EOF
+    cat > /etc/exports << EXPEOF
 $DATA_DIR/shared    192.168.0.0/16(rw,sync,no_subtree_check,no_root_squash)
 $DATA_DIR/media     192.168.0.0/16(ro,sync,no_subtree_check)
 $DATA_DIR/documents 192.168.0.0/16(rw,sync,no_subtree_check,no_root_squash)
 $DATA_DIR/photos    192.168.0.0/16(rw,sync,no_subtree_check,no_root_squash)
 $DATA_DIR/backups   192.168.0.0/16(rw,sync,no_subtree_check,no_root_squash)
-EOF
+EXPEOF
 fi
 exportfs -a
 systemctl enable nfs-kernel-server
 systemctl restart nfs-kernel-server
 echo "  ✓ NFS 配置完成"
 
+# ==================== [5/9] 配置 FTP ====================
 echo ""
-echo "[5/7] 配置 FTP (vsftpd)..."
+echo "[5/9] 配置 FTP (vsftpd)..."
 if [ -f "$NAS_DIR/configs/vsftpd.conf" ]; then
     cp "$NAS_DIR/configs/vsftpd.conf" /etc/vsftpd.conf
 else
-    cat > /etc/vsftpd.conf << EOF
+    cat > /etc/vsftpd.conf << FTPEOF
 listen=YES
 listen_ipv6=NO
 anonymous_enable=NO
@@ -96,18 +126,20 @@ pasv_max_port=31000
 userlist_enable=YES
 userlist_file=/etc/vsftpd.userlist
 userlist_deny=NO
-EOF
+FTPEOF
 fi
 echo "$NAS_USER" > /etc/vsftpd.userlist
+touch /var/log/vsftpd.log
+chmod 640 /var/log/vsftpd.log
 systemctl enable vsftpd
 systemctl restart vsftpd
 echo "  ✓ FTP 配置完成"
 
+# ==================== [6/9] 配置 WebDAV ====================
 echo ""
-echo "[6/7] 配置 WebDAV (rclone)..."
-# 生成密码哈希
+echo "[6/9] 配置 WebDAV (rclone)..."
 PASS_HASH=$(rclone obscure "$NAS_PASS")
-cat > /etc/systemd/system/rclone-webdav.service << EOF
+cat > /etc/systemd/system/rclone-webdav.service << WDEOF
 [Unit]
 Description=Rclone WebDAV Server
 After=network.target
@@ -121,23 +153,112 @@ RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
-EOF
+WDEOF
 systemctl daemon-reload
 systemctl enable rclone-webdav
 systemctl restart rclone-webdav
 echo "  ✓ WebDAV 配置完成"
 
+# ==================== [7/9] 安装 FileBrowser ====================
 echo ""
-echo "[7/7] 配置防火墙和安全..."
-# 创建 vsftpd 日志文件
-touch /var/log/vsftpd.log
-chmod 640 /var/log/vsftpd.log
+echo "[7/9] 安装 FileBrowser..."
+if command -v filebrowser &>/dev/null; then
+    echo "  FileBrowser 已安装，跳过"
+else
+    download_file /tmp/filebrowser.tar.gz \
+        "https://github.com/filebrowser/filebrowser/releases/download/${FILEBROWSER_VERSION}/linux-amd64-filebrowser.tar.gz" \
+        "https://ghfast.top/https://github.com/filebrowser/filebrowser/releases/download/${FILEBROWSER_VERSION}/linux-amd64-filebrowser.tar.gz" \
+        "https://mirror.ghproxy.com/https://github.com/filebrowser/filebrowser/releases/download/${FILEBROWSER_VERSION}/linux-amd64-filebrowser.tar.gz"
+    cd /tmp && tar xzf filebrowser.tar.gz && mv filebrowser /usr/local/bin/ && cd -
+    chmod +x /usr/local/bin/filebrowser
+fi
 
-# 配置 fail2ban
+mkdir -p /etc/filebrowser
+if [ ! -f /etc/filebrowser/filebrowser.db ]; then
+    filebrowser config init --database /etc/filebrowser/filebrowser.db 2>/dev/null || true
+fi
+filebrowser config set \
+    --database /etc/filebrowser/filebrowser.db \
+    --address 0.0.0.0 \
+    --port 8081 \
+    --root "$DATA_DIR" \
+    --log /var/log/filebrowser.log 2>/dev/null || true
+filebrowser users add "$NAS_USER" "${NAS_PASS}1234567" \
+    --database /etc/filebrowser/filebrowser.db \
+    --perm.admin 2>/dev/null || true
+
+cat > /etc/systemd/system/filebrowser.service << 'FBEOF'
+[Unit]
+Description=File Browser
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/filebrowser --database /etc/filebrowser/filebrowser.db
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+FBEOF
+systemctl daemon-reload
+systemctl enable filebrowser
+systemctl restart filebrowser
+echo "  ✓ FileBrowser 配置完成"
+
+# ==================== [8/9] 安装 MinIO ====================
+echo ""
+echo "[8/9] 安装 MinIO..."
+if command -v minio &>/dev/null; then
+    echo "  MinIO 已安装，跳过"
+else
+    download_file /usr/local/bin/minio \
+        "https://dl.min.io/server/minio/release/linux-amd64/minio" \
+        "https://ghfast.top/https://dl.min.io/server/minio/release/linux-amd64/minio" \
+        "https://mirror.ghproxy.com/https://dl.min.io/server/minio/release/linux-amd64/minio"
+    chmod +x /usr/local/bin/minio
+fi
+
+mkdir -p "$DATA_DIR/minio"
+chown "$NAS_USER:$NAS_USER" "$DATA_DIR/minio"
+
+# Write MinIO service file using a function to avoid heredoc issues
+write_minio_service() {
+    local svc_file="/etc/systemd/system/minio.service"
+    echo "[Unit]" > "$svc_file"
+    echo "Description=MinIO Object Storage" >> "$svc_file"
+    echo "Documentation=https://docs.min.io" >> "$svc_file"
+    echo "Wants=network-online.target" >> "$svc_file"
+    echo "After=network-online.target" >> "$svc_file"
+    echo "" >> "$svc_file"
+    echo "[Service]" >> "$svc_file"
+    echo "User=$NAS_USER" >> "$svc_file"
+    echo "Group=$NAS_USER" >> "$svc_file"
+    echo "Environment=MINIO_ROOT_USER=admin" >> "$svc_file"
+    echo "Environment=MINIO_ROOT_PASSWORD=*** "$svc_file"
+    echo "ExecStart=/usr/local/bin/minio server $DATA_DIR/minio --console-address :9002" >> "$svc_file"
+    echo "Restart=always" >> "$svc_file"
+    echo "RestartSec=5" >> "$svc_file"
+    echo "LimitNOFILE=65536" >> "$svc_file"
+    echo "" >> "$svc_file"
+    echo "[Install]" >> "$svc_file"
+    echo "WantedBy=multi-user.target" >> "$svc_file"
+}
+write_minio_service
+
+systemctl daemon-reload
+systemctl enable minio
+systemctl restart minio
+echo "  ✓ MinIO 配置完成"
+
+# ==================== [9/9] 配置防火墙和安全 ====================
+echo ""
+echo "[9/9] 配置防火墙和安全..."
+
 if [ -f "$NAS_DIR/configs/jail.local" ]; then
     cp "$NAS_DIR/configs/jail.local" /etc/fail2ban/jail.local
 else
-    cat > /etc/fail2ban/jail.local << EOF
+    cat > /etc/fail2ban/jail.local << 'JEOF'
 [DEFAULT]
 bantime = 3600
 findtime = 600
@@ -155,34 +276,43 @@ port = ftp,ftp-data,ftps,ftps-data
 filter = vsftpd
 logpath = /var/log/vsftpd.log
 maxretry = 5
-EOF
+JEOF
 fi
 systemctl enable fail2ban
 systemctl restart fail2ban
 
-# 配置防火墙
 ufw --force reset
 ufw default deny incoming
 ufw default allow outgoing
-ufw allow ssh
-ufw allow 139/tcp    # Samba
-ufw allow 445/tcp    # Samba
-ufw allow 2049/tcp   # NFS
-ufw allow 2049/udp   # NFS
-ufw allow 21/tcp     # FTP
-ufw allow 30000:31000/tcp  # FTP passive
-ufw allow 8080/tcp   # WebDAV
+ufw allow ssh                    # 22 - SSH
+ufw allow 139/tcp                # Samba NetBIOS
+ufw allow 445/tcp                # Samba SMB
+ufw allow 2049/tcp               # NFS
+ufw allow 2049/udp               # NFS
+ufw allow 111/tcp                # NFS rpcbind
+ufw allow 111/udp                # NFS rpcbind
+ufw allow 20048/tcp              # NFS mountd
+ufw allow 20048/udp              # NFS mountd
+ufw allow 32768:32769/tcp        # NFS lockd + statd
+ufw allow 32768:32769/udp        # NFS lockd + statd
+ufw allow 21/tcp                 # FTP
+ufw allow 30000:31000/tcp        # FTP passive
+ufw allow 8080/tcp               # WebDAV
+ufw allow 8081/tcp               # FileBrowser
+ufw allow 9000/tcp               # MinIO S3 API
+ufw allow 9002/tcp               # MinIO Console
 ufw --force enable
 echo "  ✓ 安全配置完成"
 
+# ==================== 部署完成 ====================
 echo ""
 echo "========================================="
 echo "NAS 部署完成!"
 echo "========================================="
 echo ""
 echo "服务状态:"
-for svc in smbd nmbd nfs-kernel-server vsftpd rclone-webdav fail2ban; do
-    echo "  $svc: $(systemctl is-active $svc)"
+for svc in smbd nmbd nfs-kernel-server vsftpd rclone-webdav filebrowser minio fail2ban; do
+    printf "  %-22s %s\n" "$svc:" "$(systemctl is-active $svc)"
 done
 
 echo ""
@@ -191,11 +321,14 @@ echo "  用户名: $NAS_USER"
 echo "  密码: $NAS_PASS"
 echo ""
 echo "访问方式:"
-echo "  - Samba: //NAS_IP/shared (公共共享)"
-echo "  - Samba: //NAS_IP/$NAS_USER (私有目录)"
-echo "  - NFS: mount -t nfs NAS_IP:/data/shared /mnt/nas"
-echo "  - FTP: ftp://NAS_IP/ (用户名: $NAS_USER)"
-echo "  - WebDAV: http://NAS_IP:8080/ (用户名: $NAS_USER)"
+echo "  - Samba:       //NAS_IP/shared (公共共享)"
+echo "  - Samba:       //NAS_IP/$NAS_USER (私有目录)"
+echo "  - NFS:         mount -t nfs NAS_IP:/data/shared /mnt/nas"
+echo "  - FTP:         ftp://NAS_IP/ (用户名: $NAS_USER)"
+echo "  - WebDAV:      http://NAS_IP:8080/ (用户名: $NAS_USER)"
+echo "  - FileBrowser: http://NAS_IP:8081/ (用户名: $NAS_USER)"
+echo "  - MinIO API:   http://NAS_IP:9000"
+echo "  - MinIO Web:   http://NAS_IP:9002 (用户名: admin)"
 echo ""
 echo "管理脚本:"
 echo "  添加用户: sudo $NAS_DIR/scripts/add-user.sh <用户名> <密码>"
