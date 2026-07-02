@@ -370,14 +370,20 @@ sudo systemctl restart rclone-webdav
 
 ```bash
 # 下载并安装 FileBrowser（单二进制文件）
-# 方式 1：官方脚本（需要能访问 GitHub）
-curl -fsSL https://raw.githubusercontent.com/filebrowser/get/master/get.sh | bash
-
-# 方式 2：通过 GitHub 镜像（国内网络推荐）
+# 方式 1：自有文件服务器（推荐，速度快）
 cd /tmp
-curl -fsSL -o filebrowser.tar.gz https://ghfast.top/https://github.com/filebrowser/filebrowser/releases/download/v2.63.17/linux-amd64-filebrowser.tar.gz
+curl -fsSL -o filebrowser.tar.gz https://file.abwen.com/filebroswer/linux-amd64-filebrowser.tar.gz
 tar xzf filebrowser.tar.gz
 sudo mv filebrowser /usr/local/bin/
+
+# 方式 2：官方脚本（需要能访问 GitHub）
+# curl -fsSL https://raw.githubusercontent.com/filebrowser/get/master/get.sh | bash
+
+# 方式 3：通过 GitHub 镜像（备用）
+# cd /tmp
+# curl -fsSL -o filebrowser.tar.gz https://ghfast.top/https://github.com/filebrowser/filebrowser/releases/download/v2.63.17/linux-amd64-filebrowser.tar.gz
+# tar xzf filebrowser.tar.gz
+# sudo mv filebrowser /usr/local/bin/
 
 # 验证安装
 filebrowser version
@@ -833,8 +839,13 @@ WantedBy=multi-user.target
 
 ```bash
 # 1. 下载 MinIO 二进制文件
-curl -fsSL https://dl.min.io/server/minio/release/linux-amd64/minio -o /usr/local/bin/minio
-# 国内网络可用镜像:
+# 方式 1：自有文件服务器（推荐，速度快）
+curl -fsSL https://file.abwen.com/minio/minio.linux-amd64.RELEASE.2025-09-07T16-13-09Z -o /usr/local/bin/minio
+
+# 方式 2：官方地址（需要能访问 dl.min.io）
+# curl -fsSL https://dl.min.io/server/minio/release/linux-amd64/minio -o /usr/local/bin/minio
+
+# 方式 3：通过 GitHub 镜像（备用）
 # curl -fsSL https://ghfast.top/https://dl.min.io/server/minio/release/linux-amd64/minio -o /usr/local/bin/minio
 
 sudo chmod +x /usr/local/bin/minio
