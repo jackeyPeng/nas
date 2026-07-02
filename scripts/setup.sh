@@ -138,7 +138,12 @@ echo "  ✓ FTP 配置完成"
 # ==================== [6/9] 配置 WebDAV ====================
 echo ""
 echo "[6/9] 配置 WebDAV (rclone)..."
-PASS_HASH=$(rclone obscure "$NAS_PASS")
+# 安装 htpasswd 工具（用于 WebDAV 认证）
+apt-get install -y apache2-utils 2>/dev/null || true
+# 生成 htpasswd 文件（使用 bcrypt 哈希，兼容性好）
+htpasswd -cb /etc/rclone-htpasswd "$NAS_USER" "$NAS_PASS"
+chown "$NAS_USER:$NAS_USER" /etc/rclone-htpasswd
+# 创建 systemd 服务文件（使用 htpasswd 认证，避免 rclone obscure hash 兼容性问题）
 cat > /etc/systemd/system/rclone-webdav.service << WDEOF
 [Unit]
 Description=Rclone WebDAV Server
@@ -147,7 +152,7 @@ After=network.target
 [Service]
 Type=simple
 User=$NAS_USER
-ExecStart=/usr/bin/rclone serve webdav $DATA_DIR --addr :8080 --user $NAS_USER --pass $PASS_HASH
+ExecStart=/usr/bin/rclone serve webdav $DATA_DIR --addr :8080 --htpasswd /etc/rclone-htpasswd
 Restart=on-failure
 RestartSec=10
 

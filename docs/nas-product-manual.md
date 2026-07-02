@@ -742,8 +742,7 @@ Type=simple
 User=jacky
 ExecStart=/usr/bin/rclone serve webdav /data \
     --addr :8080 \
-    --user jacky \
-    --pass <obscured_password_hash>
+    --htpasswd /etc/rclone-htpasswd
 Restart=on-failure
 RestartSec=10
 
@@ -758,21 +757,31 @@ WantedBy=multi-user.target
 | `serve webdav`    | rclone 的 WebDAV 服务模式                     |
 | `/data`           | 共享根目录，暴露整个 /data 树                  |
 | `--addr :8080`    | 监听 8080 端口                                |
-| `--user jacky`    | HTTP Basic Auth 用户名                        |
-| `--pass <hash>`   | 密码的 rclone obscure 哈希值（非明文）         |
+| `--htpasswd`      | 使用 Apache htpasswd 文件进行认证（推荐）      |
 | `Restart=on-failure` | 进程异常退出后自动重启                     |
 | `RestartSec=10`   | 重启前等待 10 秒，避免频繁重启                 |
 
-**密码哈希生成：**
+**认证配置（htpasswd 文件方式）：**
+
+setup.sh 会自动安装 `apache2-utils` 包并使用 `htpasswd` 工具生成密码文件：
 
 ```bash
-# 生成 obscure 哈希（每次运行结果不同，但都能通过验证）
-rclone obscure "[REDACTED]"
-# 输出示例: dbVrWXB8Lb31T3HOaCh9hlmaa9NVWrItZQ
+# 安装 htpasswd 工具（setup.sh 自动执行）
+apt-get install -y apache2-utils
+
+# 生成 htpasswd 密码文件（使用 bcrypt 哈希）
+htpasswd -cb /etc/rclone-htpasswd jacky "[REDACTED]"
+
+# 设置文件权限
+chown jacky:jacky /etc/rclone-htpasswd
 ```
 
-注意：`--pass` 参数不接受明文密码，也不接受 shell 命令替换（如 `$(openssl ...)`），
-必须使用 `rclone obscure` 预先生成的哈希值。这是部署时最常见的错误。
+**为什么选择 htpasswd 而非 rclone obscure：**
+
+- `htpasswd` 生成的是 Apache 标准 bcrypt 哈希，兼容性更好
+- `rclone obscure` 生成的哈希在多次部署验证中出现兼容性问题
+- `htpasswd` 文件可以支持多用户，便于权限管理
+- `htpasswd` 是业界标准工具，文档和调试支持更完善
 
 **为什么选 rclone 而不是 Apache/Nginx + mod_dav：**
 

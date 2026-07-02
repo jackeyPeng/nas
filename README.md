@@ -58,6 +58,16 @@ sudo bash /opt/nas/scripts/setup.sh
 
 详细部署步骤请参阅 `docs/nas-product-manual.md`
 
+## 恢复环境
+
+```bash
+# 清除所有 NAS 配置和数据，恢复到安装前状态
+sudo bash /opt/nas/scripts/cleanup.sh
+
+# 清除但保留 /data 数据目录
+sudo bash /opt/nas/scripts/cleanup.sh --keep-data
+```
+
 ## 服务访问
 
 | 服务 | 地址 | 凭证 |
