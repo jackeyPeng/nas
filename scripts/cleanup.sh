@@ -78,6 +78,7 @@ CONFIG_FILES="
 /etc/vsftpd.userlist
 /etc/fail2ban/jail.local
 /etc/filebrowser/filebrowser.db
+/etc/rclone-htpasswd
 /var/log/vsftpd.log
 /var/log/filebrowser.log
 "
@@ -108,7 +109,7 @@ echo "  ✓ 二进制文件已删除"
 # ==================== [5/7] 卸载软件包 ====================
 echo ""
 echo "[5/7] 卸载软件包..."
-PACKAGES="samba smbclient nfs-kernel-server nfs-common vsftpd rclone fail2ban ufw smartmontools unattended-upgrades"
+PACKAGES="samba smbclient nfs-kernel-server nfs-common vsftpd rclone fail2ban ufw smartmontools unattended-upgrades apache2-utils"
 DEBIAN_FRONTEND=noninteractive apt-get purge -y $PACKAGES 2>/dev/null || true
 DEBIAN_FRONTEND=noninteractive apt-get autoremove -y 2>/dev/null || true
 echo "  ✓ 软件包已卸载"

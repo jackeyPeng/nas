@@ -1,5 +1,22 @@
 # NAS 项目变更日志
 
+## [2026-07-02] - WebDAV 认证优化 & 清理脚本完善
+
+### 新增
+- cleanup.sh 增加 `/etc/rclone-htpasswd` 文件清理
+- cleanup.sh 增加 `apache2-utils` 包卸载（htpasswd 工具）
+
+### 修复
+- WebDAV 认证改用 htpasswd 文件方式（Apache 标准 bcrypt 哈希）
+  - 原因：rclone obscure 生成的哈希在多次部署验证中出现兼容性问题
+  - 方案：使用 `htpasswd -cb` 生成密码文件，rclone 通过 `--htpasswd` 参数读取
+  - 影响：setup.sh、configs/rclone-webdav.service 同步更新
+- setup.sh 步骤 [6/9] 增加 `apt-get install apache2-utils` 自动安装 htpasswd 工具
+
+### 验证
+- cleanup.sh → setup.sh 完整循环测试通过
+- WebDAV HTTP 200 认证正常
+
 ## [2026-07-02] - 完整部署验证通过
 
 ### 新增
