@@ -79,6 +79,7 @@ CONFIG_FILES="
 /etc/fail2ban/jail.local
 /etc/filebrowser/filebrowser.db
 /etc/rclone-htpasswd
+/etc/default/minio
 /var/log/vsftpd.log
 /var/log/filebrowser.log
 "

@@ -198,7 +198,7 @@ filebrowser config set \
     --port 8081 \
     --root "$DATA_DIR" \
     --log /var/log/filebrowser.log 2>/dev/null || true
-filebrowser users add "$NAS_USER" "${NAS_PASS}1234567" \
+filebrowser users add "$NAS_USER" "$NAS_PASS" \
     --database /etc/filebrowser/filebrowser.db \
     --perm.admin 2>/dev/null || true
 
@@ -237,6 +237,14 @@ fi
 mkdir -p "$DATA_DIR/minio"
 chown "$NAS_USER:$NAS_USER" "$DATA_DIR/minio"
 
+
+# Write MinIO credentials to environment file
+cat > /etc/default/minio << MINIOENV
+MINIO_ROOT_USER=$NAS_USER
+MINIO_ROOT_PASSWORD=***$NAS_PASS
+MINIOENV
+chmod 600 /etc/default/minio
+
 # Write MinIO service file using a function to avoid heredoc issues
 write_minio_service() {
     local svc_file="/etc/systemd/system/minio.service"
@@ -249,8 +257,8 @@ write_minio_service() {
     echo "[Service]" >> "$svc_file"
     echo "User=$NAS_USER" >> "$svc_file"
     echo "Group=$NAS_USER" >> "$svc_file"
-    echo "Environment=MINIO_ROOT_USER=admin" >> "$svc_file"
-    echo "Environment=MINIO_ROOT_PASSWORD=[REDACTED]" >> "$svc_file"
+
+    echo "EnvironmentFile=/etc/default/minio" >> "$svc_file"
     echo "ExecStart=/usr/local/bin/minio server $DATA_DIR/minio --console-address :9002" >> "$svc_file"
     echo "Restart=always" >> "$svc_file"
     echo "RestartSec=5" >> "$svc_file"
@@ -343,7 +351,7 @@ echo "  - FTP:         ftp://NAS_IP/ (用户名: $NAS_USER)"
 echo "  - WebDAV:      http://NAS_IP:8080/ (用户名: $NAS_USER)"
 echo "  - FileBrowser: http://NAS_IP:8081/ (用户名: $NAS_USER)"
 echo "  - MinIO API:   http://NAS_IP:9000"
-echo "  - MinIO Web:   http://NAS_IP:9002 (用户名: admin)"
+echo "  - MinIO Web:   http://NAS_IP:9002 (用户名: $NAS_USER)"
 echo ""
 echo "管理脚本:"
 echo "  添加用户: sudo $NAS_DIR/scripts/add-user.sh <用户名> <密码>"
