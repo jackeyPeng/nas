@@ -26,6 +26,16 @@ DATA_DIR="/data"
 NAS_DIR="/opt/nas"
 FILEBROWSER_VERSION="v2.63.17"
 
+# ==================== 确保 /opt/nas 软链接存在 ====================
+# 获取脚本所在目录的绝对路径
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+if [ ! -e "$NAS_DIR" ]; then
+    echo "创建软链接: $NAS_DIR -> $SCRIPT_DIR"
+    mkdir -p /opt
+    ln -sfn "$SCRIPT_DIR" "$NAS_DIR"
+fi
+
 # 通用下载函数：尝试多个源，第一个成功就返回
 download_file() {
     local dest="$1"
