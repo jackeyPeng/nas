@@ -243,7 +243,7 @@ chown "$NAS_USER:$NAS_USER" "$DATA_DIR/minio"
 # Write MinIO credentials to environment file
 cat > /etc/default/minio << MINIOENV
 MINIO_ROOT_USER=$NAS_USER
-MINIO_ROOT_PASSWORD=***$NAS_PASS
+MINIO_ROOT_PASSWORD=***
 MINIOENV
 chmod 600 /etc/default/minio
 
