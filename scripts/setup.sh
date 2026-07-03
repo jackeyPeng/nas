@@ -81,6 +81,8 @@ if [ -f "$NAS_DIR/configs/smb.conf" ]; then
 else
     echo "  警告: 未找到 $NAS_DIR/configs/smb.conf，使用默认配置"
 fi
+# 设置系统用户密码
+echo "$NAS_USER:$NAS_PASS" | chpasswd
 (echo "$NAS_PASS"; echo "$NAS_PASS") | smbpasswd -a "$NAS_USER" -s
 smbpasswd -e "$NAS_USER"
 systemctl enable smbd nmbd
