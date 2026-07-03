@@ -807,6 +807,15 @@ chown jacky:jacky /etc/rclone-htpasswd
 
 **Systemd 服务文件：** `/etc/systemd/system/minio.service`
 
+**MinIO 环境配置文件：** `/etc/default/minio`
+
+```bash
+MINIO_ROOT_USER=jacky
+MINIO_ROOT_PASSWORD=***
+```
+
+**MinIO Systemd 服务文件：** `/etc/systemd/system/minio.service`
+
 ```ini
 [Unit]
 Description=MinIO Object Storage
@@ -817,9 +826,8 @@ After=network-online.target
 [Service]
 User=jacky
 Group=jacky
-Environment=MINIO_ROOT_USER=admin
-Environment=MINIO_ROOT_PASSWORD=***
-ExecStart=/usr/local/bin/minio server /data/minio --console-address ":9002"
+EnvironmentFile=/etc/default/minio
+ExecStart=/usr/local/bin/minio server /data/minio --console-address :9002
 Restart=always
 RestartSec=5
 LimitNOFILE=65536
@@ -827,6 +835,13 @@ LimitNOFILE=65536
 [Install]
 WantedBy=multi-user.target
 ```
+
+**配置文件说明：**
+
+- 凭证存储在 `/etc/default/minio` 文件中，通过 `EnvironmentFile` 加载
+- 文件权限：`chmod 640`（允许 jacky 组读取）
+- 文件属主：`chown jacky:jacky`
+- 使用统一的 NAS 密码：`$NAS_PASS`（在 setup.sh 中定义）
 
 **端口说明：**
 
@@ -868,7 +883,7 @@ sudo ufw allow 9002/tcp   # Web Console
 
 - Web 控制台: `http://192.168.213.85:9002`
 - S3 API: `http://192.168.213.85:9000`
-- 用户名: `admin`
+- 用户名: `jacky`
 - 密码: `[REDACTED]`
 
 **使用 mc 客户端：**
@@ -879,7 +894,7 @@ curl -fsSL https://dl.min.io/client/mc/release/linux-amd64/mc -o mc
 chmod +x mc
 
 # 配置别名
-./mc alias set mynas http://192.168.213.85:9000 admin [REDACTED]
+./mc alias set mynas http://192.168.213.85:9000 jacky [REDACTED]
 
 # 常用操作
 ./mc ls mynas/                          # 列出存储桶

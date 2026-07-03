@@ -243,9 +243,10 @@ chown "$NAS_USER:$NAS_USER" "$DATA_DIR/minio"
 # Write MinIO credentials to environment file
 cat > /etc/default/minio << MINIOENV
 MINIO_ROOT_USER=$NAS_USER
-MINIO_ROOT_PASSWORD=***
+MINIO_ROOT_PASSWORD=$NAS_PASS
 MINIOENV
-chmod 600 /etc/default/minio
+chown "$NAS_USER:$NAS_USER" /etc/default/minio
+chmod 640 /etc/default/minio
 
 # Write MinIO service file using a function to avoid heredoc issues
 write_minio_service() {
