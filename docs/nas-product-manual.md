@@ -193,7 +193,7 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
 ├── backups/                    ← 备份（手机/电脑）
 ├── downloads/                  ← 下载目录
 └── private/                    ← 用户私有目录
-    ├── jacky/                  ← jacky 的私有空间
+    ├── <NAS_USER>/                  ← <NAS_USER> 的私有空间
     └── {username}/             ← 其他用户的私有空间
 ```
 
@@ -274,10 +274,10 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
 
 ```bash
 # 创建目录
-sudo mkdir -p /data/{shared,media/{movies,tv,music},documents,photos,backups,downloads,private/jacky}
+sudo mkdir -p /data/{shared,media/{movies,tv,music},documents,photos,backups,downloads,private/<NAS_USER>}
 
-# 设置所有权（假设管理用户为 jacky）
-sudo chown -R jacky:jacky /data
+# 设置所有权（假设管理用户为 <NAS_USER>）
+sudo chown -R <NAS_USER>:<NAS_USER> /data
 
 # 设置权限
 sudo chmod 755 /data
@@ -294,8 +294,8 @@ sudo cp /etc/samba/smb.conf /etc/samba/smb.conf.bak
 sudo cp /opt/nas/configs/smb.conf /etc/samba/smb.conf
 
 # 设置 Samba 密码
-(echo "<NAS_PASS>"; echo "<NAS_PASS>") | sudo smbpasswd -a jacky -s
-sudo smbpasswd -e jacky
+(echo "<NAS_PASS>"; echo "<NAS_PASS>") | sudo smbpasswd -a <NAS_USER> -s
+sudo smbpasswd -e <NAS_USER>
 
 # 验证配置
 sudo testparm -s
@@ -326,7 +326,7 @@ sudo systemctl restart nfs-kernel-server
 sudo cp /opt/nas/configs/vsftpd.conf /etc/vsftpd.conf
 
 # 创建用户白名单
-echo "jacky" | sudo tee /etc/vsftpd.userlist
+echo "<NAS_USER>" | sudo tee /etc/vsftpd.userlist
 
 # 创建 FTP 日志文件
 sudo touch /var/log/vsftpd.log
@@ -344,7 +344,7 @@ sudo systemctl restart vsftpd
 sudo apt-get install -y apache2-utils
 
 # 生成 htpasswd 文件（bcrypt 哈希）
-sudo htpasswd -cb /etc/rclone-htpasswd jacky "<NAS_PASS>"
+sudo htpasswd -cb /etc/rclone-htpasswd <NAS_USER> "<NAS_PASS>"
 
 # 创建 systemd 服务文件（详见 7.4 节）
 sudo tee /etc/systemd/system/rclone-webdav.service > /dev/null << EOF
@@ -354,7 +354,7 @@ After=network.target
 
 [Service]
 Type=simple
-User=jacky
+User=<NAS_USER>
 ExecStart=/usr/bin/rclone serve webdav /data --addr :8080 --htpasswd /etc/rclone-htpasswd
 Restart=on-failure
 RestartSec=10
@@ -405,7 +405,7 @@ sudo filebrowser config set \
     --log /var/log/filebrowser.log
 
 # 创建管理员用户（密码至少 12 位，FileBrowser v2.63+ 强制要求）
-sudo filebrowser users add jacky <NAS_PASS> \
+sudo filebrowser users add <NAS_USER> <NAS_PASS> \
     --database /etc/filebrowser/filebrowser.db \
     --perm.admin
 
@@ -440,7 +440,7 @@ sudo chmod +x /usr/local/bin/minio
 
 # 创建数据目录
 sudo mkdir -p /data/minio
-sudo chown jacky:jacky /data/minio
+sudo chown <NAS_USER>:<NAS_USER> /data/minio
 
 # 复制 systemd 服务文件（详见 7.5 节）
 sudo cp /opt/nas/configs/minio.service /etc/systemd/system/
@@ -500,13 +500,13 @@ done
 sudo ss -tlnp | grep -E '22|445|139|2049|21|8080|8081'
 
 # 测试 Samba
-smbclient -L localhost -U jacky%<NAS_PASS>
+smbclient -L localhost -U <NAS_USER>%<NAS_PASS>
 
 # 测试 NFS
 showmount -e localhost
 
 # 测试 WebDAV
-curl -u jacky:<NAS_PASS> http://localhost:8080/
+curl -u <NAS_USER>:<NAS_PASS> http://localhost:8080/
 
 # 测试 FileBrowser
 curl -s http://localhost:8081/ | head -5
@@ -574,9 +574,9 @@ sudo ufw status verbose
    read only = no                # 可写
    create mask = 0775            # 新文件权限
    directory mask = 0775         # 新目录权限
-   valid users = jacky           # 允许访问的用户列表
-   force user = jacky            # 强制以 jacky 身份操作
-   force group = jacky
+   valid users = <NAS_USER>           # 允许访问的用户列表
+   force user = <NAS_USER>            # 强制以 <NAS_USER> 身份操作
+   force group = <NAS_USER>
 
 [media]
    comment = 影音文件
@@ -584,7 +584,7 @@ sudo ufw status verbose
    browseable = yes
    read only = yes               # 只读（防止误删）
    guest ok = no
-   valid users = jacky
+   valid users = <NAS_USER>
 
 [documents]
    comment = 文档资料
@@ -593,7 +593,7 @@ sudo ufw status verbose
    read only = no
    create mask = 0775
    directory mask = 0775
-   valid users = jacky
+   valid users = <NAS_USER>
 
 [photos]
    comment = 照片
@@ -602,7 +602,7 @@ sudo ufw status verbose
    read only = no
    create mask = 0775
    directory mask = 0775
-   valid users = jacky
+   valid users = <NAS_USER>
 
 [backups]
    comment = 备份
@@ -611,19 +611,19 @@ sudo ufw status verbose
    read only = no
    create mask = 0775
    directory mask = 0775
-   valid users = jacky
+   valid users = <NAS_USER>
 
 # 用户私有目录（每个用户一个独立 share）
 # 注意：不使用 [homes] + %U 变量，因为 %U 在 path 中
 # 解析不稳定，可能导致路径错误
-[jacky]
-   comment = jacky 私有目录
-   path = /data/private/jacky
+[<NAS_USER>]
+   comment = <NAS_USER> 私有目录
+   path = /data/private/<NAS_USER>
    browseable = no               # 不在列表中显示，需直接访问
    read only = no
    create mask = 0700            # 仅用户本人可访问
    directory mask = 0700
-   valid users = jacky
+   valid users = <NAS_USER>
 ```
 
 **关键配置说明：**
@@ -732,7 +732,7 @@ connect_from_port_20=YES        # 使用端口 20 进行主动模式数据连接
 **用户白名单文件：** `/etc/vsftpd.userlist`
 
 ```
-jacky
+<NAS_USER>
 ```
 
 每行一个用户名，只有列在此文件中的用户才能通过 FTP 登录。
@@ -748,7 +748,7 @@ After=network.target
 
 [Service]
 Type=simple
-User=jacky
+User=<NAS_USER>
 ExecStart=/usr/bin/rclone serve webdav /data \
     --addr :8080 \
     --htpasswd /etc/rclone-htpasswd
@@ -779,10 +779,10 @@ setup.sh 会自动安装 `apache2-utils` 包并使用 `htpasswd` 工具生成密
 apt-get install -y apache2-utils
 
 # 生成 htpasswd 密码文件（使用 bcrypt 哈希）
-htpasswd -cb /etc/rclone-htpasswd jacky "<NAS_PASS>"
+htpasswd -cb /etc/rclone-htpasswd <NAS_USER> "<NAS_PASS>"
 
 # 设置文件权限
-chown jacky:jacky /etc/rclone-htpasswd
+chown <NAS_USER>:<NAS_USER> /etc/rclone-htpasswd
 ```
 
 **为什么选择 htpasswd 而非 rclone obscure：**
@@ -813,7 +813,7 @@ chown jacky:jacky /etc/rclone-htpasswd
 **MinIO 环境配置文件：** `/etc/default/minio`
 
 ```bash
-MINIO_ROOT_USER=jacky
+MINIO_ROOT_USER=<NAS_USER>
 MINIO_ROOT_PASSWORD=***
 ```
 
@@ -827,8 +827,8 @@ Wants=network-online.target
 After=network-online.target
 
 [Service]
-User=jacky
-Group=jacky
+User=<NAS_USER>
+Group=<NAS_USER>
 EnvironmentFile=/etc/default/minio
 ExecStart=/usr/local/bin/minio server /data/minio --console-address :9002
 Restart=always
@@ -842,8 +842,8 @@ WantedBy=multi-user.target
 **配置文件说明：**
 
 - 凭证存储在 `/etc/default/minio` 文件中，通过 `EnvironmentFile` 加载
-- 文件权限：`chmod 640`（允许 jacky 组读取）
-- 文件属主：`chown jacky:jacky`
+- 文件权限：`chmod 640`（允许 <NAS_USER> 组读取）
+- 文件属主：`chown <NAS_USER>:<NAS_USER>`
 - 使用统一的 NAS 密码：`$NAS_PASS`（在 setup.sh 中定义）
 
 **端口说明：**
@@ -870,7 +870,7 @@ sudo chmod +x /usr/local/bin/minio
 
 # 2. 创建数据目录
 sudo mkdir -p /data/minio
-sudo chown -R jacky:jacky /data/minio
+sudo chown -R <NAS_USER>:<NAS_USER> /data/minio
 
 # 3. 部署 systemd 服务（见上方配置）
 sudo systemctl daemon-reload
@@ -886,7 +886,7 @@ sudo ufw allow 9002/tcp   # Web Console
 
 - Web 控制台: `http://[REDACTED]:9002`
 - S3 API: `http://[REDACTED]:9000`
-- 用户名: `jacky`
+- 用户名: `<NAS_USER>`
 - 密码: `<NAS_PASS>`
 
 **使用 mc 客户端：**
@@ -897,7 +897,7 @@ curl -fsSL https://dl.min.io/client/mc/release/linux-amd64/mc -o mc
 chmod +x mc
 
 # 配置别名
-./mc alias set mynas http://[REDACTED]:9000 jacky <NAS_PASS>
+./mc alias set mynas http://[REDACTED]:9000 <NAS_USER> <NAS_PASS>
 
 # 常用操作
 ./mc ls mynas/                          # 列出存储桶
@@ -989,7 +989,7 @@ sudo filebrowser config set \
 
 ```bash
 # 添加管理员用户（密码至少 12 位，v2.63+ 强制要求）
-sudo filebrowser users add jacky <NAS_PASS> \
+sudo filebrowser users add <NAS_USER> <NAS_PASS> \
     --database /etc/filebrowser/filebrowser.db \
     --perm.admin
 
@@ -1001,7 +1001,7 @@ sudo filebrowser users add alice alicepassword123 \
 sudo filebrowser users ls --database /etc/filebrowser/filebrowser.db
 
 # 修改用户密码
-sudo filebrowser users update jacky --password newpassword123 \
+sudo filebrowser users update <NAS_USER> --password newpassword123 \
     --database /etc/filebrowser/filebrowser.db
 
 # 删除用户
@@ -1234,7 +1234,7 @@ sudo /opt/nas/scripts/remove-user.sh alice --delete-data
 4. 删除系统用户（`userdel`）
 
 **安全限制：**
-- 不允许删除 `root` 和 `jacky`（系统保护用户）
+- 不允许删除 `root` 和 `<NAS_USER>`（系统保护用户）
 - 不自动清理 FTP 白名单，需手动移除
 
 ### 修改用户密码
@@ -1321,10 +1321,10 @@ tar czf /data/backups/nas-config-$(date +%Y%m%d).tar.gz \
 
 ```
 \\[REDACTED]\shared
-\\[REDACTED]\jacky
+\\[REDACTED]\<NAS_USER>
 ```
 
-输入用户名 `jacky`，密码 `<NAS_PASS>`。
+输入用户名 `<NAS_USER>`，密码 `<NAS_PASS>`。
 
 **方法 2 — 映射网络驱动器：**
 
@@ -1336,14 +1336,14 @@ tar czf /data/backups/nas-config-$(date +%Y%m%d).tar.gz \
 **方法 3 — 命令行：**
 
 ```cmd
-net use Z: \\[REDACTED]\shared /user:jacky <NAS_PASS> /persistent:yes
+net use Z: \\[REDACTED]\shared /user:<NAS_USER> <NAS_PASS> /persistent:yes
 ```
 
 ### macOS 访问 Samba
 
 1. Finder → 前往 → 连接服务器 (⌘K)
 2. 输入: `smb://[REDACTED]/shared`
-3. 输入用户名 `jacky`，密码 `<NAS_PASS>`
+3. 输入用户名 `<NAS_USER>`，密码 `<NAS_PASS>`
 
 ### Linux 访问 Samba
 
@@ -1353,11 +1353,11 @@ sudo apt-get install cifs-utils
 
 # 挂载
 sudo mount -t cifs //[REDACTED]/shared /mnt/nas \
-    -o username=jacky,password=<NAS_PASS>
+    -o username=<NAS_USER>,password=<NAS_PASS>
 
 # 永久挂载（加入 /etc/fstab）
 echo '//[REDACTED]/shared /mnt/nas cifs credentials=/etc/samba/credentials,uid=1000,gid=1000 0 0' | sudo tee -a /etc/fstab
-echo 'username=jacky' | sudo tee /etc/samba/credentials
+echo 'username=<NAS_USER>' | sudo tee /etc/samba/credentials
 echo 'password=<NAS_PASS>' | sudo tee -a /etc/samba/credentials
 sudo chmod 600 /etc/samba/credentials
 ```
@@ -1380,14 +1380,14 @@ echo '[REDACTED]:/data/shared /mnt/nas nfs defaults 0 0' | sudo tee -a /etc/fsta
 **命令行：**
 ```bash
 ftp [REDACTED]
-# 用户名: jacky
+# 用户名: <NAS_USER>
 # 密码: <NAS_PASS>
 ```
 
 **GUI 工具（FileZilla 等）：**
 - 主机: `[REDACTED]`
 - 端口: `21`
-- 用户名: `jacky`
+- 用户名: `<NAS_USER>`
 - 密码: `<NAS_PASS>`
 
 ### WebDAV 访问
@@ -1396,7 +1396,7 @@ ftp [REDACTED]
 ```
 http://[REDACTED]:8080/
 ```
-输入用户名 `jacky`，密码 `<NAS_PASS>`。
+输入用户名 `<NAS_USER>`，密码 `<NAS_PASS>`。
 
 **Linux 挂载 WebDAV：**
 ```bash
@@ -1409,7 +1409,7 @@ Finder → 前往 → 连接服务器 → `http://[REDACTED]:8080/`
 
 **Windows 映射 WebDAV：**
 ```cmd
-net use W: http://[REDACTED]:8080/ /user:jacky <NAS_PASS>
+net use W: http://[REDACTED]:8080/ /user:<NAS_USER> <NAS_PASS>
 ```
 
 ### FileBrowser 访问
@@ -1418,7 +1418,7 @@ net use W: http://[REDACTED]:8080/ /user:jacky <NAS_PASS>
 ```
 http://[REDACTED]:8081/
 ```
-输入用户名 `jacky`，密码 `<NAS_PASS>`。
+输入用户名 `<NAS_USER>`，密码 `<NAS_PASS>`。
 
 **功能使用：**
 - **文件浏览** — 左侧目录树导航，右侧文件列表
@@ -1457,7 +1457,7 @@ systemctl status smbd nmbd
 sudo ufw status | grep 445
 
 # 4. 本地测试
-smbclient -L localhost -U jacky%<NAS_PASS>
+smbclient -L localhost -U <NAS_USER>%<NAS_PASS>
 
 # 5. 查看 Samba 用户列表
 sudo pdbedit -L
@@ -1500,7 +1500,7 @@ cat /etc/vsftpd.userlist
 sudo ufw status | grep 30000
 
 # 4. 本地测试
-curl ftp://jacky:<NAS_PASS>@localhost/
+curl ftp://<NAS_USER>:<NAS_PASS>@localhost/
 
 # 5. 检查日志
 sudo tail -50 /var/log/vsftpd.log
@@ -1516,7 +1516,7 @@ systemctl status rclone-webdav
 sudo journalctl -u rclone-webdav -n 20
 
 # 3. 本地测试
-curl -u jacky:<NAS_PASS> http://localhost:8080/
+curl -u <NAS_USER>:<NAS_PASS> http://localhost:8080/
 
 # 4. 重新生成密码哈希并更新服务文件
 NEW_HASH=$(rclone obscure "<NAS_PASS>")
@@ -1562,7 +1562,7 @@ curl http://localhost:8081/
 sudo ufw status | grep 8081
 
 # 6. 重置管理员密码（如果忘记密码）
-sudo filebrowser users update jacky --password newpassword123 \
+sudo filebrowser users update <NAS_USER> --password newpassword123 \
     --database /etc/filebrowser/filebrowser.db
 
 # 7. 检查数据库文件权限
@@ -1580,10 +1580,10 @@ sudo chown root:root /etc/filebrowser/filebrowser.db
 
 ```bash
 # 1. 从模板机器复制部署包
-scp -r /opt/nas/ jacky@<新机器IP>:/tmp/
+scp -r /opt/nas/ <NAS_USER>@<新机器IP>:/tmp/
 
 # 2. 在新机器上执行
-ssh jacky@<新机器IP>
+ssh <NAS_USER>@<新机器IP>
 sudo mv /tmp/nas /opt/
 sudo chown -R root:root /opt/nas/scripts/*.sh
 sudo chmod +x /opt/nas/scripts/*.sh
@@ -1601,7 +1601,7 @@ git commit -m "NAS deployment package"
 # 推送到你的 git 服务器
 
 # 2. 在新机器上克隆并部署
-ssh jacky@<新机器IP>
+ssh <NAS_USER>@<新机器IP>
 sudo mkdir -p /opt/nas
 git clone <你的仓库地址> /opt/nas
 sudo /opt/nas/scripts/setup.sh
@@ -1629,9 +1629,9 @@ sudo /opt/nas/scripts/setup.sh
 | MinIO 服务          | `systemctl is-active minio`                      | active         |
 | Fail2ban            | `systemctl is-active fail2ban`                   | active         |
 | UFW 防火墙          | `sudo ufw status`                                | active         |
-| Samba 共享列表      | `smbclient -L localhost -U jacky%<NAS_PASS>`      | 显示共享列表    |
+| Samba 共享列表      | `smbclient -L localhost -U <NAS_USER>%<NAS_PASS>`      | 显示共享列表    |
 | NFS 导出列表        | `showmount -e localhost`                         | 显示导出路径    |
-| WebDAV 响应         | `curl -u jacky:<NAS_PASS> http://localhost:8080/` | HTTP 200/207   |
+| WebDAV 响应         | `curl -u <NAS_USER>:<NAS_PASS> http://localhost:8080/` | HTTP 200/207   |
 | 端口监听            | `sudo ss -tlnp`                                  | 所有端口正常    |
 
 ---

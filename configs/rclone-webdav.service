@@ -4,7 +4,7 @@ After=network.target
 
 [Service]
 Type=simple
-User=jacky
+User=__NAS_USER__
 ExecStart=/usr/bin/rclone serve webdav /data --addr :8080 --htpasswd /etc/rclone-htpasswd
 Restart=on-failure
 RestartSec=10

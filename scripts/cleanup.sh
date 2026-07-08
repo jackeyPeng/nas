@@ -131,10 +131,13 @@ echo "  ✓ 数据目录已处理"
 # ==================== [7/7] 清理其他文件 ====================
 echo ""
 echo "[7/7] 清理其他文件..."
-# 清理 Samba 用户
-if command -v smbpasswd &>/dev/null; then
-    smbpasswd -x jacky 2>/dev/null || true
-    echo "  删除 Samba 用户 jacky"
+# 清理 Samba 用户（自动获取部署时的用户）
+NAS_USER="${SUDO_USER:-$USER}"
+if [ -n "$NAS_USER" ] && [ "$NAS_USER" != "root" ]; then
+    if command -v smbpasswd &>/dev/null; then
+        smbpasswd -x "$NAS_USER" 2>/dev/null || true
+        echo "  删除 Samba 用户 $NAS_USER"
+    fi
 fi
 
 # 清理 /opt/nas 软链接

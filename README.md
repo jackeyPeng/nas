@@ -57,9 +57,11 @@ sudo ln -sfn ~/soft/nas /opt/nas
 cp /opt/nas/.env.example /opt/nas/.env
 # 编辑 .env 填入实际密码（至少12位）
 
-# 4. 执行部署
+# 4. 执行部署（自动检测当前用户作为 NAS 用户）
 sudo bash /opt/nas/scripts/setup.sh
 ```
+
+部署脚本会自动识别执行 sudo 的用户名作为 NAS 管理用户，无需手动指定。
 
 详细部署步骤请参阅 `docs/nas-product-manual.md`
 
@@ -77,13 +79,13 @@ sudo bash /opt/nas/scripts/cleanup.sh --keep-data
 
 | 服务 | 地址 | 凭证 |
 |------|------|------|
-| Samba | //NAS_IP/shared | jacky / <NAS_PASS> |
+| Samba | //NAS_IP/shared | <NAS_USER> / <NAS_PASS> |
 | NFS | mount -t nfs NAS_IP:/data/shared /mnt/nas | 按 IP 控制 |
-| FTP | ftp://NAS_IP/ | jacky / <NAS_PASS> |
-| WebDAV | http://NAS_IP:8080/ | jacky / <NAS_PASS> |
-| FileBrowser | http://NAS_IP:8081/ | jacky / <NAS_PASS> |
-| MinIO API | http://NAS_IP:9000 | jacky / <NAS_PASS> |
-| MinIO Web | http://NAS_IP:9002 | jacky / <NAS_PASS> |
+| FTP | ftp://NAS_IP/ | <NAS_USER> / <NAS_PASS> |
+| WebDAV | http://NAS_IP:8080/ | <NAS_USER> / <NAS_PASS> |
+| FileBrowser | http://NAS_IP:8081/ | <NAS_USER> / <NAS_PASS> |
+| MinIO API | http://NAS_IP:9000 | <NAS_USER> / <NAS_PASS> |
+| MinIO Web | http://NAS_IP:9002 | <NAS_USER> / <NAS_PASS> |
 
 ## 管理脚本
 

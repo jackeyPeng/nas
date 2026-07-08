@@ -42,11 +42,11 @@
 ### 访问信息
 | 服务 | 地址 | 用户名 | 密码 |
 |------|------|--------|------|
-| Samba | //[REDACTED]/shared | jacky | <NAS_PASS> |
+| Samba | //[REDACTED]/shared | <NAS_USER> | <NAS_PASS> |
 | NFS | mount [REDACTED]:/data/shared | - | - |
-| FTP | ftp://[REDACTED] | jacky | <NAS_PASS> |
-| WebDAV | http://[REDACTED]:8080 | jacky | <NAS_PASS> |
-| FileBrowser | http://[REDACTED]:8081 | jacky | <NAS_PASS> |
+| FTP | ftp://[REDACTED] | <NAS_USER> | <NAS_PASS> |
+| WebDAV | http://[REDACTED]:8080 | <NAS_USER> | <NAS_PASS> |
+| FileBrowser | http://[REDACTED]:8081 | <NAS_USER> | <NAS_PASS> |
 | MinIO Console | http://[REDACTED]:9002 | admin | <NAS_PASS> |
 | MinIO API | http://[REDACTED]:9000 | - | - |
 
