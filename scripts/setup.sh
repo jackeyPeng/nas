@@ -361,7 +361,7 @@ if [ -f "$NAS_DIR/web/nas-panel" ]; then
     cp "$NAS_DIR/web/nas-panel" /usr/local/bin/nas-panel
     chmod +x /usr/local/bin/nas-panel
 elif download_file /usr/local/bin/nas-panel \
-    "https://file.abwen.com/nas-panel/nas-panel" \
+    "https://file.abwen.com/control/nas-panel.latest" \
     "https://ghfast.top/https://github.com/gitdogcat/nas/releases/download/v1.0.0/nas-panel"; then
     chmod +x /usr/local/bin/nas-panel
 else
