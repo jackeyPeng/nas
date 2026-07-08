@@ -294,7 +294,7 @@ sudo cp /etc/samba/smb.conf /etc/samba/smb.conf.bak
 sudo cp /opt/nas/configs/smb.conf /etc/samba/smb.conf
 
 # 设置 Samba 密码
-(echo "[REDACTED]"; echo "[REDACTED]") | sudo smbpasswd -a jacky -s
+(echo "<NAS_PASS>"; echo "<NAS_PASS>") | sudo smbpasswd -a jacky -s
 sudo smbpasswd -e jacky
 
 # 验证配置
@@ -340,8 +340,11 @@ sudo systemctl restart vsftpd
 ### 步骤 7：配置 WebDAV
 
 ```bash
-# 生成密码哈希
-PASS_HASH=$(rclone obscure "[REDACTED]")
+# 安装 htpasswd 工具
+sudo apt-get install -y apache2-utils
+
+# 生成 htpasswd 文件（bcrypt 哈希）
+sudo htpasswd -cb /etc/rclone-htpasswd jacky "<NAS_PASS>"
 
 # 创建 systemd 服务文件（详见 7.4 节）
 sudo tee /etc/systemd/system/rclone-webdav.service > /dev/null << EOF
@@ -352,7 +355,7 @@ After=network.target
 [Service]
 Type=simple
 User=jacky
-ExecStart=/usr/bin/rclone serve webdav /data --addr :8080 --user jacky --pass $PASS_HASH
+ExecStart=/usr/bin/rclone serve webdav /data --addr :8080 --htpasswd /etc/rclone-htpasswd
 Restart=on-failure
 RestartSec=10
 
@@ -402,7 +405,7 @@ sudo filebrowser config set \
     --log /var/log/filebrowser.log
 
 # 创建管理员用户（密码至少 12 位，FileBrowser v2.63+ 强制要求）
-sudo filebrowser users add jacky [REDACTED] \
+sudo filebrowser users add jacky <NAS_PASS> \
     --database /etc/filebrowser/filebrowser.db \
     --perm.admin
 
@@ -497,13 +500,13 @@ done
 sudo ss -tlnp | grep -E '22|445|139|2049|21|8080|8081'
 
 # 测试 Samba
-smbclient -L localhost -U jacky%[REDACTED]
+smbclient -L localhost -U jacky%<NAS_PASS>
 
 # 测试 NFS
 showmount -e localhost
 
 # 测试 WebDAV
-curl -u jacky:[REDACTED] http://localhost:8080/
+curl -u jacky:<NAS_PASS> http://localhost:8080/
 
 # 测试 FileBrowser
 curl -s http://localhost:8081/ | head -5
@@ -776,7 +779,7 @@ setup.sh 会自动安装 `apache2-utils` 包并使用 `htpasswd` 工具生成密
 apt-get install -y apache2-utils
 
 # 生成 htpasswd 密码文件（使用 bcrypt 哈希）
-htpasswd -cb /etc/rclone-htpasswd jacky "[REDACTED]"
+htpasswd -cb /etc/rclone-htpasswd jacky "<NAS_PASS>"
 
 # 设置文件权限
 chown jacky:jacky /etc/rclone-htpasswd
@@ -884,7 +887,7 @@ sudo ufw allow 9002/tcp   # Web Console
 - Web 控制台: `http://[REDACTED]:9002`
 - S3 API: `http://[REDACTED]:9000`
 - 用户名: `jacky`
-- 密码: `[REDACTED]`
+- 密码: `<NAS_PASS>`
 
 **使用 mc 客户端：**
 
@@ -894,7 +897,7 @@ curl -fsSL https://dl.min.io/client/mc/release/linux-amd64/mc -o mc
 chmod +x mc
 
 # 配置别名
-./mc alias set mynas http://[REDACTED]:9000 jacky [REDACTED]
+./mc alias set mynas http://[REDACTED]:9000 jacky <NAS_PASS>
 
 # 常用操作
 ./mc ls mynas/                          # 列出存储桶
@@ -986,7 +989,7 @@ sudo filebrowser config set \
 
 ```bash
 # 添加管理员用户（密码至少 12 位，v2.63+ 强制要求）
-sudo filebrowser users add jacky [REDACTED] \
+sudo filebrowser users add jacky <NAS_PASS> \
     --database /etc/filebrowser/filebrowser.db \
     --perm.admin
 
@@ -1321,7 +1324,7 @@ tar czf /data/backups/nas-config-$(date +%Y%m%d).tar.gz \
 \\[REDACTED]\jacky
 ```
 
-输入用户名 `jacky`，密码 `[REDACTED]`。
+输入用户名 `jacky`，密码 `<NAS_PASS>`。
 
 **方法 2 — 映射网络驱动器：**
 
@@ -1333,14 +1336,14 @@ tar czf /data/backups/nas-config-$(date +%Y%m%d).tar.gz \
 **方法 3 — 命令行：**
 
 ```cmd
-net use Z: \\[REDACTED]\shared /user:jacky [REDACTED] /persistent:yes
+net use Z: \\[REDACTED]\shared /user:jacky <NAS_PASS> /persistent:yes
 ```
 
 ### macOS 访问 Samba
 
 1. Finder → 前往 → 连接服务器 (⌘K)
 2. 输入: `smb://[REDACTED]/shared`
-3. 输入用户名 `jacky`，密码 `[REDACTED]`
+3. 输入用户名 `jacky`，密码 `<NAS_PASS>`
 
 ### Linux 访问 Samba
 
@@ -1350,12 +1353,12 @@ sudo apt-get install cifs-utils
 
 # 挂载
 sudo mount -t cifs //[REDACTED]/shared /mnt/nas \
-    -o username=jacky,password=[REDACTED]
+    -o username=jacky,password=<NAS_PASS>
 
 # 永久挂载（加入 /etc/fstab）
 echo '//[REDACTED]/shared /mnt/nas cifs credentials=/etc/samba/credentials,uid=1000,gid=1000 0 0' | sudo tee -a /etc/fstab
 echo 'username=jacky' | sudo tee /etc/samba/credentials
-echo 'password=[REDACTED]' | sudo tee -a /etc/samba/credentials
+echo 'password=<NAS_PASS>' | sudo tee -a /etc/samba/credentials
 sudo chmod 600 /etc/samba/credentials
 ```
 
@@ -1378,14 +1381,14 @@ echo '[REDACTED]:/data/shared /mnt/nas nfs defaults 0 0' | sudo tee -a /etc/fsta
 ```bash
 ftp [REDACTED]
 # 用户名: jacky
-# 密码: [REDACTED]
+# 密码: <NAS_PASS>
 ```
 
 **GUI 工具（FileZilla 等）：**
 - 主机: `[REDACTED]`
 - 端口: `21`
 - 用户名: `jacky`
-- 密码: `[REDACTED]`
+- 密码: `<NAS_PASS>`
 
 ### WebDAV 访问
 
@@ -1393,7 +1396,7 @@ ftp [REDACTED]
 ```
 http://[REDACTED]:8080/
 ```
-输入用户名 `jacky`，密码 `[REDACTED]`。
+输入用户名 `jacky`，密码 `<NAS_PASS>`。
 
 **Linux 挂载 WebDAV：**
 ```bash
@@ -1406,7 +1409,7 @@ Finder → 前往 → 连接服务器 → `http://[REDACTED]:8080/`
 
 **Windows 映射 WebDAV：**
 ```cmd
-net use W: http://[REDACTED]:8080/ /user:jacky [REDACTED]
+net use W: http://[REDACTED]:8080/ /user:jacky <NAS_PASS>
 ```
 
 ### FileBrowser 访问
@@ -1415,7 +1418,7 @@ net use W: http://[REDACTED]:8080/ /user:jacky [REDACTED]
 ```
 http://[REDACTED]:8081/
 ```
-输入用户名 `jacky`，密码 `[REDACTED]`。
+输入用户名 `jacky`，密码 `<NAS_PASS>`。
 
 **功能使用：**
 - **文件浏览** — 左侧目录树导航，右侧文件列表
@@ -1454,7 +1457,7 @@ systemctl status smbd nmbd
 sudo ufw status | grep 445
 
 # 4. 本地测试
-smbclient -L localhost -U jacky%[REDACTED]
+smbclient -L localhost -U jacky%<NAS_PASS>
 
 # 5. 查看 Samba 用户列表
 sudo pdbedit -L
@@ -1497,7 +1500,7 @@ cat /etc/vsftpd.userlist
 sudo ufw status | grep 30000
 
 # 4. 本地测试
-curl ftp://jacky:[REDACTED]@localhost/
+curl ftp://jacky:<NAS_PASS>@localhost/
 
 # 5. 检查日志
 sudo tail -50 /var/log/vsftpd.log
@@ -1513,10 +1516,10 @@ systemctl status rclone-webdav
 sudo journalctl -u rclone-webdav -n 20
 
 # 3. 本地测试
-curl -u jacky:[REDACTED] http://localhost:8080/
+curl -u jacky:<NAS_PASS> http://localhost:8080/
 
 # 4. 重新生成密码哈希并更新服务文件
-NEW_HASH=$(rclone obscure "[REDACTED]")
+NEW_HASH=$(rclone obscure "<NAS_PASS>")
 # 编辑 /etc/systemd/system/rclone-webdav.service 中的 --pass 值
 sudo systemctl daemon-reload
 sudo systemctl restart rclone-webdav
@@ -1626,9 +1629,9 @@ sudo /opt/nas/scripts/setup.sh
 | MinIO 服务          | `systemctl is-active minio`                      | active         |
 | Fail2ban            | `systemctl is-active fail2ban`                   | active         |
 | UFW 防火墙          | `sudo ufw status`                                | active         |
-| Samba 共享列表      | `smbclient -L localhost -U jacky%[REDACTED]`      | 显示共享列表    |
+| Samba 共享列表      | `smbclient -L localhost -U jacky%<NAS_PASS>`      | 显示共享列表    |
 | NFS 导出列表        | `showmount -e localhost`                         | 显示导出路径    |
-| WebDAV 响应         | `curl -u jacky:[REDACTED] http://localhost:8080/` | HTTP 200/207   |
+| WebDAV 响应         | `curl -u jacky:<NAS_PASS> http://localhost:8080/` | HTTP 200/207   |
 | 端口监听            | `sudo ss -tlnp`                                  | 所有端口正常    |
 
 ---

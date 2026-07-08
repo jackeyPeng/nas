@@ -42,12 +42,12 @@
 ### 访问信息
 | 服务 | 地址 | 用户名 | 密码 |
 |------|------|--------|------|
-| Samba | //[REDACTED]/shared | jacky | [REDACTED] |
+| Samba | //[REDACTED]/shared | jacky | <NAS_PASS> |
 | NFS | mount [REDACTED]:/data/shared | - | - |
-| FTP | ftp://[REDACTED] | jacky | [REDACTED] |
-| WebDAV | http://[REDACTED]:8080 | jacky | [REDACTED] |
-| FileBrowser | http://[REDACTED]:8081 | jacky | [REDACTED] |
-| MinIO Console | http://[REDACTED]:9002 | admin | [REDACTED] |
+| FTP | ftp://[REDACTED] | jacky | <NAS_PASS> |
+| WebDAV | http://[REDACTED]:8080 | jacky | <NAS_PASS> |
+| FileBrowser | http://[REDACTED]:8081 | jacky | <NAS_PASS> |
+| MinIO Console | http://[REDACTED]:9002 | admin | <NAS_PASS> |
 | MinIO API | http://[REDACTED]:9000 | - | - |
 
 ## [2026-07-02] - NFS 端口固定

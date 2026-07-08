@@ -21,14 +21,31 @@ echo ""
 
 # ==================== 配置变量 ====================
 NAS_USER="jacky"
-NAS_PASS="[REDACTED]"
 DATA_DIR="/data"
 NAS_DIR="/opt/nas"
 FILEBROWSER_VERSION="v2.63.17"
 
-# ==================== 确保 /opt/nas 软链接存在 ====================
-# 获取脚本所在目录的绝对路径
+# 获取脚本所在目录的绝对路径（仓库根目录）
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# 从 .env 文件读取密码
+ENV_FILE="$SCRIPT_DIR/.env"
+if [ ! -f "$ENV_FILE" ]; then
+    echo "错误: 未找到 $ENV_FILE"
+    echo "请复制 .env.example 为 .env 并填入实际密码"
+    exit 1
+fi
+NAS_PASS=$(grep '^NAS_PASS=' "$ENV_FILE" | cut -d'=' -f2-)
+if [ -z "$NAS_PASS" ]; then
+    echo "错误: .env 文件中未设置 NAS_PASS"
+    exit 1
+fi
+if [ ${#NAS_PASS} -lt 12 ]; then
+    echo "错误: NAS_PASS 至少需要 12 位（FileBrowser 强制要求）"
+    exit 1
+fi
+
+# ==================== 确保 /opt/nas 软链接存在 ====================
 
 if [ ! -e "$NAS_DIR" ]; then
     echo "创建软链接: $NAS_DIR -> $SCRIPT_DIR"
