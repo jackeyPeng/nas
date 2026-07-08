@@ -3,8 +3,9 @@
 # 用于在新机器上部署完整的 NAS 系统
 # 用法: sudo ./setup.sh
 #
-# 包含服务: Samba, NFS, FTP, WebDAV, FileBrowser, MinIO
+# 包含服务: Samba, NFS, FTP, WebDAV, FileBrowser, MinIO, NAS Web Panel
 # 安全: Fail2ban, UFW 防火墙, unattended-upgrades
+# 10步部署, 自动检测当前用户
 
 set -e
 
@@ -349,8 +350,28 @@ ufw allow 8080/tcp               # WebDAV
 ufw allow 8081/tcp               # FileBrowser
 ufw allow 9000/tcp               # MinIO S3 API
 ufw allow 9002/tcp               # MinIO Console
+ufw allow 8090/tcp               # NAS Web Panel
 ufw --force enable
 echo "  ✓ 安全配置完成"
+
+# ==================== [10/10] 安装 NAS Web 管理面板 ====================
+echo ""
+echo "[10/10] 安装 NAS Web 管理面板..."
+if [ -f "$NAS_DIR/web/nas-panel" ]; then
+    cp "$NAS_DIR/web/nas-panel" /usr/local/bin/nas-panel
+    chmod +x /usr/local/bin/nas-panel
+else
+    echo "  警告: 未找到 $NAS_DIR/web/nas-panel 二进制文件，跳过"
+fi
+
+# Create systemd service
+if [ -f "$NAS_DIR/configs/nas-panel.service" ]; then
+    sed "s/__NAS_USER__/$NAS_USER/g" "$NAS_DIR/configs/nas-panel.service" > /etc/systemd/system/nas-panel.service
+fi
+systemctl daemon-reload
+systemctl enable nas-panel
+systemctl restart nas-panel
+echo "  ✓ NAS Web 管理面板配置完成"
 
 # ==================== 部署完成 ====================
 echo ""
@@ -359,7 +380,7 @@ echo "NAS 部署完成!"
 echo "========================================="
 echo ""
 echo "服务状态:"
-for svc in smbd nmbd nfs-kernel-server vsftpd rclone-webdav filebrowser minio fail2ban; do
+for svc in smbd nmbd nfs-kernel-server vsftpd rclone-webdav filebrowser minio fail2ban nas-panel; do
     printf "  %-22s %s\n" "$svc:" "$(systemctl is-active $svc)"
 done
 
@@ -377,6 +398,7 @@ echo "  - WebDAV:      http://NAS_IP:8080/ (用户名: $NAS_USER)"
 echo "  - FileBrowser: http://NAS_IP:8081/ (用户名: $NAS_USER)"
 echo "  - MinIO API:   http://NAS_IP:9000"
 echo "  - MinIO Web:   http://NAS_IP:9002 (用户名: $NAS_USER)"
+echo "  - Web 面板:    http://NAS_IP:8090 (用户名: $NAS_USER)"
 echo ""
 echo "管理脚本:"
 echo "  添加用户: sudo $NAS_DIR/scripts/add-user.sh <用户名> <密码>"

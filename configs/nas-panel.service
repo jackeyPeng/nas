@@ -1,0 +1,14 @@
+[Unit]
+Description=NAS Web Management Panel
+After=network.target
+
+[Service]
+Type=simple
+EnvironmentFile=/opt/nas/.env
+Environment=NAS_USER=__NAS_USER__
+ExecStart=/usr/local/bin/nas-panel
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
