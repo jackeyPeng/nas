@@ -122,15 +122,40 @@ func jsonResponse(w http.ResponseWriter, data interface{}) {
 	w.Write([]byte(toJSON(data)))
 }
 
-// toJSON is a simple JSON encoder (avoid encoding/json for small binary)
+// toJSON is a simple JSON encoder
 func toJSON(v interface{}) string {
 	switch val := v.(type) {
 	case string:
 		return fmt.Sprintf("%q", val)
+	case int:
+		return fmt.Sprintf("%d", val)
+	case bool:
+		if val {
+			return "true"
+		}
+		return "false"
+	case map[string]string:
+		parts := []string{}
+		for k, v := range val {
+			parts = append(parts, fmt.Sprintf("%q: %q", k, v))
+		}
+		return "{" + strings.Join(parts, ", ") + "}"
 	case map[string]interface{}:
 		return mapToJSON(val)
 	case []map[string]interface{}:
 		return sliceToJSON(val)
+	case []map[string]string:
+		parts := []string{}
+		for _, item := range val {
+			parts = append(parts, toJSON(item))
+		}
+		return "[" + strings.Join(parts, ", ") + "]"
+	case []interface{}:
+		parts := []string{}
+		for _, item := range val {
+			parts = append(parts, toJSON(item))
+		}
+		return "[" + strings.Join(parts, ", ") + "]"
 	default:
 		return fmt.Sprintf("%v", v)
 	}
