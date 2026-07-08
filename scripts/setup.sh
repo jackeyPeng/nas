@@ -38,7 +38,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="$SCRIPT_DIR/.env"
 if [ ! -f "$ENV_FILE" ]; then
     echo "错误: 未找到 $ENV_FILE"
-    echo "请复制 .env.example 为 .env 并填入实际密码"
+    echo ""
+    echo "请先创建配置文件："
+    echo "  cp $SCRIPT_DIR/.env.example $ENV_FILE"
+    echo "  nano $ENV_FILE"
+    echo ""
+    echo "必填项："
+    echo "  NAS_PASS=你的密码（至少12位，用于所有服务）"
+    echo ""
+    echo "可选项："
+    echo "  GITEE_TOKEN=你的Gitee token（仅创建Release时需要）"
     exit 1
 fi
 NAS_PASS=$(grep '^NAS_PASS=' "$ENV_FILE" | cut -d'=' -f2-)
