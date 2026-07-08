@@ -152,6 +152,12 @@ if command -v ufw &>/dev/null; then
     echo "  重置 UFW 规则"
 fi
 
+# 清理 sudoers
+if [ -f /etc/sudoers.d/nas-panel ]; then
+    rm -f /etc/sudoers.d/nas-panel
+    echo "  删除 /etc/sudoers.d/nas-panel"
+fi
+
 # 清理日志
 rm -f /var/log/samba/log.* 2>/dev/null || true
 rm -rf /var/log/samba 2>/dev/null || true
