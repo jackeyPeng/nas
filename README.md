@@ -38,6 +38,7 @@ nas/
 ├── docs/               # 文档
 │   ├── nas-product-manual.md   # 产品技术手册
 │   └── nas-product-manual.pdf
+├── .env.example        # 环境变量模板（复制为 .env 填入密码）
 ├── CHANGELOG.md        # 变更日志
 ├── OPTIMIZATION_CHECKLIST.md  # 待优化清单
 └── README.md           # 本文件
@@ -52,7 +53,11 @@ git clone https://gitee.com/gitdogcat/nas.git ~/soft/nas
 # 2. 创建软链接
 sudo ln -sfn ~/soft/nas /opt/nas
 
-# 3. 执行部署
+# 3. 配置密码
+cp /opt/nas/.env.example /opt/nas/.env
+# 编辑 .env 填入实际密码（至少12位）
+
+# 4. 执行部署
 sudo bash /opt/nas/scripts/setup.sh
 ```
 
@@ -72,13 +77,13 @@ sudo bash /opt/nas/scripts/cleanup.sh --keep-data
 
 | 服务 | 地址 | 凭证 |
 |------|------|------|
-| Samba | //NAS_IP/shared | jacky / [REDACTED] |
+| Samba | //NAS_IP/shared | jacky / <NAS_PASS> |
 | NFS | mount -t nfs NAS_IP:/data/shared /mnt/nas | 按 IP 控制 |
-| FTP | ftp://NAS_IP/ | jacky / [REDACTED] |
-| WebDAV | http://NAS_IP:8080/ | jacky / [REDACTED] |
-| FileBrowser | http://NAS_IP:8081/ | jacky / [REDACTED] |
-| MinIO API | http://NAS_IP:9000 | admin / [REDACTED] |
-| MinIO Web | http://NAS_IP:9002 | admin / [REDACTED] |
+| FTP | ftp://NAS_IP/ | jacky / <NAS_PASS> |
+| WebDAV | http://NAS_IP:8080/ | jacky / <NAS_PASS> |
+| FileBrowser | http://NAS_IP:8081/ | jacky / <NAS_PASS> |
+| MinIO API | http://NAS_IP:9000 | jacky / <NAS_PASS> |
+| MinIO Web | http://NAS_IP:9002 | jacky / <NAS_PASS> |
 
 ## 管理脚本
 
