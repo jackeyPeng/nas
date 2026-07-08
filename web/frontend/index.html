@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NAS 管理面板</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+</head>
+<body>
+<div x-data="nasPanel()" x-init="init()">
+    <!-- Login -->
+    <div class="login-page" x-show="!token" x-cloak>
+        <div class="login-box">
+            <h1>🗄️ NAS 管理面板</h1>
+            <form @submit.prevent="login()">
+                <div class="form-group">
+                    <label>用户名</label>
+                    <input type="text" x-model="loginForm.username" placeholder="用户名" autocomplete="username">
+                </div>
+                <div class="form-group">
+                    <label>密码</label>
+                    <input type="password" x-model="loginForm.password" placeholder="密码" autocomplete="current-password">
+                </div>
+                <button type="submit" class="btn btn-primary btn-block" :disabled="loading">
+                    <span x-show="!loading">登录</span>
+                    <span x-show="loading">登录中...</span>
+                </button>
+                <p class="error" x-show="loginError" x-text="loginError"></p>
+            </form>
+        </div>
+    </div>
+
+    <!-- Main App -->
+    <div class="app" x-show="token" x-cloak>
+        <!-- Sidebar -->
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <h2>🗄️ NAS</h2>
+            </div>
+            <ul class="nav">
+                <li :class="{active: page === 'dashboard'}" @click="navigate('dashboard')">
+                    <span>📊</span> 仪表盘
+                </li>
+                <li :class="{active: page === 'services'}" @click="navigate('services')">
+                    <span>⚙️</span> 服务管理
+                </li>
+                <li :class="{active: page === 'users'}" @click="navigate('users')">
+                    <span>👥</span> 用户管理
+                </li>
+                <li :class="{active: page === 'storage'}" @click="navigate('storage')">
+                    <span>💾</span> 存储信息
+                </li>
+                <li :class="{active: page === 'firewall'}" @click="navigate('firewall')">
+                    <span>🛡️</span> 防火墙
+                </li>
+            </ul>
+            <div class="sidebar-footer">
+                <button class="btn btn-sm" @click="logout()">退出登录</button>
+            </div>
+        </nav>
+
+        <!-- Content -->
+        <main class="content">
+            <!-- Dashboard -->
+            <div x-show="page === 'dashboard'" class="page">
+                <h2>仪表盘</h2>
+                <div class="cards">
+                    <div class="card">
+                        <div class="card-title">主机名</div>
+                        <div class="card-value" x-text="dashboard.hostname"></div>
+                    </div>
+                    <div class="card">
+                        <div class="card-title">系统</div>
+                        <div class="card-value" x-text="dashboard.os"></div>
+                    </div>
+                    <div class="card">
+                        <div class="card-title">运行时间</div>
+                        <div class="card-value" x-text="dashboard.uptime"></div>
+                    </div>
+                    <div class="card">
+                        <div class="card-title">CPU</div>
+                        <div class="card-value" x-text="dashboard.cpu_cores + '核 ' + dashboard.cpu_usage"></div>
+                    </div>
+                    <div class="card">
+                        <div class="card-title">内存</div>
+                        <div class="card-value">
+                            <span x-text="dashboard.mem_used + ' / ' + dashboard.mem_total"></span>
+                            <div class="progress-bar">
+                                <div class="progress-fill" :style="'width:' + dashboard.mem_pct"></div>
+                            </div>
+                            <span class="pct" x-text="dashboard.mem_pct"></span>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-title">磁盘</div>
+                        <div class="card-value">
+                            <span x-text="dashboard.disk_used + ' / ' + dashboard.disk_total"></span>
+                            <div class="progress-bar">
+                                <div class="progress-fill" :style="'width:' + dashboard.disk_pct"></div>
+                            </div>
+                            <span class="pct" x-text="dashboard.disk_pct"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <h3>服务状态</h3>
+                <table class="table">
+                    <thead>
+                        <tr><th>服务</th><th>端口</th><th>说明</th><th>状态</th></tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="svc in (dashboard.services || [])" :key="svc.name">
+                            <tr>
+                                <td x-text="svc.display_name"></td>
+                                <td x-text="svc.port"></td>
+                                <td x-text="svc.description"></td>
+                                <td>
+                                    <span class="badge" :class="svc.active === 'active' ? 'badge-ok' : 'badge-err'"
+                                          x-text="svc.active === 'active' ? '● 运行中' : '○ 已停止'"></span>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Services -->
+            <div x-show="page === 'services'" class="page">
+                <h2>服务管理</h2>
+                <table class="table">
+                    <thead>
+                        <tr><th>服务</th><th>端口</th><th>说明</th><th>状态</th><th>操作</th></tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="svc in services" :key="svc.name">
+                            <tr>
+                                <td x-text="svc.display_name"></td>
+                                <td x-text="svc.port"></td>
+                                <td x-text="svc.description"></td>
+                                <td>
+                                    <span class="badge" :class="svc.active === 'active' ? 'badge-ok' : 'badge-err'"
+                                          x-text="svc.active === 'active' ? '● 运行中' : '○ 已停止'"></span>
+                                </td>
+                                <td class="actions">
+                                    <button class="btn btn-sm btn-success" @click="svcAction(svc.name, 'start')">启动</button>
+                                    <button class="btn btn-sm btn-warn" @click="svcAction(svc.name, 'stop')">停止</button>
+                                    <button class="btn btn-sm btn-primary" @click="svcAction(svc.name, 'restart')">重启</button>
+                                    <button class="btn btn-sm" @click="showLogs(svc.name)">日志</button>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+
+                <div class="logs-modal" x-show="logsModal" x-cloak @click.self="logsModal = false">
+                    <div class="logs-box">
+                        <div class="logs-header">
+                            <h3 x-text="'日志: ' + logsService"></h3>
+                            <button class="btn btn-sm" @click="logsModal = false">关闭</button>
+                        </div>
+                        <pre class="logs-content" x-text="logsContent"></pre>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Users -->
+            <div x-show="page === 'users'" class="page">
+                <h2>用户管理</h2>
+                <button class="btn btn-primary" @click="showAddUser()">添加用户</button>
+                <table class="table">
+                    <thead>
+                        <tr><th>用户名</th><th>类型</th><th>操作</th></tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="user in users" :key="user.username">
+                            <tr>
+                                <td x-text="user.username"></td>
+                                <td x-text="user.type"></td>
+                                <td class="actions">
+                                    <button class="btn btn-sm btn-warn" @click="showChangePassword(user.username)">改密</button>
+                                    <button class="btn btn-sm btn-danger" @click="deleteUser(user.username)">删除</button>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+
+                <div class="modal" x-show="addUserModal" x-cloak @click.self="addUserModal = false">
+                    <div class="modal-box">
+                        <h3>添加用户</h3>
+                        <div class="form-group">
+                            <label>用户名</label>
+                            <input type="text" x-model="addUserForm.username">
+                        </div>
+                        <div class="form-group">
+                            <label>密码（至少12位）</label>
+                            <input type="password" x-model="addUserForm.password">
+                        </div>
+                        <div class="modal-actions">
+                            <button class="btn" @click="addUserModal = false">取消</button>
+                            <button class="btn btn-primary" @click="addUser()">确认</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal" x-show="pwdModal" x-cloak @click.self="pwdModal = false">
+                    <div class="modal-box">
+                        <h3>修改密码 - <span x-text="pwdUser"></span></h3>
+                        <div class="form-group">
+                            <label>新密码（至少12位）</label>
+                            <input type="password" x-model="pwdForm.password">
+                        </div>
+                        <div class="modal-actions">
+                            <button class="btn" @click="pwdModal = false">取消</button>
+                            <button class="btn btn-primary" @click="changePassword()">确认</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Storage -->
+            <div x-show="page === 'storage'" class="page">
+                <h2>存储信息</h2>
+                <div class="cards">
+                    <div class="card">
+                        <div class="card-title">磁盘总量</div>
+                        <div class="card-value" x-text="storage.disk_total"></div>
+                    </div>
+                    <div class="card">
+                        <div class="card-title">已用</div>
+                        <div class="card-value" x-text="storage.disk_used"></div>
+                    </div>
+                    <div class="card">
+                        <div class="card-title">使用率</div>
+                        <div class="card-value" x-text="storage.disk_pct"></div>
+                    </div>
+                </div>
+
+                <h3>目录大小</h3>
+                <table class="table">
+                    <thead><tr><th>路径</th><th>大小</th></tr></thead>
+                    <tbody>
+                        <template x-for="dir in (storage.directories || [])" :key="dir.path">
+                            <tr><td x-text="dir.path"></td><td x-text="dir.size"></td></tr>
+                        </template>
+                    </tbody>
+                </table>
+
+                <h3>Samba 共享</h3>
+                <pre class="config-output" x-text="storage.samba_shares"></pre>
+
+                <h3>NFS 导出</h3>
+                <pre class="config-output" x-text="storage.nfs_exports"></pre>
+
+                <h3>SMART 状态</h3>
+                <button class="btn btn-primary" @click="loadSmart()">检查 SMART</button>
+                <pre class="config-output" x-text="smartStatus"></pre>
+            </div>
+
+            <!-- Firewall -->
+            <div x-show="page === 'firewall'" class="page">
+                <h2>防火墙</h2>
+                <div class="firewall-actions">
+                    <input type="text" x-model="firewallForm.port" placeholder="端口号" class="port-input">
+                    <select x-model="firewallForm.proto">
+                        <option value="tcp">TCP</option>
+                        <option value="udp">UDP</option>
+                    </select>
+                    <button class="btn btn-success" @click="firewallAction('allow')">允许</button>
+                    <button class="btn btn-danger" @click="firewallAction('deny')">拒绝</button>
+                </div>
+                <h3>当前规则</h3>
+                <pre class="config-output" x-text="firewallStatus"></pre>
+            </div>
+        </main>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast" x-show="toast.show" x-cloak :class="toast.type" x-text="toast.msg"></div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

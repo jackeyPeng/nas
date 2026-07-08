@@ -41,7 +41,7 @@ echo ""
 
 # ==================== [1/7] 停止所有 NAS 服务 ====================
 echo "[1/7] 停止所有 NAS 服务..."
-SERVICES="smbd nmbd nfs-kernel-server vsftpd rclone-webdav filebrowser minio fail2ban"
+SERVICES="smbd nmbd nfs-kernel-server vsftpd rclone-webdav filebrowser minio fail2ban nas-panel"
 for svc in $SERVICES; do
     if systemctl is-active --quiet "$svc" 2>/dev/null; then
         systemctl stop "$svc"
@@ -57,7 +57,7 @@ echo "  ✓ 服务已停止"
 # ==================== [2/7] 删除 systemd 服务文件 ====================
 echo ""
 echo "[2/7] 删除 systemd 服务文件..."
-SERVICE_FILES="/etc/systemd/system/rclone-webdav.service /etc/systemd/system/filebrowser.service /etc/systemd/system/minio.service"
+SERVICE_FILES="/etc/systemd/system/rclone-webdav.service /etc/systemd/system/filebrowser.service /etc/systemd/system/minio.service /etc/systemd/system/nas-panel.service"
 for file in $SERVICE_FILES; do
     if [ -f "$file" ]; then
         rm -f "$file"
@@ -98,7 +98,7 @@ echo "  ✓ 配置文件已删除"
 # ==================== [4/7] 删除二进制文件 ====================
 echo ""
 echo "[4/7] 删除二进制文件..."
-BINARIES="/usr/local/bin/filebrowser /usr/local/bin/minio"
+BINARIES="/usr/local/bin/filebrowser /usr/local/bin/minio /usr/local/bin/nas-panel"
 for bin in $BINARIES; do
     if [ -f "$bin" ]; then
         rm -f "$bin"
