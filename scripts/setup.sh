@@ -360,8 +360,14 @@ echo "[10/10] 安装 NAS Web 管理面板..."
 if [ -f "$NAS_DIR/web/nas-panel" ]; then
     cp "$NAS_DIR/web/nas-panel" /usr/local/bin/nas-panel
     chmod +x /usr/local/bin/nas-panel
+elif download_file /usr/local/bin/nas-panel \
+    "https://file.abwen.com/nas-panel/nas-panel" \
+    "https://ghfast.top/https://github.com/gitdogcat/nas/releases/download/v1.0.0/nas-panel"; then
+    chmod +x /usr/local/bin/nas-panel
 else
-    echo "  警告: 未找到 $NAS_DIR/web/nas-panel 二进制文件，跳过"
+    echo "  警告: 无法获取 nas-panel 二进制文件，跳过 Web 面板安装"
+    echo "  请手动编译: cd ~/soft/nas/web && go build -o nas-panel ."
+    echo "  然后重新运行: sudo bash scripts/setup.sh"
 fi
 
 # Create systemd service
