@@ -46,7 +46,7 @@ func controlService(name, action string) (string, error) {
 		return "", fmt.Errorf("unknown service: %s", name)
 	}
 
-	out, err := exec.Command("systemctl", action, name).CombinedOutput()
+	out, err := exec.Command("sudo", "systemctl", action, name).CombinedOutput()
 	if err != nil {
 		return string(out), err
 	}
@@ -67,8 +67,8 @@ func getServiceLogs(name string) string {
 func getUsers() []map[string]string {
 	var users []map[string]string
 
-	// Get Samba users
-	out, err := exec.Command("pdbedit", "-L").Output()
+	// Get Samba users (requires root for passdb.tdb access)
+	out, err := exec.Command("sudo", "pdbedit", "-L").Output()
 	if err == nil {
 		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 			if line == "" {
@@ -111,8 +111,8 @@ func getUsers() []map[string]string {
 
 // addUser creates a new NAS user
 func addUser(username, password string) error {
-	// Use the add-user.sh script
-	out, err := exec.Command("/opt/nas/scripts/add-user.sh", username, password).CombinedOutput()
+	// Use the add-user.sh script (requires root)
+	out, err := exec.Command("sudo", "/opt/nas/scripts/add-user.sh", username, password).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%s: %v", string(out), err)
 	}
@@ -125,7 +125,7 @@ func removeUser(username string, deleteData bool) error {
 	if deleteData {
 		args = append(args, "--delete-data")
 	}
-	out, err := exec.Command("/opt/nas/scripts/remove-user.sh", args...).CombinedOutput()
+	out, err := exec.Command("sudo", append([]string{"/opt/nas/scripts/remove-user.sh"}, args...)...).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%s: %v", string(out), err)
 	}
@@ -134,29 +134,29 @@ func removeUser(username string, deleteData bool) error {
 
 // changePassword changes user password for Samba and system
 func changePassword(username, password string) error {
-	// System password
-	cmd := exec.Command("chpasswd")
+	// System password (requires root)
+	cmd := exec.Command("sudo", "chpasswd")
 	cmd.Stdin = strings.NewReader(username + ":" + password)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("chpasswd failed: %v", err)
 	}
 
-	// Samba password
-	cmd = exec.Command("smbpasswd", "-a", username, "-s")
+	// Samba password (requires root)
+	cmd = exec.Command("sudo", "smbpasswd", "-a", username, "-s")
 	cmd.Stdin = strings.NewReader(password + "\n" + password + "\n")
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("smbpasswd failed: %v", err)
 	}
 
-	// Update htpasswd for WebDAV
-	exec.Command("htpasswd", "-b", "/etc/rclone-htpasswd", username, password).Run()
+	// Update htpasswd for WebDAV (requires root)
+	exec.Command("sudo", "htpasswd", "-b", "/etc/rclone-htpasswd", username, password).Run()
 
 	return nil
 }
 
 // getFirewallStatus returns UFW status
 func getFirewallStatus() string {
-	out, err := exec.Command("ufw", "status", "numbered").Output()
+	out, err := exec.Command("sudo", "ufw", "status", "numbered").Output()
 	if err != nil {
 		return "UFW not available"
 	}
@@ -165,7 +165,7 @@ func getFirewallStatus() string {
 
 // firewallAllow allows a port
 func firewallAllow(port, proto string) (string, error) {
-	out, err := exec.Command("ufw", "allow", port+"/"+proto).CombinedOutput()
+	out, err := exec.Command("sudo", "ufw", "allow", port+"/"+proto).CombinedOutput()
 	if err != nil {
 		return string(out), err
 	}
@@ -174,7 +174,7 @@ func firewallAllow(port, proto string) (string, error) {
 
 // firewallDeny denies a port
 func firewallDeny(port, proto string) (string, error) {
-	out, err := exec.Command("ufw", "deny", port+"/"+proto).CombinedOutput()
+	out, err := exec.Command("sudo", "ufw", "deny", port+"/"+proto).CombinedOutput()
 	if err != nil {
 		return string(out), err
 	}

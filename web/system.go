@@ -191,7 +191,7 @@ func getSambaShares() string {
 
 // getNFSExports returns NFS export configuration
 func getNFSExports() string {
-	out, err := exec.Command("exportfs", "-v").Output()
+	out, err := exec.Command("sudo", "exportfs", "-v").Output()
 	if err != nil {
 		return ""
 	}
@@ -211,7 +211,7 @@ func getSmartStatus() string {
 		if !strings.HasPrefix(name, "sd") || strings.Contains(name, "0") {
 			continue
 		}
-		out, err := exec.Command("smartctl", "-H", "/dev/"+name).Output()
+		out, err := exec.Command("sudo", "smartctl", "-H", "/dev/"+name).Output()
 		if err == nil {
 			result.WriteString("--- /dev/" + name + " ---\n")
 			result.WriteString(string(out))
