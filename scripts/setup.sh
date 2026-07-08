@@ -20,7 +20,12 @@ echo "========================================="
 echo ""
 
 # ==================== 配置变量 ====================
-NAS_USER="jacky"
+# 自动获取当前用户（执行 sudo 的用户）
+NAS_USER="${SUDO_USER:-$USER}"
+if [ -z "$NAS_USER" ] || [ "$NAS_USER" = "root" ]; then
+    echo "错误: 无法自动检测用户名，请使用 sudo 运行（而非直接以 root 身份）"
+    exit 1
+fi
 DATA_DIR="/data"
 NAS_DIR="/opt/nas"
 FILEBROWSER_VERSION="v2.63.17"
@@ -94,7 +99,7 @@ echo "  ✓ 目录结构创建完成"
 echo ""
 echo "[3/9] 配置 Samba..."
 if [ -f "$NAS_DIR/configs/smb.conf" ]; then
-    cp "$NAS_DIR/configs/smb.conf" /etc/samba/smb.conf
+    sed "s/__NAS_USER__/$NAS_USER/g" "$NAS_DIR/configs/smb.conf" > /etc/samba/smb.conf
 else
     echo "  警告: 未找到 $NAS_DIR/configs/smb.conf，使用默认配置"
 fi

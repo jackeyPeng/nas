@@ -5,8 +5,8 @@ Wants=network-online.target
 After=network-online.target
 
 [Service]
-User=jacky
-Group=jacky
+User=__NAS_USER__
+Group=__NAS_USER__
 EnvironmentFile=/etc/default/minio
 ExecStart=/usr/local/bin/minio server /data/minio --console-address :9002
 Restart=always

@@ -23,8 +23,9 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-# 防止删除 root 和 jacky
-if [ "$USERNAME" = "root" ] || [ "$USERNAME" = "jacky" ]; then
+# 防止删除 root 和部署用户
+DEPLOY_USER="${SUDO_USER:-$USER}"
+if [ "$USERNAME" = "root" ] || [ "$USERNAME" = "$DEPLOY_USER" ]; then
     echo "错误: 不允许删除系统用户 $USERNAME"
     exit 1
 fi
