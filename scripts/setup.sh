@@ -389,10 +389,15 @@ systemctl restart nas-panel
 
 # 配置 sudo 免密权限（nas-panel 需要执行系统管理命令）
 SUDOERS_FILE="/etc/sudoers.d/nas-panel"
-echo "${NAS_USER} ALL=(ALL) NOPASSWD: /usr/bin/pdbedit, /opt/nas/scripts/add-user.sh, /opt/nas/scripts/remove-user.sh, /usr/sbin/smartctl, /usr/bin/chpasswd, /usr/bin/smbpasswd, /usr/bin/htpasswd, /bin/systemctl start *, /bin/systemctl stop *, /bin/systemctl restart *, /usr/sbin/ufw status, /usr/sbin/ufw allow *, /usr/sbin/ufw deny *, /usr/sbin/exportfs" > "$SUDOERS_FILE"
+echo "${NAS_USER} ALL=(ALL) NOPASSWD: /usr/bin/pdbedit, /opt/nas/scripts/add-user.sh, /opt/nas/scripts/remove-user.sh, /usr/sbin/smartctl, /usr/bin/chpasswd, /usr/bin/smbpasswd, /usr/bin/htpasswd, /bin/systemctl start *, /bin/systemctl stop *, /bin/systemctl restart *, /usr/sbin/ufw status, /usr/sbin/ufw allow *, /usr/sbin/ufw deny *, /usr/sbin/exportfs, /usr/sbin/smartctl -H *" > "$SUDOERS_FILE"
 chmod 440 "$SUDOERS_FILE"
 visudo -cf "$SUDOERS_FILE" 2>/dev/null || { echo "  错误: sudoers 语法检查失败"; rm -f "$SUDOERS_FILE"; }
 echo "  ✓ NAS Web 管理面板配置完成"
+
+# ==================== 配置监控告警 cron ====================
+CRON_LINE="*/5 * * * * $NAS_DIR/scripts/monitor.sh 2>/dev/null"
+( crontab -u "$NAS_USER" -l 2>/dev/null | grep -v "monitor.sh"; echo "$CRON_LINE" ) | crontab -u "$NAS_USER" -
+echo "  ✓ 监控告警 cron 已配置（每5分钟检查）"
 
 # ==================== 部署完成 ====================
 echo ""

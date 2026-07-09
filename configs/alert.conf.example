@@ -1,0 +1,29 @@
+# .env 告警通知配置（可选）
+# 配置哪个通道就启用哪个，不配就不告警
+# 可以同时配置多个通道
+
+# ═══ 钉钉机器人 ═══
+# 获取方式: 钉钉群 → 群设置 → 智能群助手 → 添加机器人 → 自定义
+# 安全设置选"加签"或"关键词"（关键词填 NAS）
+ALERT_DINGTALK_WEBHOOK=https://oapi.dingtalk.com/robot/send?access_token=xxxxx
+ALERT_DINGTALK_SECRET=SECxxxxx  # 加签密钥，如果选了加签的话
+
+# ═══ Telegram Bot ═══
+# 获取方式: @BotFather → /newbot → 获取 token
+# Chat ID: @userinfobot 获取你的 chat_id
+ALERT_TELEGRAM_TOKEN=123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11
+ALERT_TELEGRAM_CHAT_ID=123456789
+
+# ═══ Bark (iOS 推送) ═══
+# 获取方式: App Store 下载 Bark → 复制你的 key
+# 也可自建 Bark Server: ALERT_BARK_SERVER=https://api.day.app
+ALERT_BARK_KEY=xxxxx
+ALERT_BARK_SERVER=https://api.day.app  # 默认官方，可改自建
+
+# ═══ Email (SMTP) ═══
+ALERT_SMTP_HOST=smtp.qq.com
+ALERT_SMTP_PORT=465
+ALERT_SMTP_USER=you@qq.com
+ALERT_SMTP_PASS=授权码不是密码
+ALERT_SMTP_FROM=you@qq.com
+ALERT_SMTP_TO=you@qq.com
