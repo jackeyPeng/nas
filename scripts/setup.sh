@@ -396,7 +396,11 @@ echo "  ✓ NAS Web 管理面板配置完成"
 
 # ==================== 配置监控告警 cron ====================
 CRON_LINE="*/5 * * * * $NAS_DIR/scripts/monitor.sh 2>/dev/null"
-( crontab -u "$NAS_USER" -l 2>/dev/null | grep -v "monitor.sh"; echo "$CRON_LINE" ) | crontab -u "$NAS_USER" -
+( crontab -l 2>/dev/null | grep -v "monitor.sh"; echo "$CRON_LINE" ) | crontab -u "$NAS_USER" - 2>/dev/null || \
+( crontab -l 2>/dev/null | grep -v "monitor.sh"; echo "$CRON_LINE" ) | crontab -
+# 监控状态目录
+mkdir -p /var/lib/nas-monitor
+chown "$NAS_USER:$NAS_USER" /var/lib/nas-monitor
 echo "  ✓ 监控告警 cron 已配置（每5分钟检查）"
 
 # ==================== 部署完成 ====================

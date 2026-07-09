@@ -19,8 +19,12 @@ source "$ENV_FILE"
 set +a
 
 # 告警状态文件（防止同一告警反复发送）
-ALERT_STATE="/var/lib/nas-monitor/alerts.state"
-mkdir -p /var/lib/nas-monitor
+ALERT_STATE_DIR="/var/lib/nas-monitor"
+if [ ! -w "$ALERT_STATE_DIR" ]; then
+    ALERT_STATE_DIR="${HOME}/.nas-monitor"
+fi
+mkdir -p "$ALERT_STATE_DIR"
+ALERT_STATE="$ALERT_STATE_DIR/alerts.state"
 
 # ═══════════════════════════════════════
 # 告警发送函数
