@@ -228,7 +228,7 @@ function nasPanel() {
             this.loadMonitor();
             this.monitorTimer = setInterval(() => {
                 if (this.page === 'monitor') this.loadMonitor();
-            }, 10000);
+            }, 180000);
         },
 
         async loadAlertConfig() {
