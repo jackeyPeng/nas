@@ -158,6 +158,16 @@ if [ -f /etc/sudoers.d/nas-panel ]; then
     echo "  删除 /etc/sudoers.d/nas-panel"
 fi
 
+# 清理监控 cron
+NAS_USER="${SUDO_USER:-$USER}"
+if [ -n "$NAS_USER" ] && [ "$NAS_USER" != "root" ]; then
+    crontab -u "$NAS_USER" -l 2>/dev/null | grep -v "monitor.sh" | crontab -u "$NAS_USER" - 2>/dev/null || true
+    echo "  删除监控 cron"
+fi
+
+# 清理告警状态
+rm -rf /var/lib/nas-monitor 2>/dev/null || true
+
 # 清理日志
 rm -f /var/log/samba/log.* 2>/dev/null || true
 rm -rf /var/log/samba 2>/dev/null || true
