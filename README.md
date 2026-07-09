@@ -10,6 +10,7 @@
 - **WebDAV** — rclone serve WebDAV 服务（端口 8080）
 - **FileBrowser** — Web 文件管理界面（端口 8081）
 - **MinIO** — S3 兼容对象存储（端口 9000/9002）
+- **NAS Web Panel** — Web 管理面板（端口 8090）
 
 ## 安全
 
@@ -17,6 +18,7 @@
 - Fail2ban（SSH/FTP 暴力破解防护）
 - unattended-upgrades（自动安全更新）
 - smartmontools（磁盘健康监控）
+- 监控告警（monitor.sh + cron 每5分钟检查，多通道通知）
 
 ## 目录结构
 
@@ -34,7 +36,20 @@ nas/
 ├── scripts/            # 管理脚本
 │   ├── setup.sh        # 一键部署（9步）
 │   ├── add-user.sh     # 添加用户
-│   └── remove-user.sh  # 删除用户
+│   ├── remove-user.sh  # 删除用户
+│   └── monitor.sh      # 监控告警（cron 每5分钟）
+├── web/                 # Web 管理面板源码
+│   ├── main.go          # Go 后端入口
+│   ├── auth.go          # JWT 认证
+│   ├── handlers.go      # API handlers
+│   ├── services.go      # 服务/用户/防火墙管理
+│   ├── system.go        # 系统信息采集
+│   ├── monitor.go       # 监控状态 + 告警配置
+│   ├── go.mod
+│   └── frontend/        # 前端 (Alpine.js)
+│       ├── index.html
+│       ├── app.js
+│       └── style.css
 ├── docs/               # 文档
 │   ├── nas-product-manual.md   # 产品技术手册
 │   └── nas-product-manual.pdf
@@ -86,6 +101,7 @@ sudo bash /opt/nas/scripts/cleanup.sh --keep-data
 | FileBrowser | http://NAS_IP:8081/ | <NAS_USER> / <NAS_PASS> |
 | MinIO API | http://NAS_IP:9000 | <NAS_USER> / <NAS_PASS> |
 | MinIO Web | http://NAS_IP:9002 | <NAS_USER> / <NAS_PASS> |
+| Web 面板 | http://NAS_IP:8090 | <NAS_USER> / <NAS_PASS> |
 
 ## 管理脚本
 
