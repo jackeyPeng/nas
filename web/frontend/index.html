@@ -54,6 +54,9 @@
                 <li :class="{active: page === 'firewall'}" @click="navigate('firewall')">
                     <span>🛡️</span> 防火墙
                 </li>
+                <li :class="{active: page === 'monitor'}" @click="navigate('monitor')">
+                    <span>📡</span> 监控告警
+                </li>
             </ul>
             <div class="sidebar-footer">
                 <button class="btn btn-sm" @click="logout()">退出登录</button>
@@ -272,6 +275,135 @@
                 </div>
                 <h3>当前规则</h3>
                 <pre class="config-output" x-text="firewallStatus"></pre>
+            </div>
+
+            <!-- Monitor -->
+            <div x-show="page === 'monitor'" class="page">
+                <h2>监控告警</h2>
+                <button class="btn btn-primary" @click="loadMonitor()" style="margin-bottom:16px">刷新</button>
+
+                <h3>当前状态</h3>
+                <div class="cards">
+                    <div class="card">
+                        <div class="card-title">磁盘使用率</div>
+                        <div class="card-value">
+                            <span x-text="(monitor.disk_usage||'--') + '%'"></span>
+                            <div class="progress-bar">
+                                <div class="progress-fill" :style="'width:' + (monitor.disk_usage||0) + '%'"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-title">内存使用率</div>
+                        <div class="card-value">
+                            <span x-text="(monitor.mem_usage||'--') + '%'"></span>
+                            <div class="progress-bar">
+                                <div class="progress-fill" :style="'width:' + (monitor.mem_usage||0) + '%'"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-title">CPU 负载</div>
+                        <div class="card-value" x-text="monitor.cpu_load || '--'"></div>
+                    </div>
+                    <div class="card">
+                        <div class="card-title">服务状态</div>
+                        <div class="card-value" x-text="(monitor.services_down||0) + ' 个异常'"></div>
+                    </div>
+                </div>
+
+                <h3>已配置通知渠道</h3>
+                <div class="channels-list">
+                    <template x-for="ch in (monitor.channels||[])" :key="ch.name">
+                        <span class="badge" :class="ch.configured ? 'badge-ok' : 'badge-err'"
+                              x-text="ch.name + (ch.configured ? ' ✓' : ' ✗')"></span>
+                    </template>
+                </div>
+
+                <h3>告警配置</h3>
+                <p style="color:var(--text-light);margin-bottom:16px">配置通知渠道，填入信息后点击保存。配哪个启用哪个，留空表示不启用。</p>
+
+                <div class="alert-config">
+                    <div class="config-section">
+                        <h4>🔔 钉钉机器人</h4>
+                        <div class="form-group">
+                            <label>Webhook URL</label>
+                            <input type="text" x-model="alertConfig.ALERT_DINGTALK_WEBHOOK" placeholder="https://oapi.dingtalk.com/robot/send?access_token=...">
+                        </div>
+                        <div class="form-group">
+                            <label>加签密钥（可选）</label>
+                            <input type="text" x-model="alertConfig.ALERT_DINGTALK_SECRET" placeholder="SEC...">
+                        </div>
+                    </div>
+
+                    <div class="config-section">
+                        <h4>✈️ Telegram Bot</h4>
+                        <div class="form-group">
+                            <label>Bot Token</label>
+                            <input type="text" x-model="alertConfig.ALERT_TELEGRAM_TOKEN" placeholder="123456:ABC-DEF...">
+                        </div>
+                        <div class="form-group">
+                            <label>Chat ID</label>
+                            <input type="text" x-model="alertConfig.ALERT_TELEGRAM_CHAT_ID" placeholder="123456789">
+                        </div>
+                    </div>
+
+                    <div class="config-section">
+                        <h4>🍎 Bark (iOS 推送)</h4>
+                        <div class="form-group">
+                            <label>Bark Key</label>
+                            <input type="text" x-model="alertConfig.ALERT_BARK_KEY" placeholder="xxxxx">
+                        </div>
+                        <div class="form-group">
+                            <label>Bark Server（默认官方，可自建）</label>
+                            <input type="text" x-model="alertConfig.ALERT_BARK_SERVER" placeholder="https://api.day.app">
+                        </div>
+                    </div>
+
+                    <div class="config-section">
+                        <h4>📧 Email (SMTP)</h4>
+                        <div class="form-group">
+                            <label>SMTP 服务器</label>
+                            <input type="text" x-model="alertConfig.ALERT_SMTP_HOST" placeholder="smtp.qq.com">
+                        </div>
+                        <div class="form-group">
+                            <label>SMTP 端口</label>
+                            <input type="text" x-model="alertConfig.ALERT_SMTP_PORT" placeholder="465">
+                        </div>
+                        <div class="form-group">
+                            <label>用户名</label>
+                            <input type="text" x-model="alertConfig.ALERT_SMTP_USER" placeholder="you@qq.com">
+                        </div>
+                        <div class="form-group">
+                            <label>密码 / 授权码</label>
+                            <input type="password" x-model="alertConfig.ALERT_SMTP_PASS" placeholder="授权码">
+                        </div>
+                        <div class="form-group">
+                            <label>收件人</label>
+                            <input type="text" x-model="alertConfig.ALERT_SMTP_TO" placeholder="you@qq.com">
+                        </div>
+                    </div>
+
+                    <div class="config-section">
+                        <h4>⚙️ 告警阈值</h4>
+                        <div class="form-row">
+                            <div class="form-group" style="flex:1">
+                                <label>磁盘告警 (%)</label>
+                                <input type="number" x-model="alertConfig.ALERT_DISK_THRESHOLD" placeholder="80">
+                            </div>
+                            <div class="form-group" style="flex:1">
+                                <label>内存告警 (%)</label>
+                                <input type="number" x-model="alertConfig.ALERT_MEM_THRESHOLD" placeholder="90">
+                            </div>
+                            <div class="form-group" style="flex:1">
+                                <label>负载告警</label>
+                                <input type="number" x-model="alertConfig.ALERT_LOAD_THRESHOLD" placeholder="4">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <button class="btn btn-primary" @click="saveAlertConfig()" style="margin-top:16px">保存配置</button>
             </div>
         </main>
     </div>

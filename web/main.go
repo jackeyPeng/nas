@@ -82,6 +82,8 @@ func main() {
 	mux.HandleFunc("/api/firewall", authMiddleware(handleFirewall))
 	mux.HandleFunc("/api/firewall/allow", authMiddleware(handleFirewallAllow))
 	mux.HandleFunc("/api/firewall/deny", authMiddleware(handleFirewallDeny))
+	mux.HandleFunc("/api/monitor", authMiddleware(handleMonitor))
+	mux.HandleFunc("/api/alert-config", authMiddleware(handleAlertConfig))
 
 	// Serve frontend
 	frontendRoot, _ := fs.Sub(frontendFS, "frontend")
