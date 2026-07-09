@@ -39,6 +39,15 @@ func getMonitorStatus() map[string]interface{} {
 	result["services_down"] = downCount
 	result["services_total"] = len(services)
 
+	// Process count
+	result["process_count"] = getProcessCount()
+
+	// Logged in users
+	result["logged_in_users"] = getLoggedInUsers()
+
+	// System error logs (recent 10)
+	result["system_errors"] = getSystemErrors()
+
 	// Configured channels
 	result["channels"] = getAlertChannels()
 
@@ -262,6 +271,62 @@ func getEnvFilePath() string {
 		return "/opt/nas/.env"
 	}
 	return ""
+}
+
+// getProcessCount returns total number of running processes
+func getProcessCount() string {
+	// Count directories in /proc (PIDs)
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return "0"
+	}
+	count := 0
+	for _, e := range entries {
+		if e.IsDir() {
+			if _, err := strconv.Atoi(e.Name()); err == nil {
+				count++
+			}
+		}
+	}
+	return fmt.Sprintf("%d", count)
+}
+
+// getLoggedInUsers returns list of currently logged in users
+func getLoggedInUsers() []map[string]string {
+	out, err := exec.Command("who").Output()
+	if err != nil {
+		return []map[string]string{}
+	}
+	var users []map[string]string
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if line == "" {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 5 {
+			continue
+		}
+		// who format: username tty date time [ip]
+		user := map[string]string{
+			"user": fields[0],
+			"tty":  fields[1],
+			"date": fields[2] + " " + fields[3],
+		}
+		if len(fields) >= 6 {
+			user["from"] = strings.Trim(fields[len(fields)-1], "()")
+		}
+		users = append(users, user)
+	}
+	return users
+}
+
+// getSystemErrors returns recent 10 system error logs
+func getSystemErrors() string {
+	out, err := exec.Command("sudo", "journalctl", "-p", "err", "-n", "10", "--no-pager", "--since", "24 hours ago").Output()
+	if err != nil {
+		return ""
+	}
+	return string(out)
 }
 
 // getAlertConfig reads all ALERT_* variables from .env

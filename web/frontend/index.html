@@ -318,7 +318,32 @@
                             <span class="pct" x-text="'共 ' + (monitor.services_total||0) + ' 个服务'"></span>
                         </div>
                     </div>
+                    <div class="card">
+                        <div class="card-title">进程数</div>
+                        <div class="card-value" x-text="monitor.process_count || '--'"></div>
+                    </div>
                 </div>
+
+                <h3>登录用户</h3>
+                <table class="table">
+                    <thead><tr><th>用户</th><th>终端</th><th>来源</th><th>登录时间</th></tr></thead>
+                    <tbody>
+                        <template x-for="u in (monitor.logged_in_users||[])" :key="u.user+u.tty">
+                            <tr>
+                                <td x-text="u.user"></td>
+                                <td x-text="u.tty"></td>
+                                <td x-text="u.from || '-'"></td>
+                                <td x-text="u.date"></td>
+                            </tr>
+                        </template>
+                        <tr x-show="!(monitor.logged_in_users||[]).length">
+                            <td colspan="4" style="text-align:center;color:var(--text-light)">无用户登录</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>系统错误日志（最近24小时）</h3>
+                <pre class="config-output" x-text="monitor.system_errors || '无错误日志'"></pre>
 
                 <h3>网络流量</h3>
                 <table class="table">
