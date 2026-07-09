@@ -1,5 +1,76 @@
 # NAS 项目变更日志
 
+## [2026-07-09] - Web 管理面板 + 监控告警系统
+
+### 新增：NAS Web 管理面板 (nas-panel)
+- Go 单二进制 Web 管理面板，端口 8090，内存占用 2.7MB
+- 技术栈: Go + go:embed + Alpine.js + JWT 认证
+- 前端浅色主题，大字体高对比度，左侧导航栏
+- 二进制多源下载: file.abwen.com/control/nas-panel.latest (主) + GitHub (备)
+
+#### 面板功能模块
+- 仪表盘: 主机名/系统/运行时间/CPU/内存/磁盘使用率 + 服务一览
+- 服务管理: 8个服务启动/停止/重启 + 日志查看 (journalctl)
+- 用户管理: 添加/删除用户 (联动 Samba/系统/htpasswd) + 改密码
+- 存储信息: 磁盘使用/目录大小/Samba 配置/NFS 导出/SMART 状态
+- 防火墙: UFW 状态/规则查看 + 端口允许/拒绝
+- 监控告警: 实时状态 + 网络流量 + 告警配置
+
+#### 监控告警页面
+- 当前状态卡片 (每 180 秒自动刷新):
+  - 磁盘: 已用/总量 + 进度条 + 百分比
+  - 内存: 已用/总量 + 进度条 + 百分比
+  - CPU: 负载值 + 核心数
+  - 服务: 异常数 + 总数
+  - 进程数
+- 物理磁盘: lsblk 显示型号/大小/类型/挂载
+- Inode 使用: df -i
+- LVM 卷管理: pvs/vgs/lvs
+- 内存详情: free -h 含 Swap
+- CPU 详情: /proc/cpuinfo 型号/频率/缓存/governor
+- 内存占用 Top 10 进程: ps aux 按内存排序
+- 登录用户: who 显示用户/终端/来源/时间
+- 系统错误日志: journalctl -p err 最近 24 小时 10 条
+- 网络流量: /proc/net/dev 双采样计算实时上下行速率 + 总流量
+- 已配置通知渠道徽章: 钉钉/Telegram/Bark/Email
+
+#### 告警配置 (Web 页面可编辑)
+- 钉钉机器人: Webhook URL + 加签密钥
+- Telegram Bot: Token + Chat ID
+- Bark (iOS 推送): Key + Server (可自建)
+- Email (SMTP): 服务器/端口/用户名/密码/收件人
+- 告警阈值: 磁盘(80%)/内存(90%)/负载(4) 可自定义
+- 配置保存到 .env，页面直接编辑无需 SSH
+
+### 新增：监控告警脚本 (monitor.sh)
+- Shell 脚本 + cron 每 5 分钟检查
+- 零额外服务、零额外内存
+- 监控项: 磁盘空间/服务状态/内存/CPU 负载/SMART 磁盘健康
+- 多通道告警: 钉钉/Telegram/Bark/Email (配哪个启用哪个)
+- 告警去重: 同一告警 1 小时内不重复发送
+- setup.sh 自动配置 cron + sudoers
+- cleanup.sh 自动清理
+
+### 新增：setup.sh [10/10] 步骤
+- 部署 nas-panel 二进制 (本地/下载/手动编译 三级回退)
+- 配置 systemd 服务 (nas-panel.service)
+- 配置 sudoers 免密白名单 (pdbedit/systemctl/smartctl/ufw/chpasswd/smbpasswd/htpasswd/journalctl/pvs/vgs/lvs/tee)
+- 配置监控 cron (每 5 分钟)
+- 创建监控状态目录 /var/lib/nas-monitor
+
+### 修复
+- nas-panel 所有系统命令加 sudo 前缀 (pdbedit/smartctl/ufw/systemctl 等)
+- toJSON() 支持 map[string]string 类型 (修复用户列表不显示)
+- .env.example 完善说明 (表格 + 必填/选填 + 示例)
+- setup.sh .env 不存在时显示创建步骤和必填项
+
+### 验证
+- 2026-07-09 在 [REDACTED] (用户 dog) 部署验证通过
+- 9/9 服务全部 active (含 nas-panel)
+- Web 面板 API 全部正常: 登录/仪表盘/服务/用户/存储/防火墙/监控/告警配置
+- 监控数据实时采集: 磁盘/内存/CPU/进程/网络流量/登录用户/错误日志
+- 告警配置保存到 .env 正常
+
 ## [2026-07-08] - 安全清洗 & 用户名通用化 (v1.0.0)
 
 ### 安全
