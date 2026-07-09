@@ -312,6 +312,24 @@
                     </div>
                 </div>
 
+                <h3>网络流量</h3>
+                <table class="table">
+                    <thead>
+                        <tr><th>网卡</th><th>下行速率</th><th>上行速率</th><th>总接收</th><th>总发送</th></tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="net in (monitor.network||[])" :key="net.interface">
+                            <tr>
+                                <td x-text="net.interface"></td>
+                                <td x-text="net.rx_rate + ' KB/s'"></td>
+                                <td x-text="net.tx_rate + ' KB/s'"></td>
+                                <td x-text="net.rx_total + ' MB'"></td>
+                                <td x-text="net.tx_total + ' MB'"></td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+
                 <h3>已配置通知渠道</h3>
                 <div class="channels-list">
                     <template x-for="ch in (monitor.channels||[])" :key="ch.name">
