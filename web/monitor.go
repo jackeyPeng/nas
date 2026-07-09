@@ -12,15 +12,21 @@ import (
 // getMonitorStatus returns current monitoring check results
 func getMonitorStatus() map[string]interface{} {
 	result := map[string]interface{}{}
+	info := getSystemInfo()
 
-	// Disk usage
+	// Disk usage (detailed)
 	result["disk_usage"] = getDiskUsagePct()
+	result["disk_used"] = info.DiskUsed
+	result["disk_total"] = info.DiskTotal
 
-	// Memory usage
+	// Memory usage (detailed)
 	result["mem_usage"] = getMemUsagePct()
+	result["mem_used"] = info.MemUsed
+	result["mem_total"] = info.MemTotal
 
-	// CPU load
+	// CPU load (detailed)
 	result["cpu_load"] = getCPULoad()
+	result["cpu_cores"] = info.CPUCores
 
 	// Services down count
 	services := getServices()
@@ -31,6 +37,7 @@ func getMonitorStatus() map[string]interface{} {
 		}
 	}
 	result["services_down"] = downCount
+	result["services_total"] = len(services)
 
 	// Configured channels
 	result["channels"] = getAlertChannels()
