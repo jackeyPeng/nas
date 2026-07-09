@@ -241,3 +241,60 @@ func handleFirewallDeny(w http.ResponseWriter, r *http.Request) {
 		"message": output,
 	})
 }
+
+// handleMonitor returns current monitoring check results
+func handleMonitor(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	status := getMonitorStatus()
+	jsonResponse(w, status)
+}
+
+// handleAlertConfig handles GET (read alert config) and POST (update alert config)
+func handleAlertConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		config := getAlertConfig()
+		jsonResponse(w, map[string]interface{}{
+			"config": config,
+		})
+		return
+	}
+
+	if r.Method == http.MethodPost {
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, `{"error": "failed to parse form"}`, http.StatusBadRequest)
+			return
+		}
+
+		values := map[string]string{}
+		// Collect all ALERT_* form values
+		for key, vals := range r.Form {
+			if !strings.HasPrefix(key, "ALERT_") {
+				continue
+			}
+			if len(vals) > 0 {
+				values[key] = strings.TrimSpace(vals[0])
+			}
+		}
+
+		if len(values) == 0 {
+			http.Error(w, `{"error": "no ALERT_* values provided"}`, http.StatusBadRequest)
+			return
+		}
+
+		if err := saveAlertConfig(values); err != nil {
+			http.Error(w, fmt.Sprintf(`{"error": %q}`, err.Error()), http.StatusInternalServerError)
+			return
+		}
+
+		jsonResponse(w, map[string]interface{}{
+			"message": "告警配置已保存",
+			"saved":   values,
+		})
+		return
+	}
+
+	http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
+}

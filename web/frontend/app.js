@@ -12,6 +12,8 @@ function nasPanel() {
         smartStatus: '',
         firewallStatus: '',
         firewallForm: { port: '', proto: 'tcp' },
+        monitor: {},
+        alertConfig: {},
         logsModal: false,
         logsService: '',
         logsContent: '',
@@ -86,6 +88,7 @@ function nasPanel() {
                 case 'users': this.loadUsers(); break;
                 case 'storage': this.loadStorage(); break;
                 case 'firewall': this.loadFirewall(); break;
+                case 'monitor': this.loadMonitor(); this.loadAlertConfig(); break;
             }
         },
 
@@ -212,6 +215,32 @@ function nasPanel() {
         showToast(msg, type) {
             this.toast = { show: true, msg, type };
             setTimeout(() => { this.toast.show = false; }, 3000);
+        },
+
+        async loadMonitor() {
+            const data = await this.api('/monitor');
+            if (data) this.monitor = data;
+        },
+
+        async loadAlertConfig() {
+            const data = await this.api('/alert-config');
+            if (data && data.config) this.alertConfig = data.config;
+        },
+
+        async saveAlertConfig() {
+            const params = new URLSearchParams();
+            for (const [key, value] of Object.entries(this.alertConfig)) {
+                params.append(key, value);
+            }
+            const data = await this.api('/alert-config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: params.toString()
+            });
+            if (data) {
+                this.showToast(data.message || '保存成功', 'success');
+                this.loadMonitor();
+            }
         }
     };
 }
