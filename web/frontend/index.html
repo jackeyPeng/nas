@@ -324,6 +324,40 @@
                     </div>
                 </div>
 
+                <h3>物理磁盘</h3>
+                <pre class="config-output" x-text="monitor.disk_info || '无数据'"></pre>
+
+                <h3>Inode 使用</h3>
+                <pre class="config-output" x-text="monitor.inode_info || '无数据'"></pre>
+
+                <h3>LVM 卷管理</h3>
+                <pre class="config-output" x-text="monitor.lvm_info || '无数据'"></pre>
+
+                <h3>内存详情（含 Swap）</h3>
+                <pre class="config-output" x-text="monitor.mem_detail || '无数据'"></pre>
+
+                <h3>CPU 详情</h3>
+                <pre class="config-output" x-text="monitor.cpu_info || '无数据'"></pre>
+
+                <h3>内存占用 Top 10 进程</h3>
+                <table class="table">
+                    <thead>
+                        <tr><th>用户</th><th>PID</th><th>CPU%</th><th>MEM%</th><th>RSS</th><th>命令</th></tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="p in (monitor.top_procs||[])" :key="p.pid">
+                            <tr>
+                                <td x-text="p.user"></td>
+                                <td x-text="p.pid"></td>
+                                <td x-text="p.cpu"></td>
+                                <td x-text="p.mem"></td>
+                                <td x-text="p.rss"></td>
+                                <td x-text="p.command"></td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+
                 <h3>登录用户</h3>
                 <table class="table">
                     <thead><tr><th>用户</th><th>终端</th><th>来源</th><th>登录时间</th></tr></thead>

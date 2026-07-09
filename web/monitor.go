@@ -18,15 +18,20 @@ func getMonitorStatus() map[string]interface{} {
 	result["disk_usage"] = getDiskUsagePct()
 	result["disk_used"] = info.DiskUsed
 	result["disk_total"] = info.DiskTotal
+	result["disk_info"] = getDiskDetails()
+	result["inode_info"] = getInodeInfo()
+	result["lvm_info"] = getLVMInfo()
 
 	// Memory usage (detailed)
 	result["mem_usage"] = getMemUsagePct()
 	result["mem_used"] = info.MemUsed
 	result["mem_total"] = info.MemTotal
+	result["mem_detail"] = getMemDetail()
 
 	// CPU load (detailed)
 	result["cpu_load"] = getCPULoad()
 	result["cpu_cores"] = info.CPUCores
+	result["cpu_info"] = getCPUDetail()
 
 	// Services down count
 	services := getServices()
@@ -41,6 +46,9 @@ func getMonitorStatus() map[string]interface{} {
 
 	// Process count
 	result["process_count"] = getProcessCount()
+
+	// Top memory processes
+	result["top_procs"] = getTopMemProcs()
 
 	// Logged in users
 	result["logged_in_users"] = getLoggedInUsers()
@@ -329,7 +337,114 @@ func getSystemErrors() string {
 	return string(out)
 }
 
-// getAlertConfig reads all ALERT_* variables from .env
+// getDiskDetails returns physical disk info from lsblk
+func getDiskDetails() string {
+	out, err := exec.Command("lsblk", "-o", "NAME,SIZE,TYPE,MOUNTPOINT,MODEL,ROTA").Output()
+	if err != nil {
+		return ""
+	}
+	return string(out)
+}
+
+// getInodeInfo returns inode usage from df -i
+func getInodeInfo() string {
+	out, err := exec.Command("df", "-i", "/data").Output()
+	if err != nil {
+		out, err = exec.Command("df", "-i", "/").Output()
+		if err != nil {
+			return ""
+		}
+	}
+	return string(out)
+}
+
+// getLVMInfo returns LVM/physical volume info
+func getLVMInfo() string {
+	// Try pvs and lvs, return combined
+	var result string
+	if out, err := exec.Command("sudo", "pvs", "--noheadings", "-o", "pv_name,vg_name,pv_size,pv_free").Output(); err == nil && len(out) > 0 {
+		result += "物理卷 (PV):\n" + string(out) + "\n"
+	}
+	if out, err := exec.Command("sudo", "vgs", "--noheadings", "-o", "vg_name,vg_size,vg_free").Output(); err == nil && len(out) > 0 {
+		result += "卷组 (VG):\n" + string(out) + "\n"
+	}
+	if out, err := exec.Command("sudo", "lvs", "--noheadings", "-o", "lv_name,vg_name,lv_size,lv_path").Output(); err == nil && len(out) > 0 {
+		result += "逻辑卷 (LV):\n" + string(out) + "\n"
+	}
+	if result == "" {
+		return "无 LVM 配置"
+	}
+	return result
+}
+
+// getMemDetail returns detailed memory info including swap
+func getMemDetail() string {
+	out, err := exec.Command("free", "-h").Output()
+	if err != nil {
+		return ""
+	}
+	return string(out)
+}
+
+// getCPUDetail returns CPU model and frequency info
+func getCPUDetail() string {
+	// Read /proc/cpuinfo for model name and cache
+	data, err := os.ReadFile("/proc/cpuinfo")
+	if err != nil {
+		return ""
+	}
+	var result string
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.Contains(line, "model name") || strings.Contains(line, "cache size") || strings.Contains(line, "cpu MHz") {
+			if result == "" {
+				result = line + "\n"
+			} else if !strings.Contains(result, strings.Split(line, ":")[0]) {
+				result += line + "\n"
+			}
+		}
+	}
+	// Add CPU governor
+	if gov, err := os.ReadFile("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor"); err == nil {
+		result += "governor: " + strings.TrimSpace(string(gov)) + "\n"
+	}
+	return result
+}
+
+// getTopMemProcs returns top 10 processes by memory usage
+func getTopMemProcs() []map[string]string {
+	out, err := exec.Command("ps", "aux", "--sort=-%mem").Output()
+	if err != nil {
+		return []map[string]string{}
+	}
+	lines := strings.Split(string(out), "\n")
+	if len(lines) < 2 {
+		return []map[string]string{}
+	}
+	var result []map[string]string
+	// Skip header, take top 10
+	for i := 1; i < len(lines) && len(result) < 10; i++ {
+		l := strings.TrimSpace(lines[i])
+		if l == "" {
+			continue
+		}
+		fields := strings.Fields(l)
+		if len(fields) < 11 {
+			continue
+		}
+		// USER PID %CPU %MEM VSZ RSS TTY STAT START TIME COMMAND
+		result = append(result, map[string]string{
+			"user":    fields[0],
+			"pid":     fields[1],
+			"cpu":     fields[2],
+			"mem":     fields[3],
+			"rss":     fields[5],
+			"command": strings.Join(fields[10:], " "),
+		})
+	}
+	return result
+}
+
+// getEnvFilePath returns the .env file path
 func getAlertConfig() map[string]string {
 	envPath := getEnvFilePath()
 	if envPath == "" {
