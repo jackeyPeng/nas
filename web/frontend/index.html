@@ -287,28 +287,36 @@
                     <div class="card">
                         <div class="card-title">磁盘使用率</div>
                         <div class="card-value">
-                            <span x-text="(monitor.disk_usage||'--') + '%'"></span>
+                            <span x-text="(monitor.disk_used||'--') + ' / ' + (monitor.disk_total||'--')"></span>
                             <div class="progress-bar">
                                 <div class="progress-fill" :style="'width:' + (monitor.disk_usage||0) + '%'"></div>
                             </div>
+                            <span class="pct" x-text="(monitor.disk_usage||'--') + '%'"></span>
                         </div>
                     </div>
                     <div class="card">
                         <div class="card-title">内存使用率</div>
                         <div class="card-value">
-                            <span x-text="(monitor.mem_usage||'--') + '%'"></span>
+                            <span x-text="(monitor.mem_used||'--') + ' / ' + (monitor.mem_total||'--')"></span>
                             <div class="progress-bar">
                                 <div class="progress-fill" :style="'width:' + (monitor.mem_usage||0) + '%'"></div>
                             </div>
+                            <span class="pct" x-text="(monitor.mem_usage||'--') + '%'"></span>
                         </div>
                     </div>
                     <div class="card">
                         <div class="card-title">CPU 负载</div>
-                        <div class="card-value" x-text="monitor.cpu_load || '--'"></div>
+                        <div class="card-value">
+                            <span x-text="monitor.cpu_load || '--'"></span>
+                            <span class="pct" x-text="'(' + (monitor.cpu_cores||'?') + '核)'"></span>
+                        </div>
                     </div>
                     <div class="card">
                         <div class="card-title">服务状态</div>
-                        <div class="card-value" x-text="(monitor.services_down||0) + ' 个异常'"></div>
+                        <div class="card-value">
+                            <span x-text="(monitor.services_down||0) + ' 个异常'"></span>
+                            <span class="pct" x-text="'共 ' + (monitor.services_total||0) + ' 个服务'"></span>
+                        </div>
                     </div>
                 </div>
 
