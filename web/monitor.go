@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // getMonitorStatus returns current monitoring check results
@@ -36,6 +37,9 @@ func getMonitorStatus() map[string]interface{} {
 
 	// Alert state
 	result["alert_state"] = getAlertStateList()
+
+	// Network traffic
+	result["network"] = getNetworkTraffic()
 
 	return result
 }
@@ -168,6 +172,81 @@ func formatTimestamp(ts int64) string {
 	hours := t / 3600
 	mins := (t % 3600) / 60
 	return fmt.Sprintf("%d小时%d分钟前", hours, mins)
+}
+
+// getNetworkTraffic reads /proc/net/dev twice (1s apart) to get real-time rates
+func getNetworkTraffic() []map[string]interface{} {
+	data1, err := os.ReadFile("/proc/net/dev")
+	if err != nil {
+		return []map[string]interface{}{}
+	}
+
+	// Sleep 1 second to measure rate
+	time.Sleep(time.Second)
+
+	data2, err := os.ReadFile("/proc/net/dev")
+	if err != nil {
+		return []map[string]interface{}{}
+	}
+
+	return parseNetDev(string(data1), string(data2))
+}
+
+// parseNetDev parses two /proc/net/dev snapshots and returns per-interface rates
+func parseNetDev(snap1, snap2 string) []map[string]interface{} {
+	ifaces1 := parseNetDevLines(snap1)
+	ifaces2 := parseNetDevLines(snap2)
+
+	var result []map[string]interface{}
+	for name, vals2 := range ifaces2 {
+		vals1, ok := ifaces1[name]
+		if !ok {
+			continue
+		}
+		// Skip loopback
+		if name == "lo" {
+			continue
+		}
+
+		rxBytes := vals2[0] - vals1[0]
+		txBytes := vals2[8] - vals1[8]
+
+		result = append(result, map[string]interface{}{
+			"interface": name,
+			"rx_rate":   fmt.Sprintf("%.1f", float64(rxBytes)/1024.0),     // KB/s
+			"tx_rate":   fmt.Sprintf("%.1f", float64(txBytes)/1024.0),     // KB/s
+			"rx_total":  fmt.Sprintf("%.2f", float64(vals2[0])/1024/1024), // MB total
+			"tx_total":  fmt.Sprintf("%.2f", float64(vals2[8])/1024/1024), // MB total
+		})
+	}
+	return result
+}
+
+// parseNetDevLines parses /proc/net/dev into map[interface][]uint64 (16 fields)
+func parseNetDevLines(data string) map[string][]uint64 {
+	result := map[string][]uint64{}
+	lines := strings.Split(data, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "Inter") || strings.HasPrefix(line, "face") {
+			continue
+		}
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		name := strings.TrimSpace(parts[0])
+		fields := strings.Fields(strings.TrimSpace(parts[1]))
+		if len(fields) < 16 {
+			continue
+		}
+		vals := make([]uint64, 16)
+		for i, f := range fields[:16] {
+			vals[i], _ = strconv.ParseUint(f, 10, 64)
+		}
+		result[name] = vals
+	}
+	return result
 }
 
 // getEnvFilePath returns the .env file path

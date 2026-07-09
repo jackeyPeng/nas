@@ -13,6 +13,7 @@ function nasPanel() {
         firewallStatus: '',
         firewallForm: { port: '', proto: 'tcp' },
         monitor: {},
+        monitorTimer: null,
         alertConfig: {},
         logsModal: false,
         logsService: '',
@@ -88,7 +89,7 @@ function nasPanel() {
                 case 'users': this.loadUsers(); break;
                 case 'storage': this.loadStorage(); break;
                 case 'firewall': this.loadFirewall(); break;
-                case 'monitor': this.loadMonitor(); this.loadAlertConfig(); break;
+                case 'monitor': this.initMonitorRefresh(); this.loadAlertConfig(); break;
             }
         },
 
@@ -220,6 +221,14 @@ function nasPanel() {
         async loadMonitor() {
             const data = await this.api('/monitor');
             if (data) this.monitor = data;
+        },
+
+        initMonitorRefresh() {
+            if (this.monitorTimer) clearInterval(this.monitorTimer);
+            this.loadMonitor();
+            this.monitorTimer = setInterval(() => {
+                if (this.page === 'monitor') this.loadMonitor();
+            }, 10000);
         },
 
         async loadAlertConfig() {
