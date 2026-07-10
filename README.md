@@ -23,8 +23,9 @@
 | 防火墙 | UFW 状态查看、端口允许/拒绝 |
 | 监控告警 | 实时状态、网络流量、Top 进程、错误日志、告警配置（4 通道） |
 | 配置管理 | Samba 共享增删、FTP 白名单、配置文件在线编辑、服务自启开关 |
-| 磁盘管理 | 分区信息、挂载/卸载、LVM、I/O 性能、SMART 详情 |
+| 磁盘管理 | 分区信息、挂载/卸载、格式化、LVM、I/O 性能、SMART 详情 |
 | 系统设置 | 网络配置、时间时区、主机名修改、SSH 配置、内核参数、系统更新 |
+| 备份恢复 | 手动/自动备份、备份列表、一键恢复、删除备份 |
 
 ## 安全
 
@@ -56,7 +57,9 @@ nas/
 │   ├── cleanup.sh      # 清理恢复（--keep-data 保留数据）
 │   ├── add-user.sh     # 添加用户
 │   ├── remove-user.sh  # 删除用户
-│   └── monitor.sh      # 监控告警（cron 每5分钟）
+│   ├── monitor.sh      # 监控告警（cron 每5分钟）
+│   ├── backup-config.sh   # 配置备份（手动/升级前/定期）
+│   └── restore-config.sh # 配置恢复
 ├── web/                 # Web 管理面板源码（Go）
 │   ├── main.go          # 入口：路由注册 + 启动
 │   ├── common/          # 共享工具包
@@ -73,7 +76,8 @@ nas/
 │   │   ├── monitor/     # 监控告警
 │   │   ├── config/      # 配置管理
 │   │   ├── diskmgmt/    # 磁盘管理
-│   │   └── system/      # 系统设置
+│   │   ├── system/      # 系统设置
+│   │   └── backup/      # 备份恢复
 │   ├── go.mod
 │   └── frontend/        # 前端 (Alpine.js + 原生 CSS)
 │       ├── index.html
@@ -140,6 +144,48 @@ sudo bash /opt/nas/scripts/cleanup.sh
 # 清除但保留 /data 数据目录
 sudo bash /opt/nas/scripts/cleanup.sh --keep-data
 ```
+
+## 配置备份与恢复
+
+NAS 支持自动和手动配置备份，确保升级或修改配置后可以快速回滚。
+
+### 自动备份
+
+- **升级前备份**：运行 `setup.sh` 时自动检测已有配置并备份
+- **定期备份**：cron 每周日凌晨 3 点自动执行
+- **保留策略**：保留最近 5 个备份，自动清理旧的
+
+### 手动操作
+
+```bash
+# 创建备份
+sudo bash /opt/nas/scripts/backup-config.sh
+
+# 从备份恢复（交互式选择）
+sudo bash /opt/nas/scripts/restore-config.sh
+
+# 从指定备份恢复
+sudo bash /opt/nas/scripts/restore-config.sh /data/backups/config-20260710-163352.tar.gz
+```
+
+### Web 面板操作
+
+在 Web 面板"备份恢复"页面可以：
+- 查看所有备份列表（时间、大小、文件名）
+- 一键创建备份
+- 从指定备份恢复配置
+- 删除不需要的备份
+
+### 备份内容
+
+| 类别 | 内容 |
+|------|------|
+| 系统配置 | smb.conf / exports / nfs.conf / vsftpd.conf / jail.local / rclone-htpasswd / minio / sudoers |
+| 服务文件 | rclone-webdav / filebrowser / minio / nas-panel .service |
+| 项目配置 | .env / configs/ 目录 |
+| 用户数据 | Samba passdb.tdb / FTP 白名单 / 系统用户列表 |
+| 定时任务 | crontab（监控告警 + 定期备份） |
+| 状态快照 | 磁盘使用 / 服务状态 / 挂载点 / UFW 规则 |
 
 ## 服务访问
 
