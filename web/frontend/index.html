@@ -57,6 +57,15 @@
                 <li :class="{active: page === 'monitor'}" @click="navigate('monitor')">
                     <span>📡</span> 监控告警
                 </li>
+                <li :class="{active: page === 'config'}" @click="navigate('config')">
+                    <span>🔧</span> 配置管理
+                </li>
+                <li :class="{active: page === 'diskmgmt'}" @click="navigate('diskmgmt')">
+                    <span>💽</span> 磁盘管理
+                </li>
+                <li :class="{active: page === 'system'}" @click="navigate('system')">
+                    <span>🖥️</span> 系统设置
+                </li>
             </ul>
             <div class="sidebar-footer">
                 <button class="btn btn-sm" @click="logout()">退出登录</button>
@@ -489,6 +498,104 @@
                 </div>
 
                 <button class="btn btn-primary" @click="saveAlertConfig()" style="margin-top:16px">保存配置</button>
+            </div>
+
+            <!-- Config Management -->
+            <div x-show="page === 'config'" class="page">
+                <h2>配置管理</h2>
+
+                <h3>环境变量配置 (.env)</h3>
+                <button class="btn btn-primary" @click="loadEnvConfig()" style="margin-bottom:12px">刷新</button>
+                <table class="table">
+                    <thead><tr><th>变量名</th><th>值</th></tr></thead>
+                    <tbody>
+                        <template x-for="(val, key) in envConfig" :key="key">
+                            <tr>
+                                <td x-text="key" style="font-weight:600"></td>
+                                <td x-text="key.includes('PASS') || key.includes('TOKEN') || key.includes('SECRET') ? '••••••••' : val"></td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+
+                <h3>Samba 共享配置</h3>
+                <pre class="config-output" x-text="sambaConfig || '点击加载'"></pre>
+                <button class="btn btn-primary" @click="loadSambaConfig()">加载配置</button>
+
+                <h3>FTP 用户白名单</h3>
+                <table class="table">
+                    <thead><tr><th>用户名</th></tr></thead>
+                    <tbody>
+                        <template x-for="u in (vsftpdUsers||[])" :key="u">
+                            <tr><td x-text="u"></td></tr>
+                        </template>
+                    </tbody>
+                </table>
+                <button class="btn btn-primary" @click="loadVsftpdUsers()">加载用户列表</button>
+
+                <h3>开机自启服务</h3>
+                <pre class="config-output" x-text="enabledServices || '点击加载'"></pre>
+                <button class="btn btn-primary" @click="loadEnabledServices()">加载服务列表</button>
+            </div>
+
+            <!-- Disk Management -->
+            <div x-show="page === 'diskmgmt'" class="page">
+                <h2>磁盘管理</h2>
+
+                <h3>物理磁盘信息</h3>
+                <pre class="config-output" x-text="diskInfo || '点击加载'"></pre>
+                <button class="btn btn-primary" @click="loadDiskInfo()">加载信息</button>
+
+                <h3>挂载点</h3>
+                <pre class="config-output" x-text="diskMounts || '点击加载'"></pre>
+                <button class="btn btn-primary" @click="loadDiskMounts()">加载挂载点</button>
+
+                <h3>LVM 卷管理</h3>
+                <pre class="config-output" x-text="diskLVM || '点击加载'"></pre>
+                <button class="btn btn-primary" @click="loadDiskLVM()">加载 LVM 信息</button>
+
+                <h3>I/O 性能统计 (iostat)</h3>
+                <pre class="config-output" x-text="diskIOStat || '点击加载'"></pre>
+                <button class="btn btn-primary" @click="loadDiskIOStat()">测试 I/O (约3秒)</button>
+
+                <h3>SMART 详细信息</h3>
+                <pre class="config-output" x-text="diskSmartDetail || '点击加载'"></pre>
+                <button class="btn btn-primary" @click="loadDiskSmartDetail()">加载 SMART</button>
+            </div>
+
+            <!-- System Settings -->
+            <div x-show="page === 'system'" class="page">
+                <h2>系统设置</h2>
+
+                <h3>网络配置</h3>
+                <pre class="config-output" x-text="sysNetwork || '点击加载'"></pre>
+                <button class="btn btn-primary" @click="loadSysNetwork()">加载网络配置</button>
+
+                <h3>时间与时区</h3>
+                <pre class="config-output" x-text="sysTime || '点击加载'"></pre>
+                <button class="btn btn-primary" @click="loadSysTime()">加载时间信息</button>
+
+                <h3>主机名</h3>
+                <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px">
+                    <input type="text" x-model="hostnameForm.hostname" placeholder="新主机名" class="port-input">
+                    <button class="btn btn-primary" @click="setHostname()">修改</button>
+                </div>
+
+                <h3>SSH 配置 (sshd_config)</h3>
+                <pre class="config-output" x-text="sysSSHConfig || '点击加载'"></pre>
+                <button class="btn btn-primary" @click="loadSysSSHConfig()">加载 SSH 配置</button>
+
+                <h3>内核参数 (sysctl)</h3>
+                <pre class="config-output" x-text="sysSysctl || '点击加载'"></pre>
+                <button class="btn btn-primary" @click="loadSysSysctl()">加载内核参数</button>
+
+                <h3>系统更新状态</h3>
+                <pre class="config-output" x-text="sysUpdates || '点击加载'"></pre>
+                <button class="btn btn-primary" @click="loadSysUpdates()">检查更新</button>
+
+                <h3>开机自启服务</h3>
+                <pre class="config-output" x-text="sysEnabledServices || '点击加载'"></pre>
+                <button class="btn btn-primary" @click="loadSysEnabledServices()">加载服务列表</button>
             </div>
         </main>
     </div>
