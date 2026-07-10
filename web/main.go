@@ -9,6 +9,7 @@ import (
 	"os"
 
 	"nas-panel/common"
+	"nas-panel/modules/backup"
 	"nas-panel/modules/config"
 	"nas-panel/modules/dashboard"
 	"nas-panel/modules/diskmgmt"
@@ -73,6 +74,7 @@ func main() {
 	config.RegisterRoutes(mux)
 	diskmgmt.RegisterRoutes(mux)
 	system.RegisterRoutes(mux)
+	backup.RegisterRoutes(mux)
 
 	// Serve frontend
 	frontendRoot, _ := fs.Sub(frontendFS, "frontend")

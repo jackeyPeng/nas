@@ -66,6 +66,9 @@
                 <li :class="{active: page === 'system'}" @click="navigate('system')">
                     <span>🖥️</span> 系统设置
                 </li>
+                <li :class="{active: page === 'backup'}" @click="navigate('backup')">
+                    <span>💾</span> 备份恢复
+                </li>
             </ul>
             <div class="sidebar-footer">
                 <button class="btn btn-sm" @click="logout()">退出登录</button>
@@ -676,6 +679,64 @@
                 <h3>开机自启服务</h3>
                 <pre class="config-output" x-text="sysEnabledServices || '点击加载'"></pre>
                 <button class="btn btn-primary" @click="loadSysEnabledServices()">加载服务列表</button>
+            </div>
+
+            <!-- Backup & Restore -->
+            <div x-show="page === 'backup'" class="page">
+                <h2>备份恢复</h2>
+
+                <h3>创建备份</h3>
+                <p style="color:var(--text-light);margin-bottom:12px">手动创建一份当前 NAS 配置的快照（系统配置 + 服务文件 + 用户数据 + crontab）</p>
+                <button class="btn btn-primary" @click="createBackup()" :disabled="backupLoading">
+                    <span x-show="!backupLoading">立即备份</span>
+                    <span x-show="backupLoading">备份中...</span>
+                </button>
+
+                <h3 style="margin-top:24px">备份列表</h3>
+                <button class="btn btn-primary" @click="loadBackups()" style="margin-bottom:12px">刷新列表</button>
+                <table class="table">
+                    <thead>
+                        <tr><th>备份时间</th><th>大小</th><th>文件名</th><th>操作</th></tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="b in backups" :key="b.path">
+                            <tr>
+                                <td x-text="b.time"></td>
+                                <td x-text="b.size"></td>
+                                <td x-text="b.name" style="font-size:13px;font-family:monospace"></td>
+                                <td class="actions">
+                                    <button class="btn btn-sm btn-success" @click="restoreBackup(b.path)" :disabled="b.path.includes('restoring')">恢复</button>
+                                    <button class="btn btn-sm btn-danger" @click="deleteBackup(b.path)">删除</button>
+                                </td>
+                            </tr>
+                        </template>
+                        <tr x-show="!backups.length">
+                            <td colspan="4" style="text-align:center;color:var(--text-light)">暂无备份</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3 style="margin-top:24px">备份说明</h3>
+                <div class="config-section">
+                    <p style="margin-bottom:8px"><strong>备份内容：</strong></p>
+                    <ul style="margin-left:20px;margin-bottom:12px;color:var(--text-light);line-height:1.8">
+                        <li>系统配置：smb.conf / exports / nfs.conf / vsftpd.conf / jail.local 等</li>
+                        <li>systemd 服务文件：rclone-webdav / filebrowser / minio / nas-panel</li>
+                        <li>NAS 项目配置：.env / configs/ 目录</li>
+                        <li>用户数据：Samba 用户数据库 / FTP 白名单 / 系统用户列表</li>
+                        <li>crontab 任务（监控告警 + 定期备份）</li>
+                        <li>系统状态快照（磁盘/服务状态/挂载点/UFW）</li>
+                    </ul>
+                    <p style="margin-bottom:4px"><strong>自动备份：</strong></p>
+                    <ul style="margin-left:20px;color:var(--text-light);line-height:1.8">
+                        <li>升级前自动备份（运行 setup.sh 时触发）</li>
+                        <li>每周日凌晨 3 点定期备份（cron）</li>
+                        <li>保留最近 5 个备份，自动清理旧的</li>
+                    </ul>
+                    <p style="margin-top:12px;color:var(--danger);font-size:13px">
+                        ⚠️ 恢复操作会停止所有服务、覆盖当前配置后重启。请确认备份时间正确。
+                    </p>
+                </div>
             </div>
         </main>
     </div>

@@ -36,6 +36,9 @@ function nasPanel() {
         mountForm: { device: '', mountpoint: '', fstype: '' },
         unmountForm: { target: '' },
         formatForm: { device: '', fstype: 'ext4' },
+        // Backup
+        backups: [],
+        backupLoading: false,
         // System settings
         sysNetwork: '',
         sysTime: '',
@@ -122,6 +125,7 @@ function nasPanel() {
                 case 'config': this.loadEnvConfig(); break;
                 case 'diskmgmt': break;
                 case 'system': break;
+                case 'backup': this.loadBackups(); break;
             }
         },
 
@@ -526,6 +530,48 @@ function nasPanel() {
             this.sysEnabledServices = '加载中...';
             const data = await this.api('/system/services-enabled');
             if (data) this.sysEnabledServices = data;
+        },
+
+        // Backup management
+        async loadBackups() {
+            const data = await this.api('/backup/list');
+            if (data) this.backups = data.backups || [];
+        },
+
+        async createBackup() {
+            this.backupLoading = true;
+            const data = await this.api('/backup/create', { method: 'POST' });
+            if (data) {
+                this.showToast('备份已创建', 'success');
+                this.loadBackups();
+            }
+            this.backupLoading = false;
+        },
+
+        async restoreBackup(file) {
+            if (!confirm('⚠️ 确定从此备份恢复？当前所有 NAS 配置将被覆盖，服务将重启。')) return;
+            this.showToast('恢复中，请等待...', 'success');
+            const data = await this.api('/backup/restore', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `file=${encodeURIComponent(file)}`
+            });
+            if (data) {
+                this.showToast('恢复完成，服务已重启', 'success');
+            }
+        },
+
+        async deleteBackup(file) {
+            if (!confirm('确定删除此备份文件？')) return;
+            const data = await this.api('/backup/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `file=${encodeURIComponent(file)}`
+            });
+            if (data) {
+                this.showToast('备份已删除', 'success');
+                this.loadBackups();
+            }
         }
     };
 }
