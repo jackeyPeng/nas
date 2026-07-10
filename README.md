@@ -1,6 +1,6 @@
 # NAS 家用存储系统
 
-基于 Debian 13 (trixie) 的轻量级家用 NAS 解决方案。
+基于 Debian 13 (trixie) 的轻量级家用/小型办公 NAS 解决方案。全部原生 systemd 服务（不使用 Docker），配合 Go 单二进制 Web 管理面板，追求稳定、高性能、易维护。
 
 ## 功能
 
@@ -12,6 +12,20 @@
 - **MinIO** — S3 兼容对象存储（端口 9000/9002）
 - **NAS Web Panel** — Web 管理面板（端口 8090）
 
+### Web 管理面板功能
+
+| 模块 | 功能 |
+|------|------|
+| 仪表盘 | 系统信息、CPU/内存/磁盘使用率、服务一览 |
+| 服务管理 | 8 个服务启动/停止/重启、查看日志 |
+| 用户管理 | 添加/删除用户、修改密码（联动 Samba/系统/htpasswd） |
+| 存储信息 | 磁盘使用、目录大小、Samba 配置、NFS 导出、SMART 状态 |
+| 防火墙 | UFW 状态查看、端口允许/拒绝 |
+| 监控告警 | 实时状态、网络流量、Top 进程、错误日志、告警配置（4 通道） |
+| 配置管理 | Samba 共享增删、FTP 白名单、配置文件在线编辑、服务自启开关 |
+| 磁盘管理 | 分区信息、挂载/卸载、LVM、I/O 性能、SMART 详情 |
+| 系统设置 | 网络配置、时间时区、主机名修改、SSH 配置、内核参数、系统更新 |
+
 ## 安全
 
 - UFW 防火墙（默认 deny，仅开放必要端口）
@@ -19,34 +33,49 @@
 - unattended-upgrades（自动安全更新）
 - smartmontools（磁盘健康监控）
 - 监控告警（monitor.sh + cron 每5分钟检查，多通道通知）
+- 密码通过 .env 文件管理，不硬编码在脚本中
+- sudoers 精确限定 nas-panel 可执行的 root 命令白名单
 
 ## 目录结构
 
 ```
 nas/
-├── configs/            # 服务配置文件
+├── configs/            # 服务配置文件（__NAS_USER__ 占位符）
 │   ├── smb.conf        # Samba 配置
 │   ├── exports         # NFS 导出配置
 │   ├── nfs.conf        # NFS 主配置（固定端口）
 │   ├── vsftpd.conf     # FTP 配置
+│   ├── vsftpd.userlist # FTP 用户白名单
 │   ├── jail.local      # Fail2ban 规则
 │   ├── rclone-webdav.service
 │   ├── filebrowser.service
-│   └── minio.service
+│   ├── minio.service
+│   └── nas-panel.service
 ├── scripts/            # 管理脚本
-│   ├── setup.sh        # 一键部署（9步）
+│   ├── setup.sh        # 一键部署（10步）
+│   ├── cleanup.sh      # 清理恢复（--keep-data 保留数据）
 │   ├── add-user.sh     # 添加用户
 │   ├── remove-user.sh  # 删除用户
 │   └── monitor.sh      # 监控告警（cron 每5分钟）
-├── web/                 # Web 管理面板源码
-│   ├── main.go          # Go 后端入口
-│   ├── auth.go          # JWT 认证
-│   ├── handlers.go      # API handlers
-│   ├── services.go      # 服务/用户/防火墙管理
-│   ├── system.go        # 系统信息采集
-│   ├── monitor.go       # 监控状态 + 告警配置
+├── web/                 # Web 管理面板源码（Go）
+│   ├── main.go          # 入口：路由注册 + 启动
+│   ├── common/          # 共享工具包
+│   │   ├── common.go    # JSON 响应、.env 读写
+│   │   ├── auth.go      # JWT 认证
+│   │   ├── sudo.go      # sudo exec 封装
+│   │   └── module.go    # Module 接口
+│   ├── modules/         # 功能模块（每个模块独立）
+│   │   ├── dashboard/   # 仪表盘
+│   │   ├── services/    # 服务管理
+│   │   ├── users/       # 用户管理
+│   │   ├── storage/     # 存储信息
+│   │   ├── firewall/    # 防火墙
+│   │   ├── monitor/     # 监控告警
+│   │   ├── config/      # 配置管理
+│   │   ├── diskmgmt/    # 磁盘管理
+│   │   └── system/      # 系统设置
 │   ├── go.mod
-│   └── frontend/        # 前端 (Alpine.js)
+│   └── frontend/        # 前端 (Alpine.js + 原生 CSS)
 │       ├── index.html
 │       ├── app.js
 │       └── style.css
@@ -55,7 +84,7 @@ nas/
 │   └── nas-product-manual.pdf
 ├── .env.example        # 环境变量模板（复制为 .env 填入密码）
 ├── CHANGELOG.md        # 变更日志
-├── OPTIMIZATION_CHECKLIST.md  # 待优化清单
+├── TODO.md             # 优化路线图
 └── README.md           # 本文件
 ```
 
@@ -80,6 +109,28 @@ sudo bash /opt/nas/scripts/setup.sh
 
 详细部署步骤请参阅 `docs/nas-product-manual.md`
 
+## 从源码编译 nas-panel
+
+Web 管理面板是 Go 单二进制程序。setup.sh 会优先从下载源获取二进制，如果需要自行编译：
+
+```bash
+cd ~/soft/nas/web
+
+# 设置 Go 代理（国内用户推荐）
+export GOPROXY=https://goproxy.cn,direct
+
+# 编译
+go build -o nas-panel .
+
+# 去除调试信息（减小体积）
+strip nas-panel
+
+# 放到正确位置，setup.sh 会自动检测并使用
+cp nas-panel ~/soft/nas/web/nas-panel
+```
+
+编译好的二进制放在 `web/nas-panel` 后，setup.sh 会优先使用本地文件，不再从网络下载。
+
 ## 恢复环境
 
 ```bash
@@ -103,6 +154,19 @@ sudo bash /opt/nas/scripts/cleanup.sh --keep-data
 | MinIO Web | http://NAS_IP:9002 | <NAS_USER> / <NAS_PASS> |
 | Web 面板 | http://NAS_IP:8090 | <NAS_USER> / <NAS_PASS> |
 
+## 告警通知配置
+
+在 .env 文件中配置告警通道，配哪个启用哪个，支持多通道同时通知：
+
+| 通道 | 环境变量 | 获取方式 |
+|------|----------|----------|
+| 钉钉机器人 | ALERT_DINGTALK_WEBHOOK | 钉钉群 → 群设置 → 智能群助手 → 自定义机器人 |
+| Telegram | ALERT_TELEGRAM_TOKEN | @BotFather → /newbot |
+| Bark (iOS) | ALERT_BARK_KEY | App Store 下载 Bark → 复制 key |
+| Email | ALERT_SMTP_HOST | 任意 SMTP 服务（QQ/Gmail等） |
+
+告警阈值可在 .env 或 Web 面板"监控告警"页面自定义。
+
 ## 管理脚本
 
 ```bash
@@ -121,6 +185,29 @@ sudo /opt/nas/scripts/remove-user.sh <用户名> [--delete-data]
 - 独立数据盘（推荐）
 - 千兆以太网
 
+## 技术栈
+
+| 层 | 技术 | 说明 |
+|----|------|------|
+| NAS 服务 | Samba / NFS / vsftpd / rclone / MinIO / FileBrowser | 全部原生 systemd 服务，不使用 Docker |
+| Web 面板后端 | Go 1.25 + go:embed | 单二进制，内嵌前端，内存占用 <3MB |
+| Web 面板前端 | Alpine.js + 原生 CSS | 无构建工具，浅色主题 |
+| 认证 | JWT | 24 小时有效期 |
+| 监控告警 | Shell + cron | 零额外服务，每5分钟检查 |
+| 部署 | Shell 脚本 | 10 步一键部署，自动检测用户 |
+| 密码管理 | .env 文件 | .gitignore 排除，不提交到仓库 |
+
+## 扩展开发
+
+Web 面板采用模块化架构，添加新功能只需：
+
+1. 在 `web/modules/` 下新建目录
+2. 实现 `RegisterRoutes(mux *http.ServeMux)` 函数
+3. 在 `main.go` 添加 import 和一行路由注册
+4. 编译部署
+
+每个模块独立，互不依赖，共用 `common/` 包的认证、JSON、sudo 等工具函数。
+
 ## 许可证
 
-GNU AGPLv3（MinIO 部分）
+GNU AGPLv3
