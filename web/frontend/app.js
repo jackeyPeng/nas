@@ -15,6 +15,25 @@ function nasPanel() {
         monitor: {},
         monitorTimer: null,
         alertConfig: {},
+        // Config module
+        envConfig: {},
+        sambaConfig: '',
+        vsftpdUsers: [],
+        enabledServices: '',
+        // Disk management
+        diskInfo: '',
+        diskMounts: '',
+        diskLVM: '',
+        diskIOStat: '',
+        diskSmartDetail: '',
+        // System settings
+        sysNetwork: '',
+        sysTime: '',
+        hostnameForm: { hostname: '' },
+        sysSSHConfig: '',
+        sysSysctl: '',
+        sysUpdates: '',
+        sysEnabledServices: '',
         logsModal: false,
         logsService: '',
         logsContent: '',
@@ -90,6 +109,9 @@ function nasPanel() {
                 case 'storage': this.loadStorage(); break;
                 case 'firewall': this.loadFirewall(); break;
                 case 'monitor': this.initMonitorRefresh(); this.loadAlertConfig(); break;
+                case 'config': this.loadEnvConfig(); break;
+                case 'diskmgmt': break;
+                case 'system': break;
             }
         },
 
@@ -250,6 +272,113 @@ function nasPanel() {
                 this.showToast(data.message || '保存成功', 'success');
                 this.loadMonitor();
             }
+        },
+
+        // Config management
+        async loadEnvConfig() {
+            const data = await this.api('/config/env');
+            if (data && data.config) this.envConfig = data.config;
+        },
+
+        async loadSambaConfig() {
+            this.sambaConfig = '加载中...';
+            const data = await this.api('/config/samba-shares');
+            if (data) this.sambaConfig = data;
+        },
+
+        async loadVsftpdUsers() {
+            const data = await this.api('/config/vsftpd-users');
+            if (data) this.vsftpdUsers = data.users || [];
+        },
+
+        async loadEnabledServices() {
+            this.enabledServices = '加载中...';
+            const data = await this.api('/config/services');
+            if (data) this.enabledServices = data;
+        },
+
+        // Disk management
+        async loadDiskInfo() {
+            this.diskInfo = '加载中...';
+            const data = await this.api('/disk/info');
+            if (data) this.diskInfo = data;
+        },
+
+        async loadDiskMounts() {
+            this.diskMounts = '加载中...';
+            const data = await this.api('/disk/mounts');
+            if (data) this.diskMounts = data;
+        },
+
+        async loadDiskLVM() {
+            this.diskLVM = '加载中...';
+            const data = await this.api('/disk/lvm');
+            if (data) this.diskLVM = data;
+        },
+
+        async loadDiskIOStat() {
+            this.diskIOStat = '测试中...(约3秒)';
+            const data = await this.api('/disk/iostat');
+            if (data) this.diskIOStat = data;
+        },
+
+        async loadDiskSmartDetail() {
+            this.diskSmartDetail = '加载中...';
+            const data = await this.api('/disk/smart-detail');
+            if (data) this.diskSmartDetail = data;
+        },
+
+        // System settings
+        async loadSysNetwork() {
+            this.sysNetwork = '加载中...';
+            const data = await this.api('/system/network');
+            if (data) this.sysNetwork = data;
+        },
+
+        async loadSysTime() {
+            this.sysTime = '加载中...';
+            const data = await this.api('/system/time');
+            if (data) this.sysTime = data;
+        },
+
+        async setHostname() {
+            if (!this.hostnameForm.hostname) {
+                this.showToast('请输入主机名', 'error');
+                return;
+            }
+            const data = await this.api('/system/hostname', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `hostname=${encodeURIComponent(this.hostnameForm.hostname)}`
+            });
+            if (data) {
+                this.showToast(data.message || '修改成功', 'success');
+                this.hostnameForm.hostname = '';
+            }
+        },
+
+        async loadSysSSHConfig() {
+            this.sysSSHConfig = '加载中...';
+            const data = await this.api('/system/ssh-config');
+            if (data) this.sysSSHConfig = data;
+        },
+
+        async loadSysSysctl() {
+            this.sysSysctl = '加载中...';
+            const data = await this.api('/system/sysctl');
+            if (data) this.sysSysctl = data;
+        },
+
+        async loadSysUpdates() {
+            this.sysUpdates = '检查中...';
+            const data = await this.api('/system/updates');
+            if (data) this.sysUpdates = data;
+        },
+
+        async loadSysEnabledServices() {
+            this.sysEnabledServices = '加载中...';
+            const data = await this.api('/system/services-enabled');
+            if (data) this.sysEnabledServices = data;
         }
     };
 }

@@ -1,4 +1,4 @@
-package main
+package common
 
 import (
 	"fmt"
@@ -9,8 +9,15 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// createToken creates a JWT token for a user
-func createToken(username string) (string, error) {
+var jwtSecret []byte
+
+// InitAuth initializes the JWT secret
+func InitAuth(secret string) {
+	jwtSecret = []byte(secret)
+}
+
+// CreateToken creates a JWT token for a user
+func CreateToken(username string) (string, error) {
 	claims := jwt.MapClaims{
 		"sub": username,
 		"exp": time.Now().Add(24 * time.Hour).Unix(),
@@ -20,8 +27,8 @@ func createToken(username string) (string, error) {
 	return token.SignedString(jwtSecret)
 }
 
-// verifyToken verifies a JWT token and returns the username
-func verifyToken(tokenStr string) (string, error) {
+// VerifyToken verifies a JWT token and returns the username
+func VerifyToken(tokenStr string) (string, error) {
 	token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method")
@@ -45,8 +52,8 @@ func verifyToken(tokenStr string) (string, error) {
 	return sub, nil
 }
 
-// authMiddleware checks JWT token
-func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
+// AuthMiddleware checks JWT token
+func AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		auth := r.Header.Get("Authorization")
 		if !strings.HasPrefix(auth, "Bearer ") {
@@ -55,7 +62,7 @@ func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		}
 
 		tokenStr := strings.TrimPrefix(auth, "Bearer ")
-		_, err := verifyToken(tokenStr)
+		_, err := VerifyToken(tokenStr)
 		if err != nil {
 			http.Error(w, `{"error": "invalid token"}`, http.StatusUnauthorized)
 			return
@@ -63,29 +70,4 @@ func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 
 		next(w, r)
 	}
-}
-
-// handleLogin handles POST /api/login
-func handleLogin(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
-		return
-	}
-
-	username := r.FormValue("username")
-	password := r.FormValue("password")
-
-	if username != nasUser || password != nasPass {
-		http.Error(w, `{"error": "invalid credentials"}`, http.StatusUnauthorized)
-		return
-	}
-
-	token, err := createToken(username)
-	if err != nil {
-		http.Error(w, `{"error": "token creation failed"}`, http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	fmt.Fprintf(w, `{"token": %q, "username": %q}`, token, username)
 }
