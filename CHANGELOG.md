@@ -1,5 +1,68 @@
 # NAS 项目变更日志
 
+## [2026-07-10] - 模块化重构 + 配置管理 + 备份恢复
+
+### 重构：后端模块化架构
+- 拆分 common/ 共享包 (auth/json/sudo/env/module)
+- 引入 encoding/json 替代手写 toJSON
+- 6 个现有模块拆分到 modules/ 目录
+- main.go 精简为路由注册 + 启动
+- 删除旧的 auth.go/handlers.go/services.go/system.go/monitor.go
+
+### 新增：配置管理模块 (config)
+- Samba 共享在线添加/删除（表单提交，自动重启 smbd）
+- FTP 用户白名单在线增删（自动重启 vsftpd）
+- 配置文件在线编辑器（smb.conf/vsftpd.conf/exports/nfs.conf/jail.local/.env）
+- 服务开机自启管理（enable/disable）
+
+### 新增：磁盘管理模块 (diskmgmt)
+- 分区信息（fdisk -l）
+- 创建目录（限 /data/ 下）
+- 挂载/卸载分区
+- 格式化分区（禁止系统盘，需二次确认，支持 ext4/xfs/btrfs）
+- LVM/I/O/SMART 详情
+
+### 新增：系统设置模块 (system)
+- 网络配置（IP/路由/DNS）
+- 时间与时区
+- 主机名在线修改
+- SSH 配置查看
+- 内核参数（sysctl）
+- 系统更新状态
+- 开机自启服务列表
+
+### 新增：备份恢复系统
+- backup-config.sh: 备份所有 NAS 配置到 /data/backups/
+  - 系统配置/服务文件/项目配置/Samba 用户数据库/crontab/状态快照
+  - 打包 tar.gz，保留最近 5 个
+- restore-config.sh: 从备份恢复配置
+  - 交互式选择，7 步恢复流程（停止服务→恢复配置→重启服务）
+- setup.sh 升级前自动备份
+- cron 每周日凌晨 3 点定期备份
+- Web 面板备份恢复模块（创建/列表/恢复/删除）
+
+### 新增：Web 面板备份恢复模块 (backup)
+- /api/backup/list: 列出所有备份
+- /api/backup/create: 手动创建备份
+- /api/backup/restore: 从指定备份恢复
+- /api/backup/delete: 删除备份文件
+- 前端: 备份列表表格 + 立即备份按钮 + 恢复/删除操作
+
+### 更新：setup.sh sudoers 白名单
+- 新增 systemctl enable/disable
+- 新增 tee 读写各配置文件
+- 新增 fdisk/mount/umount/mkdir/mkfs 磁盘操作
+- 新增 journalctl/cat 配置读取
+- 新增 backup-config.sh/restore-config.sh 备份恢复
+- 新增 rm 备份文件清理
+
+### 更新：README 开源完善
+- Web 面板功能表（10 个模块）
+- 从源码编译说明
+- 告警通知配置表
+- 技术栈表
+- 扩展开发指南
+
 ## [2026-07-09] - Web 管理面板 + 监控告警系统
 
 ### 新增：NAS Web 管理面板 (nas-panel)
