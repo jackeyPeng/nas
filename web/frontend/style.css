@@ -162,3 +162,4 @@ body {
 }
 .form-row { display: flex; gap: 12px; }
 .channels-list { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+.config-textarea { width: 100%; min-height: 300px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; font-family: 'Courier New', monospace; font-size: 13px; margin-top: 8px; background: #1e1e1e; color: #d4d4d4; }

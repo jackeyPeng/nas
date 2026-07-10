@@ -504,37 +504,75 @@
             <div x-show="page === 'config'" class="page">
                 <h2>配置管理</h2>
 
-                <h3>环境变量配置 (.env)</h3>
-                <button class="btn btn-primary" @click="loadEnvConfig()" style="margin-bottom:12px">刷新</button>
+                <h3>Samba 共享管理</h3>
+                <button class="btn btn-primary" @click="loadSambaShares()" style="margin-bottom:12px">刷新共享列表</button>
                 <table class="table">
-                    <thead><tr><th>变量名</th><th>值</th></tr></thead>
+                    <thead><tr><th>共享名</th><th>路径</th><th>只读</th><th>允许用户</th><th>操作</th></tr></thead>
                     <tbody>
-                        <template x-for="(val, key) in envConfig" :key="key">
+                        <template x-for="share in sambaShares" :key="share.name">
                             <tr>
-                                <td x-text="key" style="font-weight:600"></td>
-                                <td x-text="key.includes('PASS') || key.includes('TOKEN') || key.includes('SECRET') ? '••••••••' : val"></td>
+                                <td x-text="share.name" style="font-weight:600"></td>
+                                <td x-text="share.path || '-'"></td>
+                                <td x-text="share['read only'] || 'no'"></td>
+                                <td x-text="share['valid users'] || 'all'"></td>
+                                <td><button class="btn btn-sm btn-danger" @click="deleteSambaShare(share.name)">删除</button></td>
                             </tr>
                         </template>
                     </tbody>
                 </table>
+                <button class="btn btn-primary" @click="showAddShare = true" style="margin-top:12px">添加共享</button>
 
-                <h3>Samba 共享配置</h3>
-                <pre class="config-output" x-text="sambaConfig || '点击加载'"></pre>
-                <button class="btn btn-primary" @click="loadSambaConfig()">加载配置</button>
+                <div class="modal" x-show="showAddShare" x-cloak @click.self="showAddShare = false">
+                    <div class="modal-box">
+                        <h3>添加 Samba 共享</h3>
+                        <div class="form-group"><label>共享名</label><input type="text" x-model="shareForm.name" placeholder="如: movies"></div>
+                        <div class="form-group"><label>路径</label><input type="text" x-model="shareForm.path" placeholder="/data/media/movies"></div>
+                        <div class="form-group"><label>备注</label><input type="text" x-model="shareForm.comment"></div>
+                        <div class="form-group"><label>允许用户（逗号分隔，留空=所有）</label><input type="text" x-model="shareForm.valid_users" placeholder="dog,cat"></div>
+                        <div class="form-group">
+                            <label><input type="checkbox" x-model="shareForm.read_only"> 只读</label>
+                        </div>
+                        <div class="modal-actions">
+                            <button class="btn" @click="showAddShare = false">取消</button>
+                            <button class="btn btn-primary" @click="addSambaShare()">确认添加</button>
+                        </div>
+                    </div>
+                </div>
 
-                <h3>FTP 用户白名单</h3>
+                <h3 style="margin-top:24px">FTP 用户白名单</h3>
                 <table class="table">
-                    <thead><tr><th>用户名</th></tr></thead>
+                    <thead><tr><th>用户名</th><th>操作</th></tr></thead>
                     <tbody>
-                        <template x-for="u in (vsftpdUsers||[])" :key="u">
-                            <tr><td x-text="u"></td></tr>
+                        <template x-for="u in vsftpdUsers" :key="u">
+                            <tr><td x-text="u"></td><td><button class="btn btn-sm btn-danger" @click="removeFtpUser(u)">移除</button></td></tr>
                         </template>
                     </tbody>
                 </table>
-                <button class="btn btn-primary" @click="loadVsftpdUsers()">加载用户列表</button>
+                <div style="display:flex;gap:8px;margin-top:12px;align-items:center">
+                    <input type="text" x-model="ftpUserForm.username" placeholder="用户名" class="port-input">
+                    <button class="btn btn-success" @click="addFtpUser()">添加</button>
+                </div>
 
-                <h3>开机自启服务</h3>
-                <pre class="config-output" x-text="enabledServices || '点击加载'"></pre>
+                <h3 style="margin-top:24px">配置文件编辑器</h3>
+                <select x-model="configFileForm.name" @change="loadConfigFile()" class="port-input">
+                    <option value="">选择文件...</option>
+                    <option value="smb.conf">smb.conf (Samba)</option>
+                    <option value="vsftpd.conf">vsftpd.conf (FTP)</option>
+                    <option value="exports">exports (NFS)</option>
+                    <option value="nfs.conf">nfs.conf (NFS端口)</option>
+                    <option value="jail.local">jail.local (Fail2ban)</option>
+                    <option value="env">.env (NAS配置)</option>
+                </select>
+                <textarea x-model="configFileForm.content" class="config-textarea" rows="15"></textarea>
+                <button class="btn btn-primary" @click="saveConfigFile()" style="margin-top:8px" x-show="configFileForm.content">保存</button>
+
+                <h3 style="margin-top:24px">开机自启服务管理</h3>
+                <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
+                    <input type="text" x-model="svcToggleForm.service" placeholder="服务名 如: smbd" class="port-input">
+                    <button class="btn btn-success" @click="toggleService('enable')">启用</button>
+                    <button class="btn btn-danger" @click="toggleService('disable')">禁用</button>
+                </div>
+                <pre class="config-output" x-text="enabledServices || '点击下方加载'"></pre>
                 <button class="btn btn-primary" @click="loadEnabledServices()">加载服务列表</button>
             </div>
 
@@ -542,7 +580,11 @@
             <div x-show="page === 'diskmgmt'" class="page">
                 <h2>磁盘管理</h2>
 
-                <h3>物理磁盘信息</h3>
+                <h3>分区信息 (fdisk)</h3>
+                <pre class="config-output" x-text="diskPartitions || '点击加载'"></pre>
+                <button class="btn btn-primary" @click="loadDiskPartitions()">加载分区信息</button>
+
+                <h3>物理磁盘</h3>
                 <pre class="config-output" x-text="diskInfo || '点击加载'"></pre>
                 <button class="btn btn-primary" @click="loadDiskInfo()">加载信息</button>
 
@@ -550,11 +592,49 @@
                 <pre class="config-output" x-text="diskMounts || '点击加载'"></pre>
                 <button class="btn btn-primary" @click="loadDiskMounts()">加载挂载点</button>
 
+                <h3>磁盘操作</h3>
+                <div class="config-section" style="margin-bottom:12px">
+                    <h4>创建目录（挂载点）</h4>
+                    <div style="display:flex;gap:8px;align-items:center">
+                        <input type="text" x-model="diskMkdirForm.path" placeholder="/data/newdisk" class="port-input">
+                        <button class="btn btn-primary" @click="diskMkdir()">创建</button>
+                    </div>
+                </div>
+                <div class="config-section" style="margin-bottom:12px">
+                    <h4>挂载分区</h4>
+                    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                        <input type="text" x-model="mountForm.device" placeholder="/dev/sdb1" class="port-input">
+                        <input type="text" x-model="mountForm.mountpoint" placeholder="/data/newdisk" class="port-input">
+                        <input type="text" x-model="mountForm.fstype" placeholder="ext4(可选)" class="port-input" style="width:100px">
+                        <button class="btn btn-success" @click="diskMount()">挂载</button>
+                    </div>
+                </div>
+                <div class="config-section" style="margin-bottom:12px">
+                    <h4>卸载分区</h4>
+                    <div style="display:flex;gap:8px;align-items:center">
+                        <input type="text" x-model="unmountForm.target" placeholder="/data/newdisk 或 /dev/sdb1" class="port-input">
+                        <button class="btn btn-warn" @click="diskUnmount()">卸载</button>
+                    </div>
+                </div>
+                <div class="config-section" style="margin-bottom:12px">
+                    <h4 style="color:var(--danger)">格式化分区（危险操作）</h4>
+                    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                        <input type="text" x-model="formatForm.device" placeholder="/dev/sdb1（非系统盘）" class="port-input">
+                        <select x-model="formatForm.fstype" class="port-input" style="width:100px">
+                            <option value="ext4">ext4</option>
+                            <option value="xfs">xfs</option>
+                            <option value="btrfs">btrfs</option>
+                        </select>
+                        <button class="btn btn-danger" @click="diskFormat()">格式化</button>
+                    </div>
+                    <p style="color:var(--danger);font-size:13px;margin-top:6px">⚠️ 格式化会清除分区上所有数据，请确认设备名正确！</p>
+                </div>
+
                 <h3>LVM 卷管理</h3>
                 <pre class="config-output" x-text="diskLVM || '点击加载'"></pre>
-                <button class="btn btn-primary" @click="loadDiskLVM()">加载 LVM 信息</button>
+                <button class="btn btn-primary" @click="loadDiskLVM()">加载 LVM</button>
 
-                <h3>I/O 性能统计 (iostat)</h3>
+                <h3>I/O 性能 (iostat)</h3>
                 <pre class="config-output" x-text="diskIOStat || '点击加载'"></pre>
                 <button class="btn btn-primary" @click="loadDiskIOStat()">测试 I/O (约3秒)</button>
 

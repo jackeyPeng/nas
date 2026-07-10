@@ -17,15 +17,25 @@ function nasPanel() {
         alertConfig: {},
         // Config module
         envConfig: {},
-        sambaConfig: '',
+        sambaShares: [],
         vsftpdUsers: [],
         enabledServices: '',
+        showAddShare: false,
+        shareForm: { name: '', path: '', comment: '', valid_users: '', read_only: false },
+        ftpUserForm: { username: '' },
+        configFileForm: { name: '', content: '' },
+        svcToggleForm: { service: '' },
         // Disk management
         diskInfo: '',
         diskMounts: '',
         diskLVM: '',
         diskIOStat: '',
         diskSmartDetail: '',
+        diskPartitions: '',
+        diskMkdirForm: { path: '' },
+        mountForm: { device: '', mountpoint: '', fstype: '' },
+        unmountForm: { target: '' },
+        formatForm: { device: '', fstype: 'ext4' },
         // System settings
         sysNetwork: '',
         sysTime: '',
@@ -280,10 +290,35 @@ function nasPanel() {
             if (data && data.config) this.envConfig = data.config;
         },
 
-        async loadSambaConfig() {
-            this.sambaConfig = '加载中...';
-            const data = await this.api('/config/samba-shares');
-            if (data) this.sambaConfig = data;
+        async loadSambaShares() {
+            const data = await this.api('/config/samba');
+            if (data) this.sambaShares = data.shares || [];
+        },
+
+        async addSambaShare() {
+            if (!this.shareForm.name || !this.shareForm.path) {
+                this.showToast('共享名和路径必填', 'error'); return;
+            }
+            const data = await this.api('/config/samba/share', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams(this.shareForm).toString()
+            });
+            if (data) {
+                this.showToast(data.message || '添加成功', 'success');
+                this.showAddShare = false;
+                this.shareForm = { name: '', path: '', comment: '', valid_users: '', read_only: false };
+                this.loadSambaShares();
+            }
+        },
+
+        async deleteSambaShare(name) {
+            if (!confirm(`确定删除共享 [${name}]？`)) return;
+            const data = await this.api(`/config/samba/share?name=${name}`, { method: 'DELETE' });
+            if (data) {
+                this.showToast(data.message || '删除成功', 'success');
+                this.loadSambaShares();
+            }
         },
 
         async loadVsftpdUsers() {
@@ -291,10 +326,62 @@ function nasPanel() {
             if (data) this.vsftpdUsers = data.users || [];
         },
 
+        async addFtpUser() {
+            if (!this.ftpUserForm.username) { this.showToast('请输入用户名', 'error'); return; }
+            const data = await this.api('/config/vsftpd-users', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `username=${encodeURIComponent(this.ftpUserForm.username)}`
+            });
+            if (data) {
+                this.showToast(data.message || '添加成功', 'success');
+                this.ftpUserForm.username = '';
+                this.loadVsftpdUsers();
+            }
+        },
+
+        async removeFtpUser(username) {
+            if (!confirm(`确定从 FTP 白名单移除 ${username}？`)) return;
+            const data = await this.api(`/config/vsftpd-users?username=${username}`, { method: 'DELETE' });
+            if (data) {
+                this.showToast(data.message || '移除成功', 'success');
+                this.loadVsftpdUsers();
+            }
+        },
+
+        async loadConfigFile() {
+            if (!this.configFileForm.name) return;
+            this.configFileForm.content = '加载中...';
+            const data = await this.api(`/config/file?name=${this.configFileForm.name}`);
+            if (data) this.configFileForm.content = data.content || '';
+        },
+
+        async saveConfigFile() {
+            const data = await this.api('/config/file', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `name=${this.configFileForm.name}&content=${encodeURIComponent(this.configFileForm.content)}`
+            });
+            if (data) this.showToast(data.message || '保存成功', 'success');
+        },
+
         async loadEnabledServices() {
             this.enabledServices = '加载中...';
             const data = await this.api('/config/services');
             if (data) this.enabledServices = data;
+        },
+
+        async toggleService(action) {
+            if (!this.svcToggleForm.service) { this.showToast('请输入服务名', 'error'); return; }
+            const data = await this.api('/config/service-toggle', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `service=${this.svcToggleForm.service}&action=${action}`
+            });
+            if (data) {
+                this.showToast(data.message || '操作成功', 'success');
+                this.svcToggleForm.service = '';
+            }
         },
 
         // Disk management
@@ -326,6 +413,66 @@ function nasPanel() {
             this.diskSmartDetail = '加载中...';
             const data = await this.api('/disk/smart-detail');
             if (data) this.diskSmartDetail = data;
+        },
+
+        async loadDiskPartitions() {
+            this.diskPartitions = '加载中...';
+            const data = await this.api('/disk/partitions');
+            if (data) this.diskPartitions = data;
+        },
+
+        async diskMkdir() {
+            if (!this.diskMkdirForm.path) { this.showToast('请输入路径', 'error'); return; }
+            const data = await this.api('/disk/mkdir', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `path=${encodeURIComponent(this.diskMkdirForm.path)}`
+            });
+            if (data) {
+                this.showToast(data.message || '创建成功', 'success');
+                this.diskMkdirForm.path = '';
+            }
+        },
+
+        async diskMount() {
+            if (!this.mountForm.device || !this.mountForm.mountpoint) { this.showToast('设备和挂载点必填', 'error'); return; }
+            const data = await this.api('/disk/mount', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams(this.mountForm).toString()
+            });
+            if (data) {
+                this.showToast(data.message || '挂载成功', 'success');
+                this.loadDiskMounts();
+            }
+        },
+
+        async diskUnmount() {
+            if (!this.unmountForm.target) { this.showToast('请输入挂载点或设备', 'error'); return; }
+            const data = await this.api('/disk/unmount', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `target=${encodeURIComponent(this.unmountForm.target)}`
+            });
+            if (data) {
+                this.showToast(data.message || '卸载成功', 'success');
+                this.unmountForm.target = '';
+                this.loadDiskMounts();
+            }
+        },
+
+        async diskFormat() {
+            if (!this.formatForm.device) { this.showToast('请输入设备名', 'error'); return; }
+            if (!confirm(`⚠️ 确定格式化 ${this.formatForm.device} 为 ${this.formatForm.fstype}？数据将全部丢失！`)) return;
+            const data = await this.api('/disk/format', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `device=${encodeURIComponent(this.formatForm.device)}&fstype=${this.formatForm.fstype}&confirm=yes`
+            });
+            if (data) {
+                this.showToast(data.message || '格式化成功', 'success');
+                this.formatForm.device = '';
+            }
         },
 
         // System settings
