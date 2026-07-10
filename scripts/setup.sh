@@ -34,6 +34,13 @@ FILEBROWSER_VERSION="v2.63.17"
 # 获取脚本所在目录的绝对路径（仓库根目录）
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# ==================== 升级前自动备份 ====================
+if [ -d "$DATA_DIR" ] && [ -f "/etc/samba/smb.conf" ]; then
+    echo "检测到已有 NAS 配置，执行升级前备份..."
+    bash "$SCRIPT_DIR/scripts/backup-config.sh" 2>/dev/null || echo "  ⚠ 备份失败，继续部署"
+    echo ""
+fi
+
 # 从 .env 文件读取密码
 ENV_FILE="$SCRIPT_DIR/.env"
 if [ ! -f "$ENV_FILE" ]; then
@@ -402,6 +409,11 @@ CRON_LINE="*/5 * * * * $NAS_DIR/scripts/monitor.sh 2>/dev/null"
 mkdir -p /var/lib/nas-monitor
 chown "$NAS_USER:$NAS_USER" /var/lib/nas-monitor
 echo "  ✓ 监控告警 cron 已配置（每5分钟检查）"
+
+# 配置每周备份 cron（每周日凌晨3点）
+BACKUP_CRON_LINE="0 3 * * 0 $NAS_DIR/scripts/backup-config.sh 2>/dev/null"
+( crontab -l 2>/dev/null | grep -v "backup-config.sh"; echo "$BACKUP_CRON_LINE" ) | crontab - 2>/dev/null || true
+echo "  ✓ 配置备份 cron 已配置（每周日凌晨3点）"
 
 # ==================== 部署完成 ====================
 echo ""
