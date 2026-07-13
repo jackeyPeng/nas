@@ -290,62 +290,54 @@ systemctl enable filebrowser
 systemctl restart filebrowser
 echo "  ✓ FileBrowser 配置完成"
 
-# ==================== [8/9] 安装 MinIO ====================
+# ==================== [8/10] 配置 S3 对象存储 (rclone serve s3) ====================
 echo ""
-echo "[8/9] 安装 MinIO..."
-if command -v minio &>/dev/null; then
-    echo "  MinIO 已安装，跳过"
-else
-    # MinIO 官方用 "arm" 而非 "armv7"，做一下映射
-    MINIO_ARCH="$ARCH"
-    [ "$MINIO_ARCH" = "armv7" ] && MINIO_ARCH="arm"
-    download_file /usr/local/bin/minio \
-        "https://file.abwen.com/minio/minio.linux-${ARCH}.RELEASE.2025-09-07T16-13-09Z" \
-        "https://dl.min.io/server/minio/release/linux-${MINIO_ARCH}/minio" \
-        "https://ghfast.top/https://dl.min.io/server/minio/release/linux-${MINIO_ARCH}/minio"
-    chmod +x /usr/local/bin/minio
+echo "[8/10] 配置 S3 对象存储 (rclone serve s3)..."
+# 安装/升级 rclone（需要 1.62+ 才有 serve s3 子命令）
+RCLONE_VERSION=$(rclone version 2>/dev/null | head -1 | grep -oP 'v\K[0-9]+\.[0-9]+' | head -1)
+if [ -z "$RCLONE_VERSION" ] || [ "$(echo "$RCLONE_VERSION < 1.62" | bc 2>/dev/null || echo 1)" = "1" ]; then
+    echo "  升级 rclone..."
+    if download_file /tmp/rclone-latest.deb \
+        "https://file.abwen.com/minio/rclone-v1.74.4-linux-amd64.deb"; then
+        sudo dpkg -i /tmp/rclone-latest.deb 2>/dev/null || true
+        echo "  ✓ rclone 已升级到 $(rclone version | head -1)"
+    else
+        echo "  ⚠ rclone 升级失败，S3 服务可能不可用（需要 rclone 1.62+）"
+    fi
 fi
 
-mkdir -p "$DATA_DIR/minio"
-chown "$NAS_USER:$NAS_USER" "$DATA_DIR/minio"
+# 创建 S3 服务配置（认证密钥）
+mkdir -p /etc/rclone
+cat > /etc/rclone/s3-env << S3EOF
+RCLONE_S3_ACCESS_KEY=$NAS_USER
+RCLONE_S3_SECRET_KEY=$NAS_PASS
+S3EOF
+chmod 640 /etc/rclone/s3-env
 
+# 创建 systemd 服务文件
+cat > /etc/systemd/system/rclone-s3.service << S3SVC
+[Unit]
+Description=Rclone S3 Server
+After=network.target
 
-# Write MinIO credentials to environment file
-cat > /etc/default/minio << MINIOENV
-MINIO_ROOT_USER=$NAS_USER
-MINIO_ROOT_PASSWORD=$NAS_PASS
-MINIOENV
-chown "$NAS_USER:$NAS_USER" /etc/default/minio
-chmod 640 /etc/default/minio
+[Service]
+Type=simple
+User=$NAS_USER
+EnvironmentFile=/etc/rclone/s3-env
+ExecStart=/usr/bin/rclone serve s3 $DATA_DIR --addr :9000 --auth-key $NAS_USER,$NAS_PASS
+Restart=on-failure
+RestartSec=10
 
-# Write MinIO service file using a function to avoid heredoc issues
-write_minio_service() {
-    local svc_file="/etc/systemd/system/minio.service"
-    echo "[Unit]" > "$svc_file"
-    echo "Description=MinIO Object Storage" >> "$svc_file"
-    echo "Documentation=https://docs.min.io" >> "$svc_file"
-    echo "Wants=network-online.target" >> "$svc_file"
-    echo "After=network-online.target" >> "$svc_file"
-    echo "" >> "$svc_file"
-    echo "[Service]" >> "$svc_file"
-    echo "User=$NAS_USER" >> "$svc_file"
-    echo "Group=$NAS_USER" >> "$svc_file"
-
-    echo "EnvironmentFile=/etc/default/minio" >> "$svc_file"
-    echo "ExecStart=/usr/local/bin/minio server $DATA_DIR/minio --console-address :9002" >> "$svc_file"
-    echo "Restart=always" >> "$svc_file"
-    echo "RestartSec=5" >> "$svc_file"
-    echo "LimitNOFILE=65536" >> "$svc_file"
-    echo "" >> "$svc_file"
-    echo "[Install]" >> "$svc_file"
-    echo "WantedBy=multi-user.target" >> "$svc_file"
-}
-write_minio_service
+[Install]
+WantedBy=multi-user.target
+S3SVC
 
 systemctl daemon-reload
-systemctl enable minio
-systemctl restart minio
-echo "  ✓ MinIO 配置完成"
+systemctl enable rclone-s3
+systemctl restart rclone-s3
+echo "  ✓ S3 对象存储配置完成 (rclone serve s3, 端口 9000)"
+echo "    bucket 列表: $DATA_DIR 下每个目录自动成为一个 bucket"
+echo "    访问方式: s3cmd --no-ssl --host=NAS_IP:9000 ls s3://shared/"
 
 # ==================== [9/9] 配置防火墙和安全 ====================
 echo ""
@@ -395,8 +387,7 @@ ufw allow 21/tcp                 # FTP
 ufw allow 30000:31000/tcp        # FTP passive
 ufw allow 8080/tcp               # WebDAV
 ufw allow 8081/tcp               # FileBrowser
-ufw allow 9000/tcp               # MinIO S3 API
-ufw allow 9002/tcp               # MinIO Console
+ufw allow 9000/tcp               # S3 API (rclone serve s3)
 ufw allow 8090/tcp               # NAS Web Panel
 ufw --force enable
 echo "  ✓ 安全配置完成"
@@ -454,7 +445,7 @@ echo "NAS 部署完成!"
 echo "========================================="
 echo ""
 echo "服务状态:"
-for svc in smbd nmbd nfs-kernel-server vsftpd rclone-webdav filebrowser minio fail2ban nas-panel; do
+for svc in smbd nmbd nfs-kernel-server vsftpd rclone-webdav filebrowser rclone-s3 fail2ban nas-panel; do
     printf "  %-22s %s\n" "$svc:" "$(systemctl is-active $svc)"
 done
 
@@ -470,8 +461,7 @@ echo "  - NFS:         mount -t nfs NAS_IP:/data/shared /mnt/nas"
 echo "  - FTP:         ftp://NAS_IP/ (用户名: $NAS_USER)"
 echo "  - WebDAV:      http://NAS_IP:8080/ (用户名: $NAS_USER)"
 echo "  - FileBrowser: http://NAS_IP:8081/ (用户名: $NAS_USER)"
-echo "  - MinIO API:   http://NAS_IP:9000"
-echo "  - MinIO Web:   http://NAS_IP:9002 (用户名: $NAS_USER)"
+echo "  - S3 API:       http://NAS_IP:9000 (s3cmd --no-ssl --host=NAS_IP:9000 ls s3://shared/)"
 echo "  - Web 面板:    http://NAS_IP:8090 (用户名: $NAS_USER)"
 echo ""
 echo "管理脚本:"
