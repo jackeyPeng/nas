@@ -9,6 +9,34 @@
 
 set -e
 
+# ==================== 架构检测 ====================
+# 将 uname -m 映射为 FileBrowser/MinIO 使用的架构名
+detect_arch() {
+    local arch
+    arch=$(uname -m)
+    case "$arch" in
+        x86_64|amd64)
+            ARCH="amd64"
+            GOARCH="amd64"
+            ;;
+        aarch64|arm64)
+            ARCH="arm64"
+            GOARCH="arm64"
+            ;;
+        armv7l|armv7|arm)
+            ARCH="armv7"
+            GOARCH="arm"
+            ;;
+        *)
+            echo "错误: 不支持的 CPU 架构: $arch"
+            echo "支持的架构: x86_64 (amd64), aarch64 (arm64), armv7l (armv7)"
+            exit 1
+            ;;
+    esac
+    echo "检测到 CPU 架构: $arch → 下载标识: $ARCH"
+}
+detect_arch
+
 # 检查 root 权限
 if [ "$EUID" -ne 0 ]; then
     echo "错误: 请使用 sudo 运行此脚本"
@@ -222,9 +250,9 @@ if command -v filebrowser &>/dev/null; then
     echo "  FileBrowser 已安装，跳过"
 else
     download_file /tmp/filebrowser.tar.gz \
-        "https://file.abwen.com/filebroswer/linux-amd64-filebrowser.tar.gz" \
-        "https://github.com/filebrowser/filebrowser/releases/download/${FILEBROWSER_VERSION}/linux-amd64-filebrowser.tar.gz" \
-        "https://ghfast.top/https://github.com/filebrowser/filebrowser/releases/download/${FILEBROWSER_VERSION}/linux-amd64-filebrowser.tar.gz"
+        "https://file.abwen.com/filebroswer/linux-${ARCH}-filebrowser.tar.gz" \
+        "https://github.com/filebrowser/filebrowser/releases/download/${FILEBROWSER_VERSION}/linux-${ARCH}-filebrowser.tar.gz" \
+        "https://ghfast.top/https://github.com/filebrowser/filebrowser/releases/download/${FILEBROWSER_VERSION}/linux-${ARCH}-filebrowser.tar.gz"
     cd /tmp && tar xzf filebrowser.tar.gz && mv filebrowser /usr/local/bin/ && cd -
     chmod +x /usr/local/bin/filebrowser
 fi
@@ -268,10 +296,13 @@ echo "[8/9] 安装 MinIO..."
 if command -v minio &>/dev/null; then
     echo "  MinIO 已安装，跳过"
 else
+    # MinIO 官方用 "arm" 而非 "armv7"，做一下映射
+    MINIO_ARCH="$ARCH"
+    [ "$MINIO_ARCH" = "armv7" ] && MINIO_ARCH="arm"
     download_file /usr/local/bin/minio \
-        "https://file.abwen.com/minio/minio.linux-amd64.RELEASE.2025-09-07T16-13-09Z" \
-        "https://dl.min.io/server/minio/release/linux-amd64/minio" \
-        "https://ghfast.top/https://dl.min.io/server/minio/release/linux-amd64/minio"
+        "https://file.abwen.com/minio/minio.linux-${ARCH}.RELEASE.2025-09-07T16-13-09Z" \
+        "https://dl.min.io/server/minio/release/linux-${MINIO_ARCH}/minio" \
+        "https://ghfast.top/https://dl.min.io/server/minio/release/linux-${MINIO_ARCH}/minio"
     chmod +x /usr/local/bin/minio
 fi
 
@@ -377,12 +408,13 @@ if [ -f "$NAS_DIR/web/nas-panel" ]; then
     cp "$NAS_DIR/web/nas-panel" /usr/local/bin/nas-panel
     chmod +x /usr/local/bin/nas-panel
 elif download_file /usr/local/bin/nas-panel \
+    "https://file.abwen.com/control/nas-panel-${ARCH}.latest" \
     "https://file.abwen.com/control/nas-panel.latest" \
-    "https://ghfast.top/https://github.com/gitdogcat/nas/releases/download/v1.0.0/nas-panel"; then
+    "https://ghfast.top/https://github.com/gitdogcat/nas/releases/download/v1.0.0/nas-panel-linux-${ARCH}"; then
     chmod +x /usr/local/bin/nas-panel
 else
     echo "  警告: 无法获取 nas-panel 二进制文件，跳过 Web 面板安装"
-    echo "  请手动编译: cd ~/soft/nas/web && go build -o nas-panel ."
+    echo "  请手动编译: cd $NAS_DIR/web && GOARCH=$GOARCH go build -o nas-panel ."
     echo "  然后重新运行: sudo bash scripts/setup.sh"
 fi
 

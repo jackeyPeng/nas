@@ -123,3 +123,5 @@ cython_debug/
 # FileBrowser database
 *.db
 nas-panel
+coverage.out
+build/

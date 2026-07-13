@@ -1,0 +1,119 @@
+# ============================================================
+# .gitee-ci.yml — Gitee CI 自动构建配置
+#
+# 【给队友的说明】
+# Gitee 使用码云 CI (https://gitee.com/help/articles/4290)
+# 请在 Gitee 仓库 → 服务 → Gitee CI 中启用此流水线。
+#
+# 流水线阶段：
+#   1. 代码检查（golangci-lint）
+#   2. 单元测试
+#   3. 跨平台编译
+#
+# 触发条件：push / PR 到 main 和 develop 分支
+# ============================================================
+
+name: NAS CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ---- 阶段 1：代码检查 ----
+  lint:
+    name: 代码检查
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+          cache-dependency-path: web/go.sum
+
+      - name: 安装 golangci-lint
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | \
+            sh -s -- -b $(go env GOPATH)/bin latest
+
+      - name: 运行 lint
+        run: cd web && golangci-lint run ./... --timeout=5m
+
+  # ---- 阶段 2：单元测试 ----
+  test:
+    name: 单元测试
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+          cache-dependency-path: web/go.sum
+
+      - name: 运行测试
+        run: cd web && go test ./... -v -cover -coverprofile=coverage.out
+
+      - name: 测试覆盖率报告
+        run: cd web && go tool cover -func=coverage.out
+
+  # ---- 阶段 3：跨平台编译 ----
+  build:
+    name: 跨平台编译
+    runs-on: ubuntu-latest
+    needs: [lint, test]  # 检查通过后才编译
+    strategy:
+      matrix:
+        platform:
+          - { os: linux, arch: amd64 }
+          - { os: linux, arch: arm64 }
+          - { os: linux, arch: arm, goarm: "7" }
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+
+      - name: 编译
+        run: |
+          cd web
+          GOOS=${{ matrix.platform.os }} \
+          GOARCH=${{ matrix.platform.arch }} \
+          GOARM=${{ matrix.platform.goarm || '' }} \
+          go build -trimpath -ldflags="-s -w" -o nas-panel .
+          file nas-panel
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: nas-panel-${{ matrix.platform.os }}-${{ matrix.platform.arch }}
+          path: web/nas-panel
+
+  # ---- 阶段 4：构建摘要 ----
+  summary:
+    name: 构建摘要
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: always()
+    steps:
+      - name: 输出结果
+        run: |
+          echo "========================================="
+          echo "  NAS Panel CI 完成"
+          echo "========================================="
+          echo "  lint:   ${{ needs.lint.result }}"
+          echo "  test:   ${{ needs.test.result }}"
+          echo "  build:  ${{ needs.build.result }}"
+          echo "========================================="

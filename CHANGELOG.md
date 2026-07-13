@@ -1,5 +1,101 @@
 # NAS 项目变更日志
 
+## [2026-07-12] - 架构决策敲定：x86 N150 路线
+
+### 决策
+- **确认 x86 路线**：Intel N150 标准版先行，ARM 经济版后续
+- 6 项关键决策全部锁定（CPU/主板/盘位/机箱/屏幕/硬盘）
+- 进入 Phase 0 原型验证阶段
+
+### 采购清单
+- 新增 `PURCHASE_LIST.md`：完整采购清单
+  - 主板 2 块对比（畅网 ¥450-550 / 倍控 ¥598-698）
+  - 配套物料 9 大类（内存/SSD/WiFi/电源/散热/线材/机箱/硬盘）
+  - 预算汇总：精简方案 ~¥1,050-1,350，完整方案 ~¥1,510-1,855
+  - 淘宝搜索关键词一键复制
+  - 四阶段下单顺序建议
+
+### Phase 0 行动清单
+- [ ] 采购畅网 + 倍控 N150 主板各 1 块
+- [ ] 采购配套物料：DDR4+DDR5 内存各 1、NVMe 128G ×2、MT7922 WiFi、电源 ×2
+- [ ] 3D 打印「留白」机箱验证结构
+- [ ] Debian 13 兼容性测试 + 功耗/温度基准测试
+
+### 文档
+- 更新 `HARDWARE_SPEC.md`：决策表全部标记为已定
+- 新增 `PURCHASE_LIST.md`：Phase 0 采购清单
+- 更新 `README.md`：文档导航加入采购清单
+
+---
+
+## [2026-07-12] - ARM 架构兼容性修复
+
+### 部署脚本
+- `scripts/setup.sh`：新增 `detect_arch()` 函数，自动检测 CPU 架构（amd64/arm64/armv7）
+- FileBrowser 下载 URL 从硬编码 `linux-amd64` → 动态 `linux-${ARCH}`
+- MinIO 下载 URL 从硬编码 → 动态，armv7 自动映射为 minio 使用的 `arm` 标识
+- nas-panel 下载 URL 加入架构后缀 `nas-panel-${ARCH}.latest`
+- 手动编译提示加入 `GOARCH=$GOARCH` 参数
+
+### Makefile
+- 修复 `build-all` 中 ARMv7 交叉编译 bug：`GOARCH=arm/v7` → 正确解析为 `GOARCH=arm GOARM=7`
+- 输出文件名修正：`nas-panel-linux-arm` → `nas-panel-linux-armv7`
+
+### 验证结论
+- Go Web Panel：直接 `GOARCH=arm64 go build`，无代码修改
+- systemd 服务/配置文件：无架构依赖
+- Samba/NFS/FTP：Debian ARM APT 源原生支持
+- 所有 systemd 服务文件引用 `/usr/local/bin/` 等通用路径，跨架构兼容
+
+---
+
+## [2026-07-12] - 硬件产品定义
+
+### 硬件规格
+- 新增 `HARDWARE_SPEC.md`：完整硬件规格推荐书
+  - CPU 选型对比：ARM RK3568 vs x86 N150，**推荐 N150 先行**
+  - 双版本 BOM 清单：标准版 ¥1063 / 经济版 ¥455
+  - 三套机箱外观方案：「留白」极简 / 「透明探索版」赛博 / 「收音机」复古
+  - 自研主板架构设计（芯片连接、背板、散热风道）
+  - 四阶段开发路径：原型验证 → 工程样机 → 小批量试产 → 量产发布
+  - 竞品对比表 + 定价推演（699-799 / 299-399）
+- 更新 `README.md`：加入项目文档导航表
+
+### 待决策
+- [ ] CPU 路线：确认 x86 N150 先行
+- [ ] 主板策略：确认先采购 ODM 方案
+- [ ] 机箱风格：三选一或混合策略
+- [ ] 首批数量：建议 100-200 台
+
+---
+
+## [2026-07-12] - 开源基础建设（阶段一）
+
+### 许可证
+- LICENSE 修正：GPLv3 → AGPLv3（与 README 声明一致）
+- 理由：NAS 核心是 Web 服务，AGPLv3 堵住"改代码不公开"的 ASP 漏洞
+
+### 工程化
+- 新增 `Makefile`：12 个目标（build, test, lint, fmt, release 等）
+- 新增 `.golangci.yml`：17 项 linter 配置，含启用/禁用理由注释
+- 新增 `.editorconfig`：统一 Go/HTML/JS/CSS/Shell/Makefile 缩进与换行
+- 新增 `.gitee-ci.yml`：Gitee CI 三阶段流水线（lint → test → build）
+- 新增 `.github/workflows/ci.yml`：GitHub Actions 镜像
+
+### 测试
+- 新增 `web/common/auth_test.go`：JWT 创建/验证/中间件/过期/benchmark
+- 新增 `web/common/common_test.go`：JSONResponse、ReadEnvFile、ReadAllEnv、压测
+- 新增 `web/common/module_test.go`：Module 接口编译时检查 + 运行时验证
+- 新增 `web/common/sudo_test.go`：sudo/exec 命令测试（仅 Linux 编译）
+- 测试覆盖 common/ 包核心逻辑，跨平台可运行
+
+### 文档
+- 新增 `CONTRIBUTING.md`：外部贡献流程、代码规范、Commit 格式
+- 新增 `DEVELOPMENT.md`：团队开发手册（环境搭建、模块模板、测试指南、跨平台注意事项）
+- 更新 `README.md`：加入项目愿景（开源+产品化双目标）、文档导航表
+
+---
+
 ## [2026-07-10] - 模块化重构 + 配置管理 + 备份恢复
 
 ### 重构：后端模块化架构
