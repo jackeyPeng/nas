@@ -1,0 +1,101 @@
+# ============================================================
+# .golangci.yml — Go 代码质量检查配置
+#
+# 【给队友的说明】
+# 安装 golangci-lint：
+#   go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+# 运行检查：
+#   cd web && golangci-lint run ./...
+# 自动修复：
+#   cd web && golangci-lint run ./... --fix
+#
+# 首次运行或修复大量问题时，可逐项启用 linter：
+#   1. 先跑 gofmt + goimports（格式化类）
+#   2. 再跑 govet + staticcheck（静态分析）
+#   3. 最后跑 errcheck + gosec（安全类）
+# ============================================================
+
+run:
+  timeout: 5m
+  go: "1.25"
+
+linters:
+  enable:
+    # ---- 格式化 ----
+    - gofmt          # 代码格式
+    - goimports      # import 排序
+
+    # ---- 静态分析 ----
+    - govet          # Go 官方静态分析
+    - staticcheck    # 深度静态检查
+    - unused         # 未使用代码
+    - ineffassign    # 无效赋值
+    - unconvert      # 不必要类型转换
+
+    # ---- 错误处理 ----
+    - errcheck       # 未处理错误
+    - errname        # 错误变量命名规范
+
+    # ---- 代码风格 ----
+    - revive         # golint 替代
+    - misspell       # 拼写检查
+    - goconst        # 重复字符串提取常量
+    - gocyclo        # 圈复杂度
+    - gocritic       # 代码优化建议
+
+    # ---- 安全 ----
+    - gosec          # 安全检查
+
+  disable:
+    # 禁用理由见下方注释
+    - exhaustruct    # 要求填充所有 struct 字段（太严格）
+    - funlen         # 函数长度限制（模块文件本身较长）
+    - gocognit       # 认知复杂度（与 gocyclo 重复）
+    - lll            # 行长度限制（120 列太严格）
+    - wsl            # 空白行检查（过于机械）
+
+linters-settings:
+  govet:
+    enable-all: true
+
+  errcheck:
+    # 忽略特定函数的错误检查
+    exclude-functions:
+      - (*net/http.ResponseWriter).Write
+      - fmt.Fprintf
+      - fmt.Println
+
+  gocyclo:
+    min-complexity: 20  # 圈复杂度阈值
+
+  goconst:
+    min-len: 3           # 最短字符串长度
+    min-occurrences: 3   # 最少出现次数
+
+  misspell:
+    locale: US
+
+  revive:
+    rules:
+      - name: exported          # 导出函数/类型必须有注释
+        severity: warning
+
+  gosec:
+    excludes:
+      - G104  # 不检查 Write/Print 类函数的错误（和 errcheck 保持一致）
+      - G204  # subprocess 启动（NAS 面板必须调用系统命令，无法避免）
+
+issues:
+  # 排除特定路径
+  exclude-dirs:
+    - vendor
+    - tmp
+  exclude-files:
+    - ".*_test\\.go$"    # 测试文件中某些规则放宽
+
+  # 最大相同问题数
+  max-same-issues: 10
+  max-issues-per-linter: 50
+
+  # 新增代码才检查（用 --new-from-rev 运行时生效）
+  new: false

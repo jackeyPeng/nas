@@ -1,6 +1,29 @@
 # NAS 家用存储系统
 
+[![License](https://img.shields.io/badge/license-AGPLv3-blue.svg)](LICENSE)
+[![Go](https://img.shields.io/badge/Go-1.25-00ADD8.svg)](https://go.dev/)
+
 基于 Debian 13 (trixie) 的轻量级家用/小型办公 NAS 解决方案。全部原生 systemd 服务（不使用 Docker），配合 Go 单二进制 Web 管理面板，追求稳定、高性能、易维护。
+
+## 项目愿景
+
+本项目有两条并行主线：
+
+| 方向 | 目标 | 说明 |
+|------|------|------|
+| 🔓 **开源软件** | 社区驱动的 NAS 操作系统 | 代码完全开放 (AGPLv3)，欢迎贡献 |
+| 📦 **软硬一体** | 开箱即用的 NAS 产品 | 预装系统的硬件方案，降低使用门槛 |
+
+> 两条线相互促进：开源社区贡献代码 → 产品更稳定 → 产品收入反哺开源开发。
+
+### 📋 项目文档
+
+| 文档 | 内容 |
+|------|------|
+| [DEVELOPMENT.md](DEVELOPMENT.md) | 团队开发手册：环境搭建、模块模板、跨平台注意事项 |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | 外部贡献指南：代码规范、PR 流程、Commit 格式 |
+| [HARDWARE_SPEC.md](HARDWARE_SPEC.md) | 硬件规格推荐书：CPU 选型、BOM 清单、机箱设计 |
+| [PURCHASE_LIST.md](PURCHASE_LIST.md) | 🛒 Phase 0 采购清单：主板、物料、淘宝关键词、预算 |
 
 ## 功能
 
@@ -243,7 +266,29 @@ sudo /opt/nas/scripts/remove-user.sh <用户名> [--delete-data]
 | 部署 | Shell 脚本 | 10 步一键部署，自动检测用户 |
 | 密码管理 | .env 文件 | .gitignore 排除，不提交到仓库 |
 
-## 扩展开发
+## 开发与贡献
+
+欢迎贡献代码、文档、测试用例！
+
+| 文档 | 面向人群 | 内容 |
+|------|---------|------|
+| [CONTRIBUTING.md](CONTRIBUTING.md) | 外部贡献者 | 贡献流程、代码规范、PR 指南 |
+| [DEVELOPMENT.md](DEVELOPMENT.md) | 团队成员 | 环境搭建、项目结构、日常开发、测试、注意事项 |
+
+### 快速开始
+
+```bash
+# 编译
+make build
+
+# 本地运行
+make dev
+
+# 交叉编译全部平台
+make build-all
+```
+
+### 模块架构
 
 Web 面板采用模块化架构，添加新功能只需：
 
@@ -256,4 +301,8 @@ Web 面板采用模块化架构，添加新功能只需：
 
 ## 许可证
 
-GNU AGPLv3
+本项目采用 [GNU Affero General Public License v3.0](LICENSE)。
+
+- 你可以自由使用、修改、分发本软件
+- 如果你修改了代码并通过网络提供服务，必须同时公开修改后的源代码
+- 详见 [LICENSE](LICENSE) 文件
