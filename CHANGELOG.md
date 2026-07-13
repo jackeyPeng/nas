@@ -1,5 +1,31 @@
 # NAS 项目变更日志
 
+## [2026-07-13] - v1.2.0 Release + 市场数据收集
+
+### 版本发布
+- 打 tag v1.2.0，创建 Gitee Release (ID: 744432)
+- 旧 tag v1.1.0 已删除
+- Release: https://gitee.com/gitdogcat/nas/releases/tag/v1.2.0
+
+### 新增：nas-market-research skill
+- research 类别 skill，用于 NAS 市场数据收集
+- 10 个品牌搜索查询（群晖/威联通/绿联/极空间/海康/联想/铁威马/华硕/开源/N150迷你主机）
+- 10 个数据字段（品牌/型号/盘位/CPU/内存/网口/M.2/价格/亮点/场景）
+- 按盘位分组对比 + 价格区间分析 + 竞品对比
+
+### 新增：市场数据 cron 定时任务
+- 每周五下午 3:00 自动收集 NAS 市场数据
+- 输出到 ~/soft/nasdata/nas-market-YYYY-MM-DD.md
+- 加载 nas-market-research skill 执行
+- 工具集: web + file
+
+### 首次市场数据报告
+- 生成 nas-market-2026-07-13.md (13KB)
+- 覆盖 8 个成品品牌 + 3 个开源方案 + 4 个 DIY 主板方案
+- 约 30+ 款产品
+- 含与我们产品(N150标准版/RK3568经济版)的性价比对比
+- 注: 首次因 Firecrawl API 未配置，基于已有数据整理，非实时价格
+
 ## [2026-07-12] - 架构决策敲定：x86 N150 路线
 
 ### 决策
