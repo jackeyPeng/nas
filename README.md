@@ -301,7 +301,13 @@ Web 面板采用模块化架构，添加新功能只需：
 
 ## 许可证
 
-本项目采用 [GNU Affero General Public License v3.0](LICENSE)。
+- **本项目代码**: GNU AGPLv3 (见 [LICENSE](LICENSE))
+- **第三方组件**: 见 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)
+  - rclone (MIT) — WebDAV + S3 服务
+  - FileBrowser (Apache 2.0) — Web 文件管理
+  - Alpine.js (MIT) — 前端响应式框架
+  - Go JWT (MIT) — 认证
+  - Samba/NFS/vsftpd/Fail2ban/UFW 等 — 各自开源许可证
 
 - 你可以自由使用、修改、分发本软件
 - 如果你修改了代码并通过网络提供服务，必须同时公开修改后的源代码
