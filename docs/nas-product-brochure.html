@@ -245,59 +245,51 @@ tr:nth-child(even) td { background: #f8f9fa; }
 <div class="page">
     <h2>安全与运维</h2>
     
-    <h3>安全体系</h3>
-    <div class="feature-grid">
-        <div class="feature-card">
-            <h4>🛡️ 防火墙</h4>
-            <p>UFW 默认 deny，仅开放必要端口。Web 面板可在线管理端口规则</p>
+    <div class="feature-grid" style="margin: 2mm 0;">
+        <div class="feature-card" style="padding:4mm;">
+            <h4 style="margin-bottom:2mm;">🛡️ 防火墙</h4>
+            <p style="font-size:9pt;">UFW 默认 deny，Web 面板可在线管理端口规则</p>
         </div>
-        <div class="feature-card">
-            <h4>🔒 入侵防护</h4>
-            <p>Fail2ban SSH/FTP 暴力破解防护，自动封禁异常 IP</p>
+        <div class="feature-card" style="padding:4mm;">
+            <h4 style="margin-bottom:2mm;">🔒 入侵防护</h4>
+            <p style="font-size:9pt;">Fail2ban SSH/FTP 暴力破解防护，自动封禁异常 IP</p>
         </div>
-        <div class="feature-card">
-            <h4>🔐 密码管理</h4>
-            <p>密码通过 .env 文件管理，不硬编码。12 位长度强制校验</p>
+        <div class="feature-card" style="padding:4mm;">
+            <h4 style="margin-bottom:2mm;">🔐 密码管理</h4>
+            <p style="font-size:9pt;">.env 文件管理，不硬编码，12 位长度强制校验</p>
         </div>
-        <div class="feature-card">
-            <h4>📋 权限白名单</h4>
-            <p>sudoers 精确限定 Web 面板可执行的 root 命令，最小权限原则</p>
+        <div class="feature-card" style="padding:4mm;">
+            <h4 style="margin-bottom:2mm;">📋 权限白名单</h4>
+            <p style="font-size:9pt;">sudoers 精确限定 Web 面板可执行的 root 命令</p>
         </div>
-        <div class="feature-card">
-            <h4>🔄 自动更新</h4>
-            <p>unattended-upgrades 自动安装安全补丁</p>
+        <div class="feature-card" style="padding:4mm;">
+            <h4 style="margin-bottom:2mm;">🔄 自动更新</h4>
+            <p style="font-size:9pt;">unattended-upgrades 自动安装安全补丁</p>
         </div>
-        <div class="feature-card">
-            <h4>💾 配置备份</h4>
-            <p>升级前自动备份，每周定期备份，一键恢复，保留最近 5 个</p>
+        <div class="feature-card" style="padding:4mm;">
+            <h4 style="margin-bottom:2mm;">💾 配置备份</h4>
+            <p style="font-size:9pt;">升级前自动备份，每周定期备份，一键恢复</p>
         </div>
     </div>
 
-    <h3>一键部署</h3>
-    <div class="arch">
-$ git clone https://gitee.com/gitdogcat/nas.git ~/soft/nas
-$ cp ~/soft/nas/.env.example ~/soft/nas/.env
-$ # 编辑 .env 填入密码（至少12位）
-$ sudo bash ~/soft/nas/scripts/setup.sh
+    <h3 style="margin-top:4mm;">一键部署</h3>
+    <div style="background:#0a1628;color:#d4d4d4;border-radius:8px;padding:4mm;margin:3mm 0;font-family:monospace;font-size:9pt;line-height:1.8;">
+        <div style="color:#6a9955;"># 克隆仓库 + 配置密码 + 部署</div>
+        <div>git clone https://gitee.com/gitdogcat/nas.git ~/soft/nas</div>
+        <div>cp ~/soft/nas/.env.example ~/soft/nas/.env&nbsp;&nbsp;<span style="color:#6a9955;"># 编辑填入密码(12位+)</span></div>
+        <div>sudo bash ~/soft/nas/scripts/setup.sh</div>
+    </div>
 
-[1/10] 安装基础软件包...     ✓
-[2/10] 创建数据目录结构...    ✓
-[3/10] 配置 Samba...         ✓
-[4/10] 配置 NFS...           ✓
-[5/10] 配置 FTP...           ✓
-[6/10] 配置 WebDAV...        ✓
-[7/10] 安装 FileBrowser...    ✓
-[8/10] 配置 S3 对象存储...     ✓
-[9/10] 配置防火墙和安全...     ✓
-[10/10] 安装 Web 管理面板...   ✓
+    <div style="background:#1a2a3a;border-radius:8px;padding:4mm;margin:3mm 0;font-size:9pt;line-height:1.6;">
+        <div style="color:#4a9eff;font-weight:700;margin-bottom:2mm;">10 步部署流程</div>
+        <div style="color:#d4d4d4;">[1/10] 安装基础软件包&nbsp;&nbsp;✓&nbsp;&nbsp;[2/10] 创建数据目录&nbsp;✓&nbsp;&nbsp;[3/10] 配置 Samba&nbsp;✓&nbsp;&nbsp;[4/10] 配置 NFS&nbsp;&nbsp;✓&nbsp;&nbsp;[5/10] 配置 FTP&nbsp;&nbsp;✓</div>
+        <div style="color:#d4d4d4;">[6/10] 配置 WebDAV&nbsp;&nbsp;&nbsp;&nbsp;✓&nbsp;&nbsp;[7/10] 安装 FileBrowser&nbsp;✓&nbsp;&nbsp;[8/10] 配置 S3&nbsp;&nbsp;✓&nbsp;&nbsp;[9/10] 防火墙安全&nbsp;✓&nbsp;&nbsp;[10/10] Web 面板&nbsp;✓</div>
     </div>
     
     <h3>从源码编译</h3>
-    <div class="arch">
-$ cd ~/soft/nas/web
-$ export GOPROXY=https://goproxy.cn,direct
-$ go build -o nas-panel .
-$ strip nas-panel   # 9.1MB → 6.2MB
+    <div style="background:#0a1628;color:#d4d4d4;border-radius:8px;padding:4mm;margin:3mm 0;font-family:monospace;font-size:9pt;line-height:1.8;">
+        <div>cd ~/soft/nas/web && export GOPROXY=https://goproxy.cn,direct</div>
+        <div>go build -o nas-panel . && strip nas-panel&nbsp;&nbsp;<span style="color:#6a9955;"># 9.1MB → 6.2MB</span></div>
     </div>
 </div>
 
