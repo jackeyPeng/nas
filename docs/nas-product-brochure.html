@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<style>
+@page { size: A4; margin: 0; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; color: #1a1a2e; }
+
+/* 封面 */
+.cover { background: linear-gradient(135deg, #0a1628 0%, #1a3a5c 50%, #2d6a9f 100%); height: 297mm; padding: 60mm 30mm; color: white; position: relative; }
+.cover h1 { font-size: 42pt; font-weight: 800; line-height: 1.2; margin-bottom: 8mm; }
+.cover .subtitle { font-size: 18pt; opacity: 0.9; margin-bottom: 20mm; }
+.cover .tagline { font-size: 14pt; opacity: 0.7; margin-bottom: 40mm; border-left: 4px solid #4a9eff; padding-left: 8mm; }
+.cover .version { position: absolute; bottom: 30mm; left: 30mm; font-size: 12pt; opacity: 0.6; }
+.cover .logo { position: absolute; bottom: 30mm; right: 30mm; font-size: 24pt; }
+
+/* 通用页 */
+.page { padding: 25mm 30mm; min-height: 297mm; page-break-after: always; }
+.page h2 { font-size: 24pt; font-weight: 700; color: #0a1628; margin-bottom: 8mm; border-bottom: 3px solid #4a9eff; padding-bottom: 3mm; }
+.page h3 { font-size: 16pt; font-weight: 600; color: #1a3a5c; margin: 8mm 0 4mm; }
+.page p { font-size: 11pt; line-height: 1.8; color: #333; margin-bottom: 4mm; }
+
+/* 表格 */
+table { width: 100%; border-collapse: collapse; margin: 4mm 0; font-size: 10pt; }
+th { background: #1a3a5c; color: white; padding: 3mm 4mm; text-align: left; font-weight: 600; }
+td { padding: 3mm 4mm; border-bottom: 1px solid #e0e4e8; }
+tr:nth-child(even) td { background: #f8f9fa; }
+
+/* 功能卡片 */
+.feature-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; margin: 6mm 0; }
+.feature-card { background: #f5f7fa; border-radius: 8px; padding: 6mm; border-left: 4px solid #4a9eff; }
+.feature-card h4 { font-size: 13pt; font-weight: 700; color: #1a3a5c; margin-bottom: 3mm; }
+.feature-card p { font-size: 10pt; color: #555; line-height: 1.6; margin: 0; }
+.feature-card ul { margin-left: 5mm; font-size: 10pt; color: #555; line-height: 1.8; }
+
+/* 数据块 */
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4mm; margin: 6mm 0; }
+.stat { text-align: center; background: #1a3a5c; color: white; border-radius: 8px; padding: 5mm; }
+.stat .num { font-size: 28pt; font-weight: 800; color: #4a9eff; }
+.stat .label { font-size: 10pt; opacity: 0.8; margin-top: 2mm; }
+
+/* 架构图 */
+.arch { background: #0a1628; color: white; padding: 8mm; border-radius: 8px; margin: 6mm 0; font-family: monospace; font-size: 9pt; line-height: 1.6; }
+
+/* 价格 */
+.price-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; margin: 6mm 0; }
+.price-card { border: 2px solid #1a3a5c; border-radius: 8px; overflow: hidden; }
+.price-card .header { background: #1a3a5c; color: white; padding: 4mm; text-align: center; font-weight: 700; font-size: 14pt; }
+.price-card .price { text-align: center; padding: 6mm; font-size: 24pt; font-weight: 800; color: #4a9eff; }
+.price-card .desc { padding: 0 4mm 4mm; font-size: 10pt; color: #555; line-height: 1.8; }
+.price-card ul { margin-left: 6mm; font-size: 10pt; color: #555; line-height: 1.8; padding-bottom: 4mm; }
+
+/* 对比 */
+.vs-table th:first-child { background: #0a1628; }
+.vs-table .us { background: #e8f4ff; font-weight: 600; }
+.vs-table .highlight { color: #c62828; font-weight: 700; }
+.vs-table .win { color: #2e7d32; font-weight: 700; }
+
+/* 底部 */
+.footer-page { text-align: center; padding: 25mm 30mm; }
+.footer-page .cta { background: linear-gradient(135deg, #1a3a5c, #4a9eff); color: white; padding: 12mm; border-radius: 12px; margin: 10mm 0; }
+.footer-page .cta h2 { color: white; border: none; font-size: 20pt; }
+.footer-page .links { font-size: 10pt; color: #666; margin-top: 8mm; line-height: 1.8; }
+</style>
+</head>
+<body>
+
+<!-- 封面 -->
+<div class="cover">
+    <h1>NAS 家用<br>存储系统</h1>
+    <div class="subtitle">开源 · 轻量 · 可定制 · 软硬一体</div>
+    <div class="tagline">
+        基于 Debian 13 的全原生服务 NAS 解决方案<br>
+        Go 单二进制 Web 管理面板 · 9 大服务一体<br>
+        一份文件，六种协议访问
+    </div>
+    <div class="version">v1.2.0 · 2026 年 7 月</div>
+    <div class="logo">🗄️</div>
+</div>
+
+<!-- 第1页：产品概述 -->
+<div class="page">
+    <h2>产品概述</h2>
+    <p>NAS 家用存储系统是一套基于 Debian 13 (trixie) 的轻量级 NAS 解决方案，全部使用原生 systemd 服务，不依赖 Docker 容器化，追求稳定、高性能、易维护。</p>
+    
+    <div class="stats">
+        <div class="stat"><div class="num">9</div><div class="label">服务模块</div></div>
+        <div class="stat"><div class="num">10</div><div class="label">Web 面板功能</div></div>
+        <div class="stat"><div class="num">3MB</div><div class="label">面板内存占用</div></div>
+        <div class="stat"><div class="num">0</div><div class="label">Docker 依赖</div></div>
+    </div>
+
+    <h3>核心特点</h3>
+    <div class="feature-grid">
+        <div class="feature-card">
+            <h4>🔧 全原生服务</h4>
+            <p>Samba/NFS/FTP/WebDAV/S3 全部原生 systemd 服务，无容器层故障点，最少抽象层 = 最稳定</p>
+        </div>
+        <div class="feature-card">
+            <h4>📦 Go 单二进制面板</h4>
+            <p>Web 管理面板编译成单个二进制文件，内嵌前端，内存占用 <3MB，跟 FileBrowser 一样轻量</p>
+        </div>
+        <div class="feature-card">
+            <h4>💾 统一存储</h4>
+            <p>一份文件六种协议访问：SMB / NFS / FTP / WebDAV / Web UI / S3 API，数据不再被对象格式隔离</p>
+        </div>
+        <div class="feature-card">
+            <h4>📡 实时监控告警</h4>
+            <p>磁盘/内存/CPU/网络流量/SMART/服务状态实时监控，支持钉钉/Telegram/Bark/邮件四通道告警</p>
+        </div>
+    </div>
+
+    <h3>技术架构</h3>
+    <div class="arch">
+┌─────────────────────────────────────────────────┐
+│              Web 管理面板 (端口 8090)              │
+│    Go + go:embed + Alpine.js + JWT 认证         │
+│    10 模块: 仪表盘/服务/用户/存储/防火墙/         │
+│    监控告警/配置管理/磁盘管理/系统设置/备份恢复    │
+├─────────────────────────────────────────────────┤
+│  Samba  │  NFS  │  FTP  │  WebDAV  │  S3 API    │
+│ 139/445 │ 2049  │  21   │   8080   │   9000     │
+├─────────────────────────────────────────────────┤
+│              FileBrowser (端口 8081)              │
+├─────────────────────────────────────────────────┤
+│    Fail2ban │ UFW │ unattended-upgrades │ SMART   │
+├─────────────────────────────────────────────────┤
+│              Debian 13 (trixie) 原生              │
+├─────────────────────────────────────────────────┤
+│                   /data/ 统一存储                  │
+│  shared │ media │ documents │ photos │ backups   │
+│  → S3 bucket 自动映射每个目录                      │
+└─────────────────────────────────────────────────┘
+    </div>
+</div>
+
+<!-- 第2页：功能列表 -->
+<div class="page">
+    <h2>功能列表</h2>
+    
+    <h3>NAS 服务</h3>
+    <table>
+        <tr><th>服务</th><th>端口</th><th>说明</th></tr>
+        <tr><td>Samba (smbd)</td><td>139, 445</td><td>Windows/Mac/Linux 文件共享，6 个共享目录</td></tr>
+        <tr><td>NFS</td><td>2049</td><td>Linux 设备高速文件访问，固定端口</td></tr>
+        <tr><td>FTP (vsftpd)</td><td>21</td><td>传统文件传输，用户白名单控制</td></tr>
+        <tr><td>WebDAV (rclone)</td><td>8080</td><td>WebDAV 文件服务，htpasswd 认证</td></tr>
+        <tr><td>FileBrowser</td><td>8081</td><td>Web 文件管理界面，浏览/上传/下载/编辑</td></tr>
+        <tr><td>S3 API (rclone)</td><td>9000</td><td>S3 兼容对象存储，bucket 自动映射目录</td></tr>
+        <tr><td>Fail2ban</td><td>-</td><td>SSH/FTP 暴力破解防护</td></tr>
+        <tr><td>UFW 防火墙</td><td>-</td><td>默认 deny，仅开放必要端口</td></tr>
+    </table>
+
+    <h3>Web 管理面板（10 个模块）</h3>
+    <table>
+        <tr><th>模块</th><th>功能</th></tr>
+        <tr><td>📊 仪表盘</td><td>系统信息、CPU/内存/磁盘使用率、服务一览</td></tr>
+        <tr><td>⚙️ 服务管理</td><td>9 个服务启动/停止/重启、查看日志</td></tr>
+        <tr><td>👥 用户管理</td><td>添加/删除用户、修改密码（联动 Samba/系统/htpasswd）</td></tr>
+        <tr><td>💾 存储信息</td><td>磁盘使用、目录大小、Samba 配置、NFS 导出、SMART 状态</td></tr>
+        <tr><td>🛡️ 防火墙</td><td>UFW 状态查看、端口允许/拒绝</td></tr>
+        <tr><td>📡 监控告警</td><td>实时状态、网络流量、Top 进程、错误日志、4 通道告警配置</td></tr>
+        <tr><td>🔧 配置管理</td><td>Samba 共享增删、FTP 白名单、配置文件在线编辑、服务自启开关</td></tr>
+        <tr><td>💽 磁盘管理</td><td>分区信息、挂载/卸载、格式化、LVM、I/O 性能、SMART 详情</td></tr>
+        <tr><td>🖥️ 系统设置</td><td>网络配置、时间时区、主机名修改、SSH 配置、内核参数、系统更新</td></tr>
+        <tr><td>📦 备份恢复</td><td>手动/自动备份、备份列表、一键恢复、删除备份</td></tr>
+    </table>
+</div>
+
+<!-- 第3页：硬件方案 -->
+<div class="page">
+    <h2>硬件方案</h2>
+    
+    <div class="price-grid">
+        <div class="price-card">
+            <div class="header">标准版（4 盘位）</div>
+            <div class="price">¥699-799</div>
+            <div class="desc">
+                <ul>
+                    <li>CPU: Intel N150 (4C4T, 3.6GHz)</li>
+                    <li>内存: 8GB DDR5 (可换)</li>
+                    <li>网口: 2×2.5GbE</li>
+                    <li>M.2: 1×NVMe + 1×WiFi 6E</li>
+                    <li>盘位: 4×SATA (2.5"/3.5")</li>
+                    <li>系统: 开源 Debian 13</li>
+                    <li>BOM 成本: ~¥1,063</li>
+                </ul>
+            </div>
+        </div>
+        <div class="price-card">
+            <div class="header">经济版（2 盘位）</div>
+            <div class="price">¥299-399</div>
+            <div class="desc">
+                <ul>
+                    <li>CPU: RK3568 (4×A55)</li>
+                    <li>内存: 4GB LPDDR4 (板贴)</li>
+                    <li>网口: 1×千兆</li>
+                    <li>盘位: 2×SATA</li>
+                    <li>散热: 被动散热（无风扇）</li>
+                    <li>系统: 开源 Debian 13</li>
+                    <li>BOM 成本: ~¥455</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <h3>竞品对比</h3>
+    <table class="vs-table">
+        <tr><th>维度</th><th>我们-标准版</th><th>绿联 DXP2800</th><th>极空间 Z2 Pro</th><th>群晖 DS225+</th></tr>
+        <tr><td>CPU</td><td class="us">Intel N150</td><td>N100</td><td>RK3568</td><td>N150</td></tr>
+        <tr><td>内存</td><td class="us win">8GB DDR5</td><td>8GB DDR5</td><td>4GB</td><td>4GB</td></tr>
+        <tr><td>盘位</td><td class="us win">4</td><td>2</td><td>2</td><td>2</td></tr>
+        <tr><td>网口</td><td class="us win">2×2.5GbE</td><td>1×2.5GbE</td><td>1×2.5GbE</td><td>1×1GbE</td></tr>
+        <tr><td>WiFi</td><td class="us win">WiFi 6E 内置</td><td>无</td><td>无</td><td>无</td></tr>
+        <tr><td>系统</td><td class="us win">开源 Debian</td><td>封闭 UGOS</td><td>封闭 ZOS</td><td>封闭 DSM</td></tr>
+        <tr><td>价格</td><td class="us win">¥699-799</td><td>¥999</td><td>¥899</td><td class="highlight">¥2,500</td></tr>
+        <tr><td>每盘位成本</td><td class="us win">¥175-200</td><td>¥500</td><td>¥450</td><td class="highlight">¥1,250</td></tr>
+    </table>
+</div>
+
+<!-- 第4页：安全与部署 -->
+<div class="page">
+    <h2>安全与运维</h2>
+    
+    <h3>安全体系</h3>
+    <div class="feature-grid">
+        <div class="feature-card">
+            <h4>🛡️ 防火墙</h4>
+            <p>UFW 默认 deny，仅开放必要端口。Web 面板可在线管理端口规则</p>
+        </div>
+        <div class="feature-card">
+            <h4>🔒 入侵防护</h4>
+            <p>Fail2ban SSH/FTP 暴力破解防护，自动封禁异常 IP</p>
+        </div>
+        <div class="feature-card">
+            <h4>🔐 密码管理</h4>
+            <p>密码通过 .env 文件管理，不硬编码。12 位长度强制校验</p>
+        </div>
+        <div class="feature-card">
+            <h4>📋 权限白名单</h4>
+            <p>sudoers 精确限定 Web 面板可执行的 root 命令，最小权限原则</p>
+        </div>
+        <div class="feature-card">
+            <h4>🔄 自动更新</h4>
+            <p>unattended-upgrades 自动安装安全补丁</p>
+        </div>
+        <div class="feature-card">
+            <h4>💾 配置备份</h4>
+            <p>升级前自动备份，每周定期备份，一键恢复，保留最近 5 个</p>
+        </div>
+    </div>
+
+    <h3>一键部署</h3>
+    <div class="arch">
+$ git clone https://gitee.com/gitdogcat/nas.git ~/soft/nas
+$ cp ~/soft/nas/.env.example ~/soft/nas/.env
+$ # 编辑 .env 填入密码（至少12位）
+$ sudo bash ~/soft/nas/scripts/setup.sh
+
+[1/10] 安装基础软件包...     ✓
+[2/10] 创建数据目录结构...    ✓
+[3/10] 配置 Samba...         ✓
+[4/10] 配置 NFS...           ✓
+[5/10] 配置 FTP...           ✓
+[6/10] 配置 WebDAV...        ✓
+[7/10] 安装 FileBrowser...    ✓
+[8/10] 配置 S3 对象存储...     ✓
+[9/10] 配置防火墙和安全...     ✓
+[10/10] 安装 Web 管理面板...   ✓
+    </div>
+    
+    <h3>从源码编译</h3>
+    <div class="arch">
+$ cd ~/soft/nas/web
+$ export GOPROXY=https://goproxy.cn,direct
+$ go build -o nas-panel .
+$ strip nas-panel   # 9.1MB → 6.2MB
+    </div>
+</div>
+
+<!-- 第5页：技术栈与开源 -->
+<div class="page">
+    <h2>技术栈</h2>
+    <table>
+        <tr><th>层</th><th>技术</th><th>说明</th></tr>
+        <tr><td>NAS 服务</td><td>Samba / NFS / vsftpd / rclone</td><td>全部原生 systemd，不使用 Docker</td></tr>
+        <tr><td>对象存储</td><td>rclone serve s3</td><td>S3 兼容，bucket 自动映射目录</td></tr>
+        <tr><td>Web 面板后端</td><td>Go 1.25 + go:embed</td><td>单二进制，内嵌前端，<3MB 内存</td></tr>
+        <tr><td>Web 面板前端</td><td>Alpine.js + 原生 CSS</td><td>无构建工具，浅色主题，大字体高对比</td></tr>
+        <tr><td>认证</td><td>JWT (golang-jwt/v5)</td><td>24 小时有效期，Bearer Token</td></tr>
+        <tr><td>监控告警</td><td>Shell + cron</td><td>零额外服务，每 5 分钟检查</td></tr>
+        <tr><td>备份恢复</td><td>Shell 脚本 + tar.gz</td><td>升级前自动备份，每周定期备份</td></tr>
+        <tr><td>部署</td><td>Shell 脚本</td><td>10 步一键部署，自动检测用户</td></tr>
+        <tr><td>CI/CD</td><td>Gitee CI + GitHub Actions</td><td>代码检查 + 单元测试 + 跨平台编译</td></tr>
+        <tr><td>代码质量</td><td>golangci-lint + Makefile</td><td>gofmt/goimports/govet/staticcheck</td></tr>
+    </table>
+
+    <h3>模块化架构</h3>
+    <p>Web 面板采用模块化设计，10 个功能模块各自独立，共用 common/ 包的认证、JSON、sudo 工具函数。添加新功能只需新建模块目录、实现 RegisterRoutes、在 main.go 加一行注册。</p>
+
+    <h3>开源许可证</h3>
+    <table>
+        <tr><th>组件</th><th>许可证</th><th>用途</th></tr>
+        <tr><td>本项目代码</td><td>GNU AGPLv3</td><td>NAS 系统和管理面板</td></tr>
+        <tr><td>rclone</td><td>MIT</td><td>WebDAV + S3 服务</td></tr>
+        <tr><td>FileBrowser</td><td>Apache 2.0</td><td>Web 文件管理</td></tr>
+        <tr><td>Alpine.js</td><td>MIT</td><td>前端响应式框架</td></tr>
+        <tr><td>Go JWT</td><td>MIT</td><td>认证库</td></tr>
+    </table>
+</div>
+
+<!-- 封底 -->
+<div class="footer-page">
+    <div class="cta">
+        <h2>🗄️ NAS 家用存储系统</h2>
+        <p style="font-size:14pt;opacity:0.9;margin-top:4mm">开源 · 轻量 · 可定制 · 软硬一体</p>
+    </div>
+    
+    <div class="links">
+        <p><strong>Git 仓库</strong>: https://gitee.com/gitdogcat/nas</p>
+        <p><strong>技术文档</strong>: docs/nas-product-manual.md</p>
+        <p><strong>开发手册</strong>: DEVELOPMENT.md</p>
+        <p><strong>贡献指南</strong>: CONTRIBUTING.md</p>
+        <p><strong>硬件规格</strong>: HARDWARE_SPEC.md</p>
+        <p><strong>版本</strong>: v1.2.0 · 2026 年 7 月</p>
+        <p><strong>许可证</strong>: GNU AGPLv3 + 第三方 MIT/Apache 2.0</p>
+    </div>
+</div>
+
+</body>
+</html>
