@@ -110,30 +110,50 @@ tr:nth-child(even) td { background: #f8f9fa; }
             <p>磁盘/内存/CPU/网络流量/SMART/服务状态实时监控，支持钉钉/Telegram/Bark/邮件四通道告警</p>
         </div>
     </div>
+</div>
 
-    <h3>技术架构</h3>
-    <div style="margin: 4mm 0;">
-        <div style="background:#1a3a5c;color:white;text-align:center;padding:4mm;border-radius:8px 8px 0 0;font-weight:700;font-size:12pt;">
+<!-- 第2页：技术架构 -->
+<div class="page">
+    <h2>技术架构</h2>
+    <p>NAS 系统采用分层架构，全部基于 Debian 13 原生服务构建，无 Docker 依赖。Web 管理面板以 Go 单二进制方式提供统一管理入口。</p>
+
+    <div style="margin: 8mm 0;">
+        <div style="background:#1a3a5c;color:white;text-align:center;padding:6mm;border-radius:8px 8px 0 0;font-weight:700;font-size:16pt;">
             Web 管理面板 (端口 8090)
         </div>
-        <div style="background:#2d6a9f;color:white;text-align:center;padding:3mm;font-size:10pt;">
-            Go + go:embed + Alpine.js + JWT · 10 模块: 仪表盘/服务/用户/存储/防火墙/监控/配置/磁盘/系统/备份恢复
+        <div style="background:#2d6a9f;color:white;text-align:center;padding:4mm;font-size:12pt;">
+            Go + go:embed + Alpine.js + JWT 认证
         </div>
-        <div style="display:flex;text-align:center;font-size:9pt;color:white;">
-            <div style="flex:1;background:#3a7ca5;padding:3mm;border-right:1px solid #5a9cc5;">Samba<br><b>139/445</b></div>
-            <div style="flex:1;background:#3a7ca5;padding:3mm;border-right:1px solid #5a9cc5;">NFS<br><b>2049</b></div>
-            <div style="flex:1;background:#3a7ca5;padding:3mm;border-right:1px solid #5a9cc5;">FTP<br><b>21</b></div>
-            <div style="flex:1;background:#3a7ca5;padding:3mm;border-right:1px solid #5a9cc5;">WebDAV<br><b>8080</b></div>
-            <div style="flex:1;background:#3a7ca5;padding:3mm;border-right:1px solid #5a9cc5;">S3 API<br><b>9000</b></div>
-            <div style="flex:1;background:#3a7ca5;padding:3mm;">FileBrowser<br><b>8081</b></div>
+        <div style="background:#2d6a9f;color:white;text-align:center;padding:0 4mm 4mm;font-size:10pt;opacity:0.9;">
+            10 模块: 仪表盘 · 服务管理 · 用户管理 · 存储信息 · 防火墙 · 监控告警 · 配置管理 · 磁盘管理 · 系统设置 · 备份恢复
         </div>
-        <div style="background:#2d4a6f;color:white;text-align:center;padding:3mm;font-size:9pt;border-top:1px solid #5a9cc5;">
-            Fail2ban · UFW · unattended-upgrades · SMART · 监控告警 cron
+        <div style="display:flex;text-align:center;font-size:11pt;color:white;">
+            <div style="flex:1;background:#3a7ca5;padding:5mm;border-right:1px solid #5a9cc5;">Samba<br><b>139/445</b></div>
+            <div style="flex:1;background:#3a7ca5;padding:5mm;border-right:1px solid #5a9cc5;">NFS<br><b>2049</b></div>
+            <div style="flex:1;background:#3a7ca5;padding:5mm;border-right:1px solid #5a9cc5;">FTP<br><b>21</b></div>
+            <div style="flex:1;background:#3a7ca5;padding:5mm;border-right:1px solid #5a9cc5;">WebDAV<br><b>8080</b></div>
+            <div style="flex:1;background:#3a7ca5;padding:5mm;border-right:1px solid #5a9cc5;">S3 API<br><b>9000</b></div>
+            <div style="flex:1;background:#3a7ca5;padding:5mm;">FileBrowser<br><b>8081</b></div>
         </div>
-        <div style="background:#0a1628;color:white;text-align:center;padding:3mm;font-size:10pt;border-radius:0 0 8px 8px;">
-            Debian 13 (trixie) · <b>/data/ 统一存储</b> · shared | media | documents | photos | backups<br>
-            <span style="font-size:8pt;opacity:0.7;">S3 bucket 自动映射每个目录 → 一份文件六种协议访问</span>
+        <div style="background:#2d4a6f;color:white;text-align:center;padding:5mm;font-size:11pt;border-top:1px solid #5a9cc5;">
+            Fail2ban · UFW · unattended-upgrades · SMART · 监控告警 (cron 每5分钟)
         </div>
+        <div style="background:#0a1628;color:white;text-align:center;padding:6mm;font-size:13pt;border-radius:0 0 8px 8px;">
+            Debian 13 (trixie) 原生服务
+        </div>
+    </div>
+
+    <h3>统一存储层</h3>
+    <div style="background:#0a1628;color:white;border-radius:8px;padding:6mm;text-align:center;">
+        <div style="font-size:14pt;font-weight:700;margin-bottom:3mm;">/data/ 统一存储</div>
+        <div style="display:flex;text-align:center;font-size:11pt;margin:4mm 0;">
+            <div style="flex:1;background:#1a3a5c;padding:4mm;border-radius:6px;margin:0 2mm;">shared</div>
+            <div style="flex:1;background:#1a3a5c;padding:4mm;border-radius:6px;margin:0 2mm;">media</div>
+            <div style="flex:1;background:#1a3a5c;padding:4mm;border-radius:6px;margin:0 2mm;">documents</div>
+            <div style="flex:1;background:#1a3a5c;padding:4mm;border-radius:6px;margin:0 2mm;">photos</div>
+            <div style="flex:1;background:#1a3a5c;padding:4mm;border-radius:6px;margin:0 2mm;">backups</div>
+        </div>
+        <div style="font-size:10pt;opacity:0.7;">每个目录自动映射为 S3 bucket · 一份文件六种协议访问 (SMB/NFS/FTP/WebDAV/Web UI/S3)</div>
     </div>
 </div>
 
