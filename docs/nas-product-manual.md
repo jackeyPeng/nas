@@ -48,7 +48,7 @@
 | FTP     | vsftpd             | 传统文件传输                  | 21, 30000-31000  |
 | WebDAV  | rclone serve       | 浏览器/移动端文件管理         | 8080             |
 | Web UI  | FileBrowser        | Web 文件管理界面（浏览/上传/下载/编辑） | 8081    |
-| S3 对象存储 | MinIO          | S3 兼容对象存储                   | 9000, 9002       |
+| S3 对象存储 | rclone serve s3  | S3 兼容对象存储，bucket 自动映射目录      | 9000             |
 
 **设计原则：**
 

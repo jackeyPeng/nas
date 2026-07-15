@@ -32,7 +32,7 @@
 - **FTP** — vsftpd 传统文件传输（端口 21）
 - **WebDAV** — rclone serve WebDAV 服务（端口 8080）
 - **FileBrowser** — Web 文件管理界面（端口 8081）
-- **MinIO** — S3 兼容对象存储（端口 9000/9002）
+- **S3 API (rclone)** — S3 兼容对象存储，bucket 自动映射目录（端口 9000）
 - **NAS Web Panel** — Web 管理面板（端口 8090）
 
 ### Web 管理面板功能
@@ -73,8 +73,8 @@ nas/
 │   ├── jail.local      # Fail2ban 规则
 │   ├── rclone-webdav.service
 │   ├── filebrowser.service
-│   ├── minio.service
-│   └── nas-panel.service
+│   ├── nas-panel.service
+│   └── rclone-s3.service
 ├── scripts/            # 管理脚本
 │   ├── setup.sh        # 一键部署（10步）
 │   ├── cleanup.sh      # 清理恢复（--keep-data 保留数据）
@@ -203,8 +203,8 @@ sudo bash /opt/nas/scripts/restore-config.sh /data/backups/config-20260710-16335
 
 | 类别 | 内容 |
 |------|------|
-| 系统配置 | smb.conf / exports / nfs.conf / vsftpd.conf / jail.local / rclone-htpasswd / minio / sudoers |
-| 服务文件 | rclone-webdav / filebrowser / minio / nas-panel .service |
+| 系统配置 | smb.conf / exports / nfs.conf / vsftpd.conf / jail.local / rclone-htpasswd / rclone s3-env / sudoers |
+| 服务文件 | rclone-webdav / filebrowser / rclone-s3 / nas-panel .service |
 | 项目配置 | .env / configs/ 目录 |
 | 用户数据 | Samba passdb.tdb / FTP 白名单 / 系统用户列表 |
 | 定时任务 | crontab（监控告警 + 定期备份） |
@@ -219,8 +219,7 @@ sudo bash /opt/nas/scripts/restore-config.sh /data/backups/config-20260710-16335
 | FTP | ftp://NAS_IP/ | <NAS_USER> / <NAS_PASS> |
 | WebDAV | http://NAS_IP:8080/ | <NAS_USER> / <NAS_PASS> |
 | FileBrowser | http://NAS_IP:8081/ | <NAS_USER> / <NAS_PASS> |
-| MinIO API | http://NAS_IP:9000 | <NAS_USER> / <NAS_PASS> |
-| MinIO Web | http://NAS_IP:9002 | <NAS_USER> / <NAS_PASS> |
+| S3 API | http://NAS_IP:9000 | <NAS_USER> / <NAS_PASS> |
 | Web 面板 | http://NAS_IP:8090 | <NAS_USER> / <NAS_PASS> |
 
 ## 告警通知配置
@@ -258,7 +257,7 @@ sudo /opt/nas/scripts/remove-user.sh <用户名> [--delete-data]
 
 | 层 | 技术 | 说明 |
 |----|------|------|
-| NAS 服务 | Samba / NFS / vsftpd / rclone / MinIO / FileBrowser | 全部原生 systemd 服务，不使用 Docker |
+| NAS 服务 | Samba / NFS / vsftpd / rclone / FileBrowser | 全部原生 systemd 服务，不使用 Docker |
 | Web 面板后端 | Go 1.25 + go:embed | 单二进制，内嵌前端，内存占用 <3MB |
 | Web 面板前端 | Alpine.js + 原生 CSS | 无构建工具，浅色主题 |
 | 认证 | JWT | 24 小时有效期 |
