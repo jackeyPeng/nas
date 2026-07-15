@@ -26,6 +26,43 @@
 - 含与我们产品(N150标准版/RK3568经济版)的性价比对比
 - 注: 首次因 Firecrawl API 未配置，基于已有数据整理，非实时价格
 
+## [2026-07-13] - rclone serve s3 替代 MinIO + v1.2.0 Release
+
+### 重构：MinIO 替换为 rclone serve s3
+- 用 `rclone serve s3 /data --addr :9000` 替代 MinIO
+- 一份文件六种协议访问：SMB/NFS/FTP/WebDAV/Web UI/S3 API
+- /data 下每个目录自动成为 S3 bucket，无需单独配置
+- 删除 MinIO 二进制 (~100MB) 和 Console (端口 9002)
+- setup.sh [8/10] 从 MinIO 安装改为 rclone 升级 + S3 服务配置
+- rclone 从 file.abwen.com/minio/rclone-v1.74.4-linux-amd64.deb 下载
+- cleanup.sh 更新：minio → rclone-s3，增加 /etc/rclone/s3-env 清理
+- UFW：删除 9002 端口，保留 9000 (S3 API)
+- dashboard 模块：minio → rclone-s3 服务定义
+
+### 新增：nas-market-research skill
+- research 类别 skill，用于 NAS 市场数据收集
+- 10 个品牌搜索查询 + 10 个数据字段
+- 按盘位分组对比 + 价格区间分析 + 竞品对比
+
+### 新增：市场数据 cron 定时任务
+- 每周五下午 3:00 自动收集 NAS 市场数据
+- 输出到 ~/soft/nasdata/nas-market-YYYY-MM-DD.md
+
+### 版本发布
+- 打 tag v1.2.0，创建 Gitee Release (ID: 744432)
+- 旧 tag v1.1.0 已删除
+
+### 新增：THIRD_PARTY_LICENSES.md
+- rclone (MIT) — WebDAV + S3 服务
+- FileBrowser (Apache 2.0) — Web 文件管理
+- Alpine.js (MIT) — 前端框架
+- Go JWT (MIT) — 认证库
+- 系统组件许可证表
+
+### 新增：产品宣传 PDF
+- nas-product-brochure.pdf (10页)
+- 封面/产品概述/技术架构/功能列表/硬件方案/安全运维/技术栈/许可证
+
 ## [2026-07-12] - 架构决策敲定：x86 N150 路线
 
 ### 决策
@@ -184,6 +221,18 @@
 - 告警通知配置表
 - 技术栈表
 - 扩展开发指南
+- 配置备份与恢复章节
+- MinIO 引用全部替换为 rclone serve s3
+- 第三方许可证链接
+
+### 更新：产品技术手册
+- S3 对象存储：MinIO → rclone serve s3
+
+### 更新：TODO 路线图
+- 项12: Web 面板"关于我们"页面（低优先级）
+- 项13: 存储管理与新盘引导（中优先级，三层方案）
+- 项11: backup-config.sh/restore-config.sh 标记已完成
+- 进度统计: 13项, 完成7, 待办6
 
 ## [2026-07-09] - Web 管理面板 + 监控告警系统
 
