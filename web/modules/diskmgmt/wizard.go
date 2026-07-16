@@ -239,8 +239,8 @@ func setupSingleDisk(dev, mountPoint, nasUser string) []string {
 	partDev := dev + "1"
 	steps = append(steps, "分区 "+dev)
 	// Format
-	common.SudoExec("mkfs.ext4", "-F", partDev)
-	steps = append(steps, "格式化 ext4")
+	common.SudoExec("mkfs.xfs", "-f", partDev)
+	steps = append(steps, "格式化 xfs")
 	// Mount
 	common.SudoExec("mkdir", "-p", mountPoint)
 	common.SudoExec("mount", partDev, mountPoint)
@@ -248,7 +248,7 @@ func setupSingleDisk(dev, mountPoint, nasUser string) []string {
 	// fstab
 	uuidOut, _ := common.ExecOutput("blkid", "-s", "UUID", "-o", "value", partDev)
 	uuid := strings.TrimSpace(uuidOut)
-	writeFstab(uuid, mountPoint, "ext4")
+	writeFstab(uuid, mountPoint, "xfs")
 	steps = append(steps, "写入 fstab 持久化")
 	// chown
 	common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountPoint)
@@ -275,8 +275,8 @@ func setupMergeDisks(devs []string, mountPoint, nasUser string) []string {
 	lvPath := "/dev/" + vgName + "/data"
 	steps = append(steps, "创建逻辑卷 data")
 	// format
-	common.SudoExec("mkfs.ext4", "-F", lvPath)
-	steps = append(steps, "格式化 ext4")
+	common.SudoExec("mkfs.xfs", "-f", lvPath)
+	steps = append(steps, "格式化 xfs")
 	// mount
 	common.SudoExec("mkdir", "-p", mountPoint)
 	common.SudoExec("mount", lvPath, mountPoint)
@@ -284,7 +284,7 @@ func setupMergeDisks(devs []string, mountPoint, nasUser string) []string {
 	// fstab
 	uuidOut, _ := common.ExecOutput("blkid", "-s", "UUID", "-o", "value", lvPath)
 	uuid := strings.TrimSpace(uuidOut)
-	writeFstab(uuid, mountPoint, "ext4")
+	writeFstab(uuid, mountPoint, "xfs")
 	steps = append(steps, "写入 fstab 持久化")
 	// chown
 	common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountPoint)
@@ -324,8 +324,8 @@ func setupRaid1(devs []string, mountPoint, nasUser string) []string {
 	common.SudoExec(mdadmPath, args...)
 	steps = append(steps, "创建 RAID1 镜像")
 	// Format
-	common.SudoExec("mkfs.ext4", "-F", mdDev)
-	steps = append(steps, "格式化 ext4")
+	common.SudoExec("mkfs.xfs", "-f", mdDev)
+	steps = append(steps, "格式化 xfs")
 	// Mount
 	common.SudoExec("mkdir", "-p", mountPoint)
 	common.SudoExec("mount", mdDev, mountPoint)
@@ -333,7 +333,7 @@ func setupRaid1(devs []string, mountPoint, nasUser string) []string {
 	// fstab
 	uuidOut, _ := common.ExecOutput("blkid", "-s", "UUID", "-o", "value", mdDev)
 	uuid := strings.TrimSpace(uuidOut)
-	writeFstab(uuid, mountPoint, "ext4")
+	writeFstab(uuid, mountPoint, "xfs")
 	steps = append(steps, "写入 fstab 持久化")
 	// chown
 	common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountPoint)
