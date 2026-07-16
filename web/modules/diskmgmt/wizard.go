@@ -38,6 +38,10 @@ func handleWizardStatus(w http.ResponseWriter, r *http.Request) {
 			Model:    d.Model,
 			Type:     d.Type,
 		}
+		// Skip system disks entirely
+		if isSystemDisk(d.Device) {
+			continue
+		}
 		// Check if disk or its partitions are unused
 		isUnused := d.Type == "unused"
 		if !isUnused && len(d.Children) > 0 {
@@ -151,6 +155,9 @@ func handleWizardSetup(w http.ResponseWriter, r *http.Request) {
 	var unusedDevs []string
 	for _, d := range disks {
 		if d.Name == "sr0" {
+			continue
+		}
+		if isSystemDisk(d.Device) {
 			continue
 		}
 		if d.Type == "unused" {
