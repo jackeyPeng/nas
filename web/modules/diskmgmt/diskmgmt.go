@@ -34,6 +34,7 @@ func RegisterRoutes(mux *http.ServeMux) {
 	// Wizard (simple storage setup)
 	mux.HandleFunc("/api/disk/wizard/status", common.AuthMiddleware(handleWizardStatus))
 	mux.HandleFunc("/api/disk/wizard/setup", common.AuthMiddleware(handleWizardSetup))
+	mux.HandleFunc("/api/disk/wizard/reset", common.AuthMiddleware(handleWizardReset))
 }
 
 // ═══════════════════════════════════════
