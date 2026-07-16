@@ -1,5 +1,68 @@
 # NAS 项目变更日志
 
+## [2026-07-16] - 存储管理重构 + 向导式配置 + 实时进度
+
+### 存储：文件系统改为 xfs
+- 所有配置模式（单盘/合并/RAID1/LVM池）默认使用 xfs
+- 优势：无 lost+found 目录、大文件性能更好、断电恢复更可靠、在线扩容更快
+- setup.sh 安装列表新增 xfsprogs 包
+
+### 存储：依赖包更新
+- setup.sh apt 安装列表新增：
+  - xfsprogs — xfs 文件系统工具（mkfs.xfs / xfs_growfs）
+  - mdadm — RAID 管理工具
+  - lvm2 — LVM 逻辑卷管理（pvcreate/vgcreate/lvcreate 等）
+
+### 存储：向导式配置界面
+- 左侧导航"磁盘管理"改为"存储管理"
+- 不再暴露 /dev/sdb、VG、LV 等技术术语
+- 磁盘显示友好名称（磁盘1、磁盘2）
+- 单盘：推荐方案卡片，一键配置到 /data/nas1
+- 多盘：三选一卡片选择
+  - 📦 容量优先：所有盘合并成一个目录（LVM）
+  - 🛡️ 安全优先：两盘镜像冗余（RAID1）
+  - 📁 独立模式：每盘独立目录 /data/nas1, /data/nas2...
+- 卡片选中高亮+缩放动画
+- 数据安全警告
+
+### 存储：重新配置功能
+- 已配置存储后可点"重新配置存储"按钮
+- 自动清除：卸载→fstab→LVM→RAID→磁盘签名→Samba
+- 重置后磁盘恢复为"未使用"，回到配置向导
+
+### 存储：实时进度显示（SSE）
+- 后端 SSE 流式响应：每完成一步推送事件
+- 前端右下角浮动进度面板
+- 每步显示：⏳执行中 → ✓完成 → 🎉全部完成
+- 步骤：清除签名→分区→格式化→挂载→fstab→Samba
+- 重置也支持流式进度
+
+### 存储：后端 API
+- /api/disk/wizard/status — 友好磁盘列表 + 存储池状态 + 已挂载目录
+- /api/disk/wizard/setup — 按模式一键配置（single/merge/separate/raid1）
+- /api/disk/wizard/reset — 重置存储配置
+- /api/disk/wizard/setup-stream — SSE 流式配置进度
+- /api/disk/wizard/reset-stream — SSE 流式重置进度
+- /api/disk/status — 结构化磁盘状态（lsblk JSON 解析）
+- /api/disk/pool/status — LVM 存储池状态
+- /api/disk/pool/create — 创建 LVM 池
+- /api/disk/pool/extend — 扩容 LVM 池
+- /api/disk/quick-setup — 单盘快速配置
+- /api/disk/fstab — 查看 /etc/fstab
+
+### 存储：安全检查
+- isSystemDisk() 检查：跳过系统盘，不误格式化
+- 挂载点限制 /data/ 下
+- 所有写操作需 confirm=yes
+- sudoers 新增：pvremove/vgremove/lvremove/wipefs/mdadm/parted/ls
+- LVM 命令用绝对路径 /usr/sbin/
+
+### 验证 ([REDACTED])
+- sdb+sdc RAID1 → /dev/md0 50G xfs → /data/nas1 ✓
+- 无 lost+found 目录 ✓
+- fstab 持久化 ✓
+- Samba 共享自动添加 ✓
+
 ## [2026-07-13] - v1.2.0 Release + 市场数据收集
 
 ### 版本发布
