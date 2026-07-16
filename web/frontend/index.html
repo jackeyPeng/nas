@@ -587,175 +587,122 @@
                 <div style="background:linear-gradient(135deg,#1a3a5c,#2d6a9f);color:white;border-radius:10px;padding:16px;margin-bottom:16px">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
                         <strong style="font-size:16px">📊 存储总览</strong>
-                        <button class="btn btn-sm" @click="loadDiskStatus(); loadPoolStatus()" style="background:rgba(255,255,255,0.2);color:white;border:none">刷新</button>
+                        <button class="btn btn-sm" @click="loadWizardStatus()" style="background:rgba(255,255,255,0.2);color:white;border:none">刷新</button>
                     </div>
-                    <div style="display:flex;gap:20px;flex-wrap:wrap">
+                    <div x-show="wizard.has_storage" style="display:flex;gap:20px;flex-wrap:wrap">
                         <div>
-                            <div style="font-size:11px;opacity:0.7">物理磁盘</div>
-                            <div style="font-size:20px;font-weight:700" x-text="(diskStatus||[]).filter(d=>d.name!=='sr0').length + ' 块'"></div>
+                            <div style="font-size:11px;opacity:0.7">数据磁盘</div>
+                            <div style="font-size:20px;font-weight:700" x-text="wizard.unused_count + ' 块空闲'"></div>
                         </div>
-                        <div x-show="pool.exists">
-                            <div style="font-size:11px;opacity:0.7">存储池容量</div>
-                            <div style="font-size:20px;font-weight:700" x-text="(pool.total_gb||'0') + ' GB'"></div>
+                        <div x-show="wizard.pool.exists">
+                            <div style="font-size:11px;opacity:0.7">存储池</div>
+                            <div style="font-size:20px;font-weight:700" x-text="(wizard.pool.total_gb||'0') + ' GB'"></div>
                         </div>
-                        <div x-show="pool.exists">
-                            <div style="font-size:11px;opacity:0.7">已用</div>
-                            <div style="font-size:20px;font-weight:700" x-text="(pool.used_gb||'0') + ' GB'"></div>
-                        </div>
-                        <div x-show="pool.exists">
-                            <div style="font-size:11px;opacity:0.7">可用</div>
-                            <div style="font-size:20px;font-weight:700" x-text="(pool.free_gb||'0') + ' GB'"></div>
-                        </div>
-                        <div x-show="pool.exists" style="flex:1;min-width:120px">
-                            <div style="font-size:11px;opacity:0.7">使用率 <span x-text="pool.use_percent||'0'"></span>%</div>
+                        <div x-show="wizard.pool.exists" style="flex:1;min-width:120px">
+                            <div style="font-size:11px;opacity:0.7">使用率 <span x-text="wizard.pool.percent||'0'"></span>%</div>
                             <div style="background:rgba(255,255,255,0.2);border-radius:4px;height:24px;margin-top:4px;overflow:hidden">
-                                <div :style="'width:'+(pool.use_percent||0)+'%'" style="background:#4a9eff;height:100%;border-radius:4px;transition:width 0.5s"></div>
+                                <div :style="'width:'+(wizard.pool.percent||0)+'%'" style="background:#4a9eff;height:100%;border-radius:4px;transition:width 0.5s"></div>
                             </div>
                         </div>
                     </div>
-                    <div x-show="!pool.exists" style="margin-top:8px;font-size:13px;opacity:0.8">
-                        ⚠️ 尚未创建存储池，多块磁盘各自独立。建议创建 LVM 存储池合并容量。
+                    <div x-show="!wizard.has_storage" style="margin-top:8px;font-size:13px;opacity:0.8">
+                        ⚠️ 还没有配置存储。点击下方"配置存储"开始使用。
+                    </div>
+                    <!-- 已挂载存储 -->
+                    <div x-show="wizard.existing_mounts && wizard.existing_mounts.length" style="margin-top:10px;border-top:1px solid rgba(255,255,255,0.2);padding-top:8px">
+                        <div style="font-size:12px;opacity:0.7;margin-bottom:4px">当前存储：</div>
+                        <template x-for="m in wizard.existing_mounts" :key="m.mount">
+                            <div style="font-size:13px;display:flex;justify-content:space-between;align-items:center;margin-top:4px">
+                                <span x-text="m.mount"></span>
+                                <span>
+                                    <span x-text="m.used"></span> / <span x-text="m.size"></span>
+                                    <span style="opacity:0.7;margin-left:8px" x-text="m.percent"></span>
+                                </span>
+                            </div>
+                        </template>
                     </div>
                 </div>
 
-                <!-- 物理磁盘卡片 -->
-                <h3>物理磁盘</h3>
-                <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;margin-bottom:16px">
-                    <template x-for="disk in (diskStatus||[]).filter(d=>d.name!=='sr0')" :key="disk.device">
-                        <div class="feature-card" style="padding:12px" :style="disk.type==='system' ? 'border-left-color:#6b7280' : disk.type==='unused' ? 'border-left-color:var(--danger)' : 'border-left-color:var(--success)'">
-                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-                                <strong x-text="disk.device"></strong>
-                                <span style="font-size:11px;padding:2px 8px;border-radius:4px"
-                                    :style="disk.type==='system' ? 'background:#f3f4f6;color:#6b7280' : disk.type==='unused' ? 'background:#fee;color:var(--danger)' : 'background:#e8f5e9;color:var(--success)'"
-                                    x-text="disk.type==='system' ? '系统盘' : disk.type==='unused' ? '未使用' : '数据盘'"></span>
+                <!-- 存储配置向导 -->
+                <div x-show="wizard.unused_count > 0" class="config-section" style="margin-bottom:16px;padding:16px">
+                    <h3 style="margin-bottom:8px">🚀 配置存储</h3>
+                    <p style="color:var(--text-light);font-size:14px;margin-bottom:12px">
+                        检测到 <strong x-text="wizard.unused_count"></strong> 块未使用的磁盘：
+                    </p>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+                        <template x-for="d in wizard.unused_disks" :key="d.device">
+                            <span style="background:#e8f5e9;border:1px solid var(--success);border-radius:6px;padding:4px 12px;font-size:13px">
+                                <strong x-text="d.friendly"></strong> <span x-text="d.size"></span>
+                            </span>
+                        </template>
+                    </div>
+
+                    <!-- 单盘模式 -->
+                    <div x-show="wizard.unused_count === 1" style="margin-top:12px">
+                        <div style="background:#f5f7fa;border-radius:8px;padding:12px;border-left:4px solid #4a9eff">
+                            <strong>推荐方案</strong>
+                            <p style="font-size:14px;margin-top:4px;color:#555">将磁盘格式化后挂载到 <code>/data/nas1</code>，自动配置 Samba 共享。</p>
+                            <button class="btn btn-success" @click="wizardSetup('single')" style="margin-top:8px">一键配置</button>
+                        </div>
+                    </div>
+
+                    <!-- 多盘模式 -->
+                    <div x-show="wizard.unused_count >= 2" style="margin-top:12px">
+                        <p style="font-size:14px;color:#555;margin-bottom:8px">请选择存储方式：</p>
+
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                            <!-- 容量优先 -->
+                            <div @click="wizardMode = 'merge'" :style="wizardMode === 'merge' ? 'border:2px solid #4a9eff;background:#e8f4ff' : 'border:2px solid #e0e4e8;background:white'" style="border-radius:8px;padding:12px;cursor:pointer">
+                                <div style="font-size:16px;margin-bottom:4px">📦 容量优先</div>
+                                <div style="font-size:13px;color:#555">所有磁盘合并成一个大目录</div>
+                                <div style="font-size:12px;color:#999;margin-top:4px">
+                                    磁盘1 + 磁盘2 → /data/nas1（总容量相加）<br>
+                                    ⚠️ 一块盘坏了，所有数据会丢失
+                                </div>
                             </div>
-                            <div style="font-size:13px;color:#555;line-height:1.7">
-                                <div>大小: <span x-text="disk.size"></span></div>
-                                <div x-show="disk.model">型号: <span x-text="disk.model"></span></div>
-                                <div>类型: <span x-text="disk.rotational==='0' ? 'SSD' : 'HDD'"></span></div>
-                                <div x-show="disk.fstype">文件系统: <span x-text="disk.fstype"></span></div>
-                                <div x-show="disk.mountpoint">挂载: <span x-text="disk.mountpoint"></span></div>
-                                <div x-show="disk.smart">SMART: <span :style="disk.smart==='PASSED' ? 'color:var(--success)' : 'color:var(--danger)'" x-text="disk.smart"></span></div>
-                                <div x-show="disk.children && disk.children.length" style="margin-top:4px">
-                                    <template x-for="c in disk.children" :key="c.device">
-                                        <div style="padding-left:10px;border-left:2px solid #e0e4e8;margin-top:3px;font-size:12px">
-                                            <span x-text="c.device"></span> — <span x-text="c.size"></span>
-                                            <span x-show="c.fstype" style="color:#999" x-text="'('+c.fstype+')'"></span>
-                                            <span x-show="c.mountpoint" style="color:#666" x-text="'→ '+c.mountpoint"></span>
-                                        </div>
-                                    </template>
+
+                            <!-- 安全优先 -->
+                            <div @click="wizardMode = 'raid1'" :style="wizardMode === 'raid1' ? 'border:2px solid var(--success);background:#e8f5e9' : 'border:2px solid #e0e4e8;background:white'" style="border-radius:8px;padding:12px;cursor:pointer">
+                                <div style="font-size:16px;margin-bottom:4px">🛡️ 安全优先</div>
+                                <div style="font-size:13px;color:#555">两块盘互为镜像，数据冗余</div>
+                                <div style="font-size:12px;color:#999;margin-top:4px">
+                                    磁盘1 = 磁盘2（容量减半，但坏一块数据不丢）<br>
+                                    ⚠️ 容量为单块盘大小
+                                </div>
+                            </div>
+
+                            <!-- 独立模式 -->
+                            <div @click="wizardMode = 'separate'" :style="wizardMode === 'separate' ? 'border:2px solid #4a9eff;background:#e8f4ff' : 'border:2px solid #e0e4e8;background:white'" style="border-radius:8px;padding:12px;cursor:pointer;grid-column:1/3">
+                                <div style="font-size:16px;margin-bottom:4px">📁 独立模式</div>
+                                <div style="font-size:13px;color:#555">每块磁盘单独一个目录</div>
+                                <div style="font-size:12px;color:#999;margin-top:4px">
+                                    磁盘1 → /data/nas1，磁盘2 → /data/nas2 ...（各自独立）
                                 </div>
                             </div>
                         </div>
-                    </template>
-                </div>
 
-                <!-- 逻辑卷 (LVM) -->
-                <div x-show="pool.exists && pool.lvs && pool.lvs.length" style="margin-bottom:16px">
-                    <h3>逻辑卷 (LVM)</h3>
-                    <table class="table">
-                        <tr><th>LV 名称</th><th>VG</th><th>大小</th><th>路径</th><th>挂载</th><th>文件系统</th></tr>
-                        <template x-for="lv in pool.lvs" :key="lv.path">
-                            <tr>
-                                <td x-text="lv.name"></td>
-                                <td x-text="lv.vg"></td>
-                                <td x-text="lv.size"></td>
-                                <td style="font-family:monospace;font-size:12px" x-text="lv.path"></td>
-                                <td x-text="lv.mount || '-'"></td>
-                                <td x-text="lv.fstype || '-'"></td>
-                            </tr>
-                        </template>
-                    </table>
-                </div>
-
-                <!-- 操作区 (折叠面板) -->
-                <h3>存储操作</h3>
-
-                <!-- 创建存储池 -->
-                <div class="config-section" style="margin-bottom:12px">
-                    <h4 @click="showCreatePool = !showCreatePool" style="cursor:pointer">▸ 创建存储池 (LVM) <span style="font-size:12px;color:var(--text-light)">— 多盘合并成一个大卷</span></h4>
-                    <div x-show="showCreatePool" style="margin-top:10px">
-                        <div class="form-row" style="margin-bottom:8px">
-                            <div style="flex:1">
-                                <label>磁盘 (逗号分隔)</label>
-                                <input type="text" x-model="poolCreateForm.devices" placeholder="/dev/sdb,/dev/sdc" class="port-input" style="width:100%">
-                            </div>
-                            <div>
-                                <label>文件系统</label>
-                                <select x-model="poolCreateForm.fstype" class="port-input" style="width:100px">
-                                    <option value="ext4">ext4</option>
-                                    <option value="xfs">xfs</option>
-                                </select>
-                            </div>
+                        <div x-show="wizardMode" style="margin-top:12px;padding:10px;background:#fff3e0;border-radius:8px;border-left:4px solid #ff9800">
+                            <strong style="color:#e65100">⚠️ 重要提醒</strong>
+                            <p style="font-size:13px;color:#555;margin-top:4px">
+                                选中的磁盘上的<strong>所有数据将被擦除</strong>。请确认这些磁盘上没有重要数据！
+                            </p>
                         </div>
-                        <div class="form-row" style="margin-bottom:8px">
-                            <div>
-                                <label>VG 名称</label>
-                                <input type="text" x-model="poolCreateForm.vg_name" placeholder="vg_nas" class="port-input" style="width:120px">
-                            </div>
-                            <div>
-                                <label>LV 名称</label>
-                                <input type="text" x-model="poolCreateForm.lv_name" placeholder="data" class="port-input" style="width:120px">
-                            </div>
-                            <div style="flex:1">
-                                <label>挂载点</label>
-                                <input type="text" x-model="poolCreateForm.mountpoint" placeholder="/data" class="port-input" style="width:100%">
-                            </div>
-                        </div>
-                        <button class="btn btn-success" @click="createPool()">创建存储池</button>
-                        <p style="color:var(--danger);font-size:13px;margin-top:6px">⚠️ 选中的磁盘将被擦除并合并！</p>
+
+                        <button class="btn btn-success" @click="wizardSetup(wizardMode)" x-show="wizardMode" style="margin-top:8px;width:100%;padding:10px;font-size:15px">
+                            确认配置
+                        </button>
                     </div>
                 </div>
 
-                <!-- 扩容存储池 -->
-                <div class="config-section" style="margin-bottom:12px" x-show="pool.exists">
-                    <h4 @click="showExtendPool = !showExtendPool" style="cursor:pointer">▸ 扩容存储池 <span style="font-size:12px;color:var(--text-light)">— 加新盘到已有池</span></h4>
-                    <div x-show="showExtendPool" style="margin-top:10px">
-                        <div class="form-row">
-                            <div style="flex:1">
-                                <label>新磁盘</label>
-                                <input type="text" x-model="poolExtendForm.device" placeholder="/dev/sdd" class="port-input" style="width:100%">
-                            </div>
-                            <div>
-                                <label>VG 名称</label>
-                                <input type="text" x-model="poolExtendForm.vg_name" placeholder="vg_nas" class="port-input" style="width:120px" :value="pool.vg_name || 'vg_nas'">
-                            </div>
-                        </div>
-                        <button class="btn btn-primary" @click="extendPool()">扩容</button>
-                    </div>
-                </div>
-
-                <!-- 新盘快速配置 -->
+                <!-- 高级操作（折叠） -->
                 <div class="config-section" style="margin-bottom:12px">
-                    <h4 @click="showQuickSetup = !showQuickSetup" style="cursor:pointer">▸ 单盘快速配置 <span style="font-size:12px;color:var(--text-light)">— 格式化+挂载+fstab+权限</span></h4>
-                    <div x-show="showQuickSetup" style="margin-top:10px">
-                        <div class="form-row">
-                            <div style="flex:1"><input type="text" x-model="quickSetupForm.device" placeholder="/dev/sdb1" class="port-input" style="width:100%"></div>
-                            <div style="flex:1"><input type="text" x-model="quickSetupForm.mountpoint" placeholder="/data/storage1" class="port-input" style="width:100%"></div>
-                        </div>
-                        <div class="form-row" style="margin-top:6px">
-                            <select x-model="quickSetupForm.fstype" class="port-input" style="width:100px">
-                                <option value="ext4">ext4</option>
-                                <option value="xfs">xfs</option>
-                                <option value="btrfs">btrfs</option>
-                            </select>
-                            <label style="display:flex;align-items:center;gap:4px;font-size:14px">
-                                <input type="checkbox" x-model="quickSetupForm.samba"> 自动 Samba
-                            </label>
-                            <button class="btn btn-success" @click="diskQuickSetup()">一键配置</button>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 持久化 + 手动操作 -->
-                <div class="config-section" style="margin-bottom:12px">
-                    <h4 @click="showManual = !showManual" style="cursor:pointer">▸ 高级操作 <span style="font-size:12px;color:var(--text-light)">— fstab / 分区 / 挂载 / 格式化 / LVM / SMART</span></h4>
+                    <h4 @click="showManual = !showManual" style="cursor:pointer;color:var(--text-light)">▸ 高级操作（分区/LVM/fstab/SMART）</h4>
                     <div x-show="showManual" style="margin-top:10px">
                         <div style="margin-bottom:8px">
-                            <button class="btn btn-sm btn-primary" @click="loadFstab()">查看 fstab</button>
-                            <button class="btn btn-sm btn-primary" @click="loadDiskPartitions()">分区信息</button>
+                            <button class="btn btn-sm btn-primary" @click="loadDiskStatus(); loadFstab()">磁盘状态</button>
+                            <button class="btn btn-sm btn-primary" @click="loadDiskPartitions()">分区</button>
                             <button class="btn btn-sm btn-primary" @click="loadDiskLVM()">LVM</button>
-                            <button class="btn btn-sm btn-primary" @click="loadDiskIOStat()">I/O 性能</button>
+                            <button class="btn btn-sm btn-primary" @click="loadDiskIOStat()">I/O</button>
                             <button class="btn btn-sm btn-primary" @click="loadDiskSmartDetail()">SMART</button>
                         </div>
                         <pre class="config-output" x-text="diskFstab || diskPartitions || diskLVM || diskIOStat || diskSmartDetail || '点击上方按钮加载'" style="max-height:300px;overflow:auto"></pre>
