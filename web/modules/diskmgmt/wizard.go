@@ -233,9 +233,9 @@ func handleWizardSetup(w http.ResponseWriter, r *http.Request) {
 func setupSingleDisk(dev, mountPoint, nasUser string) []string {
 	var steps []string
 	// Wipe existing partition table
-	common.SudoExec("wipefs", "-a", dev)
+	common.SudoExec("/usr/sbin/wipefs", "-a", dev)
 	// Create partition
-	common.SudoExec("parted", "-s", dev, "mklabel", "gpt", "mkpart", "primary", "ext4", "0%", "100%")
+	common.SudoExec("/usr/sbin/parted", "-s", dev, "mklabel", "gpt", "mkpart", "primary", "ext4", "0%", "100%")
 	partDev := dev + "1"
 	steps = append(steps, "分区 "+dev)
 	// Format
@@ -261,7 +261,7 @@ func setupMergeDisks(devs []string, mountPoint, nasUser string) []string {
 	var steps []string
 	// pvcreate all
 	for _, dev := range devs {
-		common.SudoExec("wipefs", "-a", dev)
+		common.SudoExec("/usr/sbin/wipefs", "-a", dev)
 		common.SudoExec("/usr/sbin/pvcreate", "-f", dev)
 		steps = append(steps, "pvcreate "+dev)
 	}
@@ -307,18 +307,21 @@ func setupSeparateDisks(devs []string, nasUser string) []string {
 func setupRaid1(devs []string, mountPoint, nasUser string) []string {
 	var steps []string
 	// Check mdadm
+	mdadmPath := "/usr/sbin/mdadm"
 	if _, err := exec.LookPath("mdadm"); err != nil {
-		// Install mdadm
+		// Try install
 		exec.Command("sudo", "apt-get", "install", "-y", "mdadm").Run()
+	} else {
+		mdadmPath = "mdadm"
 	}
 	// Create RAID1
 	mdDev := "/dev/md0"
-	args := []string{"--create", mdDev, "--level=1", "--raid-devices=" + fmt.Sprintf("%d", len(devs))}
+	args := []string{"--create", mdDev, "--level=1", "--raid-devices=" + fmt.Sprintf("%d", len(devs)), "--run"}
 	for _, dev := range devs {
-		common.SudoExec("wipefs", "-a", dev)
+		common.SudoExec("/usr/sbin/wipefs", "-a", dev)
 		args = append(args, dev)
 	}
-	common.SudoExec("mdadm", args...)
+	common.SudoExec(mdadmPath, args...)
 	steps = append(steps, "创建 RAID1 镜像")
 	// Format
 	common.SudoExec("mkfs.ext4", "-F", mdDev)

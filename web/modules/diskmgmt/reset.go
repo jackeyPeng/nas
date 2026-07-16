@@ -80,8 +80,8 @@ func handleWizardReset(w http.ResponseWriter, r *http.Request) {
 	steps = append(steps, "清除物理卷")
 
 	// 5. Stop RAID (if exists)
-	common.SudoExec("mdadm", "--stop", "--scan")
-	common.SudoExec("mdadm", "--zero-superblock", "/dev/sdb", "/dev/sdc", "/dev/sdd", "/dev/sde")
+	common.SudoExec("/usr/sbin/mdadm", "--stop", "--scan")
+	common.SudoExec("/usr/sbin/mdadm", "--zero-superblock", "/dev/sdb", "/dev/sdc", "/dev/sdd", "/dev/sde")
 	// Remove mdadm config
 	common.SudoExec("bash", "-c", "echo '' > /etc/mdadm/mdadm.conf 2>/dev/null || true")
 	steps = append(steps, "清除 RAID 配置")
@@ -90,7 +90,7 @@ func handleWizardReset(w http.ResponseWriter, r *http.Request) {
 	for _, dev := range []string{"/dev/sdb", "/dev/sdc", "/dev/sdd", "/dev/sde"} {
 		// Check if device exists
 		if _, err := common.ExecOutput("ls", dev); err == nil {
-			common.SudoExec("wipefs", "-a", dev)
+			common.SudoExec("/usr/sbin/wipefs", "-a", dev)
 		}
 	}
 	steps = append(steps, "清除磁盘签名")
