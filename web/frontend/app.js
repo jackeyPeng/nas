@@ -629,6 +629,27 @@ function nasPanel() {
             this.wizardLoading = false;
         },
 
+        // Wizard: reset storage
+        async resetStorage() {
+            if (!confirm(`⚠️ 警告：重新配置将清除当前所有存储设置！\n\n` +
+                `• 卸载所有数据磁盘\n` +
+                `• 删除 LVM 卷组/逻辑卷\n` +
+                `• 清除 RAID 配置\n` +
+                `• 删除 fstab 持久化\n` +
+                `• 删除 Samba 共享\n\n` +
+                `磁盘上的数据将被保留（仅解除配置），但建议先备份！\n\n` +
+                `确定继续吗？`)) return;
+            const data = await this.api('/disk/wizard/reset', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'confirm=yes'
+            });
+            if (data) {
+                this.showToast('存储已重置: ' + (data.steps||[]).join(' → '), 'success');
+                this.loadWizardStatus();
+            }
+        },
+
         // System settings
         async loadSysNetwork() {
             this.sysNetwork = '加载中...';
