@@ -47,6 +47,10 @@ function nasPanel() {
         showManual: false,
         poolCreateForm: { devices: '', vg_name: 'vg_nas', lv_name: 'data', mountpoint: '/data', fstype: 'ext4' },
         poolExtendForm: { device: '', vg_name: 'vg_nas' },
+        // Wizard
+        wizard: {},
+        wizardMode: '',
+        wizardLoading: false,
         // Backup
         backups: [],
         backupLoading: false,
@@ -134,7 +138,7 @@ function nasPanel() {
                 case 'firewall': this.loadFirewall(); break;
                 case 'monitor': this.initMonitorRefresh(); this.loadAlertConfig(); break;
                 case 'config': this.loadEnvConfig(); break;
-                case 'diskmgmt': break;
+                case 'diskmgmt': this.loadWizardStatus(); break;
                 case 'system': break;
                 case 'backup': this.loadBackups(); break;
             }
@@ -582,6 +586,31 @@ function nasPanel() {
                 this.showExtendPool = false;
                 this.poolExtendForm.device = '';
             }
+        },
+
+        // Wizard: load status
+        async loadWizardStatus() {
+            const data = await this.api('/disk/wizard/status');
+            if (data) this.wizard = data;
+        },
+
+        // Wizard: setup
+        async wizardSetup(mode) {
+            if (!mode) { this.showToast('请选择存储方式', 'error'); return; }
+            const modeName = {single:'单盘配置', merge:'容量优先(合并)', separate:'独立模式', raid1:'安全优先(RAID1)'}[mode];
+            if (!confirm(`⚠️ 确定执行「${modeName}」？\n\n选中的磁盘上所有数据将被擦除！`)) return;
+            this.wizardLoading = true;
+            const data = await this.api('/disk/wizard/setup', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `mode=${mode}&confirm=yes`
+            });
+            if (data) {
+                this.showToast('配置完成！' + (data.steps||[]).join(' → '), 'success');
+                this.loadWizardStatus();
+                this.wizardMode = '';
+            }
+            this.wizardLoading = false;
         },
 
         // System settings
