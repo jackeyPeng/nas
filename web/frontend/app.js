@@ -36,6 +36,10 @@ function nasPanel() {
         mountForm: { device: '', mountpoint: '', fstype: '' },
         unmountForm: { target: '' },
         formatForm: { device: '', fstype: 'ext4' },
+        // Disk management - new
+        diskStatus: [],
+        diskFstab: '',
+        quickSetupForm: { device: '', mountpoint: '', fstype: 'ext4', samba: false },
         // Backup
         backups: [],
         backupLoading: false,
@@ -476,7 +480,47 @@ function nasPanel() {
             if (data) {
                 this.showToast(data.message || '格式化成功', 'success');
                 this.formatForm.device = '';
+                this.loadDiskStatus();
             }
+        },
+
+        // New: disk status overview
+        async loadDiskStatus() {
+            const data = await this.api('/disk/status');
+            if (data) this.diskStatus = data.disks || [];
+        },
+
+        // New: quick setup
+        async diskQuickSetup() {
+            if (!this.quickSetupForm.device || !this.quickSetupForm.mountpoint) {
+                this.showToast('请填写设备名和挂载点', 'error'); return;
+            }
+            if (!confirm(`⚠️ 确定对 ${this.quickSetupForm.device} 执行快速配置？\n将格式化为 ${this.quickSetupForm.fstype}，挂载到 ${this.quickSetupForm.mountpoint}\n该设备上的所有数据将丢失！`)) return;
+            const params = new URLSearchParams({
+                device: this.quickSetupForm.device,
+                mountpoint: this.quickSetupForm.mountpoint,
+                fstype: this.quickSetupForm.fstype,
+                confirm: 'yes',
+                samba: this.quickSetupForm.samba ? 'yes' : ''
+            });
+            const data = await this.api('/disk/quick-setup', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: params.toString()
+            });
+            if (data) {
+                this.showToast('配置完成: ' + (data.steps||[]).join(' → '), 'success');
+                this.loadDiskStatus();
+                this.loadFstab();
+                this.quickSetupForm.device = '';
+                this.quickSetupForm.mountpoint = '';
+            }
+        },
+
+        // New: load fstab
+        async loadFstab() {
+            const data = await this.api('/disk/fstab');
+            if (data !== null) this.diskFstab = data;
         },
 
         // System settings

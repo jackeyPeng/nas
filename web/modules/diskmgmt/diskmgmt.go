@@ -13,16 +13,20 @@ import (
 func RegisterRoutes(mux *http.ServeMux) {
 	// Read-only
 	mux.HandleFunc("/api/disk/info", common.AuthMiddleware(handleDiskInfo))
+	mux.HandleFunc("/api/disk/status", common.AuthMiddleware(handleDiskStatus))
+	mux.HandleFunc("/api/disk/free", common.AuthMiddleware(handleDiskListFree))
 	mux.HandleFunc("/api/disk/mounts", common.AuthMiddleware(handleMounts))
 	mux.HandleFunc("/api/disk/lvm", common.AuthMiddleware(handleLVM))
 	mux.HandleFunc("/api/disk/iostat", common.AuthMiddleware(handleIOStat))
 	mux.HandleFunc("/api/disk/smart-detail", common.AuthMiddleware(handleSmartDetail))
 	mux.HandleFunc("/api/disk/partitions", common.AuthMiddleware(handlePartitions))
+	mux.HandleFunc("/api/disk/fstab", common.AuthMiddleware(handleFstab))
 	// Operations
 	mux.HandleFunc("/api/disk/format", common.AuthMiddleware(handleFormat))
 	mux.HandleFunc("/api/disk/mount", common.AuthMiddleware(handleMount))
 	mux.HandleFunc("/api/disk/unmount", common.AuthMiddleware(handleUnmount))
 	mux.HandleFunc("/api/disk/mkdir", common.AuthMiddleware(handleMkdir))
+	mux.HandleFunc("/api/disk/quick-setup", common.AuthMiddleware(handleQuickSetup))
 }
 
 // ═══════════════════════════════════════
