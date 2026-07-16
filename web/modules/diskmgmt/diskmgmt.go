@@ -27,6 +27,10 @@ func RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/disk/unmount", common.AuthMiddleware(handleUnmount))
 	mux.HandleFunc("/api/disk/mkdir", common.AuthMiddleware(handleMkdir))
 	mux.HandleFunc("/api/disk/quick-setup", common.AuthMiddleware(handleQuickSetup))
+	// Storage pool (LVM)
+	mux.HandleFunc("/api/disk/pool/status", common.AuthMiddleware(handlePoolStatus))
+	mux.HandleFunc("/api/disk/pool/create", common.AuthMiddleware(handlePoolCreate))
+	mux.HandleFunc("/api/disk/pool/extend", common.AuthMiddleware(handlePoolExtend))
 }
 
 // ═══════════════════════════════════════

@@ -40,6 +40,13 @@ function nasPanel() {
         diskStatus: [],
         diskFstab: '',
         quickSetupForm: { device: '', mountpoint: '', fstype: 'ext4', samba: false },
+        pool: {},
+        showCreatePool: false,
+        showExtendPool: false,
+        showQuickSetup: false,
+        showManual: false,
+        poolCreateForm: { devices: '', vg_name: 'vg_nas', lv_name: 'data', mountpoint: '/data', fstype: 'ext4' },
+        poolExtendForm: { device: '', vg_name: 'vg_nas' },
         // Backup
         backups: [],
         backupLoading: false,
@@ -521,6 +528,60 @@ function nasPanel() {
         async loadFstab() {
             const data = await this.api('/disk/fstab');
             if (data !== null) this.diskFstab = data;
+        },
+
+        // New: pool status
+        async loadPoolStatus() {
+            const data = await this.api('/disk/pool/status');
+            if (data && data.pool) this.pool = data.pool;
+        },
+
+        // New: create pool
+        async createPool() {
+            if (!this.poolCreateForm.devices) { this.showToast('请填写磁盘', 'error'); return; }
+            if (!confirm(`⚠️ 确定创建存储池？\n磁盘: ${this.poolCreateForm.devices}\n这些磁盘上的所有数据将被擦除！`)) return;
+            const params = new URLSearchParams({
+                devices: this.poolCreateForm.devices,
+                vg_name: this.poolCreateForm.vg_name,
+                lv_name: this.poolCreateForm.lv_name,
+                mountpoint: this.poolCreateForm.mountpoint,
+                fstype: this.poolCreateForm.fstype,
+                confirm: 'yes'
+            });
+            const data = await this.api('/disk/pool/create', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: params.toString()
+            });
+            if (data) {
+                this.showToast('存储池创建完成: ' + (data.steps||[]).join(' → '), 'success');
+                this.loadPoolStatus();
+                this.loadDiskStatus();
+                this.showCreatePool = false;
+            }
+        },
+
+        // New: extend pool
+        async extendPool() {
+            if (!this.poolExtendForm.device) { this.showToast('请填写磁盘', 'error'); return; }
+            if (!confirm(`确定将 ${this.poolExtendForm.device} 加入存储池 ${this.poolExtendForm.vg_name}？`)) return;
+            const params = new URLSearchParams({
+                device: this.poolExtendForm.device,
+                vg_name: this.poolExtendForm.vg_name,
+                confirm: 'yes'
+            });
+            const data = await this.api('/disk/pool/extend', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: params.toString()
+            });
+            if (data) {
+                this.showToast('扩容完成: ' + (data.steps||[]).join(' → '), 'success');
+                this.loadPoolStatus();
+                this.loadDiskStatus();
+                this.showExtendPool = false;
+                this.poolExtendForm.device = '';
+            }
         },
 
         // System settings
