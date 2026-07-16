@@ -584,54 +584,29 @@
                 <h2>存储管理</h2>
 
                 <!-- 存储池状态卡片 -->
-                <div style="background:linear-gradient(135deg,#1a3a5c,#2d6a9f);color:white;border-radius:10px;padding:20px;margin-bottom:16px">
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-                        <strong style="font-size:18px">📊 存储池</strong>
-                        <button @click="loadWizardStatus()" style="background:rgba(255,255,255,0.2);color:white;border:none;padding:6px 16px;border-radius:6px;cursor:pointer;font-size:13px">刷新</button>
+                <div style="background:linear-gradient(135deg,#1a3a5c,#2d6a9f);color:white;border-radius:8px;padding:14px;margin-bottom:16px">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                        <strong style="font-size:15px">📊 存储池</strong>
+                        <button @click="loadWizardStatus()" style="background:rgba(255,255,255,0.2);color:white;border:none;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:12px">刷新</button>
                     </div>
 
                     <!-- 有存储 -->
-                    <div x-show="wizard.has_storage" style="display:flex;gap:24px;flex-wrap:wrap;align-items:center">
-                        <div style="text-align:center;min-width:80px">
-                            <div style="font-size:28px;font-weight:800" x-text="(wizard.pool.total_gb||wizard.existing_mounts?.[0]?.size||'0')"></div>
-                            <div style="font-size:12px;opacity:0.7;margin-top:2px">总容量</div>
-                        </div>
-                        <div style="width:1px;height:40px;background:rgba(255,255,255,0.2)"></div>
-                        <div style="text-align:center;min-width:80px">
-                            <div style="font-size:28px;font-weight:800" x-text="wizard.existing_mounts?.[0]?.used||'0'"></div>
-                            <div style="font-size:12px;opacity:0.7;margin-top:2px">已用</div>
-                        </div>
-                        <div style="width:1px;height:40px;background:rgba(255,255,255,0.2)"></div>
-                        <div style="text-align:center;min-width:80px">
-                            <div style="font-size:28px;font-weight:800" x-text="wizard.existing_mounts?.[0]?.avail||'0'"></div>
-                            <div style="font-size:12px;opacity:0.7;margin-top:2px">可用</div>
-                        </div>
-                        <div style="flex:1;min-width:200px">
-                            <div style="font-size:12px;opacity:0.7;margin-bottom:4px">使用率 <span x-text="wizard.existing_mounts?.[0]?.percent||'0'"></span></div>
-                            <div style="background:rgba(255,255,255,0.2);border-radius:8px;height:20px;overflow:hidden">
-                                <div :style="'width:'+parseFloat(wizard.existing_mounts?.[0]?.percent||'0')+'%'" style="background:#4a9eff;height:100%;border-radius:8px;transition:width 0.5s"></div>
+                    <div x-show="wizard.has_storage" style="display:flex;gap:16px;align-items:center;font-size:13px">
+                        <span>总容量: <strong x-text="wizard.existing_mounts?.[0]?.size||'0'"></strong></span>
+                        <span>已用: <strong x-text="wizard.existing_mounts?.[0]?.used||'0'"></strong></span>
+                        <span>可用: <strong x-text="wizard.existing_mounts?.[0]?.avail||'0'"></strong></span>
+                        <div style="flex:1;min-width:100px" x-show="wizard.existing_mounts?.[0]?.percent">
+                            <div style="background:rgba(255,255,255,0.2);border-radius:4px;height:8px;overflow:hidden">
+                                <div :style="'width:'+parseFloat(wizard.existing_mounts?.[0]?.percent||'0')+'%'" style="background:#4a9eff;height:100%;border-radius:4px;transition:width 0.5s"></div>
                             </div>
                         </div>
+                        <span x-show="wizard.existing_mounts?.[0]?.percent" style="font-size:12px;opacity:0.8" x-text="wizard.existing_mounts?.[0]?.percent"></span>
                     </div>
 
                     <!-- 无存储 -->
-                    <div x-show="!wizard.has_storage" style="text-align:center;padding:20px 0">
-                        <div style="font-size:16px;opacity:0.9;margin-bottom:8px">还没有配置存储</div>
-                        <div style="font-size:13px;opacity:0.7" x-show="wizard.unused_count > 0">检测到 <strong x-text="wizard.unused_count"></strong> 块新磁盘，请向下滚动配置存储</div>
-                        <div style="font-size:13px;opacity:0.7" x-show="wizard.unused_count === 0">没有检测到可用磁盘，请先插入磁盘</div>
-                    </div>
-
-                    <!-- 存储详情列表 -->
-                    <div x-show="wizard.existing_mounts && wizard.existing_mounts.length > 0" style="margin-top:12px;border-top:1px solid rgba(255,255,255,0.15);padding-top:10px">
-                        <template x-for="m in wizard.existing_mounts" :key="m.mount">
-                            <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px">
-                                <span>📁 <span x-text="m.mount"></span></span>
-                                <span style="opacity:0.8">
-                                    <span x-text="m.used"></span> / <span x-text="m.size"></span>
-                                    <span style="margin-left:8px;background:rgba(255,255,255,0.15);padding:2px 8px;border-radius:4px" x-text="m.percent"></span>
-                                </span>
-                            </div>
-                        </template>
+                    <div x-show="!wizard.has_storage" style="font-size:13px;opacity:0.8">
+                        <span x-show="wizard.unused_count > 0">检测到 <strong x-text="wizard.unused_count"></strong> 块新磁盘，请向下配置存储</span>
+                        <span x-show="wizard.unused_count === 0">没有检测到可用磁盘，请先插入磁盘</span>
                     </div>
                 </div>
 
