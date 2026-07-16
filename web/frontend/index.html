@@ -583,37 +583,90 @@
             <div x-show="page === 'diskmgmt'" class="page">
                 <h2>磁盘管理</h2>
 
-                <h3>分区信息 (fdisk)</h3>
-                <pre class="config-output" x-text="diskPartitions || '点击加载'"></pre>
-                <button class="btn btn-primary" @click="loadDiskPartitions()">加载分区信息</button>
+                <!-- 磁盘状态总览 -->
+                <h3>磁盘状态总览</h3>
+                <button class="btn btn-primary" @click="loadDiskStatus()" style="margin-bottom:12px">刷新</button>
+                <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">
+                    <template x-for="disk in diskStatus" :key="disk.device">
+                        <div class="feature-card" style="padding:12px" :style="disk.type==='system' ? 'border-left-color:#6b7280' : disk.type==='unused' ? 'border-left-color:var(--danger)' : 'border-left-color:var(--success)'">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                                <strong x-text="disk.device"></strong>
+                                <span style="font-size:11px;padding:2px 8px;border-radius:4px"
+                                    :style="disk.type==='system' ? 'background:#f3f4f6;color:#6b7280' : disk.type==='unused' ? 'background:#fee;color:var(--danger)' : 'background:#e8f5e9;color:var(--success)'"
+                                    x-text="disk.type==='system' ? '系统盘' : disk.type==='unused' ? '未使用' : '数据盘'"></span>
+                            </div>
+                            <div style="font-size:13px;color:#555;line-height:1.8">
+                                <div>大小: <span x-text="disk.size"></span></div>
+                                <div x-show="disk.model">型号: <span x-text="disk.model"></span></div>
+                                <div>类型: <span x-text="disk.rotational==='0' ? 'SSD' : 'HDD'"></span></div>
+                                <div x-show="disk.fstype">文件系统: <span x-text="disk.fstype"></span></div>
+                                <div x-show="disk.mountpoint">挂载: <span x-text="disk.mountpoint"></span></div>
+                                <div x-show="disk.smart">SMART: <span :style="disk.smart==='PASSED' ? 'color:var(--success)' : 'color:var(--danger)'" x-text="disk.smart"></span></div>
+                                <div x-show="disk.children && disk.children.length">
+                                    <div x-for="c in disk.children" :key="c.device" style="margin-top:4px;padding-left:12px;border-left:2px solid #e0e4e8">
+                                        <span x-text="c.device"></span> — <span x-text="c.size"></span>
+                                        <span x-show="c.fstype" x-text="'('+c.fstype+')'"></span>
+                                        <span x-show="c.mountpoint" x-text="'→ '+c.mountpoint"></span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                    <div x-show="!diskStatus.length" style="color:var(--text-light)">点击刷新加载磁盘信息</div>
+                </div>
 
-                <h3>物理磁盘</h3>
-                <pre class="config-output" x-text="diskInfo || '点击加载'"></pre>
-                <button class="btn btn-primary" @click="loadDiskInfo()">加载信息</button>
-
-                <h3>挂载点</h3>
-                <pre class="config-output" x-text="diskMounts || '点击加载'"></pre>
-                <button class="btn btn-primary" @click="loadDiskMounts()">加载挂载点</button>
-
-                <h3>磁盘操作</h3>
-                <div class="config-section" style="margin-bottom:12px">
-                    <h4>创建目录（挂载点）</h4>
-                    <div style="display:flex;gap:8px;align-items:center">
-                        <input type="text" x-model="diskMkdirForm.path" placeholder="/data/newdisk" class="port-input">
-                        <button class="btn btn-primary" @click="diskMkdir()">创建</button>
+                <!-- 新盘快速配置 -->
+                <h3 style="margin-top:20px">新盘快速配置</h3>
+                <p style="color:var(--text-light);margin-bottom:8px">一键完成格式化+挂载+fstab持久化+权限设置</p>
+                <div class="config-section">
+                    <div class="form-row">
+                        <div style="flex:1">
+                            <label>设备</label>
+                            <input type="text" x-model="quickSetupForm.device" placeholder="/dev/sdb1" class="port-input" style="width:100%">
+                        </div>
+                        <div style="flex:1">
+                            <label>挂载点</label>
+                            <input type="text" x-model="quickSetupForm.mountpoint" placeholder="/data/newdisk" class="port-input" style="width:100%">
+                        </div>
                     </div>
+                    <div class="form-row" style="margin-top:8px">
+                        <div>
+                            <label>文件系统</label>
+                            <select x-model="quickSetupForm.fstype" class="port-input" style="width:100px">
+                                <option value="ext4">ext4</option>
+                                <option value="xfs">xfs</option>
+                                <option value="btrfs">btrfs</option>
+                            </select>
+                        </div>
+                        <div style="display:flex;align-items:flex-end;gap:8px">
+                            <label style="display:flex;align-items:center;gap:4px;font-size:14px">
+                                <input type="checkbox" x-model="quickSetupForm.samba"> 自动加入 Samba 共享
+                            </label>
+                        </div>
+                    </div>
+                    <button class="btn btn-success" @click="diskQuickSetup()" style="margin-top:8px">一键配置</button>
+                    <p style="color:var(--danger);font-size:13px;margin-top:6px">⚠️ 会格式化指定设备上的所有数据！</p>
+                </div>
+
+                <!-- /etc/fstab -->
+                <h3 style="margin-top:20px">持久化挂载 (/etc/fstab)</h3>
+                <button class="btn btn-primary" @click="loadFstab()" style="margin-bottom:8px">加载 fstab</button>
+                <pre class="config-output" x-text="diskFstab || '点击加载'"></pre>
+
+                <!-- 手动操作 -->
+                <h3 style="margin-top:20px">手动磁盘操作</h3>
+                <div class="config-section" style="margin-bottom:12px">
+                    <h4>分区信息 (fdisk)</h4>
+                    <button class="btn btn-primary" @click="loadDiskPartitions()">加载分区信息</button>
+                    <pre class="config-output" x-text="diskPartitions || ''"></pre>
                 </div>
                 <div class="config-section" style="margin-bottom:12px">
-                    <h4>挂载分区</h4>
-                    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                    <h4>挂载/卸载</h4>
+                    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
                         <input type="text" x-model="mountForm.device" placeholder="/dev/sdb1" class="port-input">
                         <input type="text" x-model="mountForm.mountpoint" placeholder="/data/newdisk" class="port-input">
-                        <input type="text" x-model="mountForm.fstype" placeholder="ext4(可选)" class="port-input" style="width:100px">
                         <button class="btn btn-success" @click="diskMount()">挂载</button>
                     </div>
-                </div>
-                <div class="config-section" style="margin-bottom:12px">
-                    <h4>卸载分区</h4>
                     <div style="display:flex;gap:8px;align-items:center">
                         <input type="text" x-model="unmountForm.target" placeholder="/data/newdisk 或 /dev/sdb1" class="port-input">
                         <button class="btn btn-warn" @click="diskUnmount()">卸载</button>
@@ -630,20 +683,19 @@
                         </select>
                         <button class="btn btn-danger" @click="diskFormat()">格式化</button>
                     </div>
-                    <p style="color:var(--danger);font-size:13px;margin-top:6px">⚠️ 格式化会清除分区上所有数据，请确认设备名正确！</p>
                 </div>
 
                 <h3>LVM 卷管理</h3>
-                <pre class="config-output" x-text="diskLVM || '点击加载'"></pre>
                 <button class="btn btn-primary" @click="loadDiskLVM()">加载 LVM</button>
+                <pre class="config-output" x-text="diskLVM || ''"></pre>
 
                 <h3>I/O 性能 (iostat)</h3>
-                <pre class="config-output" x-text="diskIOStat || '点击加载'"></pre>
                 <button class="btn btn-primary" @click="loadDiskIOStat()">测试 I/O (约3秒)</button>
+                <pre class="config-output" x-text="diskIOStat || ''"></pre>
 
                 <h3>SMART 详细信息</h3>
-                <pre class="config-output" x-text="diskSmartDetail || '点击加载'"></pre>
                 <button class="btn btn-primary" @click="loadDiskSmartDetail()">加载 SMART</button>
+                <pre class="config-output" x-text="diskSmartDetail || ''"></pre>
             </div>
 
             <!-- System Settings -->
