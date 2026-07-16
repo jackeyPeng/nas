@@ -21,7 +21,8 @@
    - 7.2 [NFS — Linux 文件共享](#72-nfs--linux-文件共享)
    - 7.3 [vsftpd — FTP 服务](#73-vsftpd--ftp-服务)
    - 7.4 [rclone — WebDAV 服务](#74-rclone--webdav-服务)
-   - 7.5 [FileBrowser — Web 文件管理器](#75-filebrowser--web-文件管理器)
+   - 7.5 [rclone — S3 对象存储](#75-rclone--s3-对象存储)
+   - 7.6 [FileBrowser — Web 文件管理器](#76-filebrowser--web-文件管理器)
 8. [安全配置](#8-安全配置)
    - 8.1 [UFW 防火墙](#81-ufw-防火墙)
    - 8.2 [Fail2ban 入侵防护](#82-fail2ban-入侵防护)
@@ -150,10 +151,12 @@ Samba、NFS 都是内核级服务（NFS 直接在内核空间运行），用 Doc
 | nfs-kernel-server   | 1:2.8.3-1               | NFS 内核服务端         | ~3 MB          |
 | nfs-common          | 1:2.8.3-1               | NFS 通用工具           | ~3 MB          |
 | vsftpd              | 3.0.5-0.2               | FTP 服务器             | ~1.5 MB        |
-| rclone              | 1.60.1+dfsg-4           | WebDAV 服务 (serve 模式)| ~15 MB         |
-| minio               | RELEASE.2025-09-07 | MinIO 对象存储 (S3 兼容) | ~106 MB (单文件) |
+| rclone              | 1.74.4 (.deb)           | WebDAV + S3 服务 (serve 模式) | ~30 MB |
 | filebrowser         | v2.63.17                | Web 文件管理器          | ~15 MB (单文件)|
 | rpcbind             | 1.2.7-1                 | RPC 端口映射 (NFS 依赖)| ~0.5 MB        |
+| xfsprogs            | 6.15.0-1                | XFS 文件系统工具        | ~5 MB          |
+| mdadm               | 4.3+20250117-1          | RAID 管理工具           | ~2 MB          |
+| lvm2                | 2.03.31-1               | LVM 逻辑卷管理          | ~5 MB          |
 
 ### 安全与运维包
 
@@ -170,12 +173,12 @@ Samba、NFS 都是内核级服务（NFS 直接在内核空间运行），用 Doc
 ```bash
 sudo apt-get update
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    samba nfs-kernel-server vsftpd rclone \
+    samba nfs-kernel-server vsftpd \
     fail2ban ufw smartmontools unattended-upgrades \
-    smbclient nfs-common
+    smbclient nfs-common xfsprogs mdadm lvm2
 ```
 
-**总计安装量：** 约 54 MB 下载，251 MB 磁盘占用（含 99 个包及全部依赖）。
+**总计安装量：** 约 50 MB 下载，230 MB 磁盘占用（含全部依赖；rclone 通过 .deb 包单独安装）。
 
 ---
 
@@ -223,7 +226,7 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
 │   ├── jail.local              ← Fail2ban 配置
 │   ├── rclone-webdav.service   ← WebDAV systemd 单元文件
 │   ├── filebrowser.service     ← FileBrowser systemd 单元文件
-│   └── minio.service           ← MinIO systemd 单元文件
+│   └── rclone-s3.service        ← rclone S3 systemd 单元文件
 └── scripts/                    ← 管理脚本
     ├── setup.sh                ← 一键部署脚本
     ├── add-user.sh             ← 添加用户
@@ -240,7 +243,7 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
 | /opt/nas/configs/jail.local          | /etc/fail2ban/jail.local                 |
 | /opt/nas/configs/rclone-webdav.service | /etc/systemd/system/rclone-webdav.service |
 | /opt/nas/configs/filebrowser.service  | /etc/systemd/system/filebrowser.service  |
-| /opt/nas/configs/minio.service        | /etc/systemd/system/minio.service        |
+| /opt/nas/configs/rclone-s3.service     | /etc/systemd/system/rclone-s3.service     |
 | /opt/nas/scripts/*.sh                | 保留原位，直接执行                        |
 
 ---
@@ -267,9 +270,9 @@ sudo apt-get install -y curl ca-certificates gnupg
 
 ```bash
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    samba nfs-kernel-server vsftpd rclone \
+    samba nfs-kernel-server vsftpd \
     fail2ban ufw smartmontools unattended-upgrades \
-    smbclient nfs-common
+    smbclient nfs-common xfsprogs mdadm lvm2
 ```
 
 ### 步骤 3：创建数据目录结构
@@ -433,24 +436,26 @@ sudo systemctl enable filebrowser
 sudo systemctl start filebrowser
 ```
 
-### 步骤 9：安装 MinIO
+### 步骤 9：安装 rclone S3 服务
 
 ```bash
-# 下载并安装 MinIO
-sudo curl -fsSL https://dl.min.io/server/minio/release/linux-amd64/minio -o /usr/local/bin/minio
-sudo chmod +x /usr/local/bin/minio
+# 下载并安装 rclone .deb 包（推荐，速度快）
+cd /tmp
+curl -fsSL -o rclone.deb https://file.abwen.com/minio/rclone-v1.74.4-linux-amd64.deb
+sudo dpkg -i rclone.deb
+rm rclone.deb
 
-# 创建数据目录
-sudo mkdir -p /data/minio
-sudo chown <NAS_USER>:<NAS_USER> /data/minio
+# 验证安装
+rclone version
+# 期望输出: rclone v1.74.4
 
-# 复制 systemd 服务文件（详见 7.5 节）
-sudo cp /opt/nas/configs/minio.service /etc/systemd/system/
+# 创建环境配置文件（详见 7.5 节）
+sudo cp /opt/nas/configs/rclone-s3.service /etc/systemd/system/
 
 # 启动服务
 sudo systemctl daemon-reload
-sudo systemctl enable minio
-sudo systemctl start minio
+sudo systemctl enable rclone-s3
+sudo systemctl start rclone-s3
 ```
 
 ### 步骤 10：配置防火墙
@@ -471,8 +476,7 @@ sudo ufw allow 21/tcp                 # FTP
 sudo ufw allow 30000:31000/tcp        # FTP 被动模式
 sudo ufw allow 8080/tcp               # WebDAV
 sudo ufw allow 8081/tcp               # FileBrowser
-sudo ufw allow 9000/tcp               # MinIO S3 API
-sudo ufw allow 9002/tcp               # MinIO Web Console
+sudo ufw allow 9000/tcp               # rclone S3 API
 
 # 启用防火墙
 sudo ufw --force enable
@@ -494,7 +498,7 @@ sudo systemctl restart fail2ban
 
 ```bash
 # 检查所有服务状态
-for svc in smbd nmbd nfs-kernel-server vsftpd rclone-webdav filebrowser minio fail2ban; do
+for svc in smbd nmbd nfs-kernel-server vsftpd rclone-webdav filebrowser rclone-s3 fail2ban; do
     echo "$svc: $(systemctl is-active $svc)"
 done
 
@@ -513,12 +517,9 @@ curl -u <NAS_USER>:<NAS_PASS> http://localhost:8080/
 # 测试 FileBrowser
 curl -s http://localhost:8081/ | head -5
 
-# 测试 MinIO API
-curl -s http://localhost:9000/minio/health/live
+# 测试 rclone S3 API
+curl -s http://localhost:9000/
 echo  # 添加换行
-
-# 测试 MinIO Console
-curl -s http://localhost:9002/login | head -3
 
 # 测试防火墙
 sudo ufw status verbose
@@ -801,38 +802,37 @@ chown <NAS_USER>:<NAS_USER> /etc/rclone-htpasswd
 - 性能对家用场景完全足够
 - 进程挂了 systemd 自动重启，运维成本极低
 
-### 7.5 MinIO — S3 兼容对象存储
+### 7.5 rclone — S3 对象存储
 
-**简介：** MinIO 是一个高性能、S3 兼容的对象存储服务器，单二进制文件部署，提供 Web 管理控制台和完整的 S3 API。适合对接云存储、应用开发和备份场景。
+**简介：** rclone serve s3 是 rclone 内置的 S3 兼容对象存储服务模式，直接以 `/data` 为根目录，每个子目录自动映射为一个 S3 bucket。无需额外 Web 管理控制台，适合对接云存储、应用开发和备份场景。
 
-**安装位置：** `/usr/local/bin/minio`
-**版本：** RELEASE.2025-09-07T16-13-09Z (go1.24.6 linux/amd64)
-**数据目录：** `/data/minio`
-**许可证：** GNU AGPLv3
+**安装位置：** `/usr/bin/rclone`（通过 .deb 包安装）
+**版本：** rclone v1.74.4
+**数据目录：** `/data`（每个子目录即一个 bucket）
+**许可证：** MIT
 
-**Systemd 服务文件：** `/etc/systemd/system/minio.service`
+**Systemd 服务文件：** `/etc/systemd/system/rclone-s3.service`
 
-**MinIO 环境配置文件：** `/etc/default/minio`
+**rclone S3 环境配置文件：** `/etc/rclone/s3-env`
 
 ```bash
-MINIO_ROOT_USER=<NAS_USER>
-MINIO_ROOT_PASSWORD=***
+RCLONE_S3_AUTH_KEY=<NAS_USER>,<NAS_PASS>
 ```
 
-**MinIO Systemd 服务文件：** `/etc/systemd/system/minio.service`
+**rclone S3 Systemd 服务文件：** `/etc/systemd/system/rclone-s3.service`
 
 ```ini
 [Unit]
-Description=MinIO Object Storage
-Documentation=https://docs.min.io
+Description=Rclone S3 Object Storage Server
 Wants=network-online.target
 After=network-online.target
 
 [Service]
+Type=simple
 User=<NAS_USER>
 Group=<NAS_USER>
-EnvironmentFile=/etc/default/minio
-ExecStart=/usr/local/bin/minio server /data/minio --console-address :9002
+EnvironmentFile=/etc/rclone/s3-env
+ExecStart=/usr/bin/rclone serve s3 /data --addr :9000 --auth-key ${RCLONE_S3_AUTH_KEY}
 Restart=always
 RestartSec=5
 LimitNOFILE=65536
@@ -843,70 +843,87 @@ WantedBy=multi-user.target
 
 **配置文件说明：**
 
-- 凭证存储在 `/etc/default/minio` 文件中，通过 `EnvironmentFile` 加载
+- 凭证存储在 `/etc/rclone/s3-env` 文件中，通过 `EnvironmentFile` 加载
 - 文件权限：`chmod 640`（允许 <NAS_USER> 组读取）
 - 文件属主：`chown <NAS_USER>:<NAS_USER>`
 - 使用统一的 NAS 密码：`$NAS_PASS`（在 setup.sh 中定义）
+- rclone serve s3 以 `/data` 为根目录，`/data` 下的每个子目录自动成为 S3 bucket（如 `shared`、`backups`、`media` 等）
+- 内网环境下也可使用匿名模式（不带 `--auth-key`），允许无认证访问
 
 **端口说明：**
 
 | 端口 | 用途                  |
 |------|----------------------|
 | 9000 | S3 API 端点           |
-| 9002 | Web 管理控制台         |
+
+> 注意：rclone serve s3 无 Web 管理控制台，不需要额外端口。
 
 **安装步骤：**
 
 ```bash
-# 1. 下载 MinIO 二进制文件
+# 1. 下载并安装 rclone .deb 包
 # 方式 1：自有文件服务器（推荐，速度快）
-curl -fsSL https://file.abwen.com/minio/minio.linux-amd64.RELEASE.2025-09-07T16-13-09Z -o /usr/local/bin/minio
+cd /tmp
+curl -fsSL -o rclone.deb https://file.abwen.com/minio/rclone-v1.74.4-linux-amd64.deb
+sudo dpkg -i rclone.deb
+rm rclone.deb
 
-# 方式 2：官方地址（需要能访问 dl.min.io）
-# curl -fsSL https://dl.min.io/server/minio/release/linux-amd64/minio -o /usr/local/bin/minio
+# 方式 2：官方地址（需要能访问 rclone.org）
+# curl -fsSL -o rclone.deb https://rclone.org/downloads/rclone-v1.74.4-linux-amd64.deb
+# sudo dpkg -i rclone.deb
 
-# 方式 3：通过 GitHub 镜像（备用）
-# curl -fsSL https://ghfast.top/https://dl.min.io/server/minio/release/linux-amd64/minio -o /usr/local/bin/minio
+# 验证
+rclone version
 
-sudo chmod +x /usr/local/bin/minio
-
-# 2. 创建数据目录
-sudo mkdir -p /data/minio
-sudo chown -R <NAS_USER>:<NAS_USER> /data/minio
+# 2. 创建环境配置文件
+sudo mkdir -p /etc/rclone
+echo 'RCLONE_S3_AUTH_KEY=<NAS_USER>,<NAS_PASS>' | sudo tee /etc/rclone/s3-env
+sudo chmod 640 /etc/rclone/s3-env
+sudo chown <NAS_USER>:<NAS_USER> /etc/rclone/s3-env
 
 # 3. 部署 systemd 服务（见上方配置）
+sudo cp /opt/nas/configs/rclone-s3.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable minio
-sudo systemctl start minio
+sudo systemctl enable rclone-s3
+sudo systemctl start rclone-s3
 
 # 4. 开放防火墙端口
 sudo ufw allow 9000/tcp   # S3 API
-sudo ufw allow 9002/tcp   # Web Console
 ```
 
 **访问方式：**
 
-- Web 控制台: `http://[REDACTED]:9002`
 - S3 API: `http://[REDACTED]:9000`
-- 用户名: `<NAS_USER>`
-- 密码: `<NAS_PASS>`
+- Access Key: `<NAS_USER>`
+- Secret Key: `<NAS_PASS>`
+- Bucket 映射：`/data/backups` → bucket `backups`，`/data/media` → bucket `media`，以此类推
 
-**使用 mc 客户端：**
+**使用 s3cmd 客户端：**
 
 ```bash
-# 下载 mc (MinIO Client)
-curl -fsSL https://dl.min.io/client/mc/release/linux-amd64/mc -o mc
-chmod +x mc
+# 安装 s3cmd
+sudo apt-get install -y s3cmd
 
-# 配置别名
-./mc alias set mynas http://[REDACTED]:9000 <NAS_USER> <NAS_PASS>
+# 配置 s3cmd（交互式或直接编辑配置文件）
+s3cmd --configure
+# 或直接创建配置文件
+mkdir -p ~/.s3cfg
+cat > ~/.s3cfg << EOF
+[default]
+access_key = <NAS_USER>
+secret_key = <NAS_PASS>
+host_base = [REDACTED]:9000
+host_bucket = [REDACTED]:9000
+use_https = False
+EOF
 
 # 常用操作
-./mc ls mynas/                          # 列出存储桶
-./mc mb mynas/backups                   # 创建存储桶
-./mc cp localfile.txt mynas/backups/    # 上传文件
-./mc cp -r mynas/backups/ ./restore/    # 下载文件
-./mc mirror mynas/backups /local/backup # 双向同步
+s3cmd ls                          # 列出存储桶
+s3cmd mb s3://backups             # 创建存储桶
+s3cmd put localfile.txt s3://backups/  # 上传文件
+s3cmd get s3://backups/remotefile.txt ./  # 下载文件
+s3cmd sync s3://backups/ ./restore/      # 同步到本地
+s3cmd ls s3://backups             # 列出 bucket 内容
 ```
 
 **S3 SDK 对接示例（Python boto3）：**
@@ -917,11 +934,15 @@ import boto3
 s3 = boto3.client(
     's3',
     endpoint_url='http://[REDACTED]:9000',
-    aws_access_key_id='admin',
-    aws_secret_access_key='***'
+    aws_access_key_id='<NAS_USER>',
+    aws_secret_access_key='<NAS_PASS>',
+    region_name='us-east-1'
 )
 
-# 创建存储桶
+# 列出存储桶
+s3.list_buckets()
+
+# 创建存储桶（对应在 /data 下创建同名子目录）
 s3.create_bucket(Bucket='backups')
 
 # 上传文件
@@ -929,11 +950,11 @@ s3.upload_file('localfile.txt', 'backups', 'remotefile.txt')
 ```
 
 **安全建议：**
-- 部署后立即修改默认密码（在 Web 控制台中修改）
-- 生产环境建议启用 HTTPS
-- 可通过 bucket policy 限制访问权限
+- 生产环境建议启用 HTTPS（可通过反向代理如 Nginx 实现 TLS 终结）
+- 内网环境下可使用匿名模式（省略 `--auth-key`），简化内网访问
+- 可通过 bucket policy 或文件系统权限限制访问
 
-**资源占用：** 内存 ~140MB，二进制 ~106MB
+**资源占用：** 内存 ~30MB，二进制 ~30MB（.deb 包）
 
 ---
 
@@ -1628,7 +1649,7 @@ sudo /opt/nas/scripts/setup.sh
 | FTP 服务            | `systemctl is-active vsftpd`                     | active         |
 | WebDAV 服务         | `systemctl is-active rclone-webdav`              | active         |
 | FileBrowser 服务    | `systemctl is-active filebrowser`                | active         |
-| MinIO 服务          | `systemctl is-active minio`                      | active         |
+| rclone S3 服务       | `systemctl is-active rclone-s3`                   | active         |
 | Fail2ban            | `systemctl is-active fail2ban`                   | active         |
 | UFW 防火墙          | `sudo ufw status`                                | active         |
 | Samba 共享列表      | `smbclient -L localhost -U <NAS_USER>%<NAS_PASS>`      | 显示共享列表    |
@@ -1664,10 +1685,10 @@ sudo /opt/nas/scripts/setup.sh
 | 4 | `configs/jail.local`                  | Fail2ban 配置模板        |
 | 5 | `configs/rclone-webdav.service`       | WebDAV 服务单元模板      |
 | 6 | `configs/filebrowser.service`        | FileBrowser 服务单元模板 |
-| 7 | `configs/minio.service`              | MinIO 服务单元模板       |
-| 7 | `scripts/setup.sh`                    | 一键部署脚本             |
-| 8 | `scripts/add-user.sh`                 | 添加用户脚本             |
-| 9 | `scripts/remove-user.sh`              | 删除用户脚本             |
+| 7 | `configs/rclone-s3.service`          | rclone S3 服务单元模板   |
+| 8 | `scripts/setup.sh`                    | 一键部署脚本             |
+| 9 | `scripts/add-user.sh`                 | 添加用户脚本             |
+| 10 | `scripts/remove-user.sh`              | 删除用户脚本             |
 
 ---
 
@@ -1684,8 +1705,7 @@ sudo /opt/nas/scripts/setup.sh
 | 30000-31000  | TCP   | FTP         | 入站  | FTP 被动模式数据通道        |
 | 8080         | TCP   | WebDAV      | 入站  | WebDAV HTTP 服务            |
 | 8081         | TCP   | FileBrowser | 入站  | Web 文件管理器              |
-| 9000         | TCP   | MinIO       | 入站  | S3 API 端点                |
-| 9002         | TCP   | MinIO       | 入站  | Web 管理控制台              |
+| 9000         | TCP   | rclone S3   | 入站  | S3 API 端点                |
 
 ## 附录 B：Systemd 服务清单
 
@@ -1698,7 +1718,7 @@ sudo /opt/nas/scripts/setup.sh
 | vsftpd             | 系统服务 | enabled | FTP 服务器                     |
 | rclone-webdav      | 自定义   | enabled | WebDAV 服务（rclone serve）    |
 | filebrowser        | 自定义   | enabled | Web 文件管理器                 |
-| minio              | 自定义   | enabled | MinIO 对象存储 (S3 API + Web Console) |
+| rclone-s3          | 自定义   | enabled | rclone S3 对象存储服务        |
 | fail2ban           | 系统服务 | enabled | 入侵检测与自动封禁            |
 | ufw                | 系统服务 | enabled | 防火墙                         |
 | unattended-upgrades| 系统服务 | enabled | 自动安全更新                   |
