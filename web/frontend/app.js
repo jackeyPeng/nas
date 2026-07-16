@@ -51,6 +51,7 @@ function nasPanel() {
         wizard: {},
         wizardMode: '',
         wizardLoading: false,
+        allDisks: [],
         // Backup
         backups: [],
         backupLoading: false,
@@ -591,7 +592,22 @@ function nasPanel() {
         // Wizard: load status
         async loadWizardStatus() {
             const data = await this.api('/disk/wizard/status');
-            if (data) this.wizard = data;
+            if (data) {
+                this.wizard = data;
+                // Also load full disk list for display
+                const diskData = await this.api('/disk/status');
+                if (diskData && diskData.disks) {
+                    let id = 0;
+                    this.allDisks = diskData.disks.filter(d => d.name !== 'sr0').map(d => {
+                        id++;
+                        return {
+                            ...d,
+                            friendly: '磁盘 ' + id,
+                            type: (d.type === 'system' || (d.children && d.children.some(c => c.type === 'system'))) ? 'system' : d.type
+                        };
+                    });
+                }
+            }
         },
 
         // Wizard: setup
