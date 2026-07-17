@@ -132,6 +132,12 @@ func handleStorageOverview(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		diskID++
+		// Determine real status: system disk detection
+		realStatus := d.Type
+		isSystem := isSystemDisk(d.Device)
+		if isSystem {
+			realStatus = "system"
+		}
 		ds := DiskSummary{
 			Device:     d.Device,
 			Friendly:   fmt.Sprintf("磁盘 %d", diskID),
@@ -141,7 +147,7 @@ func handleStorageOverview(w http.ResponseWriter, r *http.Request) {
 			Model:      d.Model,
 			Temp:       d.Temp,
 			Smart:      d.Smart,
-			Status:     d.Type,
+			Status:     realStatus,
 		}
 		// Check if disk is part of a pool
 		ds.Pool = findDiskPoolDisplay(d.Device, mounts, mountDisplay)

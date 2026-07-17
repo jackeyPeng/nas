@@ -24,20 +24,12 @@ type WizardDisk struct {
 func handleWizardStatus(w http.ResponseWriter, r *http.Request) {
 	disks := getDiskStatus()
 	var unused []WizardDisk
-	id := 0
+	globalID := 0 // global disk number, matches overview numbering
 	for _, d := range disks {
 		if d.Name == "sr0" || d.Name == "zram0" || strings.HasPrefix(d.Name, "loop") {
 			continue
 		}
-		id++
-		wd := WizardDisk{
-			ID:       id,
-			Device:   d.Device,
-			Friendly: fmt.Sprintf("磁盘 %d", id),
-			Size:     d.Size,
-			Model:    d.Model,
-			Type:     d.Type,
-		}
+		globalID++
 		// Skip system disks entirely
 		if isSystemDisk(d.Device) {
 			continue
@@ -57,10 +49,15 @@ func handleWizardStatus(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if isUnused {
-			// Re-number for unused only
-			wd.ID = len(unused) + 1
-			wd.Friendly = fmt.Sprintf("磁盘 %d", len(unused)+1)
-			wd.Type = "unused"
+			wd := WizardDisk{
+				ID:       globalID, // keep global number, consistent with overview
+				Device:   d.Device,
+				Friendly: fmt.Sprintf("磁盘 %d", globalID),
+				Size:     d.Size,
+				Model:    d.Model,
+				Type:     "unused",
+			}
+			_ = d
 			unused = append(unused, wd)
 		}
 	}
