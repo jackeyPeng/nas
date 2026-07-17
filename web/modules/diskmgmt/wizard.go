@@ -26,7 +26,7 @@ func handleWizardStatus(w http.ResponseWriter, r *http.Request) {
 	var unused []WizardDisk
 	id := 0
 	for _, d := range disks {
-		if d.Name == "sr0" {
+		if d.Name == "sr0" || d.Name == "zram0" || strings.HasPrefix(d.Name, "loop") {
 			continue
 		}
 		id++
@@ -154,7 +154,7 @@ func handleWizardSetup(w http.ResponseWriter, r *http.Request) {
 	disks := getDiskStatus()
 	var unusedDevs []string
 	for _, d := range disks {
-		if d.Name == "sr0" {
+		if d.Name == "sr0" || d.Name == "zram0" || strings.HasPrefix(d.Name, "loop") {
 			continue
 		}
 		if isSystemDisk(d.Device) {

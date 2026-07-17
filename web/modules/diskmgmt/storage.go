@@ -15,17 +15,144 @@ import (
 
 // DiskStatus represents a single disk device
 type DiskStatus struct {
-	Device     string `json:"device"`
-	Name       string `json:"name"`
-	Size       string `json:"size"`
-	Type       string `json:"type"`      // system, data, unused
-	FSType     string `json:"fstype"`     // ext4, xfs, btrfs, ""
-	Mountpoint string `json:"mountpoint"`
-	Model      string `json:"model"`
-	Rotational string `json:"rotational"` // 0=SSD, 1=HDD
+	Device     string       `json:"device"`         // /dev/sdb
+	Name       string       `json:"name"`           // sdb
+	Size       string       `json:"size"`           // 50G
+	Type       string       `json:"type"`           // system, data, unused, pool_member
+	FSType     string       `json:"fstype"`         // xfs, ext4, btrfs, ""
+	Mountpoint string       `json:"mountpoint"`
+	Model      string       `json:"model"`
+	Interface  string       `json:"interface"`     // SATA, NVMe, VirtIO, USB
+	Rotational string       `json:"rotational"`    // 0=SSD, 1=HDD
+	Temp       string       `json:"temp,omitempty"`  // 35°C
+	Smart      string       `json:"smart,omitempty"` // PASSED/FAILED/unknown
+	Serial     string       `json:"serial,omitempty"`
+	UUID       string       `json:"uuid,omitempty"`
 	Children   []DiskStatus `json:"children,omitempty"`
-	Smart      string `json:"smart,omitempty"` // PASSED/FAILED/unknown
-	UUID       string `json:"uuid,omitempty"`
+}
+
+// detectInterface determines disk interface type from device name + sysfs
+func detectInterface(devName string) string {
+	// NVMe: nvme0n1, nvme1n2...
+	if strings.HasPrefix(devName, "nvme") {
+		return "NVMe"
+	}
+	// VirtIO: vda, vdb...
+	if strings.HasPrefix(devName, "vd") {
+		return "VirtIO"
+	}
+	// USB: usually starts with sd but has USB in sysfs
+	usbPath := "/sys/block/" + devName + "/device/uevent"
+	if data, err := os.ReadFile(usbPath); err == nil {
+		uevent := string(data)
+		if strings.Contains(uevent, "usb") {
+			return "USB"
+		}
+	}
+	// SD/SCSI: check sysfs for SATA/link info
+	linkPath := "/sys/block/" + devName + "/device/sata_phy"
+	if _, err := os.Stat(linkPath); err == nil {
+		return "SATA"
+	}
+	// Fallback: check transport
+	transPath := "/sys/block/" + devName + "/device/transport"
+	if data, err := os.ReadFile(transPath); err == nil {
+		t := strings.TrimSpace(string(data))
+		if strings.Contains(t, "sata") || strings.Contains(t, "ata") {
+			return "SATA"
+		}
+		if strings.Contains(t, "usb") {
+			return "USB"
+		}
+	}
+	// Default for sd* devices
+	if strings.HasPrefix(devName, "sd") {
+		return "SATA"
+	}
+	return "Unknown"
+}
+
+// getDiskTemp reads disk temperature via smartctl
+func getDiskTemp(devName string) string {
+	// Only try for real disks (not partitions)
+	if strings.HasPrefix(devName, "sd") || strings.HasPrefix(devName, "nvme") || strings.HasPrefix(devName, "vd") {
+		out, err := common.SudoOutput("smartctl", "-A", "-d", "ata", "/dev/"+devName)
+		if err != nil {
+			// Try without ata flag for NVMe
+			out2, err2 := common.SudoOutput("smartctl", "-A", "/dev/"+devName)
+			if err2 != nil {
+				return ""
+			}
+			out = out2
+		}
+		// Parse temperature: look for Temperature_Celsius or Temperature_NA
+		for _, line := range strings.Split(out, "\n") {
+			lower := strings.ToLower(line)
+			if strings.Contains(lower, "temperature_celsius") || strings.Contains(lower, "temperature:") {
+				fields := strings.Fields(line)
+				if len(fields) >= 10 {
+					// smartctl -A format: ID# ATTRIBUTE_NAME ... RAW_VALUE
+					return fields[len(fields)-1] + "°C"
+				}
+				// NVMe format: Temperature: 35 Celsius
+				for i, f := range fields {
+					if strings.Contains(strings.ToLower(f), "celsius") && i > 0 {
+						return fields[i-1] + "°C"
+					}
+				}
+			}
+		}
+		// NVMe: look for line like "Temperature:                        35"
+		for _, line := range strings.Split(out, "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), "Temperature:") {
+				fields := strings.Fields(line)
+				if len(fields) >= 2 {
+					return fields[len(fields)-1] + "°C"
+				}
+			}
+		}
+	}
+	return ""
+}
+
+// getSmartStatus gets SMART health for a disk
+func getSmartStatus(devName string) string {
+	if !strings.HasPrefix(devName, "sd") && !strings.HasPrefix(devName, "nvme") && !strings.HasPrefix(devName, "vd") {
+		return ""
+	}
+	out, err := common.SudoOutput("smartctl", "-H", "/dev/"+devName)
+	if err != nil {
+		return "unknown"
+	}
+	if strings.Contains(out, "PASSED") {
+		return "PASSED"
+	}
+	if strings.Contains(out, "FAILED") {
+		return "FAILED"
+	}
+	// NVMe may use "OK" instead
+	if strings.Contains(out, "OK") {
+		return "PASSED"
+	}
+	return "unknown"
+}
+
+// getDiskSerial reads disk serial number
+func getDiskSerial(devName string) string {
+	out, err := common.SudoOutput("smartctl", "-i", "/dev/"+devName)
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(out, "\n") {
+		lower := strings.ToLower(line)
+		if strings.Contains(lower, "serial number:") {
+			fields := strings.SplitN(line, ":", 2)
+			if len(fields) == 2 {
+				return strings.TrimSpace(fields[1])
+			}
+		}
+	}
+	return ""
 }
 
 // getDiskStatus returns structured disk overview
@@ -35,7 +162,7 @@ func getDiskStatus() []DiskStatus {
 		return nil
 	}
 
-		var raw struct {
+	var raw struct {
 		Blockdevices []struct {
 			Name       string      `json:"name"`
 			Size       string      `json:"size"`
@@ -71,6 +198,7 @@ func getDiskStatus() []DiskStatus {
 			Name:       dev.Name,
 			Size:       dev.Size,
 			Rotational: rota,
+			Interface:  detectInterface(dev.Name),
 		}
 		if m, ok := dev.Model.(string); ok {
 			ds.Model = m
@@ -100,9 +228,10 @@ func getDiskStatus() []DiskStatus {
 		// Check children (partitions)
 		for _, child := range dev.Children {
 			childDS := DiskStatus{
-				Device: "/dev/" + child.Name,
-				Name:   child.Name,
-				Size:   child.Size,
+				Device:    "/dev/" + child.Name,
+				Name:      child.Name,
+				Size:      child.Size,
+				Interface: ds.Interface,
 			}
 			if f, ok := child.Fstype.(string); ok {
 				childDS.FSType = f
@@ -115,8 +244,10 @@ func getDiskStatus() []DiskStatus {
 			}
 			if childDS.Mountpoint == "/" || childDS.Mountpoint == "/boot" || childDS.Mountpoint == "/boot/efi" {
 				childDS.Type = "system"
+				ds.Type = "system"
 			} else if childDS.Mountpoint != "" {
 				childDS.Type = "data"
+				ds.Type = "data"
 			} else if childDS.FSType != "" {
 				childDS.Type = "data"
 			} else {
@@ -125,18 +256,11 @@ func getDiskStatus() []DiskStatus {
 			ds.Children = append(ds.Children, childDS)
 		}
 
-		// SMART status for whole disks
-		if dev.Type == "disk" && (strings.HasPrefix(ds.Name, "sd") || strings.HasPrefix(ds.Name, "nvme")) {
-			smartOut, err := common.SudoOutput("smartctl", "-H", "/dev/"+dev.Name)
-			if err == nil {
-				if strings.Contains(smartOut, "PASSED") {
-					ds.Smart = "PASSED"
-				} else if strings.Contains(smartOut, "FAILED") {
-					ds.Smart = "FAILED"
-				} else {
-					ds.Smart = "unknown"
-				}
-			}
+		// SMART, temperature, serial for real disks (not sr0/cdrom)
+		if dev.Type == "disk" && dev.Name != "sr0" {
+			ds.Smart = getSmartStatus(dev.Name)
+			ds.Temp = getDiskTemp(dev.Name)
+			ds.Serial = getDiskSerial(dev.Name)
 		}
 
 		result = append(result, ds)
@@ -172,18 +296,16 @@ func handleQuickSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if fstype == "" {
-		fstype = "ext4"
+		fstype = "xfs"
 	}
 	if confirm != "yes" {
 		http.Error(w, `{"error": "请加 confirm=yes 确认操作"}`, http.StatusBadRequest)
 		return
 	}
-	// Security: no system disk
 	if isSystemDisk(device) {
 		http.Error(w, `{"error": "不允许操作系统盘"}`, http.StatusBadRequest)
 		return
 	}
-	// Security: mountpoint must be under /data
 	if !strings.HasPrefix(mountpoint, "/data/") && mountpoint != "/data" {
 		http.Error(w, `{"error": "挂载点必须在 /data/ 下"}`, http.StatusBadRequest)
 		return
@@ -196,7 +318,6 @@ func handleQuickSetup(w http.ResponseWriter, r *http.Request) {
 
 	var steps []string
 
-	// 1. Format
 	out, err := common.SudoExec("mkfs."+fstype, "-F", device)
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error": "格式化失败: %s"}`, out), http.StatusInternalServerError)
@@ -204,22 +325,17 @@ func handleQuickSetup(w http.ResponseWriter, r *http.Request) {
 	}
 	steps = append(steps, "格式化 "+device+" 为 "+fstype)
 
-	// 2. Get UUID
 	uuidOut, _ := common.ExecOutput("blkid", "-s", "UUID", "-o", "value", device)
 	uuid := strings.TrimSpace(uuidOut)
 
-	// 3. Create mount point
 	common.SudoExec("mkdir", "-p", mountpoint)
 	steps = append(steps, "创建目录 "+mountpoint)
 
-	// 4. Mount
 	common.SudoExec("mount", device, mountpoint)
 	steps = append(steps, "挂载 "+device+" 到 "+mountpoint)
 
-	// 5. Write fstab for persistence
 	if uuid != "" {
 		fstabLine := fmt.Sprintf("UUID=%s %s %s defaults 0 2", uuid, mountpoint, fstype)
-		// Read existing fstab, check if entry exists
 		fstabData, _ := os.ReadFile("/etc/fstab")
 		fstabLines := strings.Split(string(fstabData), "\n")
 		found := false
@@ -235,7 +351,6 @@ func handleQuickSetup(w http.ResponseWriter, r *http.Request) {
 				content += "\n"
 			}
 			content += fstabLine + "\n"
-			// Write via sudo tee
 			cmd := exec.Command("sudo", "tee", "/etc/fstab")
 			cmd.Stdin = strings.NewReader(content)
 			cmd.Run()
@@ -243,11 +358,9 @@ func handleQuickSetup(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 6. Chown
 	common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountpoint)
 	steps = append(steps, "设置权限 "+nasUser+":"+nasUser)
 
-	// 7. Optional: add to Samba
 	if autoSamba == "yes" {
 		shareName := filepath.Base(mountpoint)
 		smbConf := fmt.Sprintf("\n[%s]\n   path = %s\n   browseable = yes\n   writable = yes\n   valid users = %s\n",
@@ -260,12 +373,12 @@ func handleQuickSetup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	common.JSONResponse(w, map[string]interface{}{
-		"message": "快速配置完成",
-		"steps":   steps,
-		"device":  device,
+		"message":   "快速配置完成",
+		"steps":     steps,
+		"device":    device,
 		"mountpoint": mountpoint,
-		"fstype":  fstype,
-		"uuid":    uuid,
+		"fstype":    fstype,
+		"uuid":      uuid,
 	})
 }
 
@@ -273,7 +386,6 @@ func handleQuickSetup(w http.ResponseWriter, r *http.Request) {
 func handleFstab(w http.ResponseWriter, r *http.Request) {
 	data, err := os.ReadFile("/etc/fstab")
 	if err != nil {
-		// Try sudo
 		out, _ := common.SudoOutput("cat", "/etc/fstab")
 		w.Header().Set("Content-Type", "text/plain")
 		w.Write([]byte(out))
@@ -285,18 +397,11 @@ func handleFstab(w http.ResponseWriter, r *http.Request) {
 
 // isSystemDisk checks if device is a system disk
 func isSystemDisk(device string) bool {
-	// Check mount status
 	out, _ := common.ExecOutput("findmnt", "-n", "-o", "TARGET", device)
 	mount := strings.TrimSpace(out)
 	if mount == "/" || mount == "/boot" || mount == "/boot/efi" {
 		return true
 	}
-	// Check by device name patterns
-	if strings.Contains(device, "nvme0n1p1") || strings.Contains(device, "nvme0n1p2") {
-		return true
-	}
-	// Check if any partition on this device mounts /
-	// e.g. /dev/sda3 might be /
 	baseDevice := strings.TrimSuffix(device, "0123456789")
 	for i := 1; i <= 9; i++ {
 		partDev := fmt.Sprintf("%s%d", baseDevice, i)
@@ -320,7 +425,6 @@ func handleDiskListFree(w http.ResponseWriter, r *http.Request) {
 		if d.Type == "unused" {
 			freeDisks = append(freeDisks, d)
 		}
-		// Also check children for unused partitions
 		for _, c := range d.Children {
 			if c.Type == "unused" && c.FSType == "" {
 				freeDisks = append(freeDisks, c)

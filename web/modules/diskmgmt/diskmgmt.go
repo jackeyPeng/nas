@@ -11,6 +11,8 @@ import (
 
 // RegisterRoutes registers disk management routes
 func RegisterRoutes(mux *http.ServeMux) {
+	// Overview
+	mux.HandleFunc("/api/disk/overview", common.AuthMiddleware(handleStorageOverview))
 	// Read-only
 	mux.HandleFunc("/api/disk/info", common.AuthMiddleware(handleDiskInfo))
 	mux.HandleFunc("/api/disk/status", common.AuthMiddleware(handleDiskStatus))
@@ -31,6 +33,12 @@ func RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/disk/pool/status", common.AuthMiddleware(handlePoolStatus))
 	mux.HandleFunc("/api/disk/pool/create", common.AuthMiddleware(handlePoolCreate))
 	mux.HandleFunc("/api/disk/pool/extend", common.AuthMiddleware(handlePoolExtend))
+	mux.HandleFunc("/api/disk/pool/extend-stream", common.AuthMiddleware(handlePoolExtendStream))
+	// Shared folders
+	mux.HandleFunc("/api/disk/folders", common.AuthMiddleware(handleListFolders))
+	mux.HandleFunc("/api/disk/folders/create", common.AuthMiddleware(handleCreateFolder))
+	mux.HandleFunc("/api/disk/folders/delete", common.AuthMiddleware(handleDeleteFolder))
+	mux.HandleFunc("/api/disk/folders/permission", common.AuthMiddleware(handleFolderPermission))
 	// Wizard (simple storage setup)
 	mux.HandleFunc("/api/disk/wizard/status", common.AuthMiddleware(handleWizardStatus))
 	mux.HandleFunc("/api/disk/wizard/setup", common.AuthMiddleware(handleWizardSetup))

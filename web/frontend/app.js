@@ -54,6 +54,17 @@ function nasPanel() {
         allDisks: [],
         progressSteps: [],
         progressShow: false,
+        progressTitle: '',
+        // Storage overview
+        storageOverview: {},
+        // Shared folders
+        sharedFolders: [],
+        showAddFolder: false,
+        folderForm: { pool: '', name: '', permission: 'readwrite', valid_users: '', recycle_bin: false },
+        showFolderPerm: false,
+        folderPermForm: { name: '', path: '', pool: '', permission: 'readwrite', valid_users: '', recycle_bin: false },
+        // Pool extend
+        showExtendPool: false,
         // Backup
         backups: [],
         backupLoading: false,
@@ -141,7 +152,7 @@ function nasPanel() {
                 case 'firewall': this.loadFirewall(); break;
                 case 'monitor': this.initMonitorRefresh(); this.loadAlertConfig(); break;
                 case 'config': this.loadEnvConfig(); break;
-                case 'diskmgmt': this.loadWizardStatus(); break;
+                case 'diskmgmt': this.loadStorageOverview(); this.loadWizardStatus(); this.loadSharedFolders(); break;
                 case 'system': break;
                 case 'backup': this.loadBackups(); break;
             }
@@ -622,6 +633,7 @@ function nasPanel() {
             this.wizardLoading = true;
             this.progressSteps = [];
             this.progressShow = true;
+            this.progressTitle = '存储配置进度';
 
             try {
                 const token = this.token;
@@ -664,8 +676,149 @@ function nasPanel() {
                 this.progressSteps.push({ name: '错误: ' + e.message, status: 'error' });
             }
             this.wizardLoading = false;
+            this.progressTitle = '';
             // Auto refresh after 2s
-            setTimeout(() => { this.loadWizardStatus(); }, 2000);
+            setTimeout(() => { this.loadStorageOverview(); this.loadWizardStatus(); this.loadSharedFolders(); }, 2000);
+        },
+
+        // Storage overview
+        async loadStorageOverview() {
+            const data = await this.api('/disk/overview');
+            if (data && data.overview) this.storageOverview = data.overview;
+        },
+
+        // Shared folders
+        async loadSharedFolders() {
+            const data = await this.api('/disk/folders');
+            if (data) this.sharedFolders = data.folders || [];
+        },
+
+        async createFolder() {
+            if (!this.folderForm.pool || !this.folderForm.name) {
+                this.showToast('请选择存储空间并输入文件夹名', 'error'); return;
+            }
+            const params = new URLSearchParams({
+                pool: this.folderForm.pool,
+                name: this.folderForm.name,
+                permission: this.folderForm.permission,
+                valid_users: this.folderForm.valid_users,
+                recycle_bin: this.folderForm.recycle_bin ? 'yes' : ''
+            });
+            const data = await this.api('/disk/folders/create', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: params.toString()
+            });
+            if (data) {
+                this.showToast(data.message || '文件夹已创建', 'success');
+                this.showAddFolder = false;
+                this.folderForm = { pool: '', name: '', permission: 'readwrite', valid_users: '', recycle_bin: false };
+                this.loadSharedFolders();
+            }
+        },
+
+        async deleteFolder(f) {
+            if (!confirm(`⚠️ 确定删除文件夹 ${f.name}？\n路径: ${f.path}\n该文件夹及其中所有数据将被永久删除！`)) return;
+            const data = await this.api('/disk/folders/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `path=${encodeURIComponent(f.path)}&confirm=yes`
+            });
+            if (data) {
+                this.showToast(data.message || '文件夹已删除', 'success');
+                this.loadSharedFolders();
+                this.loadStorageOverview();
+            }
+        },
+
+        editFolderPermission(f) {
+            this.folderPermForm = {
+                name: f.name,
+                path: f.path || '',
+                pool: f.pool || '',
+                permission: f.permission || 'readwrite',
+                valid_users: f.valid_users || '',
+                recycle_bin: f.recycle_bin || false
+            };
+            this.showFolderPerm = true;
+        },
+
+        async saveFolderPermission() {
+            const params = new URLSearchParams({
+                path: this.folderPermForm.path,
+                permission: this.folderPermForm.permission,
+                valid_users: this.folderPermForm.valid_users,
+                recycle_bin: this.folderPermForm.recycle_bin ? 'yes' : 'no'
+            });
+            const data = await this.api('/disk/folders/permission', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: params.toString()
+            });
+            if (data) {
+                this.showToast(data.message || '权限已更新', 'success');
+                this.showFolderPerm = false;
+                this.loadSharedFolders();
+            }
+        },
+
+        // Pool extend with SSE progress
+        async extendPoolStream() {
+            if (!this.poolExtendForm.device) { this.showToast('请选择磁盘', 'error'); return; }
+            if (!confirm(`确定将 ${this.poolExtendForm.device} 加入存储池？\n该磁盘上的数据将被擦除！`)) return;
+
+            this.wizardLoading = true;
+            this.progressSteps = [];
+            this.progressShow = true;
+            this.progressTitle = '扩容进度';
+
+            try {
+                const params = new URLSearchParams({
+                    vg_name: this.poolExtendForm.vg_name,
+                    device: this.poolExtendForm.device,
+                    confirm: 'yes'
+                });
+                const resp = await fetch(`/api/disk/pool/extend-stream?${params.toString()}`, {
+                    headers: { 'Authorization': 'Bearer ' + this.token }
+                });
+                const reader = resp.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop();
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const ev = JSON.parse(line.slice(6));
+                                if (ev.status === 'running') {
+                                    this.progressSteps.push({ name: ev.step, status: 'running' });
+                                } else if (ev.status === 'done') {
+                                    const last = this.progressSteps[this.progressSteps.length - 1];
+                                    if (last && last.status === 'running' && last.name === ev.step) {
+                                        last.status = 'done';
+                                    } else {
+                                        this.progressSteps.push({ name: ev.step, status: 'done' });
+                                    }
+                                } else if (ev.status === 'complete') {
+                                    this.progressSteps.push({ name: ev.detail || '完成', status: 'complete' });
+                                } else if (ev.status === 'error') {
+                                    this.progressSteps.push({ name: ev.step + ': ' + (ev.detail||''), status: 'error' });
+                                }
+                            } catch(e) {}
+                        }
+                    }
+                }
+            } catch(e) {
+                this.progressSteps.push({ name: '错误: ' + e.message, status: 'error' });
+            }
+            this.wizardLoading = false;
+            this.showExtendPool = false;
+            this.progressTitle = '';
+            setTimeout(() => { this.loadStorageOverview(); this.loadWizardStatus(); }, 2000);
         },
 
         // Wizard: reset storage (streaming)
@@ -682,6 +835,7 @@ function nasPanel() {
             this.wizardLoading = true;
             this.progressSteps = [];
             this.progressShow = true;
+            this.progressTitle = '重置存储进度';
 
             try {
                 const resp = await fetch(`/api/disk/wizard/reset-stream?confirm=yes`, {
@@ -720,7 +874,8 @@ function nasPanel() {
                 this.progressSteps.push({ name: '错误: ' + e.message, status: 'error' });
             }
             this.wizardLoading = false;
-            setTimeout(() => { this.loadWizardStatus(); }, 2000);
+            this.progressTitle = '';
+            setTimeout(() => { this.loadStorageOverview(); this.loadWizardStatus(); this.loadSharedFolders(); }, 2000);
         },
 
         // System settings

@@ -578,64 +578,165 @@
                 <pre class="config-output" x-text="enabledServices || '点击下方加载'"></pre>
                 <button class="btn btn-primary" @click="loadEnabledServices()">加载服务列表</button>
             </div>
-
             <!-- Disk Management -->
             <div x-show="page === 'diskmgmt'" class="page">
                 <h2>存储管理</h2>
 
-                <!-- 存储池状态卡片 -->
-                <div style="background:linear-gradient(135deg,#1a3a5c,#2d6a9f);color:white;border-radius:8px;padding:14px;margin-bottom:16px">
+                <!-- ════ 第一层：存储总览 ════ -->
+                <div x-show="storageOverview.total_capacity" style="background:linear-gradient(135deg,#1a3a5c,#2d6a9f);color:white;border-radius:10px;padding:18px;margin-bottom:20px">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                        <strong style="font-size:16px">📊 存储总览</strong>
+                        <button @click="loadStorageOverview()" style="background:rgba(255,255,255,0.2);color:white;border:none;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:12px">刷新</button>
+                    </div>
+                    <div style="display:flex;gap:24px;align-items:center;font-size:14px;flex-wrap:wrap">
+                        <div>总容量: <strong x-text="storageOverview.total_capacity"></strong></div>
+                        <div>已用: <strong x-text="storageOverview.total_used"></strong></div>
+                        <div>可用: <strong x-text="storageOverview.total_avail"></strong></div>
+                        <div style="flex:1;min-width:120px;max-width:200px">
+                            <div style="background:rgba(255,255,255,0.2);border-radius:4px;height:10px;overflow:hidden">
+                                <div :style="'width:'+(storageOverview.used_percent||0)+'%'" style="background:#4ade80;height:100%;border-radius:4px;transition:width 0.5s"></div>
+                            </div>
+                        </div>
+                        <span style="font-size:13px;opacity:0.9" x-text="(storageOverview.used_percent||0)+'%'"></span>
+                    </div>
+                    <div style="display:flex;gap:16px;margin-top:10px;font-size:13px;opacity:0.85;flex-wrap:wrap">
+                        <span>存储空间: <strong x-text="storageOverview.pools?.length||0"></strong></span>
+                        <span>物理磁盘: <strong x-text="storageOverview.disks?.length||0"></strong></span>
+                        <span x-show="storageOverview.unconfigured_count > 0" style="color:#fca5a5">未配置磁盘: <strong x-text="storageOverview.unconfigured_count"></strong></span>
+                        <span x-show="storageOverview.has_issues" style="color:#fca5a5">⚠️ 有异常</span>
+                        <span x-show="!storageOverview.has_issues && storageOverview.total_capacity" style="color:#86efac">✓ 一切正常</span>
+                    </div>
+                    <!-- Issue list -->
+                    <div x-show="storageOverview.has_issues" style="margin-top:8px;font-size:13px;background:rgba(252,165,165,0.15);padding:8px 12px;border-radius:6px">
+                        <template x-for="issue in (storageOverview.issues||[])">
+                            <div style="padding:2px 0">⚠️ <span x-text="issue"></span></div>
+                        </template>
+                    </div>
+                </div>
+
+                <!-- No storage yet -->
+                <div x-show="!storageOverview.total_capacity" style="text-align:center;padding:24px;background:#f9fafb;border-radius:10px;margin-bottom:20px">
+                    <div style="font-size:40px;margin-bottom:8px">💽</div>
+                    <div style="font-size:16px;color:var(--text-light);margin-bottom:4px">还没有配置存储</div>
+                    <div style="font-size:13px;color:var(--text-light)" x-show="storageOverview.unconfigured_count > 0">
+                        检测到 <strong x-text="storageOverview.unconfigured_count"></strong> 块可用磁盘，请向下查看配置向导
+                    </div>
+                    <div style="font-size:13px;color:var(--text-light)" x-show="!storageOverview.unconfigured_count">
+                        请插入磁盘后刷新
+                    </div>
+                </div>
+
+                <!-- ════ 第二层：存储池 ════ -->
+                <div x-show="storageOverview.pools?.length > 0" style="margin-bottom:20px">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-                        <strong style="font-size:15px">📊 存储池</strong>
-                        <button @click="loadWizardStatus()" style="background:rgba(255,255,255,0.2);color:white;border:none;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:12px">刷新</button>
+                        <h3 style="margin:0">🗄️ 存储空间</h3>
+                        <span style="font-size:13px;color:var(--text-light)" x-text="(storageOverview.pools||[]).length + ' 个空间'"></span>
                     </div>
-
-                    <!-- 有存储 -->
-                    <div x-show="wizard.has_storage" style="display:flex;gap:16px;align-items:center;font-size:13px">
-                        <span>总容量: <strong x-text="wizard.existing_mounts?.[0]?.size||'0'"></strong></span>
-                        <span>已用: <strong x-text="wizard.existing_mounts?.[0]?.used||'0'"></strong></span>
-                        <span>可用: <strong x-text="wizard.existing_mounts?.[0]?.avail||'0'"></strong></span>
-                        <div style="flex:1;min-width:100px" x-show="wizard.existing_mounts?.[0]?.percent">
-                            <div style="background:rgba(255,255,255,0.2);border-radius:4px;height:8px;overflow:hidden">
-                                <div :style="'width:'+parseFloat(wizard.existing_mounts?.[0]?.percent||'0')+'%'" style="background:#4a9eff;height:100%;border-radius:4px;transition:width 0.5s"></div>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">
+                        <template x-for="pool in (storageOverview.pools||[])" :key="pool.mountpoint">
+                            <div style="border:1px solid #e0e4e8;border-radius:8px;padding:14px;background:white"
+                                :style="!pool.healthy ? 'border-color:#fca5a5;background:#fef3f2' : ''">
+                                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                                    <strong style="font-size:15px" x-text="pool.display_name"></strong>
+                                    <span style="font-size:11px;padding:2px 8px;border-radius:4px"
+                                        :style="pool.type==='lvm' ? 'background:#dbeafe;color:#1e40af' : pool.type==='raid1' ? 'background:#dcfce7;color:#166534' : 'background:#f3f4f6;color:#374151'"
+                                        x-text="pool.raid_level ? ('RAID'+pool.raid_level) : (pool.type==='lvm'?'LVM合并':pool.type==='separate'?'独立盘':'单盘')"></span>
+                                </div>
+                                <div style="font-size:13px;color:#666;line-height:1.8;margin-bottom:6px">
+                                    <div>文件系统: <span x-text="pool.fstype || '-'"></span></div>
+                                    <div x-show="!pool.healthy" style="color:#dc2626">⚠️ 状态异常或同步中</div>
+                                </div>
+                                <div style="display:flex;align-items:center;gap:8px;font-size:13px">
+                                    <span x-text="pool.used + ' / ' + pool.size"></span>
+                                    <div style="flex:1;min-width:60px">
+                                        <div style="background:#e5e7eb;border-radius:4px;height:8px;overflow:hidden">
+                                            <div :style="'width:' + parseFloat(pool.percent||'0') + '%'" style="background:#4a9eff;height:100%;border-radius:4px;transition:width 0.5s"></div>
+                                        </div>
+                                    </div>
+                                    <span style="font-size:12px;color:#888" x-text="pool.percent"></span>
+                                </div>
                             </div>
-                        </div>
-                        <span x-show="wizard.existing_mounts?.[0]?.percent" style="font-size:12px;opacity:0.8" x-text="wizard.existing_mounts?.[0]?.percent"></span>
-                    </div>
-
-                    <!-- 无存储 -->
-                    <div x-show="!wizard.has_storage" style="font-size:13px;opacity:0.8">
-                        <span x-show="wizard.unused_count > 0">检测到 <strong x-text="wizard.unused_count"></strong> 块新磁盘，请向下配置存储</span>
-                        <span x-show="wizard.unused_count === 0">没有检测到可用磁盘，请先插入磁盘</span>
+                        </template>
                     </div>
                 </div>
 
-                <!-- 磁盘列表 -->
-                <h3 style="margin-bottom:8px">物理磁盘</h3>
-                <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;margin-bottom:16px">
-                    <template x-for="disk in allDisks" :key="disk.device">
-                        <div style="border:1px solid #e0e4e8;border-radius:8px;padding:12px" :style="disk.type==='system' ? 'background:#f9fafb' : disk.type==='unused' ? 'background:#fef3f2;border-color:#fca5a5' : 'background:#f0fdf4;border-color:#86efac'">
-                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-                                <strong style="font-size:14px" x-text="disk.friendly || disk.device"></strong>
-                                <span style="font-size:11px;padding:2px 8px;border-radius:4px"
-                                    :style="disk.type==='system' ? 'background:#e5e7eb;color:#6b7280' : disk.type==='unused' ? 'background:#fee2e2;color:#dc2626' : 'background:#dcfce7;color:#16a34a'"
-                                    x-text="disk.type==='system' ? '系统盘' : disk.type==='unused' ? '未使用' : '已使用'"></span>
-                            </div>
-                            <div style="font-size:12px;color:#666;line-height:1.6">
-                                <div>容量: <span x-text="disk.size"></span></div>
-                                <div x-show="disk.model">型号: <span x-text="disk.model"></span></div>
-                                <div x-show="disk.smart">健康: <span :style="disk.smart==='PASSED' ? 'color:#16a34a' : 'color:#dc2626'" x-text="disk.smart"></span></div>
-                            </div>
-                        </div>
-                    </template>
-                    <div x-show="!allDisks.length" style="color:var(--text-light);font-size:14px;padding:12px">点击右上角刷新加载</div>
+                <!-- ════ 第三层：共享目录 ════ -->
+                <div x-show="storageOverview.pools?.length > 0" style="margin-bottom:20px">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                        <h3 style="margin:0">📁 共享目录</h3>
+                        <button class="btn btn-sm btn-primary" @click="showAddFolder = true">新建文件夹</button>
+                    </div>
+                    <table class="table">
+                        <thead>
+                            <tr><th>文件夹</th><th>所属空间</th><th>大小</th><th>权限</th><th>访问用户</th><th>回收站</th><th>操作</th></tr>
+                        </thead>
+                        <tbody>
+                            <template x-for="f in sharedFolders" :key="f.name+f.pool">
+                                <tr>
+                                    <td style="font-weight:600" x-text="f.name"></td>
+                                    <td x-text="f.pool"></td>
+                                    <td x-text="f.size || '-'"></td>
+                                    <td>
+                                        <span class="badge"
+                                            :class="f.permission==='readwrite' ? 'badge-ok' : f.permission==='readonly' ? '' : 'badge-err'"
+                                            :style="f.permission==='readonly' ? 'background:#fef3c7;color:#92400e' : ''"
+                                            x-text="f.permission==='readwrite' ? '读写' : f.permission==='readonly' ? '只读' : '未共享'"></span>
+                                    </td>
+                                    <td>
+                                        <span style="font-size:12px" x-text="f.valid_users || (f.permission==='noaccess' ? '-' : '默认')"></span>
+                                    </td>
+                                    <td>
+                                        <span x-show="f.recycle_bin" style="color:#16a34a">✓</span>
+                                        <span x-show="!f.recycle_bin" style="color:#ccc">—</span>
+                                    </td>
+                                    <td class="actions">
+                                        <button class="btn btn-sm" @click="editFolderPermission(f)">权限</button>
+                                        <button class="btn btn-sm btn-danger" @click="deleteFolder(f)">删除</button>
+                                    </td>
+                                </tr>
+                            </template>
+                            <tr x-show="!sharedFolders.length">
+                                <td colspan="7" style="text-align:center;color:var(--text-light)">暂无文件夹，点击右上角新建</td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
 
-                <!-- 存储配置向导 -->
-                <div x-show="wizard.unused_count > 0" style="border:2px solid #4a9eff;border-radius:10px;padding:20px;margin-bottom:16px;background:#f8fbff">
+                <!-- ════ 第四层：物理磁盘 ════ -->
+                <div style="margin-bottom:20px">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                        <h3 style="margin:0">💽 物理磁盘</h3>
+                        <span style="font-size:13px;color:var(--text-light)" x-text="(storageOverview.disks||[]).length + ' 块磁盘'"></span>
+                    </div>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px">
+                        <template x-for="disk in (storageOverview.disks||[])" :key="disk.device">
+                            <div style="border:1px solid #e0e4e8;border-radius:8px;padding:12px"
+                                :style="disk.status==='system' ? 'background:#f9fafb' : disk.status==='unused' ? 'background:#fef3f2;border-color:#fca5a5' : 'background:#f0fdf4;border-color:#86efac'">
+                                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                                    <strong style="font-size:14px" x-text="disk.friendly"></strong>
+                                    <span style="font-size:11px;padding:2px 8px;border-radius:4px"
+                                        :style="disk.status==='system' ? 'background:#e5e7eb;color:#6b7280' : disk.status==='unused' ? 'background:#fee2e2;color:#dc2626' : 'background:#dcfce7;color:#16a34a'"
+                                        x-text="disk.status==='system' ? '系统盘' : disk.status==='unused' ? '空闲' : '已使用'"></span>
+                                </div>
+                                <div style="font-size:12px;color:#666;line-height:1.7">
+                                    <div>容量: <span x-text="disk.size"></span></div>
+                                    <div>接口: <span x-text="disk.interface"></span></div>
+                                    <div x-show="disk.model">型号: <span x-text="disk.model"></span></div>
+                                    <div>类型: <span x-text="disk.rotational==='0' ? 'SSD' : 'HDD'"></span></div>
+                                    <div x-show="disk.temp">温度: <span x-text="disk.temp"></span></div>
+                                    <div x-show="disk.smart">健康: <span :style="disk.smart==='PASSED' ? 'color:#16a34a' : 'color:#dc2626'" x-text="disk.smart"></span></div>
+                                    <div x-show="disk.pool">所属池: <span style="color:#4a9eff" x-text="disk.pool"></span></div>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <!-- ════ 存储配置向导 ════ -->
+                <div x-show="storageOverview.unconfigured_count > 0" style="border:2px solid #4a9eff;border-radius:10px;padding:20px;margin-bottom:16px;background:#f8fbff">
                     <h3 style="margin-bottom:4px">🚀 存储配置向导</h3>
                     <p style="color:var(--text-light);font-size:14px;margin-bottom:12px">
-                        检测到 <strong style="color:#4a9eff" x-text="wizard.unused_count"></strong> 块新磁盘，请选择配置方式
+                        检测到 <strong style="color:#4a9eff" x-text="storageOverview.unconfigured_count"></strong> 块新磁盘，请选择配置方式
                     </p>
 
                     <!-- 新磁盘列表 -->
@@ -648,7 +749,7 @@
                     </div>
 
                     <!-- 单盘 -->
-                    <div x-show="wizard.unused_count === 1" style="background:white;border-radius:8px;padding:16px;border-left:4px solid #4a9eff">
+                    <div x-show="storageOverview.unconfigured_count === 1" style="background:white;border-radius:8px;padding:16px;border-left:4px solid #4a9eff">
                         <div style="font-size:15px;font-weight:600;margin-bottom:6px">推荐方案</div>
                         <p style="font-size:14px;color:#555;line-height:1.6">
                             将磁盘格式化并挂载到 <code style="background:#f0f0f0;padding:2px 6px;border-radius:4px">/data/nas1</code><br>
@@ -661,7 +762,7 @@
                     </div>
 
                     <!-- 多盘 -->
-                    <div x-show="wizard.unused_count >= 2">
+                    <div x-show="storageOverview.unconfigured_count >= 2">
                         <p style="font-size:14px;color:#555;margin-bottom:10px">请选择存储方式（点击选择）：</p>
 
                         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
@@ -720,7 +821,7 @@
                 <!-- 进度面板 -->
                 <div x-show="progressShow" style="position:fixed;bottom:0;right:0;width:400px;background:white;border:1px solid #e0e4e8;border-radius:8px 0 0 0;box-shadow:0 -4px 20px rgba(0,0,0,0.1);z-index:1000;padding:16px">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-                        <strong>存储配置进度</strong>
+                        <strong x-text="progressTitle || '操作进度'"></strong>
                         <button @click="progressShow=false" style="border:none;background:none;cursor:pointer;color:#999;font-size:18px">×</button>
                     </div>
                     <div style="max-height:300px;overflow-y:auto">
@@ -737,9 +838,115 @@
                 </div>
 
                 <!-- 无空闲磁盘时的提示 -->
-                <div x-show="wizard.unused_count === 0 && wizard.has_storage" style="text-align:center;padding:16px;background:#f9fafb;border-radius:8px;margin-bottom:16px">
+                <div x-show="storageOverview.unconfigured_count === 0 && storageOverview.total_capacity" style="text-align:center;padding:16px;background:#f9fafb;border-radius:8px;margin-bottom:16px">
                     <div style="color:var(--text-light);font-size:14px;margin-bottom:8px">所有磁盘已配置完成。如需扩容，请插入新磁盘后刷新。</div>
                     <button @click="resetStorage()" style="background:white;border:1px solid #dc2626;color:#dc2626;padding:6px 16px;border-radius:6px;cursor:pointer;font-size:13px">重新配置存储</button>
+                </div>
+
+                <!-- 扩容按钮 (有未配置磁盘且有已有池) -->
+                <div x-show="storageOverview.unconfigured_count > 0 && storageOverview.pools?.length > 0" style="margin-bottom:16px">
+                    <button @click="showExtendPool = true" style="background:#dbeafe;color:#1e40af;border:1px solid #3b82f6;padding:8px 20px;border-radius:6px;cursor:pointer;font-size:14px">
+                        ➕ 扩容存储空间
+                    </button>
+                </div>
+
+                <!-- 新建文件夹弹窗 -->
+                <div class="modal" x-show="showAddFolder" x-cloak @click.self="showAddFolder = false">
+                    <div class="modal-box">
+                        <h3>新建共享文件夹</h3>
+                        <div class="form-group">
+                            <label>所属存储空间</label>
+                            <select x-model="folderForm.pool" class="port-input">
+                                <option value="">选择空间...</option>
+                                <template x-for="p in (storageOverview.pools||[])" :key="p.mountpoint">
+                                    <option :value="p.mountpoint" x-text="p.display_name"></option>
+                                </template>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>文件夹名称</label>
+                            <input type="text" x-model="folderForm.name" placeholder="如: 照片, 文档, 电影, 下载">
+                        </div>
+                        <div class="form-group">
+                            <label>访问权限</label>
+                            <select x-model="folderForm.permission" class="port-input">
+                                <option value="readwrite">读写（可查看、修改、删除）</option>
+                                <option value="readonly">只读（可查看，不可修改）</option>
+                                <option value="noaccess">不共享（仅本地访问）</option>
+                            </select>
+                        </div>
+                        <div class="form-group" x-show="folderForm.permission !== 'noaccess'">
+                            <label>允许访问的用户（逗号分隔，留空=仅NAS用户）</label>
+                            <input type="text" x-model="folderForm.valid_users" placeholder="如: dog,cat">
+                        </div>
+                        <div class="form-group" x-show="folderForm.permission !== 'noaccess'">
+                            <label><input type="checkbox" x-model="folderForm.recycle_bin"> 开启回收站（删除的文件可恢复）</label>
+                        </div>
+                        <div class="modal-actions">
+                            <button class="btn" @click="showAddFolder = false">取消</button>
+                            <button class="btn btn-primary" @click="createFolder()">创建</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 权限编辑弹窗 -->
+                <div class="modal" x-show="showFolderPerm" x-cloak @click.self="showFolderPerm = false">
+                    <div class="modal-box">
+                        <h3>权限设置 - <span x-text="folderPermForm.name"></span></h3>
+                        <div class="form-group">
+                            <label>所属空间</label>
+                            <input type="text" :value="folderPermForm.pool" disabled style="background:#f0f0f0">
+                        </div>
+                        <div class="form-group">
+                            <label>访问权限</label>
+                            <select x-model="folderPermForm.permission" class="port-input">
+                                <option value="readwrite">读写（可查看、修改、删除）</option>
+                                <option value="readonly">只读（可查看，不可修改）</option>
+                                <option value="noaccess">不共享（关闭 Samba 访问）</option>
+                            </select>
+                        </div>
+                        <div class="form-group" x-show="folderPermForm.permission !== 'noaccess'">
+                            <label>允许访问的用户（逗号分隔）</label>
+                            <input type="text" x-model="folderPermForm.valid_users" placeholder="如: dog,cat">
+                        </div>
+                        <div class="form-group" x-show="folderPermForm.permission !== 'noaccess'">
+                            <label><input type="checkbox" x-model="folderPermForm.recycle_bin"> 开启回收站</label>
+                            <p style="font-size:12px;color:var(--text-light);margin-top:4px">开启后，通过 Samba 删除的文件会进入 #recycle 目录，可手动恢复</p>
+                        </div>
+                        <div class="modal-actions">
+                            <button class="btn" @click="showFolderPerm = false">取消</button>
+                            <button class="btn btn-primary" @click="saveFolderPermission()">保存</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 扩容弹窗 -->
+                <div class="modal" x-show="showExtendPool" x-cloak @click.self="showExtendPool = false">
+                    <div class="modal-box">
+                        <h3>扩容存储空间</h3>
+                        <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">将新磁盘加入现有存储空间，扩展容量</p>
+                        <div class="form-group">
+                            <label>选择存储空间</label>
+                            <select x-model="poolExtendForm.vg_name" class="port-input">
+                                <template x-for="p in (storageOverview.pools||[]).filter(p => p.type === 'lvm')" :key="p.mountpoint">
+                                    <option :value="'vg_nas'" x-text="p.display_name"></option>
+                                </template>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>选择磁盘</label>
+                            <select x-model="poolExtendForm.device" class="port-input">
+                                <option value="">选择空闲磁盘...</option>
+                                <template x-for="d in (wizard.unused_disks||[])" :key="d.device">
+                                    <option :value="d.device" x-text="d.friendly + ' · ' + d.size + ' · ' + d.device"></option>
+                                </template>
+                            </select>
+                        </div>
+                        <div class="modal-actions">
+                            <button class="btn" @click="showExtendPool = false">取消</button>
+                            <button class="btn btn-primary" @click="extendPoolStream()">确认扩容</button>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- 高级操作（折叠） -->
