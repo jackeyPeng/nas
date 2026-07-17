@@ -643,13 +643,13 @@
                                     <!-- 盘体信息区 -->
                                     <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:0">
                                         <template x-if="slotNum <= (storageOverview.pools?.[0]?.disks || []).length">
-                                            <span style="font-size:11px;font-weight:600;color:#bfdbfe" x-text="storageOverview.pools[0].disks[slotNum-1].friendly"></span>
+                                            <span style="font-size:11px;font-weight:600;color:#bfdbfe;font-family:monospace" x-text="storageOverview.pools[0].disks[slotNum-1].device"></span>
                                         </template>
                                         <template x-if="slotNum <= (storageOverview.pools?.[0]?.disks || []).length">
                                             <span style="font-size:10px;color:#93c5fd" x-text="storageOverview.pools[0].disks[slotNum-1].size + ' ' + storageOverview.pools[0].disks[slotNum-1].interface"></span>
                                         </template>
                                         <template x-if="slotNum > (storageOverview.pools?.[0]?.disks || []).length && slotNum - (storageOverview.pools?.[0]?.disks || []).length <= (storageOverview.free_disks || []).length">
-                                            <span style="font-size:11px;font-weight:600;color:#92400e" x-text="storageOverview.free_disks[slotNum - (storageOverview.pools?.[0]?.disks || []).length - 1].friendly"></span>
+                                            <span style="font-size:11px;font-weight:600;color:#92400e;font-family:monospace" x-text="storageOverview.free_disks[slotNum - (storageOverview.pools?.[0]?.disks || []).length - 1].device"></span>
                                         </template>
                                         <template x-if="slotNum > (storageOverview.pools?.[0]?.disks || []).length && slotNum - (storageOverview.pools?.[0]?.disks || []).length <= (storageOverview.free_disks || []).length">
                                             <span style="font-size:10px;color:#b45309" x-text="storageOverview.free_disks[slotNum - (storageOverview.pools?.[0]?.disks || []).length - 1].size + ' 待配置'"></span>
@@ -702,7 +702,7 @@
                                 <template x-for="disk in (pool.disks||[])" :key="disk.device">
                                     <div style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:13px;border-bottom:1px solid #f0f0f0">
                                         <span :style="disk.smart==='PASSED'?'color:#16a34a':'color:#dc2626'">●</span>
-                                        <strong x-text="disk.friendly"></strong>
+                                        <strong x-text="disk.device" style="font-family:monospace"></strong>
                                         <span style="color:#475569" x-text="disk.size"></span>
                                         <span style="font-size:11px;background:#e0f2fe;padding:1px 6px;border-radius:3px;color:#0369a1" x-text="disk.interface"></span>
                                         <span x-show="disk.model" style="font-size:12px;color:#334155" x-text="disk.model"></span>
@@ -748,19 +748,19 @@
                         <div style="border:1px solid #e0e4e8;border-radius:8px;padding:10px;margin-bottom:8px;background:#f9fafb">
                             <div style="display:flex;align-items:center;gap:8px">
                                 <span style="font-size:11px;padding:2px 8px;border-radius:4px;background:#e5e7eb;color:#6b7280">系统盘</span>
-                                <strong style="font-size:14px" x-text="disk.friendly"></strong>
-                                <span style="color:#888;font-size:13px" x-text="disk.size"></span>
-                                <span style="font-size:11px;background:#f0f0f0;padding:1px 6px;border-radius:3px;color:#666" x-text="disk.interface"></span>
-                                <span x-show="disk.model" style="font-size:12px;color:#999" x-text="disk.model"></span>
-                                <span x-show="disk.smart" style="font-size:11px" :style="disk.smart==='PASSED'?'color:#16a34a':'color:#dc2626'" x-text="disk.smart==='PASSED'?'✓健康':'✗异常'"></span>
+                                <strong style="font-size:14px;font-family:monospace" x-text="disk.device"></strong>
+                                <span style="color:#475569;font-size:13px" x-text="disk.size"></span>
+                                <span style="font-size:11px;background:#e0f2fe;padding:1px 6px;border-radius:3px;color:#0369a1" x-text="disk.interface"></span>
+                                <span x-show="disk.model" style="font-size:12px;color:#334155" x-text="disk.model"></span>
+                                <span x-show="disk.smart" style="font-size:12px" :style="disk.smart==='PASSED'?'color:#16a34a':'color:#dc2626'" x-text="disk.smart==='PASSED'?'✓健康':'✗异常'"></span>
                             </div>
                             <div x-show="disk.partitions?.length" style="margin-left:20px;margin-top:6px">
                                 <template x-for="p in (disk.partitions||[])" :key="p.device">
-                                    <div style="display:flex;gap:6px;font-size:11px;padding:1px 0;color:#888">
+                                    <div style="display:flex;gap:6px;font-size:11px;padding:1px 0;color:#475569">
                                         <span style="font-family:monospace" x-text="p.name"></span>
                                         <span x-text="p.size"></span>
-                                        <span style="background:#f0f0f0;padding:0 4px;border-radius:2px" x-show="p.fstype" x-text="p.fstype"></span>
-                                        <span style="color:#4a9eff" x-show="p.mountpoint" x-text="p.mountpoint"></span>
+                                        <span style="background:#e0f2fe;padding:0 4px;border-radius:2px;color:#0369a1" x-show="p.fstype" x-text="p.fstype"></span>
+                                        <span style="color:#2563eb" x-show="p.mountpoint" x-text="p.mountpoint"></span>
                                     </div>
                                 </template>
                             </div>
@@ -771,7 +771,7 @@
                         <div style="border:1px solid #fca5a5;border-radius:8px;padding:10px;margin-bottom:8px;background:#fef3f2">
                             <div style="display:flex;align-items:center;gap:8px">
                                 <span style="font-size:11px;padding:2px 8px;border-radius:4px;background:#fee2e2;color:#dc2626">待配置</span>
-                                <strong style="font-size:14px" x-text="disk.friendly"></strong>
+                                <strong style="font-size:14px;font-family:monospace" x-text="disk.device"></strong>
                                 <span style="color:#475569;font-size:13px" x-text="disk.size"></span>
                                 <span style="font-size:11px;background:#e0f2fe;padding:1px 6px;border-radius:3px;color:#0369a1" x-text="disk.interface"></span>
                                 <span x-show="disk.model" style="font-size:12px;color:#334155" x-text="disk.model"></span>
@@ -792,7 +792,7 @@
                     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
                         <template x-for="d in wizard.unused_disks" :key="d.device">
                             <span style="background:white;border:1px solid #4a9eff;border-radius:8px;padding:6px 14px;font-size:14px">
-                                <strong x-text="d.friendly"></strong> · <span x-text="d.size"></span>
+                                <strong style="font-family:monospace" x-text="d.device"></strong> · <span x-text="d.size"></span>
                             </span>
                         </template>
                     </div>
@@ -950,7 +950,7 @@
                             <select x-model="poolExtendForm.device" class="port-input">
                                 <option value="">选择空闲磁盘...</option>
                                 <template x-for="d in (wizard.unused_disks||[])" :key="d.device">
-                                    <option :value="d.device" x-text="d.friendly + ' · ' + d.size + ' · ' + d.device"></option>
+                                    <option :value="d.device" x-text="d.device + ' · ' + d.size"></option>
                                 </template>
                             </select>
                         </div>
