@@ -87,9 +87,13 @@ func handleStorageOverview(w http.ResponseWriter, r *http.Request) {
 	// 1. Get all data mounts (pools)
 	mounts := getExistingDataMounts()
 	poolSeq := 0
+	mountDisplay := make(map[string]string) // mount path → display name
 	for _, m := range mounts {
 		poolSeq++
-		poolName := extractPoolName(m["mount"])
+		mountPoint := m["mount"]
+		poolName := extractPoolName(mountPoint)
+		displayName := fmt.Sprintf("存储空间%d", poolSeq)
+		mountDisplay[mountPoint] = displayName
 		ps := PoolSummary{
 			Name:        poolName,
 			DisplayName: fmt.Sprintf("存储空间%d", poolSeq),
@@ -140,7 +144,7 @@ func handleStorageOverview(w http.ResponseWriter, r *http.Request) {
 			Status:     d.Type,
 		}
 		// Check if disk is part of a pool
-		ds.Pool = findDiskPool(d.Device, mounts)
+		ds.Pool = findDiskPoolDisplay(d.Device, mounts, mountDisplay)
 		// Build partition list from children
 		for _, c := range d.Children {
 			pi := PartitionInfo{
@@ -243,6 +247,44 @@ func detectPoolTypeEx(device, mount string) (string, string) {
 		return "separate", ""
 	}
 	return "single", ""
+}
+
+// findDiskPoolDisplay returns the display name of the pool a disk belongs to
+func findDiskPoolDisplay(device string, mounts []map[string]string, mountDisplay map[string]string) string {
+	for _, m := range mounts {
+		// Direct mount
+		if m["device"] == device {
+			if disp, ok := mountDisplay[m["mount"]]; ok {
+				return disp
+			}
+			return extractPoolName(m["mount"])
+		}
+		// Check LVM PV → VG → LV
+		pvOut, _ := common.SudoOutput("/usr/sbin/pvs", "--noheadings", "-o", "pv_name,vg_name")
+		for _, line := range strings.Split(pvOut, "\n") {
+			fields := strings.Fields(strings.TrimSpace(line))
+			if len(fields) >= 2 && fields[0] == device {
+				vgName := fields[1]
+				if strings.Contains(m["device"], vgName) {
+					if disp, ok := mountDisplay[m["mount"]]; ok {
+						return disp
+					}
+					return extractPoolName(m["mount"])
+				}
+			}
+		}
+		// Check RAID members
+		if strings.HasPrefix(m["device"], "/dev/md") {
+			scanOut, _ := common.SudoOutput("/usr/sbin/mdadm", "--detail", m["device"])
+			if strings.Contains(scanOut, device) {
+				if disp, ok := mountDisplay[m["mount"]]; ok {
+					return disp
+				}
+				return extractPoolName(m["mount"])
+			}
+		}
+	}
+	return ""
 }
 
 // findDiskPool checks which pool/mount a disk belongs to
