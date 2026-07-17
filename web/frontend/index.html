@@ -613,16 +613,16 @@
                     </div>
                 </div>
 
-                <!-- ════ 存储空间（树状结构） ════ -->
+                <!-- ════ 存储空间区域 ════ -->
                 <div x-show="storageOverview.pools?.length > 0" style="margin-bottom:20px">
+                    <h3 style="margin-bottom:8px;border-bottom:2px solid #4a9eff;padding-bottom:4px">🗄️ 存储空间</h3>
                     <template x-for="pool in (storageOverview.pools||[])" :key="pool.mountpoint">
                         <div style="border:2px solid #e0e4e8;border-radius:10px;margin-bottom:16px;overflow:hidden"
                             :style="!pool.healthy ? 'border-color:#fca5a5' : ''">
                             <!-- 存储空间头部 -->
-                            <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;cursor:pointer"
+                            <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px"
                                 :style="pool.healthy ? 'background:linear-gradient(135deg,#f0f7ff,#e0f0ff)' : 'background:linear-gradient(135deg,#fef3f2,#fee2e2)'">
                                 <div style="display:flex;align-items:center;gap:12px">
-                                    <span style="font-size:24px">🗄️</span>
                                     <div>
                                         <div style="font-size:16px;font-weight:700" x-text="pool.display_name"></div>
                                         <div style="font-size:12px;color:#666;display:flex;gap:8px;align-items:center;margin-top:2px">
@@ -641,23 +641,36 @@
                                 </div>
                             </div>
                             <!-- 存储空间内容 -->
-                            <div style="padding:8px 16px 12px 44px">
-                                <!-- 磁盘列表 -->
-                                <div style="font-size:12px;color:#999;margin-bottom:4px;margin-top:4px">📥 磁盘</div>
+                            <div style="padding:12px 16px">
+                                <!-- 盘位图 -->
+                                <div style="font-size:12px;color:#999;margin-bottom:6px">📦 盘位</div>
+                                <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
+                                    <template x-for="disk in (pool.disks||[])" :key="disk.device">
+                                        <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+                                            <div style="width:48px;height:48px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:11px;color:white;font-weight:600"
+                                                :style="disk.smart==='PASSED' ? 'background:linear-gradient(135deg,#16a34a,#22c55e)' : 'background:linear-gradient(135deg,#dc2626,#ef4444)'"
+                                                x-text="disk.friendly.replace('磁盘 ','')"></div>
+                                            <span style="font-size:10px;color:#888" x-text="disk.size"></span>
+                                        </div>
+                                    </template>
+                                </div>
+
+                                <!-- 磁盘详情列表 -->
+                                <div style="font-size:12px;color:#999;margin-bottom:4px">💽 磁盘详情</div>
                                 <template x-for="disk in (pool.disks||[])" :key="disk.device">
                                     <div style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:13px;border-bottom:1px solid #f0f0f0">
-                                        <span style="color:#16a34a">●</span>
+                                        <span :style="disk.smart==='PASSED'?'color:#16a34a':'color:#dc2626'">●</span>
                                         <strong x-text="disk.friendly"></strong>
                                         <span style="color:#888" x-text="disk.size"></span>
                                         <span style="font-size:11px;background:#f0f0f0;padding:1px 6px;border-radius:3px;color:#666" x-text="disk.interface"></span>
+                                        <span x-show="disk.model" style="font-size:11px;color:#999" x-text="disk.model"></span>
                                         <span x-show="disk.temp" style="font-size:11px;color:#666" x-text="disk.temp"></span>
                                         <span x-show="disk.smart" style="font-size:11px" :style="disk.smart==='PASSED'?'color:#16a34a':'color:#dc2626'" x-text="disk.smart==='PASSED'?'✓':'✗'"></span>
                                     </div>
                                 </template>
-                                <div x-show="!pool.disks?.length" style="font-size:12px;color:#ccc;padding:4px 0">无关联磁盘</div>
 
                                 <!-- 共享文件夹列表 -->
-                                <div style="font-size:12px;color:#999;margin:8px 0 4px">📁 共享文件夹</div>
+                                <div style="font-size:12px;color:#999;margin:10px 0 4px">📁 共享文件夹</div>
                                 <template x-for="f in (pool.folders||[])" :key="f.name">
                                     <div style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:13px;border-bottom:1px solid #f0f0f0">
                                         <span style="color:#4a9eff">▸</span>
@@ -685,9 +698,9 @@
                     </template>
                 </div>
 
-                <!-- ════ 未分配磁盘 ════ -->
+                <!-- ════ 其它磁盘（系统盘+空闲盘） ════ -->
                 <div x-show="storageOverview.system_disks?.length > 0 || storageOverview.free_disks?.length > 0" style="margin-bottom:20px">
-                    <h3 style="margin-bottom:8px">💽 磁盘</h3>
+                    <h3 style="margin-bottom:8px;border-bottom:2px solid #9ca3af;padding-bottom:4px">💽 其它磁盘</h3>
                     <!-- 系统盘 -->
                     <template x-for="disk in (storageOverview.system_disks||[])" :key="disk.device">
                         <div style="border:1px solid #e0e4e8;border-radius:8px;padding:10px;margin-bottom:8px;background:#f9fafb">
@@ -699,7 +712,6 @@
                                 <span x-show="disk.model" style="font-size:12px;color:#999" x-text="disk.model"></span>
                                 <span x-show="disk.smart" style="font-size:11px" :style="disk.smart==='PASSED'?'color:#16a34a':'color:#dc2626'" x-text="disk.smart==='PASSED'?'✓健康':'✗异常'"></span>
                             </div>
-                            <!-- 分区 -->
                             <div x-show="disk.partitions?.length" style="margin-left:20px;margin-top:6px">
                                 <template x-for="p in (disk.partitions||[])" :key="p.device">
                                     <div style="display:flex;gap:6px;font-size:11px;padding:1px 0;color:#888">
@@ -716,7 +728,7 @@
                     <template x-for="disk in (storageOverview.free_disks||[])" :key="disk.device">
                         <div style="border:1px solid #fca5a5;border-radius:8px;padding:10px;margin-bottom:8px;background:#fef3f2">
                             <div style="display:flex;align-items:center;gap:8px">
-                                <span style="font-size:11px;padding:2px 8px;border-radius:4px;background:#fee2e2;color:#dc2626">空闲</span>
+                                <span style="font-size:11px;padding:2px 8px;border-radius:4px;background:#fee2e2;color:#dc2626">待配置</span>
                                 <strong style="font-size:14px" x-text="disk.friendly"></strong>
                                 <span style="color:#888;font-size:13px" x-text="disk.size"></span>
                                 <span style="font-size:11px;background:#f0f0f0;padding:1px 6px;border-radius:3px;color:#666" x-text="disk.interface"></span>
