@@ -619,44 +619,45 @@
                     <template x-for="pool in (storageOverview.pools||[])" :key="pool.mountpoint">
                         <div style="border:2px solid #e0e4e8;border-radius:10px;margin-bottom:16px;overflow:hidden"
                             :style="!pool.healthy ? 'border-color:#fca5a5' : ''">
-                            <!-- 存储空间头部 -->
-                            <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px"
+                            <!-- 存储空间头部（紧凑） -->
+                            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 16px"
                                 :style="pool.healthy ? 'background:linear-gradient(135deg,#f0f7ff,#e0f0ff)' : 'background:linear-gradient(135deg,#fef3f2,#fee2e2)'">
-                                <div style="display:flex;align-items:center;gap:12px">
+                                <div style="display:flex;align-items:center;gap:10px">
                                     <div>
-                                        <div style="font-size:16px;font-weight:700" x-text="pool.display_name"></div>
-                                        <div style="font-size:12px;color:#666;display:flex;gap:8px;align-items:center;margin-top:2px">
-                                            <span style="background:#dbeafe;color:#1e40af;padding:1px 8px;border-radius:4px;font-size:11px" x-text="pool.raid_level ? ('RAID'+pool.raid_level) : (pool.type==='lvm'?'LVM':pool.type==='separate'?'独立':'单盘')"></span>
-                                            <span x-text="pool.fstype || ''"></span>
-                                            <span x-show="!pool.healthy" style="color:#dc2626">⚠️ 异常</span>
-                                        </div>
+                                        <span style="font-size:15px;font-weight:700" x-text="pool.display_name"></span>
+                                        <span style="background:#dbeafe;color:#1e40af;padding:1px 8px;border-radius:4px;font-size:11px;margin-left:8px" x-text="pool.raid_level ? ('RAID'+pool.raid_level) : (pool.type==='lvm'?'LVM':pool.type==='separate'?'独立':'单盘')"></span>
+                                        <span style="font-size:12px;color:#666;margin-left:6px" x-text="pool.fstype || ''"></span>
+                                        <span x-show="!pool.healthy" style="color:#dc2626;font-size:12px;margin-left:6px">⚠️ 异常</span>
                                     </div>
                                 </div>
-                                <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
-                                    <div style="font-size:14px" x-text="pool.used + ' / ' + pool.size"></div>
-                                    <div style="width:120px;background:#e5e7eb;border-radius:4px;height:6px;overflow:hidden">
+                                <div style="display:flex;align-items:center;gap:8px">
+                                    <span style="font-size:13px" x-text="pool.used + ' / ' + pool.size"></span>
+                                    <div style="width:100px;background:#e5e7eb;border-radius:4px;height:6px;overflow:hidden">
                                         <div :style="'width:' + parseFloat(pool.percent||'0') + '%'" style="background:#4a9eff;height:100%;border-radius:4px"></div>
                                     </div>
-                                    <span style="font-size:11px;color:#888" x-text="pool.percent"></span>
+                                    <span style="font-size:12px;color:#888" x-text="pool.percent"></span>
                                 </div>
                             </div>
                             <!-- 存储空间内容 -->
                             <div style="padding:12px 16px">
-                                <!-- 盘位图 -->
-                                <div style="font-size:12px;color:#999;margin-bottom:6px">📦 盘位</div>
-                                <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
-                                    <template x-for="disk in (pool.disks||[])" :key="disk.device">
-                                        <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
-                                            <div style="width:48px;height:48px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:11px;color:white;font-weight:600"
-                                                :style="disk.smart==='PASSED' ? 'background:linear-gradient(135deg,#16a34a,#22c55e)' : 'background:linear-gradient(135deg,#dc2626,#ef4444)'"
-                                                x-text="disk.friendly.replace('磁盘 ','')"></div>
-                                            <span style="font-size:10px;color:#888" x-text="disk.size"></span>
+                                <!-- 盘位图（NAS产品式4槽位） -->
+                                <div style="font-size:14px;font-weight:600;color:#1e3a5f;margin-bottom:8px">📦 盘位</div>
+                                <div style="display:flex;gap:4px;margin-bottom:12px;background:#1a1a2e;padding:8px;border-radius:6px">
+                                    <!-- 槽位1-4, 固定4个 -->
+                                    <template x-for="slotNum in 4" :key="slotNum">
+                                        <div style="flex:1;aspect-ratio:0.6;border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border:2px solid #333344"
+                                            :style="pool.disks && slotNum <= pool.disks.length
+                                                ? (pool.disks[slotNum-1].smart==='PASSED' ? 'background:linear-gradient(135deg,#16a34a,#22c55e);border-color:#4ade80' : 'background:linear-gradient(135deg,#dc2626,#ef4444);border-color:#f87171')
+                                                : 'background:#1a1a2e;border-color:#333344'">
+                                            <span style="font-size:16px;font-weight:700;color:white" x-text="pool.disks && slotNum <= pool.disks.length ? pool.disks[slotNum-1].friendly.replace('磁盘 ','') : ''"></span>
+                                            <span style="font-size:10px;color:rgba(255,255,255,0.7)" x-text="pool.disks && slotNum <= pool.disks.length ? pool.disks[slotNum-1].size : '—'"></span>
+                                            <span style="font-size:9px;color:rgba(255,255,255,0.5)" x-text="slotNum <= (pool.disks?.length||0) ? '' : '空闲'"></span>
                                         </div>
                                     </template>
                                 </div>
 
                                 <!-- 磁盘详情列表 -->
-                                <div style="font-size:12px;color:#999;margin-bottom:4px">💽 磁盘详情</div>
+                                <div style="font-size:14px;font-weight:600;color:#0f4c5c;margin-bottom:4px">💽 磁盘详情</div>
                                 <template x-for="disk in (pool.disks||[])" :key="disk.device">
                                     <div style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:13px;border-bottom:1px solid #f0f0f0">
                                         <span :style="disk.smart==='PASSED'?'color:#16a34a':'color:#dc2626'">●</span>
@@ -670,7 +671,7 @@
                                 </template>
 
                                 <!-- 共享文件夹列表 -->
-                                <div style="font-size:12px;color:#999;margin:10px 0 4px">📁 共享文件夹</div>
+                                <div style="font-size:14px;font-weight:600;color:#5b21b6;margin-top:10px;margin-bottom:4px">📁 共享文件夹</div>
                                 <template x-for="f in (pool.folders||[])" :key="f.name">
                                     <div style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:13px;border-bottom:1px solid #f0f0f0">
                                         <span style="color:#4a9eff">▸</span>
