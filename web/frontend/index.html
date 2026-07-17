@@ -615,20 +615,13 @@
 
                 <!-- ════ 盘位图（NAS机箱正面，4槽位，浅色主题） ════ -->
                 <div x-show="storageOverview.pools?.length > 0" style="display:flex;justify-content:center;margin-bottom:20px">
-                    <div style="display:inline-flex;flex-direction:column;align-items:center;gap:4px">
-                        <!-- 槽位号行 -->
-                        <div style="display:flex;gap:1vw;padding:0 0.8vw">
-                            <template x-for="slotNum in 4" :key="'num'+slotNum">
-                                <div style="width:6.8vw;max-width:68px;text-align:center">
-                                    <span style="font-size:18px;font-weight:800;color:#1e3a5f" x-text="slotNum"></span>
-                                </div>
-                            </template>
-                        </div>
-                        <!-- NAS机箱外壳: 17vw高 x 32vw宽, padding 0.8vw, gap 1vw -->
-                        <div style="height:17vw;max-height:170px;width:32vw;max-width:320px;background:linear-gradient(145deg,#e8ecf0,#d4dae0);border-radius:6px;padding:0.8vw;border:3px solid #9ca3af;box-shadow:0 4px 12px rgba(0,0,0,0.08),inset 0 1px 2px rgba(255,255,255,0.8);display:flex;gap:1vw">
-                            <!-- 固定4个槽位 -->
+                    <div style="display:inline-flex;flex-direction:column;align-items:center;gap:6px">
+                        <span style="font-size:13px;font-weight:600;color:#1e3a5f">📦 盘位图</span>
+                        <!-- NAS机箱外壳: 24vw高 x 32vw宽, padding 1.2vw(四边一致), gap 1vw -->
+                        <div style="height:24vw;max-height:240px;width:32vw;max-width:320px;background:linear-gradient(145deg,#e8ecf0,#d4dae0);border-radius:6px;padding:1.2vw;border:3px solid #9ca3af;box-shadow:0 4px 12px rgba(0,0,0,0.08),inset 0 1px 2px rgba(255,255,255,0.8);display:flex;gap:1vw;align-items:stretch">
+                            <!-- 固定4个槽位, 每个槽位内: 编号在上 + 盘体在下 -->
                             <template x-for="slotNum in 4" :key="slotNum">
-                                <div style="width:6.8vw;max-width:68px;border-radius:3px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border:3px solid;overflow:hidden;position:relative"
+                                <div style="flex:1;display:flex;flex-direction:column;align-items:center;border-radius:3px;overflow:hidden;border:3px solid;"
                                     :style="(function(){
                                         var disks = storageOverview.pools?.[0]?.disks || [];
                                         if (slotNum <= disks.length) {
@@ -642,21 +635,25 @@
                                         }
                                         return 'background:linear-gradient(180deg,#6b7280,#4b5563);border-color:#374151';
                                     })()">
-                                    <!-- 磁盘信息(如有) -->
-                                    <template x-if="slotNum <= (storageOverview.pools?.[0]?.disks || []).length">
-                                        <span style="font-size:11px;font-weight:600;color:#bfdbfe" x-text="storageOverview.pools[0].disks[slotNum-1].size"></span>
-                                    </template>
-                                    <template x-if="slotNum <= (storageOverview.pools?.[0]?.disks || []).length">
-                                        <span style="font-size:9px;color:#93c5fd" x-text="storageOverview.pools[0].disks[slotNum-1].interface"></span>
-                                    </template>
-                                    <!-- 待配置标记 -->
-                                    <template x-if="slotNum > (storageOverview.pools?.[0]?.disks || []).length && slotNum - (storageOverview.pools?.[0]?.disks || []).length <= (storageOverview.free_disks || []).length">
-                                        <span style="font-size:11px;font-weight:600;color:#92400e">待配置</span>
-                                    </template>
-                                    <!-- 空闲标记 -->
-                                    <template x-if="slotNum > (storageOverview.pools?.[0]?.disks || []).length + (storageOverview.free_disks || []).length">
-                                        <span style="font-size:11px;color:rgba(255,255,255,0.6)">空</span>
-                                    </template>
+                                    <!-- 槽位编号（在机箱内、槽位顶部） -->
+                                    <div style="height:5vw;max-height:50px;min-height:24px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                                        <span style="font-size:16px;font-weight:800;color:white" x-text="slotNum"></span>
+                                    </div>
+                                    <!-- 盘体信息区 -->
+                                    <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:0">
+                                        <template x-if="slotNum <= (storageOverview.pools?.[0]?.disks || []).length">
+                                            <span style="font-size:11px;font-weight:600;color:#bfdbfe" x-text="storageOverview.pools[0].disks[slotNum-1].size"></span>
+                                        </template>
+                                        <template x-if="slotNum <= (storageOverview.pools?.[0]?.disks || []).length">
+                                            <span style="font-size:9px;color:#93c5fd" x-text="storageOverview.pools[0].disks[slotNum-1].interface"></span>
+                                        </template>
+                                        <template x-if="slotNum > (storageOverview.pools?.[0]?.disks || []).length && slotNum - (storageOverview.pools?.[0]?.disks || []).length <= (storageOverview.free_disks || []).length">
+                                            <span style="font-size:11px;font-weight:600;color:#92400e">待配置</span>
+                                        </template>
+                                        <template x-if="slotNum > (storageOverview.pools?.[0]?.disks || []).length + (storageOverview.free_disks || []).length">
+                                            <span style="font-size:11px;color:rgba(255,255,255,0.6)">空</span>
+                                        </template>
+                                    </div>
                                 </div>
                             </template>
                         </div>
