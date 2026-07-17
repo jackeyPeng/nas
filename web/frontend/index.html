@@ -624,7 +624,8 @@
                             <template x-for="slotNum in 4" :key="slotNum">
                                 <div class="disk-slot"
                                     :style="(function(){
-                                        var disks = storageOverview.pools?.[0]?.disks || [];
+                                        var allDisks = (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];});
+                                        var disks = allDisks;
                                         if (slotNum <= disks.length) {
                                             var d = disks[slotNum-1];
                                             if (d.smart !== 'PASSED') return 'background:linear-gradient(180deg,#fee2e2,#fecaca);border-color:#dc2626';
@@ -642,19 +643,19 @@
                                     </div>
                                     <!-- 盘体信息区 -->
                                     <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:0">
-                                        <template x-if="slotNum <= (storageOverview.pools?.[0]?.disks || []).length">
-                                            <span style="font-size:11px;font-weight:600;color:#bfdbfe;font-family:monospace" x-text="storageOverview.pools[0].disks[slotNum-1].device"></span>
+                                        <template x-if="slotNum <= (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length">
+                                            <span style="font-size:11px;font-weight:600;color:#bfdbfe;font-family:monospace" x-text="(storageOverview.pools||[]).flatMap(function(p){return p.disks||[];})[slotNum-1].device"></span>
                                         </template>
-                                        <template x-if="slotNum <= (storageOverview.pools?.[0]?.disks || []).length">
-                                            <span style="font-size:10px;color:#93c5fd" x-text="storageOverview.pools[0].disks[slotNum-1].size + ' ' + storageOverview.pools[0].disks[slotNum-1].interface"></span>
+                                        <template x-if="slotNum <= (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length">
+                                            <span style="font-size:10px;color:#93c5fd" x-text="(storageOverview.pools||[]).flatMap(function(p){return p.disks||[];})[slotNum-1].size + ' ' + (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];})[slotNum-1].interface"></span>
                                         </template>
-                                        <template x-if="slotNum > (storageOverview.pools?.[0]?.disks || []).length && slotNum - (storageOverview.pools?.[0]?.disks || []).length <= (storageOverview.free_disks || []).length">
-                                            <span style="font-size:11px;font-weight:600;color:#92400e;font-family:monospace" x-text="storageOverview.free_disks[slotNum - (storageOverview.pools?.[0]?.disks || []).length - 1].device"></span>
+                                        <template x-if="slotNum > (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length && slotNum - (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length <= (storageOverview.free_disks || []).length">
+                                            <span style="font-size:11px;font-weight:600;color:#92400e;font-family:monospace" x-text="storageOverview.free_disks[slotNum - (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length - 1].device"></span>
                                         </template>
-                                        <template x-if="slotNum > (storageOverview.pools?.[0]?.disks || []).length && slotNum - (storageOverview.pools?.[0]?.disks || []).length <= (storageOverview.free_disks || []).length">
-                                            <span style="font-size:10px;color:#b45309" x-text="storageOverview.free_disks[slotNum - (storageOverview.pools?.[0]?.disks || []).length - 1].size + ' 待配置'"></span>
+                                        <template x-if="slotNum > (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length && slotNum - (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length <= (storageOverview.free_disks || []).length">
+                                            <span style="font-size:10px;color:#b45309" x-text="storageOverview.free_disks[slotNum - (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length - 1].size + ' 待配置'"></span>
                                         </template>
-                                        <template x-if="slotNum > (storageOverview.pools?.[0]?.disks || []).length + (storageOverview.free_disks || []).length">
+                                        <template x-if="slotNum > (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length + (storageOverview.free_disks || []).length">
                                             <span style="font-size:11px;color:rgba(255,255,255,0.5)">空</span>
                                         </template>
                                     </div>
