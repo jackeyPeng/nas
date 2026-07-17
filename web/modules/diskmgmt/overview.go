@@ -13,32 +13,35 @@ import (
 
 // StorageOverview is the top-level dashboard data for the storage page
 type StorageOverview struct {
-	TotalCapacity string         `json:"total_capacity"` // e.g. "100G"
+	TotalCapacity string         `json:"total_capacity"`
 	TotalUsed     string         `json:"total_used"`
 	TotalAvail    string         `json:"total_avail"`
-	UsedPercent   string         `json:"used_percent"` // "45"
-	Pools         []PoolSummary  `json:"pools"`
-	Disks         []DiskSummary  `json:"disks"`
+	UsedPercent   string         `json:"used_percent"`
+	Pools         []PoolSummary  `json:"pools"`          // 存储空间(含嵌套磁盘和文件夹)
+	SystemDisks   []DiskSummary  `json:"system_disks"`   // 系统盘
+	FreeDisks     []DiskSummary  `json:"free_disks"`     // 空闲盘(未配置)
 	RAIDHealth    []RAIDStatus   `json:"raid_health,omitempty"`
-	Unconfigured  int            `json:"unconfigured_count"` // unused disks
-	HasIssues     bool          `json:"has_issues"`
+	Unconfigured  int            `json:"unconfigured_count"`
+	HasIssues     bool           `json:"has_issues"`
 	Issues        []string       `json:"issues,omitempty"`
 }
 
-// PoolSummary represents one storage pool/mount
+// PoolSummary represents one storage space with nested disks and folders
 type PoolSummary struct {
-	Name        string `json:"name"`         // 内部名: nas1
-	DisplayName string `json:"display_name"` // 用户可见名: 存储空间1
-	MountPoint  string `json:"mountpoint"`  // /data/nas1 (仅高级模式显示)
-	Device      string `json:"device"`      // /dev/sdb1 or /dev/vg_nas/data
-	Type        string `json:"type"`         // single, lvm, raid1, separate
-	RaidLevel   string `json:"raid_level"`   // 1, 0, 5, "" for non-raid
-	Size        string `json:"size"`
-	Used        string `json:"used"`
-	Avail       string `json:"avail"`
-	Percent     string `json:"percent"`
-	FSType      string `json:"fstype"`
-	Healthy     bool   `json:"healthy"`
+	Name        string           `json:"name"`
+	DisplayName string           `json:"display_name"`
+	MountPoint  string           `json:"mountpoint"`
+	Device      string           `json:"device"`
+	Type        string           `json:"type"`
+	RaidLevel   string           `json:"raid_level"`
+	Size        string           `json:"size"`
+	Used        string           `json:"used"`
+	Avail       string           `json:"avail"`
+	Percent     string           `json:"percent"`
+	FSType      string           `json:"fstype"`
+	Healthy     bool             `json:"healthy"`
+	Disks       []DiskSummary    `json:"disks,omitempty"`       // 属于这个空间的磁盘
+	Folders     []SharedFolder   `json:"folders,omitempty"`     // 这个空间下的共享文件夹
 }
 
 // DiskSummary is a flat disk info for the overview
@@ -80,8 +83,9 @@ type RAIDStatus struct {
 // handleStorageOverview returns the complete storage dashboard data
 func handleStorageOverview(w http.ResponseWriter, r *http.Request) {
 	overview := StorageOverview{
-		Pools: []PoolSummary{},
-		Disks: []DiskSummary{},
+		Pools:       []PoolSummary{},
+		SystemDisks: []DiskSummary{},
+		FreeDisks:   []DiskSummary{},
 	}
 
 	// 1. Get all data mounts (pools)
@@ -96,27 +100,24 @@ func handleStorageOverview(w http.ResponseWriter, r *http.Request) {
 		mountDisplay[mountPoint] = displayName
 		ps := PoolSummary{
 			Name:        poolName,
-			DisplayName: fmt.Sprintf("存储空间%d", poolSeq),
-			MountPoint:  m["mount"],
+			DisplayName: displayName,
+			MountPoint:  mountPoint,
 			Device:      m["device"],
 			Size:        m["size"],
 			Used:        m["used"],
 			Avail:       m["avail"],
-			Percent:    m["percent"],
-			Healthy:    true,
+			Percent:     m["percent"],
+			Healthy:     true,
 		}
-		// Detect pool type and raid level
-		ps.Type, ps.RaidLevel = detectPoolTypeEx(m["device"], m["mount"])
-		// Get fstype
+		ps.Type, ps.RaidLevel = detectPoolTypeEx(m["device"], mountPoint)
 		fsOut, _ := common.ExecOutput("findmnt", "-n", "-o", "FSTYPE", "--source", m["device"])
 		ps.FSType = strings.TrimSpace(fsOut)
-		// Check RAID health
-		if ps.Type == "raid1" {
+		if ps.Type == "raid1" || ps.Type == "raid0" || ps.Type == "raid5" || ps.Type == "raid6" {
 			for _, ra := range getRAIDStatus() {
 				if strings.Contains(m["device"], ra.Device) {
 					ps.Healthy = ra.State == "active" || ra.State == "clean"
 					if ra.SyncPercent != "" {
-						ps.Healthy = false // still syncing
+						ps.Healthy = false
 					}
 				}
 			}
@@ -124,7 +125,66 @@ func handleStorageOverview(w http.ResponseWriter, r *http.Request) {
 		overview.Pools = append(overview.Pools, ps)
 	}
 
-	// 2. Get disk list
+	// 2. Get all shared folders, grouped by mount point
+	folderMap := make(map[string][]SharedFolder) // mount → folders
+	{
+		smbConf, _ := common.SudoOutput("cat", "/etc/samba/smb.conf")
+		smbMap := parseSambaShares(smbConf)
+		for _, m := range mounts {
+			mountPoint := m["mount"]
+			entries, err := os.ReadDir(mountPoint)
+			if err != nil {
+				out, _ := common.SudoOutput("ls", "-1", mountPoint)
+				for _, name := range strings.Split(out, "\n") {
+					name = strings.TrimSpace(name)
+					if name == "" || name == "#recycle" {
+						continue
+					}
+					folderMap[mountPoint] = append(folderMap[mountPoint], SharedFolder{
+						Name:  name,
+						Pool:  mountDisplay[mountPoint],
+						Path:  mountPoint + "/" + name,
+					})
+				}
+			} else {
+				for _, entry := range entries {
+					if !entry.IsDir() || entry.Name() == "#recycle" {
+						continue
+					}
+					folderPath := filepath.Join(mountPoint, entry.Name())
+					f := SharedFolder{
+						Name:  entry.Name(),
+						Pool:  mountDisplay[mountPoint],
+						Path:  folderPath,
+					}
+					sizeOut, _ := common.SudoOutput("du", "-sh", folderPath)
+					f.Size = parseDuSize(sizeOut)
+					if smb, ok := smbMap[folderPath]; ok {
+						f.SambaShare = true
+						if smb["read_only"] == "yes" {
+							f.Permission = "readonly"
+						} else {
+							f.Permission = "readwrite"
+						}
+						f.ValidUsers = smb["valid_users"]
+						f.RecycleBin = hasRecycleBin(smbConf, entry.Name())
+					} else {
+						f.Permission = "noaccess"
+					}
+					folderMap[mountPoint] = append(folderMap[mountPoint], f)
+				}
+			}
+		}
+	}
+	// Assign folders to pools
+	for i := range overview.Pools {
+		mp := overview.Pools[i].MountPoint
+		if folders, ok := folderMap[mp]; ok {
+			overview.Pools[i].Folders = folders
+		}
+	}
+
+	// 3. Get disk list, assign to pools / system / free
 	disks := getDiskStatus()
 	diskID := 0
 	for _, d := range disks {
@@ -132,9 +192,8 @@ func handleStorageOverview(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		diskID++
-		// Determine real status: system disk detection
-		realStatus := d.Type
 		isSystem := isSystemDisk(d.Device)
+		realStatus := d.Type
 		if isSystem {
 			realStatus = "system"
 		}
@@ -149,9 +208,7 @@ func handleStorageOverview(w http.ResponseWriter, r *http.Request) {
 			Smart:      d.Smart,
 			Status:     realStatus,
 		}
-		// Check if disk is part of a pool
-		ds.Pool = findDiskPoolDisplay(d.Device, mounts, mountDisplay)
-		// Build partition list from children
+		// Build partition list
 		for _, c := range d.Children {
 			pi := PartitionInfo{
 				Name:       c.Name,
@@ -161,18 +218,32 @@ func handleStorageOverview(w http.ResponseWriter, r *http.Request) {
 				Mountpoint: c.Mountpoint,
 				Status:     c.Type,
 			}
-			// Special: swap
 			if c.FSType == "swap" {
 				pi.Status = "swap"
 				pi.Mountpoint = "[SWAP]"
 			}
 			ds.Partitions = append(ds.Partitions, pi)
 		}
-		overview.Disks = append(overview.Disks, ds)
 
-		if d.Type == "unused" {
+		// Assign disk to correct bucket
+		if isSystem {
+			overview.SystemDisks = append(overview.SystemDisks, ds)
+		} else if realStatus == "unused" {
+			overview.FreeDisks = append(overview.FreeDisks, ds)
 			overview.Unconfigured++
+		} else {
+			// Data disk — find which pool it belongs to
+			poolDisplayName := findDiskPoolDisplay(d.Device, mounts, mountDisplay)
+			ds.Pool = poolDisplayName
+			// Add to the pool's disk list
+			for i := range overview.Pools {
+				if overview.Pools[i].DisplayName == poolDisplayName {
+					overview.Pools[i].Disks = append(overview.Pools[i].Disks, ds)
+					break
+				}
+			}
 		}
+
 		if d.Smart == "FAILED" {
 			overview.HasIssues = true
 			overview.Issues = append(overview.Issues, fmt.Sprintf("%s (%s) SMART 检测失败", ds.Friendly, d.Device))

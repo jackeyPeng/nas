@@ -687,6 +687,11 @@ function nasPanel() {
             if (data && data.overview) this.storageOverview = data.overview;
         },
 
+        scrollToWizard() {
+            const el = document.getElementById('wizard-section');
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        },
+
         // Shared folders
         async loadSharedFolders() {
             const data = await this.api('/disk/folders');
