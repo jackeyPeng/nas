@@ -1,6 +1,6 @@
 # NAS 项目优化路线图
 
-> 最后更新: 2026-07-16
+> 最后更新: 2026-07-17
 >
 > 项14: 项目官网（中优先级）
 
@@ -273,42 +273,53 @@ setup.sh 已包含 FileBrowser 的完整安装和配置。
 
 ---
 
-#### 13. 存储管理与新盘引导
+#### 13. 存储管理（三层抽象模型）
 **状态**: ✅ 已完成  
 **优先级**: 中  
 **描述**:  
-存储管理向导式配置已完成，支持单盘/合并/RAID1/独立模式，实时进度显示。
+存储管理重构为三层抽象模型（物理磁盘→存储空间→共享文件夹），参考群晖/TrueNAS专业建议，屏蔽底层路径。
 
-**层次一：磁盘状态总览（只读，安全）**
-- 页面顶部磁盘卡片总览
-- 每块盘显示：设备名、大小、类型（系统/数据/空闲）、挂载点、文件系统、SMART 健康状态
-- API: /api/disk/status — lsblk + df + smartctl 综合数据
-- 前端: 卡片式展示，已用/空闲/未格式化三种状态颜色区分
+**架构设计**:
+- 物理磁盘层：接口识别(SATA/NVMe/VirtIO)、温度、SMART、序列号、分区信息
+- 存储空间层：RAID组合(LVM/RAID0/1/5/6/独立)、文件系统(xfs)、健康状态
+- 共享文件夹层：三级权限(读写/只读/禁止)、回收站(Samba vfs recycle)
 
-**层次二：新盘引导流程（有写操作，需谨慎）**
-- 检测到未格式化/未挂载的磁盘时显示引导卡片
-- 快速配置（一键）：
-  1. 格式化（ext4 默认）
-  2. 创建挂载点（/data/ 下选目录或新建）
-  3. 挂载
-  4. 写入 /etc/fstab 持久化（blkid 获取 UUID）
-  5. chown 给 NAS 用户
-  6. 可选自动加入 Samba 共享
-- 手动配置：用户自选文件系统、挂载点
-- API: /api/disk/quick-setup
-- 安全检查：禁止操作系统盘、需二次确认
+**RAID方案推荐引擎**:
+- 根据空闲盘数动态推荐：1盘→LVM单盘，2盘→RAID1，3盘→RAID5，4盘→RAID5
+- 每方案显示：安全等级/可用容量/利用率/注意事项/推荐标记
+- 1盘用LVM(非直接格式化)方便后期vgextend扩容
 
-**层次三：RAID 支持（后续）**
-- 多盘冗余：RAID 0/1/5
-- mdadm 实现
-- Web 面板提供创建/查看/故障告警
-- 家用场景 RAID 5 最实用（至少 3 盘）
+**存储配置向导(SSE流式)**:
+- 7种模式：single(LVM)/merge(LVM合并)/raid0/raid1/raid5/raid6/separate
+- 实时进度推送：每步完成即推送事件
+- 自动选择下一个可用挂载点(/data/nas2,nas3...)，避免覆盖已有空间
 
-**实现方案**:
-- [ ] 后端: modules/diskmgmt/ 新增 disk/status、disk/quick-setup、disk/fstab API
-- [ ] 前端: 磁盘状态卡片总览 + 新盘引导弹窗 + 快速配置表单
-- [ ] sudoers: blkid + tee /etc/fstab + chown
-- [ ] 安全: 禁止系统盘操作、二次确认、操作日志
+**盘位图(NAS机箱式)**:
+- 固定4槽位，浅色机箱外壳
+- 四色状态：深蓝(已安装)/黄(待配置)/灰(空闲)/红(故障)
+- 槽位号紫色36px，槽位内显示设备路径+容量+接口
+
+**LVM扩容(SSE)**:
+- 5步流式进度：wipe→pvcreate→vgextend→lvextend→xfs_growfs
+- 风险提示：合并后任一盘故障全丢
+
+**共享文件夹管理**:
+- CRUD + 权限(读写/只读/禁止访问) + 回收站
+- Samba vfs objects = recycle
+
+**API清单**:
+- `/api/disk/overview` — 存储总览(嵌套结构)
+- `/api/disk/wizard/status` — 向导状态+方案列表
+- `/api/disk/wizard/setup-stream` — SSE配置
+- `/api/disk/wizard/reset-stream` — SSE重置
+- `/api/disk/pool/extend-stream` — SSE扩容
+- `/api/disk/folders` — 文件夹CRUD
+- `/api/disk/folders/permission` — 权限管理
+
+**待完善**:
+- [ ] RAID1扩容逻辑（不能vgextend，需走独立空间2或RAID5重建）
+- [ ] RAID5在线扩容（mdadm --grow）
+- [ ] 存储配额(quota)
 
 ---
 

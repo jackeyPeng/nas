@@ -1,5 +1,183 @@
 # NAS 项目变更日志
 
+## [2026-07-17] - 存储管理三层抽象模型 + RAID方案引擎 + 盘位图
+
+### 存储管理架构：三层抽象模型
+
+参考群晖/TrueNAS的专业建议，重构为经典三层抽象：
+
+- **物理磁盘层（硬件）**：磁盘识别、健康监测、接口类型
+- **存储空间层（容量与冗余）**：RAID组合、LVM管理、文件系统
+- **共享文件夹层（用户访问）**：权限管理、回收站
+
+核心设计：屏蔽底层路径（/data/nas1），用户只看到"存储空间1"。
+
+#### 后端 overview.go 重构
+
+- StorageOverview 结构体重构：
+  - `Pools []PoolSummary` — 存储空间（嵌套磁盘和文件夹）
+  - `SystemDisks []DiskSummary` — 系统盘（单独分组）
+  - `FreeDisks []DiskSummary` — 空闲盘（待配置）
+  - 不再平铺所有磁盘到 Disks 字段
+- PoolSummary 新增字段：
+  - `DisplayName` — 用户可见名（存储空间1、存储空间2）
+  - `RaidLevel` — RAID级别（1/0/5/6）
+  - `Healthy` — 健康状态（RAID同步中=false）
+  - `Disks []DiskSummary` — 属于该空间的磁盘列表
+  - `Folders []SharedFolder` — 该空间下的共享文件夹
+- DiskSummary 新增字段：
+  - `Interface` — 接口类型（SATA/NVMe/VirtIO/USB）
+  - `Temp` — 磁盘温度（smartctl解析，支持ATA和NVME格式）
+  - `Smart` — SMART健康状态（PASSED/FAILED）
+  - `Serial` — 序列号
+  - `Partitions []PartitionInfo` — 分区/卷列表
+- 磁盘自动归类逻辑：
+  - `isSystemDisk()` 检测系统盘（挂载/或/boot/efi）
+  - 系统盘 → SystemDisks
+  - 空闲盘 → FreeDisks + Unconfigured++
+  - 数据盘 → 查找所属存储空间（通过PV→VG→LV或mdadm成员）
+- `detectPoolTypeEx()` 返回 (type, raidLevel)，从 /proc/mdstat 解析RAID级别
+- `findDiskPoolDisplay()` 返回友好名（存储空间1）而非内部名（nas1）
+- 异常检测：SMART失败、RAID degraded/resyncing
+- 过滤 zram0/loop/ram 设备
+
+#### 后端 options.go（新建）— RAID方案推荐引擎
+
+根据空闲磁盘数量动态计算可用方案：
+
+| 磁盘数 | 可用方案 | 推荐方案 |
+|--------|---------|---------|
+| 1块 | LVM单盘 | ★ LVM单盘 |
+| 2块 | LVM合并/RAID0/RAID1/独立 | ★ RAID1 |
+| 3块 | +RAID5 | ★ RAID5 |
+| 4块 | +RAID6 | ★ RAID5 |
+
+每个方案返回：
+- `ID` — 模式标识（single/merge/raid0/raid1/raid5/raid6/separate）
+- `Name` — 中文名（LVM单盘/容量合并/RAID0条带/RAID1镜像/RAID5/RAID6/独立模式）
+- `Safety/SafetyText` — 安全等级（无冗余/基本安全/安全/极高安全）
+- `UsableSize/UsableRatio` — 可用容量和利用率（如RAID5三盘：100G，2/3）
+- `Description` — 方案说明
+- `Warning` — 注意事项（红色显示）
+- `Recommended` — 是否推荐（蓝色边框+推荐标签）
+
+关键设计：
+- 1块盘用 **LVM**（非直接格式化），方便后期加盘扩容（vgextend）
+- RAID0 可选但不推荐，有醒目警告
+- 容量计算取所有空闲盘的最小盘容量（混合盘以最小为准）
+
+#### 后端 stream.go 重构 — SSE流式配置
+
+支持全部7种模式的实时进度推送：
+
+- `single` — LVM单盘：wipe→pvcreate→vgcreate→lvcreate→mkfs.xfs→mount+fstab+Samba
+- `merge` — LVM合并：多盘pvcreate→vgcreate→lvcreate→格式化→挂载
+- `raid0` — RAID0条带：多盘wipe→mdadm --create level=0→格式化→挂载
+- `raid1` — RAID1镜像：2盘wipe→mdadm --create level=1→格式化→挂载
+- `raid5` — RAID5：3+盘wipe→mdadm --create level=5→格式式→挂载
+- `raid6` — RAID6：4+盘wipe→mdadm --create level=6→格式化→挂载
+- `separate` — 独立模式：每盘独立分区→格式化→挂载→Samba
+
+重要修复：
+- **自动选择下一个可用挂载点**：遍历 /data/nas1 到 /data/nas9，找第一个未挂载且空目录的路径。避免新配置覆盖已有的 /data/nas1（之前固定写死 nas1 导致 RAID 存储空间被 LVM 覆盖）
+- `validateMode()` 校验每种模式的最少磁盘数
+- `getModeStepCount()` 根据模式计算总步骤数
+
+#### 后端 wizard.go 重构
+
+- `handleWizardStatus` 新增返回 `raid_options` 方案列表
+- 空闲盘使用全局编号（磁盘4），与物理磁盘区域编号一致，不再重新从1编号
+- 过滤 zram0/loop 设备
+
+#### 后端 pool_extend.go（新建）— LVM扩容SSE
+
+- `/api/disk/pool/extend-stream` 流式推送扩容进度
+- 5步：清除签名→pvcreate→vgextend→lvextend→xfs_growfs
+- 前端扩容弹窗含风险提示："任意一块磁盘故障，整个存储空间的数据将全部丢失"
+
+#### 后端 folders.go（新建）— 共享文件夹管理
+
+- `/api/disk/folders` — 列出所有存储空间下的文件夹，含大小/权限/回收站状态
+- `/api/disk/folders/create` — 在指定空间下建文件夹，支持权限选择和回收站
+- `/api/disk/folders/delete` — 删除文件夹+清理Samba配置
+- `/api/disk/folders/permission` — 修改Samba权限
+- 权限三级：`readwrite`（读写）/ `readonly`（只读）/ `noaccess`（禁止访问，移除Samba共享）
+- 回收站：Samba `vfs objects = recycle`，删除文件进入 #recycle 目录
+- `parseSambaShares()` 解析 smb.conf 获取共享配置
+- `hasRecycleBin()` 检测共享是否配置了回收站
+
+### 前端布局重构
+
+#### 树状结构（替代原来的平铺区块）
+
+- **存储总览**：深蓝渐变卡片，总容量/已用/可用/进度条/空间数/磁盘数/异常
+- **盘位图**：独立居中区域（见下文详述）
+- **存储空间区域**：蓝色下划线标题，每个空间一张展开卡片
+  - 卡片头部：存储空间名 + RAID级别标签 + 文件系统 + 容量进度条
+  - 卡片内容：
+    - 磁盘详情列表（设备路径 + 容量 + 接口 + 型号 + 温度 + SMART）
+    - 共享文件夹列表（名称 + 大小 + 权限标签 + 回收站图标 + 权限/删除按钮）
+    - 新建文件夹按钮（预选所属空间）
+    - 操作按钮：扩容（仅LVM/单盘模式显示）/ 重置
+- **其它磁盘区域**：灰色下划线标题
+  - 系统盘：灰色标签 + 设备路径 + 分区列表
+  - 待配置盘：红色标签 + 设备路径 + 配置按钮（点击平滑滚到向导）
+- **存储配置向导**：动态方案卡片 + 安全等级 + 容量计算 + 推荐标记
+
+#### 盘位图（NAS机箱式，迭代多版）
+
+设计参考 TrueNAS 产品正面原型图：
+
+- 位置：存储总览下方，居中独立区域
+- 机箱外壳：浅色渐变(#e8ecf0→#d4dae0)，3px灰色边框，圆角
+- 固定4个槽位（机器预留4盘位），横向排列
+- 槽位尺寸：CSS class `.disk-slot` 定义 `width:calc((100% - 3vw) / 4)`
+  - 用 CSS class 避免 Alpine.js `:style` 绑定覆盖 inline style 的 width
+- 槽位结构：编号区（顶部5vw高）+ 盘体信息区（flex:1填充）
+- 槽位号1-4：36px紫色(#7c3aed)加粗，在机箱内部槽位顶部
+- 四色状态：
+  - 深蓝(#1e3a5f→#1e40af) — 已安装（SMART正常）
+  - 黄色(#fef3c7→#fde68a) — 待配置（有空闲盘未加入存储空间）
+  - 深灰(#6b7280→#4b5563) — 空闲（无盘）
+  - 红色(#fee2e2→#fecaca) — 故障（SMART失败）
+- 槽位内显示：/dev/sdb + 50G SATA
+- 合并所有存储空间的磁盘到盘位图（flatMap），不只取pools[0]
+- 底部图例：已安装/待配置/空闲/故障
+
+#### 颜色规范
+
+全面去灰色，保证浅色主题下可读性：
+
+| 元素 | 颜色 |
+|------|------|
+| 容量 | #475569 深灰蓝 |
+| 接口标签 | 底#e0f2fe + 字#0369a1 |
+| 型号 | #334155 深石板色 |
+| 温度 | #c2410c 深橙色 |
+| SMART | #16a34a绿色 / #dc2626红色 |
+| 文件夹大小 | #475569 |
+| 分区名 | monospace #475569 |
+| 分区文件系统 | 底#e0f2fe + 字#0369a1 |
+| 分区挂载点 | #2563eb |
+| 系统盘（唯一保留灰色） | #6b7280 |
+
+#### 磁盘标识
+
+所有位置从友好名（磁盘2）改为物理路径（/dev/sdb），等宽字体：
+- 盘位图槽位内
+- 存储空间磁盘详情列表
+- 其它磁盘区域（系统盘+待配置盘）
+- 向导磁盘列表
+- 扩容弹窗下拉选项
+
+### 已知待处理
+
+- RAID1存储空间的扩容逻辑（不能vgextend，需要走独立存储空间2或RAID5重建）
+- file.abwen.com 上传新版 nas-panel.latest
+- TODO.md 更新完成率
+
+---
+
 ## [2026-07-16] - 存储管理重构 + 向导式配置 + 实时进度
 
 ### 存储：文件系统改为 xfs
