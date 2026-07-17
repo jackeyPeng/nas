@@ -725,7 +725,19 @@
                                     <div>类型: <span x-text="disk.rotational==='0' ? 'SSD' : 'HDD'"></span></div>
                                     <div x-show="disk.temp">温度: <span x-text="disk.temp"></span></div>
                                     <div x-show="disk.smart">健康: <span :style="disk.smart==='PASSED' ? 'color:#16a34a' : 'color:#dc2626'" x-text="disk.smart"></span></div>
-                                    <div x-show="disk.pool">所属池: <span style="color:#4a9eff" x-text="disk.pool"></span></div>
+                                    <div x-show="disk.pool">所属空间: <span style="color:#4a9eff" x-text="disk.pool"></span></div>
+                                </div>
+                                <!-- 分区/卷列表 -->
+                                <div x-show="disk.partitions && disk.partitions.length > 0" style="margin-top:8px;padding-top:8px;border-top:1px dashed #e0e4e8">
+                                    <div style="font-size:11px;color:#999;margin-bottom:4px">分区/卷:</div>
+                                    <template x-for="p in (disk.partitions||[])" :key="p.device">
+                                        <div style="display:flex;align-items:center;gap:4px;font-size:11px;padding:2px 0;line-height:1.4">
+                                            <span style="font-family:monospace;color:#555;min-width:90px" x-text="p.name"></span>
+                                            <span style="color:#888;min-width:45px" x-text="p.size"></span>
+                                            <span x-show="p.fstype" style="background:#f0f0f0;padding:1px 4px;border-radius:2px;font-size:10px;min-width:30px;text-align:center" x-text="p.fstype"></span>
+                                            <span x-show="p.mountpoint" style="color:#4a9eff;font-size:10px" x-text="p.mountpoint"></span>
+                                        </div>
+                                    </template>
                                 </div>
                             </div>
                         </template>

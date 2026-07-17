@@ -43,16 +43,27 @@ type PoolSummary struct {
 
 // DiskSummary is a flat disk info for the overview
 type DiskSummary struct {
-	Device     string `json:"device"`     // /dev/sdb
-	Friendly   string `json:"friendly"`   // 磁盘 1
-	Size       string `json:"size"`
-	Interface  string `json:"interface"`  // SATA, NVMe, VirtIO
-	Rotational string `json:"rotational"` // 0=SSD 1=HDD
-	Model      string `json:"model"`
-	Temp       string `json:"temp"`
-	Smart      string `json:"smart"`
-	Status     string `json:"status"` // system, data, unused, pool_member
-	Pool       string `json:"pool,omitempty"` // which pool it belongs to
+	Device     string            `json:"device"`     // /dev/sdb
+	Friendly   string            `json:"friendly"`   // 磁盘 1
+	Size       string            `json:"size"`
+	Interface  string            `json:"interface"`  // SATA, NVMe, VirtIO
+	Rotational string            `json:"rotational"` // 0=SSD 1=HDD
+	Model      string            `json:"model"`
+	Temp       string            `json:"temp"`
+	Smart      string            `json:"smart"`
+	Status     string            `json:"status"` // system, data, unused, pool_member
+	Pool       string            `json:"pool,omitempty"` // which pool it belongs to
+	Partitions []PartitionInfo  `json:"partitions,omitempty"` // 分区/卷列表
+}
+
+// PartitionInfo represents a partition or volume on a disk
+type PartitionInfo struct {
+	Name       string `json:"name"`       // nvme0n1p2
+	Device     string `json:"device"`     // /dev/nvme0n1p2
+	Size       string `json:"size"`       // 229.6G
+	FSType     string `json:"fstype"`     // ext4, xfs, swap
+	Mountpoint string `json:"mountpoint"` // /, /boot/efi
+	Status     string `json:"status"`     // system, data, swap, unused
 }
 
 // RAIDStatus represents RAID array health
@@ -130,6 +141,23 @@ func handleStorageOverview(w http.ResponseWriter, r *http.Request) {
 		}
 		// Check if disk is part of a pool
 		ds.Pool = findDiskPool(d.Device, mounts)
+		// Build partition list from children
+		for _, c := range d.Children {
+			pi := PartitionInfo{
+				Name:       c.Name,
+				Device:     c.Device,
+				Size:       c.Size,
+				FSType:     c.FSType,
+				Mountpoint: c.Mountpoint,
+				Status:     c.Type,
+			}
+			// Special: swap
+			if c.FSType == "swap" {
+				pi.Status = "swap"
+				pi.Mountpoint = "[SWAP]"
+			}
+			ds.Partitions = append(ds.Partitions, pi)
+		}
 		overview.Disks = append(overview.Disks, ds)
 
 		if d.Type == "unused" {
