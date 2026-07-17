@@ -68,12 +68,17 @@ func handleWizardStatus(w http.ResponseWriter, r *http.Request) {
 	// Check existing mounts under /data
 	existingMounts := getExistingDataMounts()
 
+	// Calculate RAID options based on available disks
+	minSize := getMinDiskSizeGB(unused)
+	raidOptions := getRaidOptions(len(unused), minSize)
+
 	common.JSONResponse(w, map[string]interface{}{
 		"unused_disks":     unused,
 		"unused_count":     len(unused),
 		"pool":             pool,
 		"existing_mounts":  existingMounts,
 		"has_storage":       len(existingMounts) > 0 || pool["exists"] == true,
+		"raid_options":      raidOptions,
 	})
 }
 
