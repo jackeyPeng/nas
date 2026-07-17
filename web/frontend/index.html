@@ -613,34 +613,51 @@
                     </div>
                 </div>
 
-                <!-- ════ 盘位图（NAS机箱正面，固定尺寸，浅色主题） ════ -->
+                <!-- ════ 盘位图（NAS机箱正面，4槽位，浅色主题） ════ -->
                 <div x-show="storageOverview.pools?.length > 0" style="display:flex;justify-content:center;margin-bottom:20px">
                     <div style="display:inline-flex;flex-direction:column;align-items:center;gap:6px">
                         <span style="font-size:13px;font-weight:600;color:#1e3a5f">📦 盘位图</span>
-                        <!-- NAS机箱外壳 -->
-                        <div style="height:24vw;max-height:240px;width:32vw;max-width:320px;background:linear-gradient(145deg,#e8ecf0,#d4dae0);border-radius:6px;padding:2vw;border:1px solid #b0b8c4;box-shadow:0 4px 12px rgba(0,0,0,0.08),inset 0 1px 2px rgba(255,255,255,0.8);display:flex;gap:2vw">
-                            <!-- 动态槽位 -->
-                            <template x-for="(disk, idx) in (storageOverview.pools?.[0]?.disks || [])" :key="disk.device">
-                                <div style="width:7vw;max-width:70px;height:20vw;max-height:200px;border-radius:3px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;border:2px solid;overflow:hidden;position:relative"
-                                    :style="disk.smart==='PASSED'
-                                        ? 'background:linear-gradient(180deg,#dcfce7,#bbf7d0);border-color:#16a34a;box-shadow:inset 0 0 6px rgba(34,197,94,0.1)'
-                                        : 'background:linear-gradient(180deg,#fee2e2,#fecaca);border-color:#dc2626;box-shadow:inset 0 0 6px rgba(239,68,68,0.1)'">
-                                    <!-- LED灯 -->
-                                    <span style="position:absolute;top:4px;left:4px;width:6px;height:6px;border-radius:50%;"
-                                        :style="disk.smart==='PASSED' ? 'background:#22c55e;box-shadow:0 0 4px #22c55e' : 'background:#ef4444;box-shadow:0 0 4px #ef4444'"></span>
-                                    <!-- 盘位号 -->
-                                    <span style="font-size:10px;color:#475569;font-weight:700;position:absolute;top:4px;right:4px" x-text="disk.friendly.replace('磁盘 ','')"></span>
-                                    <!-- 容量 -->
-                                    <span style="font-size:12px;font-weight:700;writing-mode:vertical-rl;text-orientation:upright;color:#0f4c5c" x-text="disk.size"></span>
-                                    <!-- 接口 -->
-                                    <span style="font-size:10px;color:#0369a1;writing-mode:vertical-rl;text-orientation:upright;" x-text="disk.interface"></span>
+                        <!-- NAS机箱外壳: 24vw高 x 32vw宽, padding 0.8vw, gap 1vw -->
+                        <div style="height:24vw;max-height:240px;width:32vw;max-width:320px;background:linear-gradient(145deg,#e8ecf0,#d4dae0);border-radius:6px;padding:0.8vw;border:3px solid #9ca3af;box-shadow:0 4px 12px rgba(0,0,0,0.08),inset 0 1px 2px rgba(255,255,255,0.8);display:flex;gap:1vw">
+                            <!-- 固定4个槽位 -->
+                            <template x-for="slotNum in 4" :key="slotNum">
+                                <div style="width:7vw;max-width:70px;height:20vw;max-height:200px;border-radius:3px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:4px;border:3px solid;overflow:hidden;position:relative;padding-top:6px"
+                                    :style="(function(){
+                                        var disks = storageOverview.pools?.[0]?.disks || [];
+                                        if (slotNum <= disks.length) {
+                                            var d = disks[slotNum-1];
+                                            if (d.smart !== 'PASSED') return 'background:linear-gradient(180deg,#fee2e2,#fecaca);border-color:#dc2626';
+                                            return 'background:linear-gradient(180deg,#1e3a5f,#1e40af);border-color:#1e3a5f';
+                                        }
+                                        var freeDisks = storageOverview.free_disks || [];
+                                        if (slotNum - disks.length <= freeDisks.length) {
+                                            return 'background:linear-gradient(180deg,#fef3c7,#fde68a);border-color:#d97706';
+                                        }
+                                        return 'background:linear-gradient(180deg,#6b7280,#4b5563);border-color:#374151';
+                                    })()">
+                                    <!-- 槽位号 -->
+                                    <span style="font-size:14px;font-weight:700;color:white" x-text="slotNum"></span>
+                                    <!-- 磁盘信息(如有) -->
+                                    <template x-if="slotNum <= (storageOverview.pools?.[0]?.disks || []).length">
+                                        <span style="font-size:11px;font-weight:600;writing-mode:vertical-rl;text-orientation:upright;color:#bfdbfe" x-text="(storageOverview.pools[0].disks[slotNum-1].size) + ' ' + (storageOverview.pools[0].disks[slotNum-1].interface)"></span>
+                                    </template>
+                                    <!-- 待配置标记 -->
+                                    <template x-if="slotNum > (storageOverview.pools?.[0]?.disks || []).length && slotNum - (storageOverview.pools?.[0]?.disks || []).length <= (storageOverview.free_disks || []).length">
+                                        <span style="font-size:11px;font-weight:600;color:#92400e;writing-mode:vertical-rl;text-orientation:upright">待配置</span>
+                                    </template>
+                                    <!-- 空闲标记 -->
+                                    <template x-if="slotNum > (storageOverview.pools?.[0]?.disks || []).length + (storageOverview.free_disks || []).length">
+                                        <span style="font-size:11px;color:rgba(255,255,255,0.6);writing-mode:vertical-rl;text-orientation:upright">空</span>
+                                    </template>
                                 </div>
                             </template>
                         </div>
                         <!-- 图例 -->
                         <div style="display:flex;gap:16px;font-size:12px;color:#475569">
-                            <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:linear-gradient(180deg,#dcfce7,#bbf7d0);border:1px solid #16a34a"></span>正常</span>
-                            <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:linear-gradient(180deg,#fee2e2,#fecaca);border:1px solid #dc2626"></span>故障</span>
+                            <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:2px;background:#1e3a5f;border:2px solid #1e3a5f"></span>已安装</span>
+                            <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:2px;background:linear-gradient(180deg,#fef3c7,#fde68a);border:2px solid #d97706"></span>待配置</span>
+                            <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:2px;background:#6b7280;border:2px solid #374151"></span>空闲</span>
+                            <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:2px;background:linear-gradient(180deg,#fee2e2,#fecaca);border:2px solid #dc2626"></span>故障</span>
                         </div>
                     </div>
                 </div>
