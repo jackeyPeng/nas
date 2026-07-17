@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -97,7 +98,20 @@ func handleWizardSetupStream(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
+	// Determine mount point: find next available /data/nasN
 	mountPoint := "/data/nas1"
+	for i := 1; i <= 9; i++ {
+		testMount := fmt.Sprintf("/data/nas%d", i)
+		// Check if already mounted
+		mntOut, _ := common.ExecOutput("findmnt", "-n", "-o", "TARGET", testMount)
+		if strings.TrimSpace(mntOut) == "" {
+			// Check if directory exists and is non-empty (already a data dir)
+			if entries, err := os.ReadDir(testMount); err != nil || len(entries) == 0 {
+				mountPoint = testMount
+				break
+			}
+		}
+	}
 
 	switch mode {
 	case "single":
