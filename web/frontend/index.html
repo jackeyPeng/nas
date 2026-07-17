@@ -638,21 +638,24 @@
                                     })()">
                                     <!-- 槽位编号（在机箱内、槽位顶部） -->
                                     <div style="height:5vw;max-height:50px;min-height:24px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
-                                        <span style="font-size:16px;font-weight:800;color:white" x-text="slotNum"></span>
+                                        <span style="font-size:18px;font-weight:800;color:#7c3aed" x-text="slotNum"></span>
                                     </div>
                                     <!-- 盘体信息区 -->
                                     <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:0">
                                         <template x-if="slotNum <= (storageOverview.pools?.[0]?.disks || []).length">
-                                            <span style="font-size:11px;font-weight:600;color:#bfdbfe" x-text="storageOverview.pools[0].disks[slotNum-1].size"></span>
+                                            <span style="font-size:11px;font-weight:600;color:#bfdbfe" x-text="storageOverview.pools[0].disks[slotNum-1].friendly"></span>
                                         </template>
                                         <template x-if="slotNum <= (storageOverview.pools?.[0]?.disks || []).length">
-                                            <span style="font-size:9px;color:#93c5fd" x-text="storageOverview.pools[0].disks[slotNum-1].interface"></span>
+                                            <span style="font-size:10px;color:#93c5fd" x-text="storageOverview.pools[0].disks[slotNum-1].size + ' ' + storageOverview.pools[0].disks[slotNum-1].interface"></span>
                                         </template>
                                         <template x-if="slotNum > (storageOverview.pools?.[0]?.disks || []).length && slotNum - (storageOverview.pools?.[0]?.disks || []).length <= (storageOverview.free_disks || []).length">
-                                            <span style="font-size:11px;font-weight:600;color:#92400e">待配置</span>
+                                            <span style="font-size:11px;font-weight:600;color:#92400e" x-text="storageOverview.free_disks[slotNum - (storageOverview.pools?.[0]?.disks || []).length - 1].friendly"></span>
+                                        </template>
+                                        <template x-if="slotNum > (storageOverview.pools?.[0]?.disks || []).length && slotNum - (storageOverview.pools?.[0]?.disks || []).length <= (storageOverview.free_disks || []).length">
+                                            <span style="font-size:10px;color:#b45309" x-text="storageOverview.free_disks[slotNum - (storageOverview.pools?.[0]?.disks || []).length - 1].size + ' 待配置'"></span>
                                         </template>
                                         <template x-if="slotNum > (storageOverview.pools?.[0]?.disks || []).length + (storageOverview.free_disks || []).length">
-                                            <span style="font-size:11px;color:rgba(255,255,255,0.6)">空</span>
+                                            <span style="font-size:11px;color:rgba(255,255,255,0.5)">空</span>
                                         </template>
                                     </div>
                                 </div>
