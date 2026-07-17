@@ -917,7 +917,7 @@
                 <div class="modal" x-show="showExtendPool" x-cloak @click.self="showExtendPool = false">
                     <div class="modal-box">
                         <h3>扩容存储空间</h3>
-                        <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">将新磁盘加入现有存储空间，扩展容量</p>
+                        <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">将新磁盘加入现有 LVM 存储空间，扩展容量。操作期间不需要停机，数据不受影响。</p>
                         <div class="form-group">
                             <label>选择存储空间</label>
                             <select x-model="poolExtendForm.vg_name" class="port-input">
@@ -934,6 +934,16 @@
                                     <option :value="d.device" x-text="d.friendly + ' · ' + d.size + ' · ' + d.device"></option>
                                 </template>
                             </select>
+                        </div>
+                        <!-- 风险提示 -->
+                        <div style="background:#fff3e0;border-radius:8px;padding:12px;border-left:4px solid #ff9800;margin-bottom:12px">
+                            <strong style="color:#e65100;font-size:14px">⚠️ 风险提醒</strong>
+                            <p style="font-size:13px;color:#555;margin-top:4px;line-height:1.6">
+                                扩容后，多块磁盘合并在同一个卷组中。<strong>任意一块磁盘故障，整个存储空间的数据将全部丢失</strong>，不像 RAID 镜像那样可以坏一块不丢数据。<br><br>
+                                如果存储的是重要数据（文档、照片等），建议：<br>
+                                • 定期使用备份功能创建配置快照<br>
+                                • 或考虑改用 RAID1/RAID5 方案（需要重建存储）
+                            </p>
                         </div>
                         <div class="modal-actions">
                             <button class="btn" @click="showExtendPool = false">取消</button>
