@@ -640,18 +640,17 @@
                             </div>
                             <!-- 存储空间内容 -->
                             <div style="padding:12px 16px">
-                                <!-- 盘位图（NAS产品式4槽位） -->
+                                <!-- 盘位图（NAS产品式，动态N槽位） -->
                                 <div style="font-size:14px;font-weight:600;color:#1e3a5f;margin-bottom:8px">📦 盘位</div>
-                                <div style="display:flex;gap:4px;margin-bottom:12px;background:#1a1a2e;padding:8px;border-radius:6px">
-                                    <!-- 槽位1-4, 固定4个 -->
-                                    <template x-for="slotNum in 4" :key="slotNum">
-                                        <div style="flex:1;aspect-ratio:0.6;border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border:2px solid #333344"
-                                            :style="pool.disks && slotNum <= pool.disks.length
-                                                ? (pool.disks[slotNum-1].smart==='PASSED' ? 'background:linear-gradient(135deg,#16a34a,#22c55e);border-color:#4ade80' : 'background:linear-gradient(135deg,#dc2626,#ef4444);border-color:#f87171')
-                                                : 'background:#1a1a2e;border-color:#333344'">
-                                            <span style="font-size:16px;font-weight:700;color:white" x-text="pool.disks && slotNum <= pool.disks.length ? pool.disks[slotNum-1].friendly.replace('磁盘 ','') : ''"></span>
-                                            <span style="font-size:10px;color:rgba(255,255,255,0.7)" x-text="pool.disks && slotNum <= pool.disks.length ? pool.disks[slotNum-1].size : '—'"></span>
-                                            <span style="font-size:9px;color:rgba(255,255,255,0.5)" x-text="slotNum <= (pool.disks?.length||0) ? '' : '空闲'"></span>
+                                <div style="display:flex;gap:4px;margin-bottom:12px;background:#2d2d3f;padding:10px;border-radius:8px;box-shadow:inset 0 2px 8px rgba(0,0,0,0.3)">
+                                    <!-- 根据磁盘数量动态显示槽位 -->
+                                    <template x-for="(disk, slotIdx) in (pool.disks||[])" :key="disk.device">
+                                        <div style="flex:1;aspect-ratio:0.55;border-radius:4px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border:2px solid;"
+                                            :style="disk.smart==='PASSED'
+                                                ? 'background:linear-gradient(135deg,#16a34a,#22c55e);border-color:#4ade80;box-shadow:0 0 12px rgba(34,197,94,0.3)'
+                                                : 'background:linear-gradient(135deg,#dc2626,#ef4444);border-color:#f87171;box-shadow:0 0 12px rgba(239,68,68,0.3)'">
+                                            <span style="font-size:18px;font-weight:700;color:white" x-text="disk.friendly.replace('磁盘 ','')"></span>
+                                            <span style="font-size:10px;color:rgba(255,255,255,0.85)" x-text="disk.size"></span>
                                         </div>
                                     </template>
                                 </div>
@@ -662,11 +661,11 @@
                                     <div style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:13px;border-bottom:1px solid #f0f0f0">
                                         <span :style="disk.smart==='PASSED'?'color:#16a34a':'color:#dc2626'">●</span>
                                         <strong x-text="disk.friendly"></strong>
-                                        <span style="color:#888" x-text="disk.size"></span>
-                                        <span style="font-size:11px;background:#f0f0f0;padding:1px 6px;border-radius:3px;color:#666" x-text="disk.interface"></span>
-                                        <span x-show="disk.model" style="font-size:11px;color:#999" x-text="disk.model"></span>
-                                        <span x-show="disk.temp" style="font-size:11px;color:#666" x-text="disk.temp"></span>
-                                        <span x-show="disk.smart" style="font-size:11px" :style="disk.smart==='PASSED'?'color:#16a34a':'color:#dc2626'" x-text="disk.smart==='PASSED'?'✓':'✗'"></span>
+                                        <span style="color:#475569" x-text="disk.size"></span>
+                                        <span style="font-size:11px;background:#e0f2fe;padding:1px 6px;border-radius:3px;color:#0369a1" x-text="disk.interface"></span>
+                                        <span x-show="disk.model" style="font-size:12px;color:#334155" x-text="disk.model"></span>
+                                        <span x-show="disk.temp" style="font-size:12px;color:#c2410c" x-text="disk.temp"></span>
+                                        <span x-show="disk.smart" style="font-size:12px" :style="disk.smart==='PASSED'?'color:#16a34a':'color:#dc2626'" x-text="disk.smart==='PASSED'?'✓健康':'✗异常'"></span>
                                     </div>
                                 </template>
 
@@ -676,7 +675,7 @@
                                     <div style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:13px;border-bottom:1px solid #f0f0f0">
                                         <span style="color:#4a9eff">▸</span>
                                         <strong x-text="f.name"></strong>
-                                        <span style="color:#888" x-text="f.size || ''"></span>
+                                        <span style="color:#475569" x-text="f.size || ''"></span>
                                         <span style="font-size:11px;padding:1px 6px;border-radius:3px"
                                             :style="f.permission==='readwrite'?'background:#dcfce7;color:#16a34a':f.permission==='readonly'?'background:#fef3c7;color:#92400e':'background:#fee2e2;color:#dc2626'"
                                             x-text="f.permission==='readwrite'?'读写':f.permission==='readonly'?'只读':'未共享'"></span>
@@ -731,10 +730,10 @@
                             <div style="display:flex;align-items:center;gap:8px">
                                 <span style="font-size:11px;padding:2px 8px;border-radius:4px;background:#fee2e2;color:#dc2626">待配置</span>
                                 <strong style="font-size:14px" x-text="disk.friendly"></strong>
-                                <span style="color:#888;font-size:13px" x-text="disk.size"></span>
-                                <span style="font-size:11px;background:#f0f0f0;padding:1px 6px;border-radius:3px;color:#666" x-text="disk.interface"></span>
-                                <span x-show="disk.model" style="font-size:12px;color:#999" x-text="disk.model"></span>
-                                <span x-show="disk.smart" style="font-size:11px" :style="disk.smart==='PASSED'?'color:#16a34a':'color:#dc2626'" x-text="disk.smart==='PASSED'?'✓健康':'✗异常'"></span>
+                                <span style="color:#475569;font-size:13px" x-text="disk.size"></span>
+                                <span style="font-size:11px;background:#e0f2fe;padding:1px 6px;border-radius:3px;color:#0369a1" x-text="disk.interface"></span>
+                                <span x-show="disk.model" style="font-size:12px;color:#334155" x-text="disk.model"></span>
+                                <span x-show="disk.smart" style="font-size:12px" :style="disk.smart==='PASSED'?'color:#16a34a':'color:#dc2626'" x-text="disk.smart==='PASSED'?'✓健康':'✗异常'"></span>
                                 <span style="flex:1"></span>
                                 <button class="btn btn-sm btn-success" style="font-size:11px;padding:2px 10px" @click="scrollToWizard()">配置</button>
                             </div>
