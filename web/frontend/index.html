@@ -764,7 +764,7 @@
                     <div x-show="storageOverview.unconfigured_count === 1" style="background:white;border-radius:8px;padding:16px;border-left:4px solid #4a9eff">
                         <div style="font-size:15px;font-weight:600;margin-bottom:6px">推荐方案</div>
                         <p style="font-size:14px;color:#555;line-height:1.6">
-                            将磁盘格式化并挂载到 <code style="background:#f0f0f0;padding:2px 6px;border-radius:4px">/data/nas1</code><br>
+                            将磁盘配置为新的存储空间<br>
                             自动完成格式化、挂载、开机自启、权限、Samba 共享
                         </p>
                         <button class="btn btn-success" @click="wizardSetup('single')" :disabled="wizardLoading" style="margin-top:10px;padding:8px 24px;font-size:15px">
@@ -783,7 +783,7 @@
                                 <div style="font-size:18px;margin-bottom:6px">📦 容量优先</div>
                                 <div style="font-size:13px;color:#555;margin-bottom:6px">所有磁盘合并为一个大目录</div>
                                 <div style="font-size:12px;color:#888;line-height:1.5">
-                                    磁盘1 + 磁盘2 → /data/nas1<br>
+                                    磁盘1 + 磁盘2 → 合并为一个存储空间<br>
                                     总容量 = 各磁盘容量之和
                                 </div>
                                 <div style="font-size:11px;color:#dc2626;margin-top:6px">⚠️ 任一磁盘故障，数据全部丢失</div>
@@ -794,7 +794,7 @@
                                 <div style="font-size:18px;margin-bottom:6px">🛡️ 安全优先</div>
                                 <div style="font-size:13px;color:#555;margin-bottom:6px">两块磁盘互为镜像备份</div>
                                 <div style="font-size:12px;color:#888;line-height:1.5">
-                                    磁盘1 = 磁盘2 → /data/nas1<br>
+                                    磁盘1 = 磁盘2 → 一个镜像存储空间<br>
                                     容量 = 单块磁盘大小
                                 </div>
                                 <div style="font-size:11px;color:#16a34a;margin-top:6px">✓ 一块盘坏了，数据不丢</div>
@@ -805,7 +805,7 @@
                                 <div style="font-size:18px;margin-bottom:6px">📁 独立模式</div>
                                 <div style="font-size:13px;color:#555;margin-bottom:6px">每块磁盘独立一个目录</div>
                                 <div style="font-size:12px;color:#888;line-height:1.5">
-                                    磁盘1 → /data/nas1，磁盘2 → /data/nas2 ...
+                                    磁盘1 → 存储空间1，磁盘2 → 存储空间2 ...
                                 </div>
                                 <div style="font-size:11px;color:#888;margin-top:6px">各盘独立，坏一块不影响其他</div>
                             </div>
