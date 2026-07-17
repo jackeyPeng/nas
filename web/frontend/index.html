@@ -613,6 +613,7 @@
                     </div>
                 </div>
 
+<style>.disk-slot{width:calc((100% - 3vw) / 4);min-width:0;max-width:70px;display:flex;flex-direction:column;align-items:center;border-radius:3px;overflow:hidden;border:3px solid;}</style>
                 <!-- ════ 盘位图（NAS机箱正面，4槽位，浅色主题） ════ -->
                 <div x-show="storageOverview.pools?.length > 0" style="display:flex;justify-content:center;margin-bottom:20px">
                     <div style="display:inline-flex;flex-direction:column;align-items:center;gap:6px">
@@ -621,7 +622,7 @@
                         <div style="height:24vw;max-height:240px;width:32vw;max-width:320px;background:linear-gradient(145deg,#e8ecf0,#d4dae0);border-radius:6px;padding:1.2vw;border:3px solid #9ca3af;box-shadow:0 4px 12px rgba(0,0,0,0.08),inset 0 1px 2px rgba(255,255,255,0.8);display:flex;gap:1vw;align-items:stretch">
                             <!-- 固定4个槽位, 每个槽位内: 编号在上 + 盘体在下 -->
                             <template x-for="slotNum in 4" :key="slotNum">
-                                <div style="width:calc((100% - 3*1vw) / 4);min-width:0;display:flex;flex-direction:column;align-items:center;border-radius:3px;overflow:hidden;border:3px solid;"
+                                <div class="disk-slot"
                                     :style="(function(){
                                         var disks = storageOverview.pools?.[0]?.disks || [];
                                         if (slotNum <= disks.length) {
