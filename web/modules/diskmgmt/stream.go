@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -58,7 +56,10 @@ func handleWizardSetupStream(w http.ResponseWriter, r *http.Request) {
 	disks := getDiskStatus()
 	var unusedDevs []string
 	for _, d := range disks {
-		if d.Name == "sr0" || isSystemDisk(d.Device) {
+		if d.Name == "sr0" || d.Name == "zram0" || strings.HasPrefix(d.Name, "loop") {
+			continue
+		}
+		if isSystemDisk(d.Device) {
 			continue
 		}
 		if d.Type == "unused" {
@@ -72,24 +73,20 @@ func handleWizardSetupStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Calculate total steps based on mode
-	totalSteps := 6 // default
-	switch mode {
-	case "single":
-		totalSteps = 5
-	case "merge":
-		totalSteps = 5 + len(unusedDevs)
-	case "separate":
-		totalSteps = 5 * len(unusedDevs)
-	case "raid1":
-		totalSteps = 6
-	default:
-		sendProgress(w, ProgressEvent{Step: "模式检查", Status: "error", Detail: "未知模式"})
+	totalSteps := getModeStepCount(mode, len(unusedDevs))
+	if totalSteps == 0 {
+		sendProgress(w, ProgressEvent{Step: "模式检查", Status: "error", Detail: "未知模式: " + mode})
+		return
+	}
+
+	// Validate mode requirements
+	if err := validateMode(mode, len(unusedDevs)); err != "" {
+		sendProgress(w, ProgressEvent{Step: "模式检查", Status: "error", Detail: err})
 		return
 	}
 
 	step := 0
 
-	// Helper to send step progress
 	stepDone := func(name string) {
 		step++
 		sendProgress(w, ProgressEvent{Step: name, Status: "done", Index: step, Total: totalSteps})
@@ -100,146 +97,37 @@ func handleWizardSetupStream(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
+	mountPoint := "/data/nas1"
+
 	switch mode {
 	case "single":
+		// LVM single disk — for future expansion
 		dev := unusedDevs[0]
-		mountPoint := "/data/nas1"
-
-		stepRunning("清除磁盘签名")
-		common.SudoExec("/usr/sbin/wipefs", "-a", dev)
-		stepDone("清除磁盘签名")
-
-		stepRunning("创建分区")
-		common.SudoExec("/usr/sbin/parted", "-s", dev, "mklabel", "gpt", "mkpart", "primary", "xfs", "0%", "100%")
-		time.Sleep(500 * time.Millisecond) // wait for kernel
-		partDev := dev + "1"
-		stepDone("创建分区")
-
-		stepRunning("格式化 (xfs)")
-		common.SudoExec("mkfs.xfs", "-f", partDev)
-		stepDone("格式化 (xfs)")
-
-		stepRunning("挂载到 " + mountPoint)
-		common.SudoExec("mkdir", "-p", mountPoint)
-		common.SudoExec("mount", partDev, mountPoint)
-		uuidOut, _ := common.ExecOutput("blkid", "-s", "UUID", "-o", "value", partDev)
-		writeFstab(strings.TrimSpace(uuidOut), mountPoint, "xfs")
-		common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountPoint)
-		stepDone("挂载到 " + mountPoint)
-
-		stepRunning("添加 Samba 共享")
-		addSambaShare("nas1", mountPoint, nasUser)
-		stepDone("添加 Samba 共享")
+		setupLVMSingleStream(w, dev, mountPoint, nasUser, stepRunning, stepDone, totalSteps)
 
 	case "merge":
-		mountPoint := "/data/nas1"
+		// LVM merge — combine all disks
+		setupLVMMergeStream(w, unusedDevs, mountPoint, nasUser, stepRunning, stepDone, totalSteps)
 
-		// pvcreate each disk
-		for i, dev := range unusedDevs {
-			stepRunning(fmt.Sprintf("清除并初始化磁盘 %d/%d", i+1, len(unusedDevs)))
-			common.SudoExec("/usr/sbin/wipefs", "-a", dev)
-			common.SudoExec("/usr/sbin/pvcreate", "-f", dev)
-			stepDone(fmt.Sprintf("初始化磁盘 %d/%d", i+1, len(unusedDevs)))
-		}
-
-		stepRunning("创建卷组")
-		vgName := "vg_nas"
-		vgArgs := append([]string{"-f", vgName}, unusedDevs...)
-		common.SudoExec("/usr/sbin/vgcreate", vgArgs...)
-		stepDone("创建卷组")
-
-		stepRunning("创建逻辑卷")
-		common.SudoExec("/usr/sbin/lvcreate", "-l", "100%FREE", "-n", "data", vgName)
-		lvPath := "/dev/" + vgName + "/data"
-		stepDone("创建逻辑卷")
-
-		stepRunning("格式化 (xfs)")
-		common.SudoExec("mkfs.xfs", "-f", lvPath)
-		stepDone("格式化 (xfs)")
-
-		stepRunning("挂载到 " + mountPoint)
-		common.SudoExec("mkdir", "-p", mountPoint)
-		common.SudoExec("mount", lvPath, mountPoint)
-		uuidOut, _ := common.ExecOutput("blkid", "-s", "UUID", "-o", "value", lvPath)
-		writeFstab(strings.TrimSpace(uuidOut), mountPoint, "xfs")
-		common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountPoint)
-		stepDone("挂载到 " + mountPoint)
-
-		stepRunning("添加 Samba 共享")
-		addSambaShare("nas1", mountPoint, nasUser)
-		stepDone("添加 Samba 共享")
-
-	case "separate":
-		for i, dev := range unusedDevs {
-			mountPoint := fmt.Sprintf("/data/nas%d", i+1)
-
-			stepRunning(fmt.Sprintf("磁盘 %d: 清除签名", i+1))
-			common.SudoExec("/usr/sbin/wipefs", "-a", dev)
-			stepDone(fmt.Sprintf("磁盘 %d: 清除签名", i+1))
-
-			stepRunning(fmt.Sprintf("磁盘 %d: 创建分区", i+1))
-			common.SudoExec("/usr/sbin/parted", "-s", dev, "mklabel", "gpt", "mkpart", "primary", "xfs", "0%", "100%")
-			time.Sleep(500 * time.Millisecond)
-			partDev := dev + "1"
-			stepDone(fmt.Sprintf("磁盘 %d: 创建分区", i+1))
-
-			stepRunning(fmt.Sprintf("磁盘 %d: 格式化", i+1))
-			common.SudoExec("mkfs.xfs", "-f", partDev)
-			stepDone(fmt.Sprintf("磁盘 %d: 格式化", i+1))
-
-			stepRunning(fmt.Sprintf("磁盘 %d: 挂载", i+1))
-			common.SudoExec("mkdir", "-p", mountPoint)
-			common.SudoExec("mount", partDev, mountPoint)
-			uuidOut, _ := common.ExecOutput("blkid", "-s", "UUID", "-o", "value", partDev)
-			writeFstab(strings.TrimSpace(uuidOut), mountPoint, "xfs")
-			common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountPoint)
-			stepDone(fmt.Sprintf("磁盘 %d: 挂载到 %s", i+1, mountPoint))
-
-			shareName := fmt.Sprintf("nas%d", i+1)
-			stepRunning(fmt.Sprintf("磁盘 %d: Samba", i+1))
-			addSambaShare(shareName, mountPoint, nasUser)
-			stepDone(fmt.Sprintf("磁盘 %d: Samba 共享", i+1))
-		}
+	case "raid0":
+		// RAID0 stripe — all disks, no redundancy
+		setupRAIDStream(w, unusedDevs, 0, mountPoint, nasUser, stepRunning, stepDone, totalSteps)
 
 	case "raid1":
-		devs := unusedDevs[:2]
-		mountPoint := "/data/nas1"
+		// RAID1 mirror — 2 disks
+		setupRAIDStream(w, unusedDevs[:2], 1, mountPoint, nasUser, stepRunning, stepDone, totalSteps)
 
-		stepRunning("清除磁盘签名")
-		for _, dev := range devs {
-			common.SudoExec("/usr/sbin/wipefs", "-a", dev)
-		}
-		stepDone("清除磁盘签名")
+	case "raid5":
+		// RAID5 — 3+ disks
+		setupRAIDStream(w, unusedDevs, 5, mountPoint, nasUser, stepRunning, stepDone, totalSteps)
 
-		stepRunning("创建 RAID1 镜像")
-		mdadmPath := "/usr/sbin/mdadm"
-		args := []string{"--create", "/dev/md0", "--level=1", "--raid-devices=" + fmt.Sprintf("%d", len(devs)), "--run"}
-		args = append(args, devs...)
-		common.SudoExec(mdadmPath, args...)
-		stepDone("创建 RAID1 镜像")
+	case "raid6":
+		// RAID6 — 4+ disks
+		setupRAIDStream(w, unusedDevs, 6, mountPoint, nasUser, stepRunning, stepDone, totalSteps)
 
-		// Wait for md device to appear
-		time.Sleep(2 * time.Second)
-
-		stepRunning("格式化 (xfs)")
-		common.SudoExec("mkfs.xfs", "-f", "/dev/md0")
-		stepDone("格式化 (xfs)")
-
-		stepRunning("挂载到 " + mountPoint)
-		common.SudoExec("mkdir", "-p", mountPoint)
-		common.SudoExec("mount", "/dev/md0", mountPoint)
-		uuidOut, _ := common.ExecOutput("blkid", "-s", "UUID", "-o", "value", "/dev/md0")
-		writeFstab(strings.TrimSpace(uuidOut), mountPoint, "xfs")
-		common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountPoint)
-		stepDone("挂载到 " + mountPoint)
-
-		stepRunning("添加 Samba 共享")
-		addSambaShare("nas1", mountPoint, nasUser)
-		stepDone("添加 Samba 共享")
-
-		// Note: RAID sync continues in background
-		stepRunning("RAID 后台同步中")
-		stepDone("RAID 后台同步中")
+	case "separate":
+		// Each disk independent
+		setupSeparateStream(w, unusedDevs, nasUser, stepRunning, stepDone, totalSteps)
 	}
 
 	sendProgress(w, ProgressEvent{
@@ -249,6 +137,215 @@ func handleWizardSetupStream(w http.ResponseWriter, r *http.Request) {
 		Total:  totalSteps,
 		Detail: fmt.Sprintf("存储配置完成，共 %d 块磁盘", len(unusedDevs)),
 	})
+}
+
+// validateMode checks if the mode is valid for the given disk count
+func validateMode(mode string, diskCount int) string {
+	switch mode {
+	case "single":
+		if diskCount < 1 {
+			return "至少需要 1 块磁盘"
+		}
+	case "merge", "raid0", "separate":
+		if diskCount < 2 {
+			return "至少需要 2 块磁盘"
+		}
+	case "raid1":
+		if diskCount < 2 {
+			return "RAID1 至少需要 2 块磁盘"
+		}
+	case "raid5":
+		if diskCount < 3 {
+			return "RAID5 至少需要 3 块磁盘"
+		}
+	case "raid6":
+		if diskCount < 4 {
+			return "RAID6 至少需要 4 块磁盘"
+		}
+	default:
+		return "未知模式: " + mode
+	}
+	return ""
+}
+
+// getModeStepCount calculates total steps for a given mode
+func getModeStepCount(mode string, diskCount int) int {
+	switch mode {
+	case "single":
+		return 6 // wipe, pvcreate, vgcreate, lvcreate, format, mount+fstab
+	case "merge":
+		return 5 + diskCount // per-disk wipe+pvcreate, vgcreate, lvcreate, format, mount
+	case "raid0", "raid1", "raid5", "raid6":
+		return 7 // wipe, create raid, wait, format, mount, fstab, samba
+	case "separate":
+		return 5 * diskCount // per-disk: wipe, partition, format, mount, samba
+	default:
+		return 0
+	}
+}
+
+// setupLVMSingleStream: LVM on single disk for future expansion
+func setupLVMSingleStream(w http.ResponseWriter, dev, mountPoint, nasUser string,
+	stepRunning, stepDone func(string), totalSteps int) {
+
+	stepRunning("清除磁盘签名")
+	common.SudoExec("/usr/sbin/wipefs", "-a", dev)
+	stepDone("清除磁盘签名")
+
+	stepRunning("创建物理卷 (pvcreate)")
+	common.SudoExec("/usr/sbin/pvcreate", "-f", dev)
+	stepDone("创建物理卷")
+
+	stepRunning("创建卷组 (vgcreate)")
+	vgName := "vg_nas"
+	common.SudoExec("/usr/sbin/vgcreate", "-f", vgName, dev)
+	stepDone("创建卷组 vg_nas")
+
+	stepRunning("创建逻辑卷 (lvcreate)")
+	common.SudoExec("/usr/sbin/lvcreate", "-l", "100%FREE", "-n", "data", vgName)
+	lvPath := "/dev/" + vgName + "/data"
+	stepDone("创建逻辑卷 data")
+
+	stepRunning("格式化 (xfs)")
+	common.SudoExec("mkfs.xfs", "-f", lvPath)
+	stepDone("格式化 xfs")
+
+	stepRunning("挂载并配置")
+	common.SudoExec("mkdir", "-p", mountPoint)
+	common.SudoExec("mount", lvPath, mountPoint)
+	uuidOut, _ := common.ExecOutput("blkid", "-s", "UUID", "-o", "value", lvPath)
+	writeFstab(strings.TrimSpace(uuidOut), mountPoint, "xfs")
+	common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountPoint)
+	addSambaShare("nas1", mountPoint, nasUser)
+	stepDone("挂载并配置 Samba 共享")
+}
+
+// setupLVMMergeStream: LVM merge multiple disks
+func setupLVMMergeStream(w http.ResponseWriter, devs []string, mountPoint, nasUser string,
+	stepRunning, stepDone func(string), totalSteps int) {
+
+	// Per-disk: wipe + pvcreate
+	for i, dev := range devs {
+		stepRunning(fmt.Sprintf("清除并初始化磁盘 %d/%d", i+1, len(devs)))
+		common.SudoExec("/usr/sbin/wipefs", "-a", dev)
+		common.SudoExec("/usr/sbin/pvcreate", "-f", dev)
+		stepDone(fmt.Sprintf("初始化磁盘 %d/%d", i+1, len(devs)))
+	}
+
+	stepRunning("创建卷组 (vgcreate)")
+	vgName := "vg_nas"
+	vgArgs := append([]string{"-f", vgName}, devs...)
+	common.SudoExec("/usr/sbin/vgcreate", vgArgs...)
+	stepDone("创建卷组 vg_nas")
+
+	stepRunning("创建逻辑卷 (lvcreate)")
+	common.SudoExec("/usr/sbin/lvcreate", "-l", "100%FREE", "-n", "data", vgName)
+	lvPath := "/dev/" + vgName + "/data"
+	stepDone("创建逻辑卷 data")
+
+	stepRunning("格式化 (xfs)")
+	common.SudoExec("mkfs.xfs", "-f", lvPath)
+	stepDone("格式化 xfs")
+
+	stepRunning("挂载并配置")
+	common.SudoExec("mkdir", "-p", mountPoint)
+	common.SudoExec("mount", lvPath, mountPoint)
+	uuidOut, _ := common.ExecOutput("blkid", "-s", "UUID", "-o", "value", lvPath)
+	writeFstab(strings.TrimSpace(uuidOut), mountPoint, "xfs")
+	common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountPoint)
+	addSambaShare("nas1", mountPoint, nasUser)
+	stepDone("挂载并配置 Samba 共享")
+}
+
+// setupRAIDStream: RAID0/1/5/6
+func setupRAIDStream(w http.ResponseWriter, devs []string, level int, mountPoint, nasUser string,
+	stepRunning, stepDone func(string), totalSteps int) {
+
+	// 1. Wipe all disks
+	stepRunning(fmt.Sprintf("清除 %d 块磁盘签名", len(devs)))
+	for _, dev := range devs {
+		common.SudoExec("/usr/sbin/wipefs", "-a", dev)
+	}
+	stepDone("清除磁盘签名")
+
+	// 2. Create RAID array
+	levelStr := fmt.Sprintf("raid%d", level)
+	if level == 0 {
+		levelStr = "stripe"
+	} else if level == 1 {
+		levelStr = "mirror"
+	}
+	stepRunning(fmt.Sprintf("创建 %s (RAID%d)", levelStr, level))
+	mdDev := "/dev/md0"
+	args := []string{"--create", mdDev, "--level=" + fmt.Sprintf("%d", level), "--raid-devices=" + fmt.Sprintf("%d", len(devs)), "--run"}
+	args = append(args, devs...)
+	common.SudoExec("/usr/sbin/mdadm", args...)
+	stepDone(fmt.Sprintf("创建 RAID%d 阵列", level))
+
+	// 3. Wait for md device
+	stepRunning("等待阵列就绪")
+	time.Sleep(2 * time.Second)
+	stepDone("阵列就绪")
+
+	// 4. Format
+	stepRunning("格式化 (xfs)")
+	common.SudoExec("mkfs.xfs", "-f", mdDev)
+	stepDone("格式化 xfs")
+
+	// 5. Mount + fstab
+	stepRunning("挂载并配置")
+	common.SudoExec("mkdir", "-p", mountPoint)
+	common.SudoExec("mount", mdDev, mountPoint)
+	uuidOut, _ := common.ExecOutput("blkid", "-s", "UUID", "-o", "value", mdDev)
+	writeFstab(strings.TrimSpace(uuidOut), mountPoint, "xfs")
+	common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountPoint)
+	stepDone("挂载并写入 fstab")
+
+	// 6. Save RAID config
+	stepRunning("保存 RAID 配置")
+	common.SudoExec("bash", "-c", "/usr/sbin/mdadm --detail --scan >> /etc/mdadm/mdadm.conf 2>/dev/null || /usr/sbin/mdadm --detail --scan >> /etc/mdadm.conf 2>/dev/null || true")
+	stepDone("保存 RAID 配置")
+
+	// 7. Add Samba share
+	stepRunning("配置 Samba 共享")
+	addSambaShare("nas1", mountPoint, nasUser)
+	stepDone("配置 Samba 共享")
+}
+
+// setupSeparateStream: each disk independent
+func setupSeparateStream(w http.ResponseWriter, devs []string, nasUser string,
+	stepRunning, stepDone func(string), totalSteps int) {
+
+	for i, dev := range devs {
+		mountPoint := fmt.Sprintf("/data/nas%d", i+1)
+
+		stepRunning(fmt.Sprintf("磁盘 %d: 清除签名", i+1))
+		common.SudoExec("/usr/sbin/wipefs", "-a", dev)
+		stepDone(fmt.Sprintf("磁盘 %d: 清除签名", i+1))
+
+		stepRunning(fmt.Sprintf("磁盘 %d: 创建分区", i+1))
+		common.SudoExec("/usr/sbin/parted", "-s", dev, "mklabel", "gpt", "mkpart", "primary", "xfs", "0%", "100%")
+		time.Sleep(500 * time.Millisecond)
+		partDev := dev + "1"
+		stepDone(fmt.Sprintf("磁盘 %d: 创建分区", i+1))
+
+		stepRunning(fmt.Sprintf("磁盘 %d: 格式化", i+1))
+		common.SudoExec("mkfs.xfs", "-f", partDev)
+		stepDone(fmt.Sprintf("磁盘 %d: 格式化", i+1))
+
+		stepRunning(fmt.Sprintf("磁盘 %d: 挂载", i+1))
+		common.SudoExec("mkdir", "-p", mountPoint)
+		common.SudoExec("mount", partDev, mountPoint)
+		uuidOut, _ := common.ExecOutput("blkid", "-s", "UUID", "-o", "value", partDev)
+		writeFstab(strings.TrimSpace(uuidOut), mountPoint, "xfs")
+		common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountPoint)
+		stepDone(fmt.Sprintf("磁盘 %d: 挂载到存储空间%d", i+1, i+1))
+
+		shareName := fmt.Sprintf("nas%d", i+1)
+		stepRunning(fmt.Sprintf("磁盘 %d: Samba 共享", i+1))
+		addSambaShare(shareName, mountPoint, nasUser)
+		stepDone(fmt.Sprintf("磁盘 %d: Samba 共享 %s", i+1, shareName))
+	}
 }
 
 // handleWizardResetStream does storage reset with real-time progress
@@ -331,13 +428,18 @@ func handleWizardResetStream(w http.ResponseWriter, r *http.Request) {
 	// 4. Stop RAID
 	stepRunning("停止 RAID")
 	common.SudoExec("/usr/sbin/mdadm", "--stop", "--scan")
-	common.SudoExec("/usr/sbin/mdadm", "--zero-superblock", "/dev/sdb", "/dev/sdc", "/dev/sdd", "/dev/sde")
-	common.SudoExec("bash", "-c", "echo '' > /etc/mdadm/mdadm.conf 2>/dev/null || true")
+	// Zero superblock on all possible data disks
+	for _, dev := range []string{"/dev/sdb", "/dev/sdc", "/dev/sdd", "/dev/sde", "/dev/sdf"} {
+		if _, err := common.ExecOutput("ls", dev); err == nil {
+			common.SudoExec("/usr/sbin/mdadm", "--zero-superblock", dev)
+		}
+	}
+	common.SudoExec("bash", "-c", "echo '' > /etc/mdadm/mdadm.conf 2>/dev/null || echo '' > /etc/mdadm.conf 2>/dev/null || true")
 	stepDone("停止 RAID")
 
 	// 5. Wipe disks
 	stepRunning("清除磁盘签名")
-	for _, dev := range []string{"/dev/sdb", "/dev/sdc", "/dev/sdd", "/dev/sde"} {
+	for _, dev := range []string{"/dev/sdb", "/dev/sdc", "/dev/sdd", "/dev/sde", "/dev/sdf"} {
 		if _, err := common.ExecOutput("ls", dev); err == nil {
 			common.SudoExec("/usr/sbin/wipefs", "-a", dev)
 		}
@@ -384,7 +486,3 @@ func handleWizardResetStream(w http.ResponseWriter, r *http.Request) {
 		Detail: "存储已重置，磁盘已释放",
 	})
 }
-
-// ensure os import used
-var _ = os.Stdin
-var _ = exec.Command
