@@ -1,8 +1,8 @@
 package diskmgmt
 
 import (
-	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"nas-panel/common"
@@ -33,22 +33,32 @@ func handleWizardReset(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 2. Remove from fstab
+	// 2. Remove from fstab — precise match, only /data and /data/nasN entries
 	fstabData, _ := common.SudoOutput("cat", "/etc/fstab")
 	if fstabData != "" {
 		lines := strings.Split(fstabData, "\n")
 		var newLines []string
 		for _, line := range lines {
-			// Keep system entries, remove /data entries
-			if strings.Contains(line, "/data") && !strings.HasPrefix(strings.TrimSpace(line), "#") {
+			trimmed := strings.TrimSpace(line)
+			if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+				newLines = append(newLines, line)
 				continue
+			}
+			fields := strings.Fields(trimmed)
+			if len(fields) >= 2 {
+				mountPoint := fields[1]
+				// Only remove /data and /data/nasN entries
+				if mountPoint == "/data" || isDataNasMount(mountPoint) {
+					continue
+				}
 			}
 			newLines = append(newLines, line)
 		}
 		content := strings.Join(newLines, "\n")
-		cmd := fmt.Sprintf("echo '%s' | sudo tee /etc/fstab", content)
-		common.SudoExec("bash", "-c", cmd)
-		steps = append(steps, "清理 fstab")
+		if content != fstabData {
+			common.SafeWriteFile("/etc/fstab", content)
+			steps = append(steps, "清理 fstab")
+		}
 	}
 
 	// 3. Remove LVM (if exists)
@@ -79,47 +89,32 @@ func handleWizardReset(w http.ResponseWriter, r *http.Request) {
 	}
 	steps = append(steps, "清除物理卷")
 
-	// 5. Stop RAID (if exists)
-	common.SudoExec("/usr/sbin/mdadm", "--stop", "--scan")
-	common.SudoExec("/usr/sbin/mdadm", "--zero-superblock", "/dev/sdb", "/dev/sdc", "/dev/sdd", "/dev/sde")
-	// Remove mdadm config
-	common.SudoExec("bash", "-c", "echo '' > /etc/mdadm/mdadm.conf 2>/dev/null || true")
+	// 5. Stop RAID (only /dev/mdN devices, not --scan)
+	stopRAIDArrays()
+	// Zero superblock on all data disks
+	dataDisks := getDataDisks()
+	for _, dev := range dataDisks {
+		common.SudoExec("/usr/sbin/mdadm", "--zero-superblock", dev)
+	}
+	// Clear mdadm config
+	common.SafeWriteFile("/etc/mdadm/mdadm.conf", "")
 	steps = append(steps, "清除 RAID 配置")
 
-	// 6. Wipe disk signatures
-	for _, dev := range []string{"/dev/sdb", "/dev/sdc", "/dev/sdd", "/dev/sde"} {
-		// Check if device exists
-		if _, err := common.ExecOutput("ls", dev); err == nil {
-			common.SudoExec("/usr/sbin/wipefs", "-a", dev)
-		}
+	// 6. Wipe disk signatures on all data disks
+	for _, dev := range dataDisks {
+		common.SudoExec("/usr/sbin/wipefs", "-a", dev)
 	}
 	steps = append(steps, "清除磁盘签名")
 
 	// 7. Remove Samba shares (nas1, nas2, etc)
 	smbConf, _ := common.SudoOutput("cat", "/etc/samba/smb.conf")
 	if smbConf != "" {
-		// Remove nas1, nas2, nas3... share sections
-		lines := strings.Split(smbConf, "\n")
-		var newLines []string
-		skip := false
-		for _, line := range lines {
-			trimmed := strings.TrimSpace(line)
-			if strings.HasPrefix(trimmed, "[nas") && strings.HasSuffix(trimmed, "]") {
-				skip = true
-				continue
-			}
-			if skip && strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
-				skip = false
-			}
-			if !skip {
-				newLines = append(newLines, line)
-			}
+		newConf := removeSambaSharesByPrefix(smbConf, "nas")
+		if newConf != smbConf {
+			common.SafeWriteFile("/etc/samba/smb.conf", newConf)
+			common.SudoExec("systemctl", "restart", "smbd")
+			steps = append(steps, "清理 Samba 共享")
 		}
-		content := strings.Join(newLines, "\n")
-		cmd := fmt.Sprintf("echo '%s' | sudo tee /etc/samba/smb.conf", content)
-		common.SudoExec("bash", "-c", cmd)
-		common.SudoExec("systemctl", "restart", "smbd")
-		steps = append(steps, "清理 Samba 共享")
 	}
 
 	// 8. Recreate base /data directory
@@ -135,4 +130,43 @@ func handleWizardReset(w http.ResponseWriter, r *http.Request) {
 		"message": "存储已重置，磁盘已释放",
 		"steps":   steps,
 	})
+}
+
+// isDataNasMount checks if a path matches /data/nasN pattern
+func isDataNasMount(path string) bool {
+	matched, _ := regexp.MatchString(`^/data/nas\d+$`, path)
+	return matched
+}
+
+// stopRAIDArrays stops all /dev/mdN arrays individually (not --scan)
+func stopRAIDArrays() {
+	out, _ := common.ExecOutput("ls", "/dev/md*")
+	for _, dev := range strings.Fields(out) {
+		if regexp_match(`^/dev/md\d+$`, dev) {
+			common.SudoExec("/usr/sbin/mdadm", "--stop", dev)
+		}
+	}
+}
+
+// removeSambaSharesByPrefix removes all share sections whose name starts with prefix
+func removeSambaSharesByPrefix(conf, prefix string) string {
+	lines := strings.Split(conf, "\n")
+	var newLines []string
+	skip := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+			shareName := strings.Trim(trimmed, "[]")
+			if strings.HasPrefix(shareName, prefix) {
+				skip = true
+				continue
+			} else {
+				skip = false
+			}
+		}
+		if !skip {
+			newLines = append(newLines, line)
+		}
+	}
+	return strings.Join(newLines, "\n")
 }

@@ -23,12 +23,11 @@ func RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/disk/smart-detail", common.AuthMiddleware(handleSmartDetail))
 	mux.HandleFunc("/api/disk/partitions", common.AuthMiddleware(handlePartitions))
 	mux.HandleFunc("/api/disk/fstab", common.AuthMiddleware(handleFstab))
-	// Operations
+	// Operations (deprecated low-level APIs — kept for debugging, not used by frontend)
 	mux.HandleFunc("/api/disk/format", common.AuthMiddleware(handleFormat))
 	mux.HandleFunc("/api/disk/mount", common.AuthMiddleware(handleMount))
 	mux.HandleFunc("/api/disk/unmount", common.AuthMiddleware(handleUnmount))
 	mux.HandleFunc("/api/disk/mkdir", common.AuthMiddleware(handleMkdir))
-	mux.HandleFunc("/api/disk/quick-setup", common.AuthMiddleware(handleQuickSetup))
 	// Storage pool (LVM)
 	mux.HandleFunc("/api/disk/pool/status", common.AuthMiddleware(handlePoolStatus))
 	mux.HandleFunc("/api/disk/pool/create", common.AuthMiddleware(handlePoolCreate))
@@ -41,6 +40,7 @@ func RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/disk/folders/permission", common.AuthMiddleware(handleFolderPermission))
 	// Wizard (simple storage setup)
 	mux.HandleFunc("/api/disk/wizard/status", common.AuthMiddleware(handleWizardStatus))
+	// Wizard setup (non-stream) deprecated — use setup-stream instead
 	mux.HandleFunc("/api/disk/wizard/setup", common.AuthMiddleware(handleWizardSetup))
 	mux.HandleFunc("/api/disk/wizard/reset", common.AuthMiddleware(handleWizardReset))
 	// Stream (progressive setup/reset)
@@ -109,7 +109,16 @@ func handleSmartDetail(w http.ResponseWriter, r *http.Request) {
 	var result string
 	for _, e := range entries {
 		name := e.Name()
-		if !strings.HasPrefix(name, "sd") || strings.Contains(name, "0") {
+		// Support sd*, nvme*, vd* devices
+		if !strings.HasPrefix(name, "sd") && !strings.HasPrefix(name, "nvme") && !strings.HasPrefix(name, "vd") {
+			continue
+		}
+		// Skip partitions (nvme0n1p1, sda1, vda1)
+		if regexp_match(`\d+p\d+`, name) || (strings.HasPrefix(name, "sd") && regexp_match(`sd[a-z]+\d+$`, name)) || (strings.HasPrefix(name, "vd") && regexp_match(`vd[a-z]+\d+$`, name)) {
+			continue
+		}
+		// Skip partition numbers for nvme (nvme0n1 is whole disk, nvme0n1p1 is partition)
+		if strings.HasPrefix(name, "nvme") && strings.Contains(name, "p") {
 			continue
 		}
 		out, err := common.SudoOutput("smartctl", "-a", "/dev/"+name)
@@ -150,7 +159,7 @@ func handleFormat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// 安全检查：不允许格式化系统盘
-	if strings.Contains(device, "sda") || strings.Contains(device, "nvme0n1p") {
+	if isSystemDisk(device) {
 		http.Error(w, `{"error": "不允许格式化系统盘"}`, http.StatusBadRequest)
 		return
 	}

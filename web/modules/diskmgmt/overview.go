@@ -84,6 +84,10 @@ type RAIDStatus struct {
 
 // handleStorageOverview returns the complete storage dashboard data
 func handleStorageOverview(w http.ResponseWriter, r *http.Request) {
+	// Reset caches for fresh data
+	cachedPVMappings = nil
+	cachedRAIDMembers = nil
+
 	overview := StorageOverview{
 		Pools:       []PoolSummary{},
 		SystemDisks: []DiskSummary{},
@@ -345,6 +349,7 @@ func detectPoolType(device, mount string) string {
 }
 
 // detectPoolTypeEx returns (type, raidLevel)
+// Type is determined by device path, not mount point name
 func detectPoolTypeEx(device, mount string) (string, string) {
 	// LVM: /dev/vg_nas/data or /dev/mapper/...
 	if strings.Contains(device, "vg_") || strings.Contains(device, "mapper/") || strings.Contains(device, "/vg") {
@@ -352,7 +357,7 @@ func detectPoolTypeEx(device, mount string) (string, string) {
 	}
 	// RAID: /dev/md*
 	if strings.Contains(device, "/dev/md") {
-		// Read actual level
+		// Read actual level from /proc/mdstat
 		mdstat, _ := os.ReadFile("/proc/mdstat")
 		mdName := strings.TrimPrefix(device, "/dev/")
 		for _, line := range strings.Split(string(mdstat), "\n") {
@@ -366,45 +371,47 @@ func detectPoolTypeEx(device, mount string) (string, string) {
 				if strings.Contains(line, "raid5") {
 					return "raid5", "5"
 				}
+				if strings.Contains(line, "raid6") {
+					return "raid6", "6"
+				}
 			}
 		}
 		return "raid1", "1" // default
 	}
-	// Separate mount points (nas2, nas3...) = separate mode
-	if strings.HasPrefix(mount, "/data/nas") && mount != "/data/nas1" {
-		return "separate", ""
-	}
-	return "single", ""
+	// Direct partition mount (not LVM, not RAID) = separate mode
+	// Device is /dev/sdX1 or /dev/nvmeXnYpZ
+	return "separate", ""
 }
 
 // findDiskPoolDisplay returns the display name of the pool a disk belongs to
+// Uses cached PV/RAID data to avoid N×M sudo calls
 func findDiskPoolDisplay(device string, mounts []map[string]string, mountDisplay map[string]string) string {
+	// Build device → mount mapping from direct mounts
 	for _, m := range mounts {
-		// Direct mount
 		if m["device"] == device {
 			if disp, ok := mountDisplay[m["mount"]]; ok {
 				return disp
 			}
 			return extractPoolName(m["mount"])
 		}
-		// Check LVM PV → VG → LV
-		pvOut, _ := common.SudoOutput("/usr/sbin/pvs", "--noheadings", "-o", "pv_name,vg_name")
-		for _, line := range strings.Split(pvOut, "\n") {
-			fields := strings.Fields(strings.TrimSpace(line))
-			if len(fields) >= 2 && fields[0] == device {
-				vgName := fields[1]
-				if strings.Contains(m["device"], vgName) {
-					if disp, ok := mountDisplay[m["mount"]]; ok {
-						return disp
-					}
-					return extractPoolName(m["mount"])
+	}
+	// Check cached LVM PV → VG → LV mapping
+	pvToVG := getCachedPVMappings()
+	if vgName, ok := pvToVG[device]; ok {
+		for _, m := range mounts {
+			if strings.Contains(m["device"], vgName) {
+				if disp, ok := mountDisplay[m["mount"]]; ok {
+					return disp
 				}
+				return extractPoolName(m["mount"])
 			}
 		}
-		// Check RAID members
-		if strings.HasPrefix(m["device"], "/dev/md") {
-			scanOut, _ := common.SudoOutput("/usr/sbin/mdadm", "--detail", m["device"])
-			if strings.Contains(scanOut, device) {
+	}
+	// Check cached RAID members
+	raidMembers := getCachedRAIDMembers()
+	if mountDev, ok := raidMembers[device]; ok {
+		for _, m := range mounts {
+			if m["device"] == mountDev {
 				if disp, ok := mountDisplay[m["mount"]]; ok {
 					return disp
 				}
@@ -417,36 +424,79 @@ func findDiskPoolDisplay(device string, mounts []map[string]string, mountDisplay
 
 // findDiskPool checks which pool/mount a disk belongs to
 func findDiskPool(device string, mounts []map[string]string) string {
+	// Direct mount
 	for _, m := range mounts {
-		// Direct mount
 		if m["device"] == device {
 			return extractPoolName(m["mount"])
 		}
-		// Check LVM PV → VG → LV
-		// /dev/sdb is a PV in vg_nas, /dev/vg_nas/data is the mount device
-		pvOut, _ := common.SudoOutput("/usr/sbin/pvs", "--noheadings", "-o", "pv_name,vg_name")
-		for _, line := range strings.Split(pvOut, "\n") {
-			fields := strings.Fields(strings.TrimSpace(line))
-			if len(fields) >= 2 && fields[0] == device {
-				// This disk is PV in VG fields[1]
-				vgName := fields[1]
-				// Check if mount device contains this VG
-				if strings.Contains(m["device"], vgName) {
-					return extractPoolName(m["mount"])
-				}
-			}
-		}
-		// Check RAID members
-		if strings.HasPrefix(m["device"], "/dev/md") {
-			mdName := strings.TrimPrefix(m["device"], "/dev/")
-			scanOut, _ := common.SudoOutput("/usr/sbin/mdadm", "--detail", m["device"])
-			if strings.Contains(scanOut, device) {
+	}
+	// Check cached LVM mapping
+	pvToVG := getCachedPVMappings()
+	if vgName, ok := pvToVG[device]; ok {
+		for _, m := range mounts {
+			if strings.Contains(m["device"], vgName) {
 				return extractPoolName(m["mount"])
 			}
-			_ = mdName // suppress unused
+		}
+	}
+	// Check cached RAID mapping
+	raidMembers := getCachedRAIDMembers()
+	if mountDev, ok := raidMembers[device]; ok {
+		for _, m := range mounts {
+			if m["device"] == mountDev {
+				return extractPoolName(m["mount"])
+			}
 		}
 	}
 	return ""
+}
+
+// getCachedPVMappings returns a map of PV device → VG name (cached per request)
+var cachedPVMappings map[string]string
+
+func getCachedPVMappings() map[string]string {
+	if cachedPVMappings != nil {
+		return cachedPVMappings
+	}
+	cachedPVMappings = make(map[string]string)
+	pvOut, _ := common.SudoOutput("/usr/sbin/pvs", "--noheadings", "-o", "pv_name,vg_name")
+	for _, line := range strings.Split(pvOut, "\n") {
+		fields := strings.Fields(strings.TrimSpace(line))
+		if len(fields) >= 2 {
+			cachedPVMappings[fields[0]] = fields[1]
+		}
+	}
+	return cachedPVMappings
+}
+
+// getCachedRAIDMembers returns a map of disk device → md device (cached per request)
+var cachedRAIDMembers map[string]string
+
+func getCachedRAIDMembers() map[string]string {
+	if cachedRAIDMembers != nil {
+		return cachedRAIDMembers
+	}
+	cachedRAIDMembers = make(map[string]string)
+	out, _ := common.ExecOutput("ls", "/dev/md*")
+	for _, dev := range strings.Fields(out) {
+		if !regexp_match(`^/dev/md\d+$`, dev) {
+			continue
+		}
+		scanOut, _ := common.SudoOutput("/usr/sbin/mdadm", "--detail", dev)
+		for _, line := range strings.Split(scanOut, "\n") {
+			// Look for lines like "0 8 17 0 active sync /dev/sdb"
+			if strings.Contains(line, "/dev/sd") || strings.Contains(line, "/dev/nvme") || strings.Contains(line, "/dev/vd") {
+				fields := strings.Fields(line)
+				if len(fields) > 0 {
+					last := fields[len(fields)-1]
+					if strings.HasPrefix(last, "/dev/") {
+						cachedRAIDMembers[last] = dev
+					}
+				}
+			}
+		}
+	}
+	return cachedRAIDMembers
 }
 
 // sumMountSizes aggregates size info from all data mounts
@@ -513,15 +563,9 @@ func getRAIDStatus() []RAIDStatus {
 		return arrays
 	}
 	for _, dev := range strings.Fields(out) {
-		if !strings.HasPrefix(dev, "/dev/md") {
+		// Only match /dev/mdN (not partitions like /dev/md0p1)
+		if !regexp_match(`^/dev/md\d+$`, dev) {
 			continue
-		}
-		// Skip partitions like /dev/md0p1
-		if strings.Contains(dev, "p") && !strings.HasSuffix(dev, "0") {
-			// might be partition, skip for now
-			if !regexp_match(`^/dev/md\d+$`, dev) {
-				continue
-			}
 		}
 		ra := RAIDStatus{Device: dev}
 		// Read /proc/mdstat for this device

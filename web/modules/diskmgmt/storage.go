@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -351,9 +350,7 @@ func handleQuickSetup(w http.ResponseWriter, r *http.Request) {
 				content += "\n"
 			}
 			content += fstabLine + "\n"
-			cmd := exec.Command("sudo", "tee", "/etc/fstab")
-			cmd.Stdin = strings.NewReader(content)
-			cmd.Run()
+			common.SafeWriteFile("/etc/fstab", content)
 			steps = append(steps, "写入 /etc/fstab 持久化 (UUID="+uuid+")")
 		}
 	}
@@ -365,9 +362,7 @@ func handleQuickSetup(w http.ResponseWriter, r *http.Request) {
 		shareName := filepath.Base(mountpoint)
 		smbConf := fmt.Sprintf("\n[%s]\n   path = %s\n   browseable = yes\n   writable = yes\n   valid users = %s\n",
 			shareName, mountpoint, nasUser)
-		cmd := exec.Command("sudo", "tee", "-a", "/etc/samba/smb.conf")
-		cmd.Stdin = strings.NewReader(smbConf)
-		cmd.Run()
+		common.SafeAppendFile("/etc/samba/smb.conf", smbConf)
 		common.SudoExec("systemctl", "restart", "smbd")
 		steps = append(steps, "添加 Samba 共享 "+shareName+" 并重启 smbd")
 	}
@@ -445,6 +440,23 @@ func handleDiskListFree(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	common.JSONResponse(w, map[string]interface{}{"free": freeDisks})
+}
+
+// getDataDisks returns all non-system block devices (whole disks, not partitions).
+// Includes sd*, nvme*, vd* devices. Excludes sr0, loop*, zram*, ram*.
+func getDataDisks() []string {
+	disks := getDiskStatus()
+	var result []string
+	for _, d := range disks {
+		if d.Name == "sr0" || d.Name == "zram0" || strings.HasPrefix(d.Name, "loop") || strings.HasPrefix(d.Name, "ram") {
+			continue
+		}
+		if isSystemDisk(d.Device) {
+			continue
+		}
+		result = append(result, d.Device)
+	}
+	return result
 }
 
 // unused: ensure regexp is imported

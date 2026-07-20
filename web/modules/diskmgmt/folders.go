@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -201,9 +200,7 @@ func handleCreateFolder(w http.ResponseWriter, r *http.Request) {
    valid users = %s
 `, name, folderPath, writeMode, users)
 		}
-		cmd := exec.Command("sudo", "tee", "-a", "/etc/samba/smb.conf")
-		cmd.Stdin = strings.NewReader(smbConf)
-		cmd.Run()
+		common.SafeAppendFile("/etc/samba/smb.conf", smbConf)
 		// Create recycle bin directory if needed
 		if recycleBin == "yes" {
 			recyclePath := filepath.Join(folderPath, "#recycle")
@@ -220,9 +217,7 @@ func handleCreateFolder(w http.ResponseWriter, r *http.Request) {
 			nfsOpts = "ro,sync,no_subtree_check"
 		}
 		exportLine := fmt.Sprintf("%s 192.168.0.0/16(%s)\n", folderPath, nfsOpts)
-		cmd := exec.Command("sudo", "tee", "-a", "/etc/exports")
-		cmd.Stdin = strings.NewReader(exportLine)
-		cmd.Run()
+		common.SafeAppendFile("/etc/exports", exportLine)
 		common.SudoExec("exportfs", "-a")
 	}
 
@@ -261,26 +256,25 @@ func handleDeleteFolder(w http.ResponseWriter, r *http.Request) {
 	if smbConf != "" {
 		newConf := removeSambaShare(smbConf, filepath.Base(path))
 		if newConf != smbConf {
-			cmd := fmt.Sprintf("echo '%s' | sudo tee /etc/samba/smb.conf", newConf)
-			common.SudoExec("bash", "-c", cmd)
+			common.SafeWriteFile("/etc/samba/smb.conf", newConf)
 			common.SudoExec("systemctl", "restart", "smbd")
 		}
 	}
 
-	// Remove NFS export if exists
+	// Remove NFS export if exists — precise match on first field
 	exportsData, _ := common.SudoOutput("cat", "/etc/exports")
 	if exportsData != "" {
 		var newLines []string
 		for _, line := range strings.Split(exportsData, "\n") {
-			if strings.Contains(line, path+" ") || strings.TrimSpace(line) == path {
+			fields := strings.Fields(strings.TrimSpace(line))
+			if len(fields) >= 1 && fields[0] == path {
 				continue // skip this export
 			}
 			newLines = append(newLines, line)
 		}
 		newExports := strings.Join(newLines, "\n")
 		if newExports != exportsData {
-			cmd := fmt.Sprintf("echo '%s' | sudo tee /etc/exports", newExports)
-			common.SudoExec("bash", "-c", cmd)
+			common.SafeWriteFile("/etc/exports", newExports)
 			common.SudoExec("exportfs", "-a")
 		}
 	}
@@ -324,8 +318,7 @@ func handleFolderPermission(w http.ResponseWriter, r *http.Request) {
 	if permission == "noaccess" {
 		newConf := removeSambaShare(smbConf, shareName)
 		if newConf != smbConf {
-			cmd := fmt.Sprintf("echo '%s' | sudo tee /etc/samba/smb.conf", newConf)
-			common.SudoExec("bash", "-c", cmd)
+			common.SafeWriteFile("/etc/samba/smb.conf", newConf)
 			common.SudoExec("systemctl", "restart", "smbd")
 		}
 		common.JSONResponse(w, map[string]interface{}{
@@ -433,8 +426,7 @@ func handleFolderPermission(w http.ResponseWriter, r *http.Request) {
 	}
 
 	content := strings.Join(newLines, "\n")
-	cmd := fmt.Sprintf("echo '%s' | sudo tee /etc/samba/smb.conf", content)
-	common.SudoExec("bash", "-c", cmd)
+	common.SafeWriteFile("/etc/samba/smb.conf", content)
 	common.SudoExec("systemctl", "restart", "smbd")
 
 	common.JSONResponse(w, map[string]interface{}{
