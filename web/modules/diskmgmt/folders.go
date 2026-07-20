@@ -139,6 +139,8 @@ func handleCreateFolder(w http.ResponseWriter, r *http.Request) {
 	validUsers := r.FormValue("valid_users")
 	recycleBin := r.FormValue("recycle_bin") // yes/no
 
+	nfsExport := r.FormValue("nfs") // yes/no
+
 	if pool == "" || name == "" {
 		http.Error(w, `{"error":"pool 和 name 必填"}`, http.StatusBadRequest)
 		return
@@ -211,6 +213,19 @@ func handleCreateFolder(w http.ResponseWriter, r *http.Request) {
 		common.SudoExec("systemctl", "restart", "smbd")
 	}
 
+	// Add NFS export if requested
+	if nfsExport == "yes" {
+		nfsOpts := "rw,sync,no_subtree_check,no_root_squash"
+		if permission == "readonly" {
+			nfsOpts = "ro,sync,no_subtree_check"
+		}
+		exportLine := fmt.Sprintf("%s 192.168.0.0/16(%s)\n", folderPath, nfsOpts)
+		cmd := exec.Command("sudo", "tee", "-a", "/etc/exports")
+		cmd.Stdin = strings.NewReader(exportLine)
+		cmd.Run()
+		common.SudoExec("exportfs", "-a")
+	}
+
 	common.JSONResponse(w, map[string]interface{}{
 		"message": fmt.Sprintf("文件夹 %s 已创建", name),
 		"name":    name,
@@ -249,6 +264,24 @@ func handleDeleteFolder(w http.ResponseWriter, r *http.Request) {
 			cmd := fmt.Sprintf("echo '%s' | sudo tee /etc/samba/smb.conf", newConf)
 			common.SudoExec("bash", "-c", cmd)
 			common.SudoExec("systemctl", "restart", "smbd")
+		}
+	}
+
+	// Remove NFS export if exists
+	exportsData, _ := common.SudoOutput("cat", "/etc/exports")
+	if exportsData != "" {
+		var newLines []string
+		for _, line := range strings.Split(exportsData, "\n") {
+			if strings.Contains(line, path+" ") || strings.TrimSpace(line) == path {
+				continue // skip this export
+			}
+			newLines = append(newLines, line)
+		}
+		newExports := strings.Join(newLines, "\n")
+		if newExports != exportsData {
+			cmd := fmt.Sprintf("echo '%s' | sudo tee /etc/exports", newExports)
+			common.SudoExec("bash", "-c", cmd)
+			common.SudoExec("exportfs", "-a")
 		}
 	}
 
