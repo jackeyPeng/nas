@@ -48,8 +48,8 @@
                 <li :class="{active: page === 'users'}" @click="navigate('users')">
                     <span>👥</span> 用户管理
                 </li>
-                <li :class="{active: page === 'storage'}" @click="navigate('storage')">
-                    <span>💾</span> 存储信息
+                <li :class="{active: page === 'diskmgmt'}" @click="navigate('diskmgmt')">
+                    <span>💽</span> 存储管理
                 </li>
                 <li :class="{active: page === 'firewall'}" @click="navigate('firewall')">
                     <span>🛡️</span> 防火墙
@@ -59,9 +59,6 @@
                 </li>
                 <li :class="{active: page === 'config'}" @click="navigate('config')">
                     <span>🔧</span> 配置管理
-                </li>
-                <li :class="{active: page === 'diskmgmt'}" @click="navigate('diskmgmt')">
-                    <span>💽</span> 存储管理
                 </li>
                 <li :class="{active: page === 'system'}" @click="navigate('system')">
                     <span>🖥️</span> 系统设置
@@ -235,44 +232,6 @@
             </div>
 
             <!-- Storage -->
-            <div x-show="page === 'storage'" class="page">
-                <h2>存储信息</h2>
-                <div class="cards">
-                    <div class="card">
-                        <div class="card-title">磁盘总量</div>
-                        <div class="card-value" x-text="storage.disk_total"></div>
-                    </div>
-                    <div class="card">
-                        <div class="card-title">已用</div>
-                        <div class="card-value" x-text="storage.disk_used"></div>
-                    </div>
-                    <div class="card">
-                        <div class="card-title">使用率</div>
-                        <div class="card-value" x-text="storage.disk_pct"></div>
-                    </div>
-                </div>
-
-                <h3>目录大小</h3>
-                <table class="table">
-                    <thead><tr><th>路径</th><th>大小</th></tr></thead>
-                    <tbody>
-                        <template x-for="dir in (storage.directories || [])" :key="dir.path">
-                            <tr><td x-text="dir.path"></td><td x-text="dir.size"></td></tr>
-                        </template>
-                    </tbody>
-                </table>
-
-                <h3>Samba 共享</h3>
-                <pre class="config-output" x-text="storage.samba_shares"></pre>
-
-                <h3>NFS 导出</h3>
-                <pre class="config-output" x-text="storage.nfs_exports"></pre>
-
-                <h3>SMART 状态</h3>
-                <button class="btn btn-primary" @click="loadSmart()">检查 SMART</button>
-                <pre class="config-output" x-text="smartStatus"></pre>
-            </div>
-
             <!-- Firewall -->
             <div x-show="page === 'firewall'" class="page">
                 <h2>防火墙</h2>
