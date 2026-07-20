@@ -160,6 +160,9 @@ function nasPanel() {
         async loadDashboard() {
             const data = await this.api('/dashboard');
             if (data) this.dashboard = data;
+            // Also load storage overview for disk bay diagram
+            const sdata = await this.api('/disk/overview');
+            if (sdata && sdata.overview) this.storageOverview = sdata.overview;
         },
 
         async loadServices() {
