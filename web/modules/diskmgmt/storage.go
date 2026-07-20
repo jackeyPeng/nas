@@ -402,11 +402,24 @@ func isSystemDisk(device string) bool {
 	if mount == "/" || mount == "/boot" || mount == "/boot/efi" {
 		return true
 	}
-	baseDevice := strings.TrimSuffix(device, "0123456789")
+	// Strip trailing digits to get base device, then check partitions
+	// e.g. /dev/nvme0n1 → /dev/nvme0n, /dev/sda → /dev/sd
+	baseDevice := device
+	for len(baseDevice) > 0 && baseDevice[len(baseDevice)-1] >= '0' && baseDevice[len(baseDevice)-1] <= '9' {
+		baseDevice = baseDevice[:len(baseDevice)-1]
+	}
+	// Check common partition naming: base+digit (sda1) and base+p+digit (nvme0n1p1)
 	for i := 1; i <= 9; i++ {
+		// Standard: sda1, sdb2
 		partDev := fmt.Sprintf("%s%d", baseDevice, i)
 		out2, _ := common.ExecOutput("findmnt", "-n", "-o", "TARGET", partDev)
-		if strings.TrimSpace(out2) == "/" {
+		if strings.TrimSpace(out2) == "/" || strings.TrimSpace(out2) == "/boot" || strings.TrimSpace(out2) == "/boot/efi" {
+			return true
+		}
+		// NVMe: nvme0n1p1, nvme0n1p2
+		partDevNvme := fmt.Sprintf("%sp%d", device, i)
+		out3, _ := common.ExecOutput("findmnt", "-n", "-o", "TARGET", partDevNvme)
+		if strings.TrimSpace(out3) == "/" || strings.TrimSpace(out3) == "/boot" || strings.TrimSpace(out3) == "/boot/efi" {
 			return true
 		}
 	}
