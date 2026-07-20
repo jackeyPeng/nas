@@ -133,12 +133,12 @@ echo "  ✓ 软件包安装完成"
 # ==================== [2/9] 创建数据目录结构 ====================
 echo ""
 echo "[2/9] 创建数据目录结构..."
+mkdir -p "$DATA_DIR"/system
 mkdir -p "$DATA_DIR"/{shared,media/{movies,tv,music},documents,photos,backups,downloads,private/$NAS_USER}
-mkdir -p "$DATA_DIR"/minio
 chown -R "$NAS_USER:$NAS_USER" "$DATA_DIR"
 chmod 755 "$DATA_DIR"
-chmod 775 "$DATA_DIR"/{shared,media,documents,photos}
-echo "  ✓ 目录结构创建完成"
+chmod 775 "$DATA_DIR"/{shared,media,documents,photos,system}
+echo "  ✓ 目录结构创建完成（含 /data/system 系统盘共享目录）"
 
 # ==================== [3/9] 配置 Samba ====================
 echo ""

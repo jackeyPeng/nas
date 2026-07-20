@@ -81,6 +81,7 @@ CONFIG_FILES="
 /etc/rclone-htpasswd
 /etc/default/minio
 /etc/rclone/s3-env
+/etc/sudoers.d/nas-panel
 /var/log/vsftpd.log
 /var/log/filebrowser.log
 "
@@ -99,7 +100,7 @@ echo "  ✓ 配置文件已删除"
 # ==================== [4/7] 删除二进制文件 ====================
 echo ""
 echo "[4/7] 删除二进制文件..."
-BINARIES="/usr/local/bin/filebrowser /usr/local/bin/minio /usr/local/bin/nas-panel"
+BINARIES="/usr/local/bin/filebrowser /usr/local/bin/nas-panel"
 for bin in $BINARIES; do
     if [ -f "$bin" ]; then
         rm -f "$bin"
@@ -188,7 +189,7 @@ echo "已清除的内容:"
 echo "  - 所有 NAS 服务（Samba、NFS、FTP、WebDAV、FileBrowser、MinIO）"
 echo "  - systemd 服务文件"
 echo "  - 配置文件"
-echo "  - 二进制文件（filebrowser、minio）"
+echo "  - 二进制文件（filebrowser、nas-panel）"
 echo "  - apt 软件包"
 if [ "$KEEP_DATA" = false ]; then
     echo "  - /data 数据目录"
