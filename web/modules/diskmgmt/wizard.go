@@ -3,8 +3,8 @@ package diskmgmt
 import (
 	"fmt"
 	"net/http"
-	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"nas-panel/common"
@@ -343,30 +343,77 @@ func setupRaid1(devs []string, mountPoint, nasUser string) []string {
 	return steps
 }
 
-// writeFstab appends UUID mount line to /etc/fstab
+// writeFstab appends UUID mount line to /etc/fstab, with mount point dedup check
 func writeFstab(uuid, mountPoint, fstype string) {
 	if uuid == "" {
 		return
 	}
 	fstabLine := fmt.Sprintf("UUID=%s %s %s defaults 0 2\n", uuid, mountPoint, fstype)
-	data, _ := os.ReadFile("/etc/fstab")
-	content := string(data)
+	data, _ := common.SudoOutput("cat", "/etc/fstab")
+	content := data
 	if !strings.HasSuffix(content, "\n") {
 		content += "\n"
 	}
-	if !strings.Contains(content, uuid) {
-		content += fstabLine
-		cmd := exec.Command("sudo", "tee", "/etc/fstab")
-		cmd.Stdin = strings.NewReader(content)
-		cmd.Run()
+	// Check if UUID or mount point already exists
+	lines := strings.Split(content, "\n")
+	var newLines []string
+	replaced := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			newLines = append(newLines, line)
+			continue
+		}
+		fields := strings.Fields(trimmed)
+		if len(fields) >= 2 {
+			existingUUID := fields[0]
+			existingMount := fields[1]
+			// Replace if same UUID or same mount point
+			if existingUUID == "UUID="+uuid || existingMount == mountPoint {
+				if !replaced {
+					newLines = append(newLines, fstabLine[:len(fstabLine)-1]) // strip trailing \n
+					replaced = true
+				}
+				continue
+			}
+		}
+		newLines = append(newLines, line)
+	}
+	if !replaced {
+		newLines = append(newLines, fstabLine[:len(fstabLine)-1])
+	}
+	newContent := strings.Join(newLines, "\n")
+	if newContent != content {
+		common.SafeWriteFile("/etc/fstab", newContent)
 	}
 }
 
+// shareNameFromMount derives Samba share name from mount point
+// e.g. /data/nas3 → nas3, /data/system → system
+func shareNameFromMount(mountPoint string) string {
+	if mountPoint == "/data" {
+		return "data"
+	}
+	// Extract last path component
+	idx := strings.LastIndex(mountPoint, "/")
+	if idx >= 0 && idx < len(mountPoint)-1 {
+		return mountPoint[idx+1:]
+	}
+	return filepath.Base(mountPoint)
+}
+
 // addSambaShare adds a share to smb.conf and restarts smbd
+// Removes existing share with same name first to avoid duplicates
 func addSambaShare(name, path, user string) {
+	// Read existing config and remove any existing share with same name
+	smbConf, _ := common.SudoOutput("cat", "/etc/samba/smb.conf")
 	conf := fmt.Sprintf("\n[%s]\n   path = %s\n   browseable = yes\n   writable = yes\n   valid users = %s\n", name, path, user)
-	cmd := exec.Command("sudo", "tee", "-a", "/etc/samba/smb.conf")
-	cmd.Stdin = strings.NewReader(conf)
-	cmd.Run()
+	if smbConf != "" {
+		// Remove existing share with same name
+		newConf := removeSambaShare(smbConf, name)
+		common.SafeWriteFile("/etc/samba/smb.conf", newConf+conf)
+	} else {
+		common.SafeWriteFile("/etc/samba/smb.conf", conf)
+	}
 	common.SudoExec("systemctl", "restart", "smbd")
 }

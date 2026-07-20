@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"os/exec"
 	"strings"
 
 	"nas-panel/common"
@@ -222,9 +221,7 @@ func handlePoolCreate(w http.ResponseWriter, r *http.Request) {
 		content := string(fstabData)
 		if !strings.HasSuffix(content, "\n") { content += "\n" }
 		content += fstabLine + "\n"
-		cmd := exec.Command("sudo", "tee", "/etc/fstab")
-		cmd.Stdin = strings.NewReader(content)
-		cmd.Run()
+		common.SafeWriteFile("/etc/fstab", content)
 		steps = append(steps, "写入 fstab (UUID="+uuid+")")
 	}
 

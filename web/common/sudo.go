@@ -1,6 +1,7 @@
 package common
 
 import (
+	"os"
 	"os/exec"
 	"strings"
 )
@@ -29,4 +30,31 @@ func Exec(name string, args ...string) (string, error) {
 func ExecOutput(name string, args ...string) (string, error) {
 	out, err := exec.Command(name, args...).Output()
 	return string(out), err
+}
+
+// SafeWriteFile writes content to a file safely using a temp file + sudo mv.
+// Avoids shell injection issues with echo/tee patterns.
+func SafeWriteFile(destPath, content string) error {
+	tmpFile, err := os.CreateTemp("", "nas-panel-*.tmp")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmpFile.Name())
+	if _, err := tmpFile.WriteString(content); err != nil {
+		tmpFile.Close()
+		return err
+	}
+	tmpFile.Close()
+	// cp to destination via sudo, preserving permissions
+	_, err = SudoExec("cp", tmpFile.Name(), destPath)
+	return err
+}
+
+// SafeAppendFile appends content to a file safely using a temp file.
+// Avoids shell injection issues with echo/tee -a patterns.
+func SafeAppendFile(destPath, content string) error {
+	// Read existing content
+	existing, _ := SudoOutput("cat", destPath)
+	// Write combined content
+	return SafeWriteFile(destPath, existing+content)
 }
