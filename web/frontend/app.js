@@ -148,11 +148,10 @@ function nasPanel() {
                 case 'dashboard': this.loadDashboard(); break;
                 case 'services': this.loadServices(); break;
                 case 'users': this.loadUsers(); break;
-                case 'storage': this.loadStorage(); break;
+                case 'diskmgmt': this.loadStorageOverview(); this.loadWizardStatus(); this.loadSharedFolders(); break;
                 case 'firewall': this.loadFirewall(); break;
                 case 'monitor': this.initMonitorRefresh(); this.loadAlertConfig(); break;
                 case 'config': this.loadEnvConfig(); break;
-                case 'diskmgmt': this.loadStorageOverview(); this.loadWizardStatus(); this.loadSharedFolders(); break;
                 case 'system': break;
                 case 'backup': this.loadBackups(); break;
             }
