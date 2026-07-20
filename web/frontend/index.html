@@ -83,8 +83,16 @@
                         <div class="card-value" x-text="dashboard.hostname"></div>
                     </div>
                     <div class="card">
+                        <div class="card-title">IP 地址</div>
+                        <div class="card-value" style="font-family:monospace" x-text="dashboard.ip_addr || '—'"></div>
+                    </div>
+                    <div class="card">
                         <div class="card-title">系统</div>
-                        <div class="card-value" x-text="dashboard.os"></div>
+                        <div class="card-value" style="font-size:13px" x-text="dashboard.os"></div>
+                    </div>
+                    <div class="card">
+                        <div class="card-title">内核</div>
+                        <div class="card-value" style="font-size:13px;font-family:monospace" x-text="dashboard.kernel"></div>
                     </div>
                     <div class="card">
                         <div class="card-title">运行时间</div>
@@ -93,6 +101,10 @@
                     <div class="card">
                         <div class="card-title">CPU</div>
                         <div class="card-value" x-text="dashboard.cpu_cores + '核 ' + dashboard.cpu_usage"></div>
+                    </div>
+                    <div class="card">
+                        <div class="card-title">系统负载</div>
+                        <div class="card-value" style="font-family:monospace" x-text="dashboard.load_avg || '—'"></div>
                     </div>
                     <div class="card">
                         <div class="card-title">内存</div>
@@ -113,6 +125,83 @@
                             </div>
                             <span class="pct" x-text="dashboard.disk_pct"></span>
                         </div>
+                    </div>
+                </div>
+
+                <!-- 盘位图（精简版） -->
+                <div x-show="storageOverview.system_disks?.length > 0 || storageOverview.pools?.length > 0 || storageOverview.free_disks?.length > 0" style="margin-bottom:20px">
+                    <h3 style="margin-bottom:8px;border-bottom:2px solid #4a9eff;padding-bottom:4px">📦 盘位图</h3>
+                    <div style="display:flex;justify-content:center">
+                        <div style="display:inline-flex;flex-direction:column;align-items:center;gap:6px">
+                            <div style="height:20vw;max-height:200px;width:30vw;max-width:300px;background:linear-gradient(145deg,#e8ecf0,#d4dae0);border-radius:6px;padding:1vw;border:3px solid #9ca3af;box-shadow:0 4px 12px rgba(0,0,0,0.08),inset 0 1px 2px rgba(255,255,255,0.8);display:flex;gap:1vw;align-items:stretch">
+                                <template x-for="slotNum in 4" :key="slotNum">
+                                    <div class="disk-slot"
+                                        :style="(function(){
+                                            var allDisks = (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];});
+                                            if (slotNum <= allDisks.length) {
+                                                var d = allDisks[slotNum-1];
+                                                if (d.smart !== 'PASSED') return 'background:linear-gradient(180deg,#fee2e2,#fecaca);border-color:#dc2626';
+                                                return 'background:linear-gradient(180deg,#1e3a5f,#1e40af);border-color:#1e3a5f';
+                                            }
+                                            var freeDisks = storageOverview.free_disks || [];
+                                            if (slotNum - allDisks.length <= freeDisks.length) {
+                                                return 'background:linear-gradient(180deg,#fef3c7,#fde68a);border-color:#d97706';
+                                            }
+                                            return 'background:linear-gradient(180deg,#6b7280,#4b5563);border-color:#374151';
+                                        })()">
+                                        <div style="height:4vw;max-height:40px;min-height:20px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                                            <span style="font-size:28px;font-weight:800;color:#7c3aed" x-text="slotNum"></span>
+                                        </div>
+                                        <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:0">
+                                            <template x-if="slotNum <= (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length">
+                                                <span style="font-size:10px;font-weight:600;color:#bfdbfe;font-family:monospace" x-text="(storageOverview.pools||[]).flatMap(function(p){return p.disks||[];})[slotNum-1].device"></span>
+                                            </template>
+                                            <template x-if="slotNum <= (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length">
+                                                <span style="font-size:9px;color:#93c5fd" x-text="(storageOverview.pools||[]).flatMap(function(p){return p.disks||[];})[slotNum-1].size + ' ' + (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];})[slotNum-1].interface"></span>
+                                            </template>
+                                            <template x-if="slotNum > (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length && slotNum - (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length <= (storageOverview.free_disks || []).length">
+                                                <span style="font-size:10px;font-weight:600;color:#92400e;font-family:monospace" x-text="storageOverview.free_disks[slotNum - (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length - 1].device"></span>
+                                            </template>
+                                            <template x-if="slotNum > (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length && slotNum - (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length <= (storageOverview.free_disks || []).length">
+                                                <span style="font-size:9px;color:#b45309" x-text="storageOverview.free_disks[slotNum - (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length - 1].size + ' 待配置'"></span>
+                                            </template>
+                                            <template x-if="slotNum > (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length + (storageOverview.free_disks || []).length">
+                                                <span style="font-size:10px;color:rgba(255,255,255,0.5)">空</span>
+                                            </template>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+                            <!-- 图例 -->
+                            <div style="display:flex;gap:12px;font-size:11px;color:#475569">
+                                <span style="display:flex;align-items:center;gap:3px"><span style="width:10px;height:10px;border-radius:2px;background:#1e3a5f;border:2px solid #1e3a5f"></span>已安装</span>
+                                <span style="display:flex;align-items:center;gap:3px"><span style="width:10px;height:10px;border-radius:2px;background:linear-gradient(180deg,#fef3c7,#fde68a);border:2px solid #d97706"></span>待配置</span>
+                                <span style="display:flex;align-items:center;gap:3px"><span style="width:10px;height:10px;border-radius:2px;background:#6b7280;border:2px solid #374151"></span>空闲</span>
+                                <span style="display:flex;align-items:center;gap:3px"><span style="width:10px;height:10px;border-radius:2px;background:linear-gradient(180deg,#fee2e2,#fecaca);border:2px solid #dc2626"></span>故障</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 存储概要 -->
+                <div x-show="storageOverview.total_capacity && storageOverview.total_capacity !== '0M'" style="display:flex;gap:16px;margin-bottom:20px;flex-wrap:wrap">
+                    <div style="background:#f0f7ff;border:1px solid #dbeafe;border-radius:8px;padding:8px 16px;display:flex;align-items:center;gap:8px">
+                        <span style="font-size:13px;color:#475569">总容量</span>
+                        <strong style="font-size:16px;color:#1e40af" x-text="storageOverview.total_capacity"></strong>
+                    </div>
+                    <div style="background:#dcfce7;border:1px solid #bbf7d0;border-radius:8px;padding:8px 16px;display:flex;align-items:center;gap:8px">
+                        <span style="font-size:13px;color:#475569">已用</span>
+                        <strong style="font-size:16px;color:#16a34a" x-text="storageOverview.total_used"></strong>
+                    </div>
+                    <div style="background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:8px 16px;display:flex;align-items:center;gap:8px">
+                        <span style="font-size:13px;color:#475569">可用</span>
+                        <strong style="font-size:16px;color:#92400e" x-text="storageOverview.total_avail"></strong>
+                    </div>
+                    <div x-show="storageOverview.raid_health?.length > 0" style="background:#f0f7ff;border:1px solid #dbeafe;border-radius:8px;padding:8px 16px;display:flex;align-items:center;gap:8px">
+                        <span style="font-size:13px;color:#475569">RAID</span>
+                        <template x-for="ra in (storageOverview.raid_health||[])" :key="ra.device">
+                            <span style="font-size:13px" :style="ra.state==='active'||ra.state==='clean' ? 'color:#16a34a' : 'color:#dc2626'" x-text="ra.device.replace('/dev/','') + ': ' + (ra.sync_percent ? ('同步'+ra.sync_percent) : ra.state)"></span>
+                        </template>
                     </div>
                 </div>
 

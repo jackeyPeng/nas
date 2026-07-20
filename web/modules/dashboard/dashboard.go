@@ -45,6 +45,8 @@ type SystemInfo struct {
 	DiskUsed  string `json:"disk_used"`
 	DiskPct   string `json:"disk_pct"`
 	CPUCores  int    `json:"cpu_cores"`
+	LoadAvg   string `json:"load_avg"`
+	IPAddr    string `json:"ip_addr"`
 }
 
 // GetSystemInfo collects system information
@@ -82,6 +84,12 @@ func GetSystemInfo() SystemInfo {
 
 	// CPU usage
 	info.CPUUsage = getCPUUsage()
+
+	// Load average
+	info.LoadAvg = getLoadAvg()
+
+	// IP address
+	info.IPAddr = getIPAddr()
 
 	return info
 }
@@ -131,6 +139,8 @@ func handleDashboard(w http.ResponseWriter, r *http.Request) {
 		"disk_total":     info.DiskTotal,
 		"disk_used":      info.DiskUsed,
 		"disk_pct":       info.DiskPct,
+		"load_avg":       info.LoadAvg,
+		"ip_addr":        info.IPAddr,
 		"services":       services,
 		"active_count":   activeCount,
 		"total_services": len(services),
@@ -235,4 +245,28 @@ func getCPUUsage() string {
 		}
 	}
 	return "N/A"
+}
+
+func getLoadAvg() string {
+	data, err := os.ReadFile("/proc/loadavg")
+	if err != nil {
+		return ""
+	}
+	fields := strings.Fields(string(data))
+	if len(fields) >= 3 {
+		return fields[0] + " " + fields[1] + " " + fields[2]
+	}
+	return ""
+}
+
+func getIPAddr() string {
+	out, err := common.ExecOutput("hostname", "-I")
+	if err != nil {
+		return ""
+	}
+	fields := strings.Fields(out)
+	if len(fields) > 0 {
+		return fields[0]
+	}
+	return ""
 }
