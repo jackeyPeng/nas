@@ -883,6 +883,10 @@
                         <div class="form-group" x-show="folderForm.permission !== 'noaccess'">
                             <label><input type="checkbox" x-model="folderForm.recycle_bin"> 开启回收站（删除的文件可恢复）</label>
                         </div>
+                        <div class="form-group" x-show="folderForm.permission !== 'noaccess'">
+                            <label><input type="checkbox" x-model="folderForm.nfs"> 同时创建 NFS 共享</label>
+                            <p style="font-size:12px;color:var(--text-light);margin-top:4px">NFS 导出到 192.168.0.0/16 网段，Linux/Mac 客户端可挂载访问</p>
+                        </div>
                         <div class="modal-actions">
                             <button class="btn" @click="showAddFolder = false">取消</button>
                             <button class="btn btn-primary" @click="createFolder()">创建</button>
