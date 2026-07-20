@@ -20,6 +20,8 @@ type StorageOverview struct {
 	Pools         []PoolSummary  `json:"pools"`          // 存储空间(含嵌套磁盘和文件夹)
 	SystemDisks   []DiskSummary  `json:"system_disks"`   // 系统盘
 	FreeDisks     []DiskSummary  `json:"free_disks"`     // 空闲盘(未配置)
+	SystemFolders []SharedFolder `json:"system_folders,omitempty"` // 系统盘共享目录(/data/system)
+	SystemShareSize string      `json:"system_share_size,omitempty"` // /data/system 总大小
 	RAIDHealth    []RAIDStatus   `json:"raid_health,omitempty"`
 	Unconfigured  int            `json:"unconfigured_count"`
 	HasIssues     bool           `json:"has_issues"`
@@ -256,6 +258,55 @@ func handleStorageOverview(w http.ResponseWriter, r *http.Request) {
 	overview.TotalUsed = totalUsed
 	overview.TotalAvail = totalAvail
 	overview.UsedPercent = calcPercent(totalSize, totalUsed)
+
+	// 3.5 Scan /data/system for system share folders (for no-data-disk scenario)
+	systemSharePath := "/data/system"
+	if _, err := os.Stat(systemSharePath); err == nil || os.IsNotExist(err) {
+		// Ensure /data/system exists
+		common.SudoExec("mkdir", "-p", systemSharePath)
+		nasUser, _ := common.ReadEnvFile(common.GetEnvFilePath(), "NAS_USER")
+		if nasUser == "" {
+			nasUser = "root"
+		}
+		common.SudoExec("chown", "-R", nasUser+":"+nasUser, systemSharePath)
+
+		// Get size of /data/system
+		sizeOut, _ := common.SudoOutput("du", "-sh", systemSharePath)
+		overview.SystemShareSize = parseDuSize(sizeOut)
+
+		// Scan folders under /data/system
+		smbConf, _ := common.SudoOutput("cat", "/etc/samba/smb.conf")
+		smbMap := parseSambaShares(smbConf)
+		entries, err := os.ReadDir(systemSharePath)
+		if err == nil {
+			for _, entry := range entries {
+				if !entry.IsDir() || entry.Name() == "#recycle" {
+					continue
+				}
+				folderPath := filepath.Join(systemSharePath, entry.Name())
+				f := SharedFolder{
+					Name:  entry.Name(),
+					Pool:  "系统盘",
+					Path:  folderPath,
+				}
+				sizeOut, _ := common.SudoOutput("du", "-sh", folderPath)
+				f.Size = parseDuSize(sizeOut)
+				if smb, ok := smbMap[folderPath]; ok {
+					f.SambaShare = true
+					if smb["read_only"] == "yes" {
+						f.Permission = "readonly"
+					} else {
+						f.Permission = "readwrite"
+					}
+					f.ValidUsers = smb["valid_users"]
+					f.RecycleBin = hasRecycleBin(smbConf, entry.Name())
+				} else {
+					f.Permission = "noaccess"
+				}
+				overview.SystemFolders = append(overview.SystemFolders, f)
+			}
+		}
+	}
 
 	// 4. RAID health
 	raidArrays := getRAIDStatus()
