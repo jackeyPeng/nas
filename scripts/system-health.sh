@@ -130,8 +130,10 @@ if ls /dev/md* &>/dev/null; then
         if [[ -n "$MDSTAT_LINE" ]]; then
             STATE=$(echo "$MDSTAT_LINE" | awk '{print $3}')
             LEVEL=$(echo "$MDSTAT_LINE" | grep -oP 'raid\d+' || echo "?")
-            DISKS=$(echo "$MDSTAT_LINE" | grep -oP '\[\d+\]' | wc -l)
-            FAILED=$(echo "$MDSTAT_LINE" | grep -oP '\(F\)' | wc -l)
+            DISKS=$(echo "$MDSTAT_LINE" | grep -oP '\[\d+\]' | wc -l || true)
+            DISKS=${DISKS:-0}
+            FAILED=$(echo "$MDSTAT_LINE" | grep -oP '\(F\)' | wc -l || true)
+            FAILED=${FAILED:-0}
             echo -e "  $md: $LEVEL, $DISKS 盘, 状态 $STATE"
             
             if [[ $FAILED -gt 0 ]]; then
