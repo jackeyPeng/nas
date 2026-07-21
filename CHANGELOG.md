@@ -1,5 +1,117 @@
 # NAS 项目变更日志
 
+## [2026-07-21] - RAID 扩容 + 存储配额 + 系统设置重构
+
+### 版本 v1.3.0 → 待发布
+
+---
+
+### 1. RAID 全功能管理 (commit 1f378c2)
+
+#### RAID1 扩容（2盘→N盘镜像）
+- 后端 `raid_expand.go`（334行）：
+  - mdadm --add 加盘为 spare
+  - mdadm --grow --raid-devices=N 转为 active
+  - 轮询 /proc/mdstat 等待 resync 完成（最多10分钟）
+  - xfs_growfs 自动扩展文件系统
+- SSE 实时进度推送，前端复用 progressSteps 组件
+
+#### RAID5/6 在线扩容
+- 触发 mdadm reshape 后立即返回（异步，可能数小时）
+- reshape 期间数据可访问但性能下降，不能断电
+- 完成后调用 `/api/disk/raid/expand-fs` 手动扩展文件系统
+- `/api/disk/raid/reshape-status` 查询重构进度（百分比/速度/ETA）
+
+#### 前端
+- RAID1/5/6 存储空间显示绿色"扩容"按钮（与 LVM 蓝色区分）
+- RAID 扩容弹窗：阵列设备只读 + 选盘 + RAID1/5/6 不同提示
+  - RAID1：绿色提示（容量不变，冗余增强）
+  - RAID5/6：橙色警告（reshape 数小时，不能断电）
+
+#### 新增 API
+- `GET /api/disk/raid/expand-stream` — SSE 扩容
+- `POST /api/disk/raid/expand-fs` — reshape 后扩展文件系统
+- `GET /api/disk/raid/reshape-status` — 查询重构进度
+
+---
+
+### 2. 多用户存储配额 (commit a552488)
+
+#### XFS Project Quota 硬限制
+- 后端 `quota.go`（273行）：
+  - 自动分配 project ID（从 1000 起，避免系统冲突）
+  - 写入 /etc/projects + /etc/projid
+  - xfs_quota project -s + limit -p bhard 设置硬限制
+  - 删除文件夹时自动清理配额
+- 基础设施：fstab 挂载参数加 prjquota（两台机器）
+
+#### 前端
+- 新建文件夹弹窗：存储配额输入框（GB，0=无限制）
+- 文件夹列表：配额标签显示（已用/上限，紫色背景）
+- folderForm 新增 quota_gb 字段
+
+#### 新增 API
+- `GET /api/disk/folders/quota` — 查询配额
+- `POST /api/disk/folders/quota` — 设置配额
+- `POST /api/disk/folders/create` — 新增 quota_gb 参数
+- `POST /api/disk/folders/delete` — 自动清理配额
+
+---
+
+### 3. 自动化运维脚本 (commit d4672c7 + 3个 fix)
+
+#### 4 个脚本，部署到 /opt/nas/scripts/
+
+| 脚本 | 用途 | 特点 |
+|------|------|------|
+| system-health.sh | 一键体检 | CPU/内存/磁盘/RAID/SMART/服务/网络，彩色输出，退出码反映状态 |
+| backup-data.sh | rsync 数据备份 | --dry-run 预览，--source 指定源，自动排除回收站 |
+| disk-cleanup.sh | 磁盘清理 | 日志/临时文件/缩略图/APT缓存，--dry-run/--aggressive |
+| list-users.sh | 用户+配额一览 | Samba/FTP 用户 + XFS 配额 + 共享权限 |
+
+#### 兼容性修复
+- ((VAR++)) 在 set -e 下 VAR=0 时退出 → 改 $((VAR+1))
+- bc 在 Debian 最小安装不存在 → 改 awk
+- free 输出中文 locale（内存：/交换：）→ grep 兼容
+- command -v 在 sudo 下找不到 → 改 which + 绝对路径
+- VMware SMART 返回 OK 而非 PASSED → 两种都支持
+- grep -oP 空匹配退出码 1 → || true 兜底
+
+---
+
+### 4. 系统设置重构 (commit cfb399c)
+
+#### 合并配置管理 + 系统设置
+- 删除"配置管理"页面（配置文件编辑器太危险）
+- 删除"系统设置"旧页面（全是"点击加载"按钮）
+- 新"系统设置"页面：条目化表单，进入自动加载
+
+#### 7 个区块
+1. **主机名** — 输入框 + 保存
+2. **网络信息** — IP/网关/DNS（只读）
+3. **时间与时区** — 当前时间 + NTP 状态 + 时区下拉
+4. **SSH 配置** — 端口/Root登录/密码认证/重试次数，保存重启 SSH
+5. **内核参数** — 每行 key+value+中文说明+保存按钮（白名单 5 个参数）
+6. **系统更新** — 可更新包数 + 一键更新按钮
+7. **服务管理** — 状态图标 + 启停/自启按钮（白名单 9 个核心服务）
+
+#### 后端 system.go 重写
+- `GET /api/system/overview` — 一次返回所有系统信息
+- `POST /api/system/hostname` — 修改主机名
+- `POST /api/system/timezone` — 修改时区（带验证）
+- `GET/POST /api/system/ssh-config` — SSH 条目化读写
+- `GET/POST /api/system/sysctl` — 内核参数读写（持久化到 sysctl.d）
+- `GET/POST /api/system/updates` — 更新状态 + 一键更新
+- `GET/POST /api/system/services` — 服务列表 + 启停/自启
+
+#### 安全设计
+- 不再暴露原始配置文件（smb.conf/sshd_config）
+- sysctl 白名单（swappiness/dirty_ratio/somaxconn/file-max）
+- 服务操作白名单（NAS 核心 9 个服务）
+- SSH 端口修改有警告提示
+
+---
+
 ## [2026-07-17] - 存储管理三层抽象模型 + RAID方案引擎 + 盘位图
 
 ### 存储管理架构：三层抽象模型
