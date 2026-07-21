@@ -65,6 +65,9 @@ function nasPanel() {
         folderPermForm: { name: '', path: '', pool: '', permission: 'readwrite', valid_users: '', recycle_bin: false },
         // Pool extend
         showExtendPool: false,
+        // RAID expand
+        showRAIDExpand: false,
+        raidExpandForm: { mdDevice: '', device: '', poolName: '', raidType: '' },
         // Backup
         backups: [],
         backupLoading: false,
@@ -825,6 +828,84 @@ function nasPanel() {
             }
             this.wizardLoading = false;
             this.showExtendPool = false;
+            this.progressTitle = '';
+            setTimeout(() => { this.loadStorageOverview(); this.loadWizardStatus(); }, 2000);
+        },
+
+        // Open RAID expand dialog
+        openRAIDExpand(pool) {
+            const raidType = pool.type.toUpperCase();
+            this.raidExpandForm = {
+                mdDevice: pool.device,
+                device: '',
+                poolName: pool.display_name,
+                raidType: raidType
+            };
+            this.showRAIDExpand = true;
+        },
+
+        // RAID expand with SSE progress
+        async expandRAIDStream() {
+            if (!this.raidExpandForm.device) { this.showToast('请选择磁盘', 'error'); return; }
+            const raidType = this.raidExpandForm.raidType;
+            const warnMsg = raidType === 'RAID1'
+                ? `确定将 ${this.raidExpandForm.device} 加入 ${this.raidExpandForm.mdDevice}？\n该磁盘上的数据将被擦除！`
+                : `确定将 ${this.raidExpandForm.device} 加入 ${this.raidExpandForm.mdDevice}？\n该磁盘上的数据将被擦除！\n\n⚠️ RAID5/6 扩容会触发数据重构，可能需要数小时！`;
+            if (!confirm(warnMsg)) return;
+
+            this.wizardLoading = true;
+            this.progressSteps = [];
+            this.progressShow = true;
+            this.progressTitle = 'RAID 扩容进度';
+
+            try {
+                const params = new URLSearchParams({
+                    md_device: this.raidExpandForm.mdDevice,
+                    device: this.raidExpandForm.device,
+                    confirm: 'yes'
+                });
+                const resp = await fetch(`/api/disk/raid/expand-stream?${params.toString()}`, {
+                    headers: { 'Authorization': 'Bearer ' + this.token }
+                });
+                const reader = resp.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop();
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const ev = JSON.parse(line.slice(6));
+                                if (ev.status === 'running') {
+                                    this.progressSteps.push({ name: ev.step + (ev.detail ? ': ' + ev.detail : ''), status: 'running' });
+                                } else if (ev.status === 'done') {
+                                    const last = this.progressSteps[this.progressSteps.length - 1];
+                                    if (last && last.status === 'running') {
+                                        last.status = 'done';
+                                        last.name = ev.step;
+                                    } else {
+                                        this.progressSteps.push({ name: ev.step, status: 'done' });
+                                    }
+                                } else if (ev.status === 'complete') {
+                                    this.progressSteps.push({ name: ev.detail || '完成', status: 'complete' });
+                                } else if (ev.status === 'reshaping') {
+                                    this.progressSteps.push({ name: ev.detail || '重构中', status: 'complete' });
+                                } else if (ev.status === 'error') {
+                                    this.progressSteps.push({ name: ev.step + ': ' + (ev.detail||''), status: 'error' });
+                                }
+                            } catch(e) {}
+                        }
+                    }
+                }
+            } catch(e) {
+                this.progressSteps.push({ name: '错误: ' + e.message, status: 'error' });
+            }
+            this.wizardLoading = false;
+            this.showRAIDExpand = false;
             this.progressTitle = '';
             setTimeout(() => { this.loadStorageOverview(); this.loadWizardStatus(); }, 2000);
         },

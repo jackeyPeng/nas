@@ -33,6 +33,10 @@ func RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/disk/pool/create", common.AuthMiddleware(handlePoolCreate))
 	mux.HandleFunc("/api/disk/pool/extend", common.AuthMiddleware(handlePoolExtend))
 	mux.HandleFunc("/api/disk/pool/extend-stream", common.AuthMiddleware(handlePoolExtendStream))
+	// RAID expansion
+	mux.HandleFunc("/api/disk/raid/expand-stream", common.AuthMiddleware(handleRAIDExpandStream))
+	mux.HandleFunc("/api/disk/raid/expand-fs", common.AuthMiddleware(handleRAIDExpandFS))
+	mux.HandleFunc("/api/disk/raid/reshape-status", common.AuthMiddleware(handleRAIDReshapeStatus))
 	// Shared folders
 	mux.HandleFunc("/api/disk/folders", common.AuthMiddleware(handleListFolders))
 	mux.HandleFunc("/api/disk/folders/create", common.AuthMiddleware(handleCreateFolder))

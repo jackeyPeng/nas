@@ -778,6 +778,7 @@
                                 <!-- 操作按钮 -->
                                 <div style="display:flex;gap:8px;margin-top:12px;padding-top:8px;border-top:1px solid #f0f0f0">
                                     <button x-show="storageOverview.unconfigured_count > 0 && (pool.type==='lvm' || pool.type==='single')" class="btn btn-sm" style="font-size:11px;padding:3px 10px;background:#dbeafe;color:#1e40af;border:1px solid #3b82f6" @click="showExtendPool = true">扩容</button>
+                                    <button x-show="storageOverview.unconfigured_count > 0 && (pool.type==='raid1' || pool.type==='raid5' || pool.type==='raid6')" class="btn btn-sm" style="font-size:11px;padding:3px 10px;background:#dcfce7;color:#166534;border:1px solid #16a34a" @click="openRAIDExpand(pool)">扩容</button>
                                     <button class="btn btn-sm" style="font-size:11px;padding:3px 10px;border:1px solid #dc2626;color:#dc2626;background:white" @click="resetStorage()">重置</button>
                                 </div>
                             </div>
@@ -1044,6 +1045,52 @@
                         <div class="modal-actions">
                             <button class="btn" @click="showExtendPool = false">取消</button>
                             <button class="btn btn-primary" @click="extendPoolStream()">确认扩容</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- RAID 扩容弹窗 -->
+                <div class="modal" x-show="showRAIDExpand" x-cloak @click.self="showRAIDExpand = false">
+                    <div class="modal-box">
+                        <h3>扩容 RAID 阵列</h3>
+                        <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">
+                            将新磁盘加入 <strong x-text="raidExpandForm.poolName"></strong>（<span x-text="raidExpandForm.raidType"></span>），
+                            <span x-show="raidExpandForm.raidType === 'RAID1'">增加镜像冗余，容量不变。</span>
+                            <span x-show="raidExpandForm.raidType !== 'RAID1'">扩展存储容量。</span>
+                        </p>
+                        <div class="form-group">
+                            <label>阵列设备</label>
+                            <input type="text" class="port-input" :value="raidExpandForm.mdDevice" readonly style="background:#f3f4f6;font-family:monospace">
+                        </div>
+                        <div class="form-group">
+                            <label>选择新磁盘</label>
+                            <select x-model="raidExpandForm.device" class="port-input">
+                                <option value="">选择空闲磁盘...</option>
+                                <template x-for="d in (wizard.unused_disks||[])" :key="d.device">
+                                    <option :value="d.device" x-text="d.device + ' · ' + d.size"></option>
+                                </template>
+                            </select>
+                        </div>
+                        <div x-show="raidExpandForm.raidType === 'RAID1'" style="background:#f0fdf4;border-radius:8px;padding:12px;border-left:4px solid #16a34a;margin-bottom:12px">
+                            <strong style="color:#166534;font-size:14px">🛡️ RAID1 扩容说明</strong>
+                            <p style="font-size:13px;color:#555;margin-top:4px;line-height:1.6">
+                                RAID1 扩容是将新磁盘加入镜像组，<strong>容量不变</strong>，但冗余能力增强（可坏更多盘）。<br>
+                                操作期间数据不受影响，同步过程自动完成。
+                            </p>
+                        </div>
+                        <div x-show="raidExpandForm.raidType !== 'RAID1'" style="background:#fff3e0;border-radius:8px;padding:12px;border-left:4px solid #ff9800;margin-bottom:12px">
+                            <strong style="color:#e65100;font-size:14px">⚠️ RAID5/6 扩容说明</strong>
+                            <p style="font-size:13px;color:#555;margin-top:4px;line-height:1.6">
+                                RAID5/6 扩容会触发 <strong>数据重构（reshape）</strong>，可能需要数小时。<br>
+                                重构期间：<br>
+                                • 数据仍然可访问，但性能会下降<br>
+                                • <strong>不能断电</strong>，否则阵列可能损坏<br>
+                                • 重构完成后需要手动扩展文件系统
+                            </p>
+                        </div>
+                        <div class="modal-actions">
+                            <button class="btn" @click="showRAIDExpand = false">取消</button>
+                            <button class="btn btn-primary" @click="expandRAIDStream()">确认扩容</button>
                         </div>
                     </div>
                 </div>
