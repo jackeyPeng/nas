@@ -72,13 +72,17 @@ function nasPanel() {
         backups: [],
         backupLoading: false,
         // System settings
-        sysNetwork: '',
-        sysTime: '',
-        hostnameForm: { hostname: '' },
-        sysSSHConfig: '',
-        sysSysctl: '',
-        sysUpdates: '',
-        sysEnabledServices: '',
+        // System settings (new unified)
+        sysSettings: {
+            hostname: '',
+            network: {},
+            time: {},
+            timezone: 'Asia/Shanghai',
+            ssh: {},
+            sysctl: [],
+            updates: {},
+            services: []
+        },
         logsModal: false,
         logsService: '',
         logsContent: '',
@@ -154,8 +158,7 @@ function nasPanel() {
                 case 'diskmgmt': this.loadStorageOverview(); this.loadWizardStatus(); this.loadSharedFolders(); break;
                 case 'firewall': this.loadFirewall(); break;
                 case 'monitor': this.initMonitorRefresh(); this.loadAlertConfig(); break;
-                case 'config': this.loadEnvConfig(); break;
-                case 'system': break;
+                case 'system': this.loadSystemOverview(); break;
                 case 'backup': this.loadBackups(); break;
             }
         },
@@ -968,57 +971,94 @@ function nasPanel() {
             setTimeout(() => { this.loadStorageOverview(); this.loadWizardStatus(); this.loadSharedFolders(); }, 2000);
         },
 
-        // System settings
-        async loadSysNetwork() {
-            this.sysNetwork = '加载中...';
-            const data = await this.api('/system/network');
-            if (data) this.sysNetwork = data;
+        // System settings — new unified page
+        async loadSystemOverview() {
+            const data = await this.api('/system/overview');
+            if (data) {
+                this.sysSettings.hostname = data.hostname || '';
+                this.sysSettings.network = data.network || {};
+                this.sysSettings.time = data.time || {};
+                this.sysSettings.timezone = data.time?.timezone || 'Asia/Shanghai';
+                this.sysSettings.ssh = data.ssh || {};
+                this.sysSettings.sysctl = data.sysctl || [];
+                this.sysSettings.updates = data.updates || {};
+                this.sysSettings.services = data.services || [];
+            }
         },
 
-        async loadSysTime() {
-            this.sysTime = '加载中...';
-            const data = await this.api('/system/time');
-            if (data) this.sysTime = data;
-        },
-
-        async setHostname() {
-            if (!this.hostnameForm.hostname) {
+        async saveHostname() {
+            if (!this.sysSettings.hostname) {
                 this.showToast('请输入主机名', 'error');
                 return;
             }
             const data = await this.api('/system/hostname', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: `hostname=${encodeURIComponent(this.hostnameForm.hostname)}`
+                body: `hostname=${encodeURIComponent(this.sysSettings.hostname)}`
+            });
+            if (data) this.showToast(data.message || '修改成功', 'success');
+        },
+
+        async saveTimezone() {
+            const data = await this.api('/system/timezone', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `timezone=${encodeURIComponent(this.sysSettings.timezone)}`
+            });
+            if (data) this.showToast(data.message || '时区已修改', 'success');
+        },
+
+        async saveSSHConfig() {
+            const ssh = this.sysSettings.ssh;
+            if (!confirm(`确定修改 SSH 配置？\n端口: ${ssh.port}\nRoot登录: ${ssh.permit_root_login ? '允许' : '禁止'}\n密码认证: ${ssh.password_auth ? '允许' : '禁止'}\n\n修改后 SSH 将重启！`)) return;
+            const params = new URLSearchParams({
+                port: String(ssh.port),
+                permit_root_login: ssh.permit_root_login ? 'yes' : 'no',
+                password_auth: ssh.password_auth ? 'yes' : 'no',
+                max_auth_tries: String(ssh.max_auth_tries || 6)
+            });
+            const data = await this.api('/system/ssh-config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: params.toString()
+            });
+            if (data) this.showToast(data.message || 'SSH 配置已更新', 'success');
+        },
+
+        async saveSysctl(param) {
+            const data = await this.api('/system/sysctl', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `key=${encodeURIComponent(param.key)}&value=${encodeURIComponent(param.value)}`
+            });
+            if (data) this.showToast(data.message || '已保存', 'success');
+        },
+
+        async runUpdate(action) {
+            const msg = action === 'update' ? '正在刷新软件源...' : '正在更新系统，这可能需要几分钟...';
+            this.showToast(msg, 'info');
+            const data = await this.api('/system/updates', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `action=${action}`
             });
             if (data) {
-                this.showToast(data.message || '修改成功', 'success');
-                this.hostnameForm.hostname = '';
+                this.showToast(data.message || '完成', 'success');
+                this.loadSystemOverview();
             }
         },
 
-        async loadSysSSHConfig() {
-            this.sysSSHConfig = '加载中...';
-            const data = await this.api('/system/ssh-config');
-            if (data) this.sysSSHConfig = data;
-        },
-
-        async loadSysSysctl() {
-            this.sysSysctl = '加载中...';
-            const data = await this.api('/system/sysctl');
-            if (data) this.sysSysctl = data;
-        },
-
-        async loadSysUpdates() {
-            this.sysUpdates = '检查中...';
-            const data = await this.api('/system/updates');
-            if (data) this.sysUpdates = data;
-        },
-
-        async loadSysEnabledServices() {
-            this.sysEnabledServices = '加载中...';
-            const data = await this.api('/system/services-enabled');
-            if (data) this.sysEnabledServices = data;
+        async serviceAction(name, action) {
+            const actionText = { start: '启动', stop: '停止', restart: '重启', enable: '启用自启', disable: '禁用自启' };
+            const data = await this.api('/system/services', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `name=${encodeURIComponent(name)}&action=${action}`
+            });
+            if (data) {
+                this.showToast(data.message || `${actionText[action]}成功`, 'success');
+                this.loadSystemOverview();
+            }
         },
 
         // Backup management
