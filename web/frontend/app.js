@@ -60,7 +60,7 @@ function nasPanel() {
         // Shared folders
         sharedFolders: [],
         showAddFolder: false,
-        folderForm: { pool: '', name: '', permission: 'readwrite', valid_users: '', recycle_bin: false, nfs: false },
+        folderForm: { pool: '', name: '', permission: 'readwrite', valid_users: '', recycle_bin: false, nfs: false, quota_gb: 0 },
         showFolderPerm: false,
         folderPermForm: { name: '', path: '', pool: '', permission: 'readwrite', valid_users: '', recycle_bin: false },
         // Pool extend
@@ -713,7 +713,8 @@ function nasPanel() {
                 permission: this.folderForm.permission,
                 valid_users: this.folderForm.valid_users,
                 recycle_bin: this.folderForm.recycle_bin ? 'yes' : '',
-                nfs: this.folderForm.nfs ? 'yes' : ''
+                nfs: this.folderForm.nfs ? 'yes' : '',
+                quota_gb: String(this.folderForm.quota_gb || 0)
             });
             const data = await this.api('/disk/folders/create', {
                 method: 'POST',
@@ -723,7 +724,7 @@ function nasPanel() {
             if (data) {
                 this.showToast(data.message || '文件夹已创建', 'success');
                 this.showAddFolder = false;
-                this.folderForm = { pool: '', name: '', permission: 'readwrite', valid_users: '', recycle_bin: false, nfs: false };
+                this.folderForm = { pool: '', name: '', permission: 'readwrite', valid_users: '', recycle_bin: false, nfs: false, quota_gb: 0 };
                 this.loadSharedFolders();
             }
         },
