@@ -50,15 +50,12 @@ get_size() {
 
 human_size() {
     local bytes=$1
-    if [[ $bytes -ge 1073741824 ]]; then
-        echo "$(echo "scale=1; $bytes/1073741824" | bc)G"
-    elif [[ $bytes -ge 1048576 ]]; then
-        echo "$(echo "scale=1; $bytes/1048576" | bc)M"
-    elif [[ $bytes -ge 1024 ]]; then
-        echo "$(echo "scale=1; $bytes/1024" | bc)K"
-    else
-        echo "${bytes}B"
-    fi
+    awk -v b="$bytes" 'BEGIN{
+        if (b >= 1073741824) printf "%.1fG", b/1073741824
+        else if (b >= 1048576) printf "%.1fM", b/1048576
+        else if (b >= 1024) printf "%.1fK", b/1024
+        else printf "%dB", b
+    }'
 }
 
 # ─── 清理前磁盘状态 ───

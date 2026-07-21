@@ -45,7 +45,7 @@ if [[ -f /etc/vsftpd.userlist ]]; then
         user=$(echo "$user" | xargs)
         [[ -z "$user" ]] && continue
         echo -e "  ${GREEN}●${NC} $user"
-        ((FTP_COUNT++))
+        FTP_COUNT=$((FTP_COUNT+1))
     done < /etc/vsftpd.userlist
     [[ $FTP_COUNT -eq 0 ]] && echo "  无 FTP 用户"
 else
@@ -134,7 +134,7 @@ if [[ -f /etc/samba/smb.conf ]]; then
                 RW_TEXT="读写"
                 [[ "$share_rw" == "yes" ]] && RW_TEXT="只读"
                 echo -e "  ${GREEN}[$share_name]${NC}  $share_path  $RW_TEXT  用户:$share_users"
-                ((SHARE_COUNT++))
+                SHARE_COUNT=$((SHARE_COUNT+1))
             fi
             share_name="${BASH_REMATCH[1]}"
             share_path=""
@@ -157,7 +157,7 @@ if [[ -f /etc/samba/smb.conf ]]; then
         RW_TEXT="读写"
         [[ "$share_rw" == "yes" ]] && RW_TEXT="只读"
         echo -e "  ${GREEN}[$share_name]${NC}  $share_path  $RW_TEXT  用户:$share_users"
-        ((SHARE_COUNT++))
+        SHARE_COUNT=$((SHARE_COUNT+1))
     fi
     
     [[ $SHARE_COUNT -eq 0 ]] && echo "  无共享配置"
