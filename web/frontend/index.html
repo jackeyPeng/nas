@@ -332,216 +332,336 @@
 
             <!-- Monitor -->
             <div x-show="page === 'monitor'" class="page">
-                <h2>监控告警</h2>
-                <button class="btn btn-primary" @click="loadMonitor()" style="margin-bottom:16px">刷新</button>
-
-                <h3>当前状态</h3>
-                <div class="cards">
-                    <div class="card">
-                        <div class="card-title">磁盘使用率</div>
-                        <div class="card-value">
-                            <span x-text="(monitor.disk_used||'--') + ' / ' + (monitor.disk_total||'--')"></span>
-                            <div class="progress-bar">
-                                <div class="progress-fill" :style="'width:' + (monitor.disk_usage||0) + '%'"></div>
-                            </div>
-                            <span class="pct" x-text="(monitor.disk_usage||'--') + '%'"></span>
-                        </div>
-                    </div>
-                    <div class="card">
-                        <div class="card-title">内存使用率</div>
-                        <div class="card-value">
-                            <span x-text="(monitor.mem_used||'--') + ' / ' + (monitor.mem_total||'--')"></span>
-                            <div class="progress-bar">
-                                <div class="progress-fill" :style="'width:' + (monitor.mem_usage||0) + '%'"></div>
-                            </div>
-                            <span class="pct" x-text="(monitor.mem_usage||'--') + '%'"></span>
-                        </div>
-                    </div>
-                    <div class="card">
-                        <div class="card-title">CPU 负载</div>
-                        <div class="card-value">
-                            <span x-text="monitor.cpu_load || '--'"></span>
-                            <span class="pct" x-text="'(' + (monitor.cpu_cores||'?') + '核)'"></span>
-                        </div>
-                    </div>
-                    <div class="card">
-                        <div class="card-title">服务状态</div>
-                        <div class="card-value">
-                            <span x-text="(monitor.services_down||0) + ' 个异常'"></span>
-                            <span class="pct" x-text="'共 ' + (monitor.services_total||0) + ' 个服务'"></span>
-                        </div>
-                    </div>
-                    <div class="card">
-                        <div class="card-title">进程数</div>
-                        <div class="card-value" x-text="monitor.process_count || '--'"></div>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+                    <h2 style="margin:0">监控告警</h2>
+                    <div style="display:flex;gap:8px;align-items:center">
+                        <span style="font-size:12px;color:#94a3b8" x-text="'主机: ' + (monitor.hostname||'-') + ' | 运行: ' + (monitor.uptime||'-')"></span>
+                        <button class="btn btn-sm btn-primary" @click="loadMonitor()" style="font-size:12px">刷新</button>
                     </div>
                 </div>
 
-                <h3>物理磁盘</h3>
-                <pre class="config-output" x-text="monitor.disk_info || '无数据'"></pre>
+                <!-- ═══ 核心指标仪表盘 ═══ -->
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:24px">
+                    <!-- CPU -->
+                    <div style="background:white;border:1px solid #e0e4e8;border-radius:12px;padding:20px;text-align:center">
+                        <div style="position:relative;width:120px;height:120px;margin:0 auto 12px">
+                            <svg width="120" height="120" viewBox="0 0 120 120">
+                                <circle cx="60" cy="60" r="50" fill="none" stroke="#e2e8f0" stroke-width="10"/>
+                                <circle cx="60" cy="60" r="50" fill="none" :stroke="gaugeColor(parseFloat(monitor.cpu_percent||0))" stroke-width="10"
+                                    stroke-linecap="round" stroke-dasharray="314" :stroke-dashoffset="314 - (314 * parseFloat(monitor.cpu_percent||0) / 100)"
+                                    transform="rotate(-90 60 60)" style="transition:stroke-dashoffset 0.5s ease, stroke 0.5s ease"/>
+                            </svg>
+                            <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)">
+                                <div style="font-size:28px;font-weight:700" :style="'color:'+gaugeColor(parseFloat(monitor.cpu_percent||0))" x-text="(monitor.cpu_percent||'0')+'%'"></div>
+                            </div>
+                        </div>
+                        <div style="font-size:14px;font-weight:600;color:#334155">CPU 使用率</div>
+                        <div style="font-size:12px;color:#94a3b8;margin-top:4px" x-text="(monitor.cpu_model||'-').substring(0,30)"></div>
+                        <div style="display:flex;justify-content:center;gap:12px;margin-top:8px;font-size:12px;color:#64748b">
+                            <span>负载 <strong x-text="monitor.cpu_load||'-'"></strong></span>
+                            <span>5分 <strong x-text="monitor.cpu_load5||'-'"></strong></span>
+                            <span>15分 <strong x-text="monitor.cpu_load15||'-'"></strong></span>
+                            <span x-text="(monitor.cpu_cores||'?')+'核'"></span>
+                        </div>
+                    </div>
 
-                <h3>Inode 使用</h3>
-                <pre class="config-output" x-text="monitor.inode_info || '无数据'"></pre>
+                    <!-- Memory -->
+                    <div style="background:white;border:1px solid #e0e4e8;border-radius:12px;padding:20px;text-align:center">
+                        <div style="position:relative;width:120px;height:120px;margin:0 auto 12px">
+                            <svg width="120" height="120" viewBox="0 0 120 120">
+                                <circle cx="60" cy="60" r="50" fill="none" stroke="#e2e8f0" stroke-width="10"/>
+                                <circle cx="60" cy="60" r="50" fill="none" :stroke="gaugeColor(parseFloat(monitor.mem_usage||0))" stroke-width="10"
+                                    stroke-linecap="round" stroke-dasharray="314" :stroke-dashoffset="314 - (314 * parseFloat(monitor.mem_usage||0) / 100)"
+                                    transform="rotate(-90 60 60)" style="transition:stroke-dashoffset 0.5s ease, stroke 0.5s ease"/>
+                            </svg>
+                            <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)">
+                                <div style="font-size:28px;font-weight:700" :style="'color:'+gaugeColor(parseFloat(monitor.mem_usage||0))" x-text="(monitor.mem_usage||'0')+'%'"></div>
+                            </div>
+                        </div>
+                        <div style="font-size:14px;font-weight:600;color:#334155">内存使用率</div>
+                        <div style="font-size:18px;font-weight:600;margin-top:4px" x-text="(monitor.mem_used||'-') + ' / ' + (monitor.mem_total||'-')"></div>
+                        <div style="font-size:12px;color:#94a3b8;margin-top:4px" x-show="monitor.swap_total && monitor.swap_total !== '0'">
+                            Swap: <span x-text="(monitor.swap_used||'-') + ' / ' + (monitor.swap_total||'-')"></span>
+                        </div>
+                    </div>
 
-                <h3>LVM 卷管理</h3>
-                <pre class="config-output" x-text="monitor.lvm_info || '无数据'"></pre>
+                    <!-- Disk -->
+                    <div style="background:white;border:1px solid #e0e4e8;border-radius:12px;padding:20px;text-align:center">
+                        <div style="position:relative;width:120px;height:120px;margin:0 auto 12px">
+                            <svg width="120" height="120" viewBox="0 0 120 120">
+                                <circle cx="60" cy="60" r="50" fill="none" stroke="#e2e8f0" stroke-width="10"/>
+                                <circle cx="60" cy="60" r="50" fill="none" :stroke="gaugeColor(parseFloat(monitor.disk_usage||0))" stroke-width="10"
+                                    stroke-linecap="round" stroke-dasharray="314" :stroke-dashoffset="314 - (314 * parseFloat(monitor.disk_usage||0) / 100)"
+                                    transform="rotate(-90 60 60)" style="transition:stroke-dashoffset 0.5s ease, stroke 0.5s ease"/>
+                            </svg>
+                            <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)">
+                                <div style="font-size:28px;font-weight:700" :style="'color:'+gaugeColor(parseFloat(monitor.disk_usage||0))" x-text="(monitor.disk_usage||'0')+'%'"></div>
+                            </div>
+                        </div>
+                        <div style="font-size:14px;font-weight:600;color:#334155">磁盘使用率</div>
+                        <div style="font-size:18px;font-weight:600;margin-top:4px" x-text="(monitor.disk_used||'-') + ' / ' + (monitor.disk_total||'-')"></div>
+                        <div style="font-size:12px;color:#94a3b8;margin-top:4px">/data</div>
+                    </div>
 
-                <h3>内存详情（含 Swap）</h3>
-                <pre class="config-output" x-text="monitor.mem_detail || '无数据'"></pre>
-
-                <h3>CPU 详情</h3>
-                <pre class="config-output" x-text="monitor.cpu_info || '无数据'"></pre>
-
-                <h3>内存占用 Top 10 进程</h3>
-                <table class="table">
-                    <thead>
-                        <tr><th>用户</th><th>PID</th><th>CPU%</th><th>MEM%</th><th>RSS</th><th>命令</th></tr>
-                    </thead>
-                    <tbody>
-                        <template x-for="p in (monitor.top_procs||[])" :key="p.pid">
-                            <tr>
-                                <td x-text="p.user"></td>
-                                <td x-text="p.pid"></td>
-                                <td x-text="p.cpu"></td>
-                                <td x-text="p.mem"></td>
-                                <td x-text="p.rss"></td>
-                                <td x-text="p.command"></td>
-                            </tr>
+                    <!-- Network -->
+                    <div style="background:white;border:1px solid #e0e4e8;border-radius:12px;padding:20px;text-align:center">
+                        <div style="font-size:14px;font-weight:600;color:#334155;margin-bottom:16px">网络流量</div>
+                        <template x-for="net in (monitor.network||[]).slice(0,1)" :key="net.interface">
+                            <div>
+                                <div style="margin-bottom:16px">
+                                    <div style="font-size:12px;color:#94a3b8;margin-bottom:2px">⬇ 下行</div>
+                                    <div style="font-size:24px;font-weight:700;color:#16a34a" x-text="formatNetRate(net.rx_rate)"></div>
+                                </div>
+                                <div>
+                                    <div style="font-size:12px;color:#94a3b8;margin-bottom:2px">⬆ 上行</div>
+                                    <div style="font-size:24px;font-weight:700;color:#2563eb" x-text="formatNetRate(net.tx_rate)"></div>
+                                </div>
+                                <div style="font-size:11px;color:#94a3b8;margin-top:12px" x-text="net.interface"></div>
+                            </div>
                         </template>
-                    </tbody>
-                </table>
+                    </div>
+                </div>
 
-                <h3>登录用户</h3>
-                <table class="table">
-                    <thead><tr><th>用户</th><th>终端</th><th>来源</th><th>登录时间</th></tr></thead>
-                    <tbody>
-                        <template x-for="u in (monitor.logged_in_users||[])" :key="u.user+u.tty">
-                            <tr>
-                                <td x-text="u.user"></td>
-                                <td x-text="u.tty"></td>
-                                <td x-text="u.from || '-'"></td>
-                                <td x-text="u.date"></td>
-                            </tr>
+                <!-- ═══ 服务状态 ═══ -->
+                <div style="background:white;border:1px solid #e0e4e8;border-radius:12px;padding:20px;margin-bottom:24px">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+                        <h3 style="margin:0;font-size:16px">服务状态</h3>
+                        <span style="font-size:13px;padding:4px 12px;border-radius:12px"
+                            :style="(monitor.services_down||0) === 0 ? 'background:#dcfce7;color:#16a34a' : 'background:#fee2e2;color:#dc2626'"
+                            x-text="(monitor.services_down||0) === 0 ? '全部正常 (' + (monitor.services_total||0) + ')' : (monitor.services_down||0) + ' 个异常'"></span>
+                    </div>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px">
+                        <template x-for="svc in (monitor.services_list||[])" :key="svc.name">
+                            <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:6px"
+                                :style="svc.active ? 'background:#f0fdf4' : 'background:#fef2f2'">
+                                <span style="width:10px;height:10px;border-radius:50%;flex-shrink:0"
+                                    :style="svc.active ? 'background:#16a34a' : 'background:#dc2626'"></span>
+                                <span style="font-size:13px;font-weight:500" x-text="svc.name"></span>
+                            </div>
                         </template>
-                        <tr x-show="!(monitor.logged_in_users||[]).length">
-                            <td colspan="4" style="text-align:center;color:var(--text-light)">无用户登录</td>
-                        </tr>
-                    </tbody>
-                </table>
+                    </div>
+                    <div style="display:flex;gap:16px;margin-top:12px;font-size:13px;color:#64748b">
+                        <span>进程数: <strong x-text="monitor.process_count||'-'"></strong></span>
+                        <span>登录用户: <strong x-text="(monitor.logged_in_users||[]).length"></strong></span>
+                    </div>
+                </div>
 
-                <h3>系统错误日志（最近24小时）</h3>
-                <pre class="config-output" x-text="monitor.system_errors || '无错误日志'"></pre>
-
-                <h3>网络流量</h3>
-                <table class="table">
-                    <thead>
-                        <tr><th>网卡</th><th>下行速率</th><th>上行速率</th><th>总接收</th><th>总发送</th></tr>
-                    </thead>
-                    <tbody>
+                <!-- ═══ 网络详情 ═══ -->
+                <div style="background:white;border:1px solid #e0e4e8;border-radius:12px;padding:20px;margin-bottom:24px" x-show="(monitor.network||[]).length > 0">
+                    <h3 style="margin:0 0 12px;font-size:16px">网络接口</h3>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">
                         <template x-for="net in (monitor.network||[])" :key="net.interface">
-                            <tr>
-                                <td x-text="net.interface"></td>
-                                <td x-text="net.rx_rate + ' KB/s'"></td>
-                                <td x-text="net.tx_rate + ' KB/s'"></td>
-                                <td x-text="net.rx_total + ' MB'"></td>
-                                <td x-text="net.tx_total + ' MB'"></td>
-                            </tr>
+                            <div style="border:1px solid #f0f0f0;border-radius:8px;padding:12px">
+                                <div style="font-weight:600;font-size:14px;margin-bottom:8px;font-family:monospace" x-text="net.interface"></div>
+                                <div style="display:flex;gap:16px;font-size:13px">
+                                    <div>
+                                        <span style="color:#94a3b8">⬇</span>
+                                        <strong style="color:#16a34a" x-text="formatNetRate(net.rx_rate)"></strong>
+                                    </div>
+                                    <div>
+                                        <span style="color:#94a3b8">⬆</span>
+                                        <strong style="color:#2563eb" x-text="formatNetRate(net.tx_rate)"></strong>
+                                    </div>
+                                </div>
+                                <div style="font-size:11px;color:#94a3b8;margin-top:6px">
+                                    总收 <span x-text="net.rx_total+'MB'"></span> / 总发 <span x-text="net.tx_total+'MB'"></span>
+                                </div>
+                            </div>
                         </template>
-                    </tbody>
-                </table>
-
-                <h3>已配置通知渠道</h3>
-                <div class="channels-list">
-                    <template x-for="ch in (monitor.channels||[])" :key="ch.name">
-                        <span class="badge" :class="ch.configured ? 'badge-ok' : 'badge-err'"
-                              x-text="ch.name + (ch.configured ? ' ✓' : ' ✗')"></span>
-                    </template>
-                </div>
-
-                <h3>告警配置</h3>
-                <p style="color:var(--text-light);margin-bottom:16px">配置通知渠道，填入信息后点击保存。配哪个启用哪个，留空表示不启用。</p>
-
-                <div class="alert-config">
-                    <div class="config-section">
-                        <h4>🔔 钉钉机器人</h4>
-                        <div class="form-group">
-                            <label>Webhook URL</label>
-                            <input type="text" x-model="alertConfig.ALERT_DINGTALK_WEBHOOK" placeholder="https://oapi.dingtalk.com/robot/send?access_token=...">
-                        </div>
-                        <div class="form-group">
-                            <label>加签密钥（可选）</label>
-                            <input type="text" x-model="alertConfig.ALERT_DINGTALK_SECRET" placeholder="SEC...">
-                        </div>
-                    </div>
-
-                    <div class="config-section">
-                        <h4>✈️ Telegram Bot</h4>
-                        <div class="form-group">
-                            <label>Bot Token</label>
-                            <input type="text" x-model="alertConfig.ALERT_TELEGRAM_TOKEN" placeholder="123456:ABC-DEF...">
-                        </div>
-                        <div class="form-group">
-                            <label>Chat ID</label>
-                            <input type="text" x-model="alertConfig.ALERT_TELEGRAM_CHAT_ID" placeholder="123456789">
-                        </div>
-                    </div>
-
-                    <div class="config-section">
-                        <h4>🍎 Bark (iOS 推送)</h4>
-                        <div class="form-group">
-                            <label>Bark Key</label>
-                            <input type="text" x-model="alertConfig.ALERT_BARK_KEY" placeholder="xxxxx">
-                        </div>
-                        <div class="form-group">
-                            <label>Bark Server（默认官方，可自建）</label>
-                            <input type="text" x-model="alertConfig.ALERT_BARK_SERVER" placeholder="https://api.day.app">
-                        </div>
-                    </div>
-
-                    <div class="config-section">
-                        <h4>📧 Email (SMTP)</h4>
-                        <div class="form-group">
-                            <label>SMTP 服务器</label>
-                            <input type="text" x-model="alertConfig.ALERT_SMTP_HOST" placeholder="smtp.qq.com">
-                        </div>
-                        <div class="form-group">
-                            <label>SMTP 端口</label>
-                            <input type="text" x-model="alertConfig.ALERT_SMTP_PORT" placeholder="465">
-                        </div>
-                        <div class="form-group">
-                            <label>用户名</label>
-                            <input type="text" x-model="alertConfig.ALERT_SMTP_USER" placeholder="you@qq.com">
-                        </div>
-                        <div class="form-group">
-                            <label>密码 / 授权码</label>
-                            <input type="password" x-model="alertConfig.ALERT_SMTP_PASS" placeholder="授权码">
-                        </div>
-                        <div class="form-group">
-                            <label>收件人</label>
-                            <input type="text" x-model="alertConfig.ALERT_SMTP_TO" placeholder="you@qq.com">
-                        </div>
-                    </div>
-
-                    <div class="config-section">
-                        <h4>⚙️ 告警阈值</h4>
-                        <div class="form-row">
-                            <div class="form-group" style="flex:1">
-                                <label>磁盘告警 (%)</label>
-                                <input type="number" x-model="alertConfig.ALERT_DISK_THRESHOLD" placeholder="80">
-                            </div>
-                            <div class="form-group" style="flex:1">
-                                <label>内存告警 (%)</label>
-                                <input type="number" x-model="alertConfig.ALERT_MEM_THRESHOLD" placeholder="90">
-                            </div>
-                            <div class="form-group" style="flex:1">
-                                <label>负载告警</label>
-                                <input type="number" x-model="alertConfig.ALERT_LOAD_THRESHOLD" placeholder="4">
-                            </div>
-                        </div>
                     </div>
                 </div>
 
-                <button class="btn btn-primary" @click="saveAlertConfig()" style="margin-top:16px">保存配置</button>
+                <!-- ═══ 详细信息（折叠） ═══ -->
+                <div style="background:white;border:1px solid #e0e4e8;border-radius:12px;margin-bottom:24px">
+                    <div style="padding:16px 20px;cursor:pointer;display:flex;justify-content:space-between;align-items:center" @click="monitorShowDetail = !monitorShowDetail">
+                        <h3 style="margin:0;font-size:16px">详细信息</h3>
+                        <span style="font-size:14px;color:#94a3b8" x-text="monitorShowDetail ? '▲ 收起' : '▼ 展开'"></span>
+                    </div>
+                    <div x-show="monitorShowDetail" style="padding:0 20px 20px">
+                        <!-- Top 进程 -->
+                        <h4 style="margin:0 0 8px;font-size:14px;color:#475569">内存占用 Top 10</h4>
+                        <table class="table" style="margin-bottom:20px">
+                            <thead><tr><th>用户</th><th>PID</th><th>CPU%</th><th>MEM%</th><th>RSS</th><th>命令</th></tr></thead>
+                            <tbody>
+                                <template x-for="p in (monitor.top_procs||[])" :key="p.pid">
+                                    <tr>
+                                        <td x-text="p.user"></td>
+                                        <td x-text="p.pid" style="font-family:monospace"></td>
+                                        <td x-text="p.cpu"></td>
+                                        <td x-text="p.mem"></td>
+                                        <td x-text="p.rss" style="font-family:monospace"></td>
+                                        <td x-text="p.command.length > 50 ? p.command.substring(0,50)+'...' : p.command" style="font-size:12px"></td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+
+                        <!-- 登录用户 -->
+                        <h4 style="margin:0 0 8px;font-size:14px;color:#475569">登录用户</h4>
+                        <table class="table" style="margin-bottom:20px">
+                            <thead><tr><th>用户</th><th>终端</th><th>来源</th><th>登录时间</th></tr></thead>
+                            <tbody>
+                                <template x-for="u in (monitor.logged_in_users||[])" :key="u.user+u.tty">
+                                    <tr><td x-text="u.user"></td><td x-text="u.tty"></td><td x-text="u.from||'-'"></td><td x-text="u.date"></td></tr>
+                                </template>
+                                <tr x-show="!(monitor.logged_in_users||[]).length"><td colspan="4" style="text-align:center;color:#94a3b8">无用户登录</td></tr>
+                            </tbody>
+                        </table>
+
+                        <!-- 分区使用情况 -->
+                        <h4 style="margin:0 0 8px;font-size:14px;color:#475569">分区使用情况</h4>
+                        <table style="width:100%;font-size:13px;margin-bottom:16px;border-collapse:collapse">
+                            <thead>
+                                <tr style="border-bottom:2px solid #e2e8f0;text-align:left">
+                                    <th style="padding:6px 8px;color:#64748b">设备</th>
+                                    <th style="padding:6px 8px;color:#64748b">挂载点</th>
+                                    <th style="padding:6px 8px;color:#64748b">总大小</th>
+                                    <th style="padding:6px 8px;color:#64748b">已用</th>
+                                    <th style="padding:6px 8px;color:#64748b">可用</th>
+                                    <th style="padding:6px 8px;color:#64748b">使用率</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template x-for="part in (monitor.disk_partitions||[])" :key="part.mount">
+                                    <tr style="border-bottom:1px solid #f1f5f9">
+                                        <td style="padding:6px 8px;font-family:monospace;font-size:12px" x-text="part.device"></td>
+                                        <td style="padding:6px 8px;font-weight:600" x-text="part.mount"></td>
+                                        <td style="padding:6px 8px" x-text="part.size"></td>
+                                        <td style="padding:6px 8px" x-text="part.used"></td>
+                                        <td style="padding:6px 8px" x-text="part.avail"></td>
+                                        <td style="padding:6px 8px">
+                                            <div style="display:flex;align-items:center;gap:6px">
+                                                <div style="flex:1;height:6px;background:#e2e8f0;border-radius:3px;overflow:hidden">
+                                                    <div :style="'width:'+part.pct+'%;height:100%;border-radius:3px;background:'+gaugeColor(parseFloat(part.pct))+';transition:width 0.3s'"></div>
+                                                </div>
+                                                <span style="font-size:12px;font-weight:600;min-width:36px" :style="'color:'+gaugeColor(parseFloat(part.pct))" x-text="part.pct+'%'"></span>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                </template>
+                                <tr x-show="!(monitor.disk_partitions||[]).length"><td colspan="6" style="text-align:center;color:#94a3b8;padding:12px">无分区数据</td></tr>
+                            </tbody>
+                        </table>
+
+                        <!-- 系统错误日志 -->
+                        <h4 style="margin:0 0 8px;font-size:14px;color:#475569">系统错误日志（最近24小时）</h4>
+                        <pre class="config-output" style="max-height:200px;overflow-y:auto" x-text="monitor.system_errors || '无错误日志'"></pre>
+
+                        <!-- 高级信息 -->
+                        <h4 style="margin:16px 0 8px;font-size:14px;color:#475569;cursor:pointer" @click="monitorShowAdvanced = !monitorShowAdvanced">
+                            高级信息 <span style="font-size:12px;color:#94a3b8" x-text="monitorShowAdvanced ? '▲' : '▼'"></span>
+                        </h4>
+                        <div x-show="monitorShowAdvanced">
+                            <h5 style="margin:8px 0 4px;font-size:13px;color:#64748b">物理磁盘</h5>
+                            <pre class="config-output" style="max-height:150px;overflow-y:auto;font-size:12px" x-text="monitor.disk_info || '无数据'"></pre>
+                            <h5 style="margin:8px 0 4px;font-size:13px;color:#64748b">Inode 使用</h5>
+                            <pre class="config-output" style="max-height:100px;overflow-y:auto;font-size:12px" x-text="monitor.inode_info || '无数据'"></pre>
+                            <h5 style="margin:8px 0 4px;font-size:13px;color:#64748b">LVM 卷管理</h5>
+                            <pre class="config-output" style="max-height:150px;overflow-y:auto;font-size:12px" x-text="monitor.lvm_info || '无数据'"></pre>
+                            <h5 style="margin:8px 0 4px;font-size:13px;color:#64748b">内存详情</h5>
+                            <pre class="config-output" style="max-height:100px;overflow-y:auto;font-size:12px" x-text="monitor.mem_detail || '无数据'"></pre>
+                            <h5 style="margin:8px 0 4px;font-size:13px;color:#64748b">CPU 详情</h5>
+                            <pre class="config-output" style="max-height:100px;overflow-y:auto;font-size:12px" x-text="monitor.cpu_info || '无数据'"></pre>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ═══ 告警配置 ═══ -->
+                <div style="background:white;border:1px solid #e0e4e8;border-radius:12px;padding:20px">
+                    <h3 style="margin:0 0 4px;font-size:16px">告警配置</h3>
+                    <p style="color:#94a3b8;font-size:13px;margin-bottom:16px">配置通知渠道，填入信息后点击保存。配哪个启用哪个，留空表示不启用。</p>
+
+                    <!-- 通知渠道状态 -->
+                    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+                        <template x-for="ch in (monitor.channels||[])" :key="ch.name">
+                            <span style="padding:4px 12px;border-radius:12px;font-size:13px"
+                                :style="ch.configured ? 'background:#dcfce7;color:#16a34a' : 'background:#f1f5f9;color:#94a3b8'"
+                                x-text="ch.name + (ch.configured ? ' ✓' : '')"></span>
+                        </template>
+                    </div>
+
+                    <div class="alert-config">
+                        <div class="config-section">
+                            <h4>🔔 钉钉机器人</h4>
+                            <div class="form-group">
+                                <label>Webhook URL</label>
+                                <input type="text" x-model="alertConfig.ALERT_DINGTALK_WEBHOOK" placeholder="https://oapi.dingtalk.com/robot/send?access_token=...">
+                            </div>
+                            <div class="form-group">
+                                <label>加签密钥（可选）</label>
+                                <input type="text" x-model="alertConfig.ALERT_DINGTALK_SECRET" placeholder="SEC...">
+                            </div>
+                        </div>
+
+                        <div class="config-section">
+                            <h4>✈️ Telegram Bot</h4>
+                            <div class="form-group">
+                                <label>Bot Token</label>
+                                <input type="text" x-model="alertConfig.ALERT_TELEGRAM_TOKEN" placeholder="123456:ABC-DEF...">
+                            </div>
+                            <div class="form-group">
+                                <label>Chat ID</label>
+                                <input type="text" x-model="alertConfig.ALERT_TELEGRAM_CHAT_ID" placeholder="123456789">
+                            </div>
+                        </div>
+
+                        <div class="config-section">
+                            <h4>🍎 Bark (iOS 推送)</h4>
+                            <div class="form-group">
+                                <label>Bark Key</label>
+                                <input type="text" x-model="alertConfig.ALERT_BARK_KEY" placeholder="xxxxx">
+                            </div>
+                            <div class="form-group">
+                                <label>Bark Server（默认官方，可自建）</label>
+                                <input type="text" x-model="alertConfig.ALERT_BARK_SERVER" placeholder="https://api.day.app">
+                            </div>
+                        </div>
+
+                        <div class="config-section">
+                            <h4>📧 Email (SMTP)</h4>
+                            <div class="form-group">
+                                <label>SMTP 服务器</label>
+                                <input type="text" x-model="alertConfig.ALERT_SMTP_HOST" placeholder="smtp.qq.com">
+                            </div>
+                            <div class="form-group">
+                                <label>SMTP 端口</label>
+                                <input type="text" x-model="alertConfig.ALERT_SMTP_PORT" placeholder="465">
+                            </div>
+                            <div class="form-group">
+                                <label>用户名</label>
+                                <input type="text" x-model="alertConfig.ALERT_SMTP_USER" placeholder="you@qq.com">
+                            </div>
+                            <div class="form-group">
+                                <label>密码 / 授权码</label>
+                                <input type="password" x-model="alertConfig.ALERT_SMTP_PASS" placeholder="授权码">
+                            </div>
+                            <div class="form-group">
+                                <label>收件人</label>
+                                <input type="text" x-model="alertConfig.ALERT_SMTP_TO" placeholder="you@qq.com">
+                            </div>
+                        </div>
+
+                        <div class="config-section">
+                            <h4>⚙️ 告警阈值</h4>
+                            <div class="form-row">
+                                <div class="form-group" style="flex:1">
+                                    <label>磁盘告警 (%)</label>
+                                    <input type="number" x-model="alertConfig.ALERT_DISK_THRESHOLD" placeholder="80">
+                                </div>
+                                <div class="form-group" style="flex:1">
+                                    <label>内存告警 (%)</label>
+                                    <input type="number" x-model="alertConfig.ALERT_MEM_THRESHOLD" placeholder="90">
+                                </div>
+                                <div class="form-group" style="flex:1">
+                                    <label>负载告警</label>
+                                    <input type="number" x-model="alertConfig.ALERT_LOAD_THRESHOLD" placeholder="4">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button class="btn btn-primary" @click="saveAlertConfig()" style="margin-top:16px">保存配置</button>
+                </div>
             </div>
 
             <!-- Config Management -->

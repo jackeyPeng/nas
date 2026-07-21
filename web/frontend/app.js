@@ -14,6 +14,8 @@ function nasPanel() {
         firewallForm: { port: '', proto: 'tcp' },
         monitor: {},
         monitorTimer: null,
+        monitorShowDetail: false,
+        monitorShowAdvanced: false,
         alertConfig: {},
         // Config module
         envConfig: {},
@@ -284,6 +286,22 @@ function nasPanel() {
                 this.showToast(data.message || '操作成功', 'success');
                 this.loadFirewall();
             }
+        },
+
+        gaugeColor(pct) {
+            if (pct >= 90) return '#dc2626';
+            if (pct >= 70) return '#ea580c';
+            if (pct >= 50) return '#d97706';
+            return '#16a34a';
+        },
+
+        formatNetRate(bytesPerSec) {
+            if (!bytesPerSec || bytesPerSec <= 0) return '0 B/s';
+            const units = ['B/s', 'KB/s', 'MB/s', 'GB/s'];
+            let i = 0;
+            let val = parseFloat(bytesPerSec);
+            while (val >= 1024 && i < units.length - 1) { val /= 1024; i++; }
+            return val.toFixed(i > 0 ? 1 : 0) + ' ' + units[i];
         },
 
         showToast(msg, type) {
