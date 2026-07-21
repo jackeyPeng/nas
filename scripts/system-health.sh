@@ -153,7 +153,8 @@ fi
 
 # ─── SMART ───
 section "磁盘健康 (SMART)"
-if ! command -v smartctl &>/dev/null; then
+SMARTCTL=$(which smartctl 2>/dev/null || echo "/usr/sbin/smartctl")
+if [[ ! -x "$SMARTCTL" ]]; then
     echo -e "  ${CYAN}smartctl 未安装，跳过 SMART 检查${NC}"
 else
 for dev in /dev/sd[a-z] /dev/nvme[0-9]n[0-9] /dev/vd[a-z]; do
@@ -161,11 +162,11 @@ for dev in /dev/sd[a-z] /dev/nvme[0-9]n[0-9] /dev/vd[a-z]; do
     # Skip partitions
     [[ "$dev" =~ p[0-9]+$ ]] && continue
     
-    MODEL=$(smartctl -i "$dev" 2>/dev/null | grep "Device Model\|Model Number" | cut -d: -f2 | xargs || echo "?")
-    SMART=$(smartctl -H "$dev" 2>/dev/null | grep "overall-health" | awk -F: '{print $2}' | xargs || echo "N/A")
-    TEMP=$(smartctl -A "$dev" 2>/dev/null | grep -i "temperature" | head -1 | awk '{print $10}' || echo "?")
+    MODEL=$($SMARTCTL -i "$dev" 2>/dev/null | grep "Device Model\|Model Number\|Vendor" | head -1 | cut -d: -f2 | xargs || echo "?")
+    SMART=$($SMARTCTL -H "$dev" 2>/dev/null | grep -i "overall-health\|Health Status" | awk -F: '{print $2}' | xargs || echo "N/A")
+    TEMP=$($SMARTCTL -A "$dev" 2>/dev/null | grep -i "^194\|Temperature" | head -1 | awk '{print $10}' || echo "?")
     
-    if [[ "$SMART" == "PASSED" ]]; then
+    if [[ "$SMART" == "PASSED" || "$SMART" == "OK" ]]; then
         log_pass "$dev ($MODEL) ${TEMP}°C"
     elif [[ "$SMART" == "N/A" || -z "$SMART" ]]; then
         echo -e "  ${CYAN}–${NC} $dev ($MODEL) SMART 不可用（虚拟盘？）"
