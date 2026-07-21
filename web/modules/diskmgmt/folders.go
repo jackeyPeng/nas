@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"nas-panel/common"
@@ -21,6 +22,8 @@ type SharedFolder struct {
 	Permission string `json:"permission"`    // readwrite, readonly, noaccess
 	ValidUsers string `json:"valid_users"`
 	RecycleBin bool   `json:"recycle_bin"`   // 回收站是否开启
+	QuotaGB    int    `json:"quota_gb"`      // 配额限制 (GB), 0=无限制
+	QuotaUsed  string `json:"quota_used"`    // 已用配额
 }
 
 // handleListFolders lists all shared folders under storage spaces
@@ -98,6 +101,48 @@ func handleListFolders(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Batch query quota for all mount points (avoid N×M xfs_quota calls)
+	quotaMap := make(map[string]map[string][2]string) // mountPoint -> projName -> [usedGB, limitGB]
+	for _, m := range mounts {
+		mp := m["mount"]
+		if !strings.HasPrefix(mp, "/data") {
+			continue
+		}
+		out, err := common.SudoOutput("/usr/sbin/xfs_quota", "-x", "-c", "report -p -N", mp)
+		if err != nil {
+			continue
+		}
+		quotaMap[mp] = make(map[string][2]string)
+		for _, line := range strings.Split(out, "\n") {
+			fields := strings.Fields(line)
+			if len(fields) >= 4 && fields[0] != "#0" {
+				usedKB, _ := strconv.ParseFloat(fields[1], 64)
+				hardKB, _ := strconv.Atoi(fields[3])
+				usedGB := fmt.Sprintf("%.1f", usedKB/1024/1024)
+				limitGB := fmt.Sprintf("%d", hardKB/1024/1024)
+				quotaMap[mp][fields[0]] = [2]string{usedGB, limitGB}
+			}
+		}
+	}
+
+	// Apply quota info to folders
+	for i, f := range folders {
+		// Find the mount point for this folder
+		for mp, projects := range quotaMap {
+			if strings.HasPrefix(f.Path, mp+"/") {
+				poolName := extractPoolName(mp)
+				projName := projectName(poolName, f.Name)
+				if quota, ok := projects[projName]; ok {
+					usedGB, _ := strconv.ParseFloat(quota[0], 64)
+					limitGB, _ := strconv.Atoi(quota[1])
+					folders[i].QuotaGB = limitGB
+					folders[i].QuotaUsed = fmt.Sprintf("%.1fG", usedGB)
+				}
+				break
+			}
+		}
+	}
+
 	common.JSONResponse(w, map[string]interface{}{
 		"folders": folders,
 	})
@@ -137,6 +182,7 @@ func handleCreateFolder(w http.ResponseWriter, r *http.Request) {
 	permission := r.FormValue("permission") // readwrite, readonly, noaccess
 	validUsers := r.FormValue("valid_users")
 	recycleBin := r.FormValue("recycle_bin") // yes/no
+	quotaGBStr := r.FormValue("quota_gb")   // optional, GB, 0=unlimited
 
 	nfsExport := r.FormValue("nfs") // yes/no
 
@@ -154,6 +200,17 @@ func handleCreateFolder(w http.ResponseWriter, r *http.Request) {
 	}
 	if permission == "" {
 		permission = "readwrite"
+	}
+
+	// Parse quota
+	quotaGB := 0
+	if quotaGBStr != "" {
+		var err error
+		quotaGB, err = strconv.Atoi(quotaGBStr)
+		if err != nil || quotaGB < 0 {
+			http.Error(w, `{"error":"quota_gb 必须是非负整数（0=无限制）"}`, http.StatusBadRequest)
+			return
+		}
 	}
 
 	folderPath := filepath.Join(pool, name)
@@ -221,6 +278,19 @@ func handleCreateFolder(w http.ResponseWriter, r *http.Request) {
 		common.SudoExec("exportfs", "-a")
 	}
 
+	// Set quota if requested
+	if quotaGB > 0 {
+		poolName := shareNameFromMount(pool)
+		if err := setFolderQuota(pool, folderPath, poolName, name, quotaGB); err != nil {
+			common.JSONResponse(w, map[string]interface{}{
+				"message": fmt.Sprintf("文件夹 %s 已创建，但配额设置失败: %v", name, err),
+				"name":    name,
+				"pool":    pool,
+			})
+			return
+		}
+	}
+
 	common.JSONResponse(w, map[string]interface{}{
 		"message": fmt.Sprintf("文件夹 %s 已创建", name),
 		"name":    name,
@@ -278,6 +348,10 @@ func handleDeleteFolder(w http.ResponseWriter, r *http.Request) {
 			common.SudoExec("exportfs", "-a")
 		}
 	}
+
+	// Remove quota if exists
+	poolName := shareNameFromMount(filepath.Dir(path))
+	removeFolderQuota(poolName, filepath.Base(path))
 
 	// Delete directory
 	common.SudoExec("rm", "-rf", path)

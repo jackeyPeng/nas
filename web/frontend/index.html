@@ -767,6 +767,7 @@
                                             :style="f.permission==='readwrite'?'background:#dcfce7;color:#16a34a':f.permission==='readonly'?'background:#fef3c7;color:#92400e':'background:#fee2e2;color:#dc2626'"
                                             x-text="f.permission==='readwrite'?'读写':f.permission==='readonly'?'只读':'未共享'"></span>
                                         <span x-show="f.recycle_bin" style="font-size:11px;color:#16a34a">♻️</span>
+                                        <span x-show="f.quota_gb > 0" style="font-size:11px;padding:1px 6px;border-radius:3px;background:#e0e7ff;color:#3730a3" x-text="'配额 ' + (f.quota_used || '0') + ' / ' + f.quota_gb + 'G'"></span>
                                         <span style="flex:1"></span>
                                         <button class="btn btn-sm" style="font-size:11px;padding:2px 8px" @click="editFolderPermission(f)">权限</button>
                                         <button class="btn btn-sm btn-danger" style="font-size:11px;padding:2px 8px" @click="deleteFolder(f)">删除</button>
@@ -972,6 +973,11 @@
                         <div class="form-group" x-show="folderForm.permission !== 'noaccess'">
                             <label><input type="checkbox" x-model="folderForm.nfs"> 同时创建 NFS 共享</label>
                             <p style="font-size:12px;color:var(--text-light);margin-top:4px">NFS 导出到 192.168.0.0/16 网段，Linux/Mac 客户端可挂载访问</p>
+                        </div>
+                        <div class="form-group">
+                            <label>存储配额（GB，0 = 无限制）</label>
+                            <input type="number" x-model="folderForm.quota_gb" min="0" placeholder="0" style="width:120px">
+                            <p style="font-size:12px;color:var(--text-light);margin-top:4px">限制此文件夹最大可使用的存储空间</p>
                         </div>
                         <div class="modal-actions">
                             <button class="btn" @click="showAddFolder = false">取消</button>
