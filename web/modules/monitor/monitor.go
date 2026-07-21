@@ -57,9 +57,19 @@ func getMonitorStatus() map[string]interface{} {
 	info := dashboard.GetSystemInfo()
 	services := dashboard.GetServices()
 
+	// CPU usage percentage (requires two samples)
+	result["cpu_percent"] = getCPUPercent()
+	result["cpu_load"] = getCPULoad()
+	result["cpu_load5"] = getCPULoadN(1)
+	result["cpu_load15"] = getCPULoadN(2)
+	result["cpu_cores"] = info.CPUCores
+	result["cpu_model"] = getCPUModel()
+	result["cpu_info"] = getCPUDetail()
+
 	result["disk_usage"] = getDiskUsagePct()
 	result["disk_used"] = info.DiskUsed
 	result["disk_total"] = info.DiskTotal
+	result["disk_partitions"] = getAllDiskUsage()
 	result["disk_info"] = getDiskDetails()
 	result["inode_info"] = getInodeInfo()
 	result["lvm_info"] = getLVMInfo()
@@ -68,20 +78,27 @@ func getMonitorStatus() map[string]interface{} {
 	result["mem_used"] = info.MemUsed
 	result["mem_total"] = info.MemTotal
 	result["mem_detail"] = getMemDetail()
-
-	result["cpu_load"] = getCPULoad()
-	result["cpu_cores"] = info.CPUCores
-	result["cpu_info"] = getCPUDetail()
+	result["swap_used"] = getSwapUsed()
+	result["swap_total"] = getSwapTotal()
 
 	downCount := 0
+	var svcList []map[string]interface{}
 	for _, svc := range services {
-		if svc["active"] != "active" {
+		active := svc["active"] == "active"
+		if !active {
 			downCount++
 		}
+		svcList = append(svcList, map[string]interface{}{
+			"name":   svc["name"],
+			"active": active,
+		})
 	}
 	result["services_down"] = downCount
 	result["services_total"] = len(services)
+	result["services_list"] = svcList
 	result["process_count"] = getProcessCount()
+	result["uptime"] = getUptime()
+	result["hostname"] = info.Hostname
 	result["top_procs"] = getTopMemProcs()
 	result["logged_in_users"] = getLoggedInUsers()
 	result["system_errors"] = getSystemErrors()
@@ -105,6 +122,34 @@ func getDiskUsagePct() string {
 		return "0"
 	}
 	return strings.TrimSuffix(fields[4], "%")
+}
+
+func getAllDiskUsage() []map[string]interface{} {
+	out, err := common.ExecOutput("df", "-h", "--output=source,size,used,avail,pcent,target", "-x", "tmpfs", "-x", "devtmpfs", "-x", "squashfs", "-x", "overlay", "-x", "efivarfs")
+	if err != nil || out == "" {
+		return []map[string]interface{}{}
+	}
+	var result []map[string]interface{}
+	lines := strings.Split(out, "\n")
+	for i, line := range lines {
+		if i == 0 || strings.TrimSpace(line) == "" {
+			continue // skip header
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 6 {
+			continue
+		}
+		pct := strings.TrimSuffix(fields[4], "%")
+		result = append(result, map[string]interface{}{
+			"device": fields[0],
+			"size":   fields[1],
+			"used":   fields[2],
+			"avail":  fields[3],
+			"pct":    pct,
+			"mount":  fields[5],
+		})
+	}
+	return result
 }
 
 func getMemUsagePct() string {
@@ -337,8 +382,8 @@ func parseNetDev(snap1, snap2 string) []map[string]interface{} {
 		txBytes := vals2[8] - vals1[8]
 		result = append(result, map[string]interface{}{
 			"interface": name,
-			"rx_rate":   fmt.Sprintf("%.1f", float64(rxBytes)/1024.0),
-			"tx_rate":   fmt.Sprintf("%.1f", float64(txBytes)/1024.0),
+			"rx_rate":   rxBytes,
+			"tx_rate":   txBytes,
 			"rx_total":  fmt.Sprintf("%.2f", float64(vals2[0])/1024/1024),
 			"tx_total":  fmt.Sprintf("%.2f", float64(vals2[8])/1024/1024),
 		})
@@ -446,4 +491,142 @@ func saveAlertConfig(values map[string]string) error {
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	return cmd.Run()
+}
+
+// ═══ New helper functions ═══
+
+func getCPUPercent() string {
+	// Read /proc/stat twice with 500ms interval
+	idle1, total1 := readCPUStat()
+	time.Sleep(500 * time.Millisecond)
+	idle2, total2 := readCPUStat()
+
+	if total2 <= total1 {
+		return "0"
+	}
+	idleDelta := float64(idle2 - idle1)
+	totalDelta := float64(total2 - total1)
+	usage := (1.0 - idleDelta/totalDelta) * 100
+	if usage < 0 {
+		usage = 0
+	}
+	return fmt.Sprintf("%.1f", usage)
+}
+
+func readCPUStat() (idle, total uint64) {
+	data, err := os.ReadFile("/proc/stat")
+	if err != nil {
+		return 0, 0
+	}
+	line := strings.Split(string(data), "\n")[0]
+	fields := strings.Fields(line)
+	if len(fields) < 8 {
+		return 0, 0
+	}
+	// cpu user nice system idle iowait irq softirq steal
+	for i := 1; i < len(fields); i++ {
+		val, _ := strconv.ParseUint(fields[i], 10, 64)
+		total += val
+		if i == 4 { // idle
+			idle = val
+		}
+	}
+	return idle, total
+}
+
+func getCPULoadN(index int) string {
+	data, err := os.ReadFile("/proc/loadavg")
+	if err != nil {
+		return "0"
+	}
+	fields := strings.Fields(string(data))
+	if len(fields) > index {
+		return fields[index]
+	}
+	return "0"
+}
+
+func getCPUModel() string {
+	data, err := os.ReadFile("/proc/cpuinfo")
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.Contains(line, "model name") {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 {
+				return strings.TrimSpace(parts[1])
+			}
+		}
+	}
+	return ""
+}
+
+func getSwapUsed() string {
+	data, err := os.ReadFile("/proc/meminfo")
+	if err != nil {
+		return "0"
+	}
+	var total, free float64
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		val, _ := strconv.ParseFloat(fields[1], 64)
+		switch fields[0] {
+		case "SwapTotal:":
+			total = val
+		case "SwapFree:":
+			free = val
+		}
+	}
+	used := total - free
+	if used >= 1048576 {
+		return fmt.Sprintf("%.1fG", used/1048576)
+	}
+	return fmt.Sprintf("%.0fM", used/1024)
+}
+
+func getSwapTotal() string {
+	data, err := os.ReadFile("/proc/meminfo")
+	if err != nil {
+		return "0"
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		if fields[0] == "SwapTotal:" {
+			val, _ := strconv.ParseFloat(fields[1], 64)
+			if val >= 1048576 {
+				return fmt.Sprintf("%.1fG", val/1048576)
+			}
+			return fmt.Sprintf("%.0fM", val/1024)
+		}
+	}
+	return "0"
+}
+
+func getUptime() string {
+	data, err := os.ReadFile("/proc/uptime")
+	if err != nil {
+		return ""
+	}
+	fields := strings.Fields(string(data))
+	if len(fields) < 1 {
+		return ""
+	}
+	seconds, _ := strconv.ParseFloat(fields[0], 64)
+	days := int(seconds) / 86400
+	hours := (int(seconds) % 86400) / 3600
+	minutes := (int(seconds) % 3600) / 60
+	if days > 0 {
+		return fmt.Sprintf("%d天%d小时%d分钟", days, hours, minutes)
+	}
+	if hours > 0 {
+		return fmt.Sprintf("%d小时%d分钟", hours, minutes)
+	}
+	return fmt.Sprintf("%d分钟", minutes)
 }
