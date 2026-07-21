@@ -24,9 +24,9 @@ PASS=0
 WARN=0
 FAIL=0
 
-log_pass() { ((PASS++)); echo -e "  ${GREEN}✓${NC} $1"; }
-log_warn() { ((WARN++)); echo -e "  ${YELLOW}⚠${NC} $1"; }
-log_fail() { ((FAIL++)); echo -e "  ${RED}✗${NC} $1"; }
+log_pass() { PASS=$((PASS+1)); echo -e "  ${GREEN}✓${NC} $1"; }
+log_warn() { WARN=$((WARN+1)); echo -e "  ${YELLOW}⚠${NC} $1"; }
+log_fail() { FAIL=$((FAIL+1)); echo -e "  ${RED}✗${NC} $1"; }
 
 section() {
     echo ""
@@ -56,9 +56,11 @@ echo -e "  核心:   $CPU_CORES"
 echo -e "  负载:   $LOAD"
 
 # Load check: warn if 1min load > cores
-if (( $(echo "$LOAD_1MIN > $CPU_CORES" | bc -l 2>/dev/null || echo 0) )); then
+LOAD_HIGH=$(awk -v load="$LOAD_1MIN" -v cores="$CPU_CORES" 'BEGIN{print (load > cores) ? 1 : 0}')
+LOAD_MED=$(awk -v load="$LOAD_1MIN" -v cores="$CPU_CORES" 'BEGIN{print (load > cores * 0.8) ? 1 : 0}')
+if [[ "$LOAD_HIGH" == "1" ]]; then
     log_fail "1分钟负载 ($LOAD_1MIN) 超过核心数 ($CPU_CORES)"
-elif (( $(echo "$LOAD_1MIN > $CPU_CORES * 0.8" | bc -l 2>/dev/null || echo 0) )); then
+elif [[ "$LOAD_MED" == "1" ]]; then
     log_warn "1分钟负载 ($LOAD_1MIN) 接近核心数 ($CPU_CORES)"
 else
     log_pass "负载正常 ($LOAD_1MIN / $CPU_CORES 核心)"

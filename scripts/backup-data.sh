@@ -109,7 +109,7 @@ CURRENT=0
 FAILED=0
 
 for src in "${BACKUP_SOURCES[@]}"; do
-    ((CURRENT++))
+    CURRENT=$((CURRENT+1))
     DIR_NAME=$(basename "$src")
     DEST="$TARGET/$DIR_NAME"
     
@@ -130,7 +130,7 @@ for src in "${BACKUP_SOURCES[@]}"; do
         echo -e "  ${GREEN}✓ $DIR_NAME 备份完成${NC}"
     else
         echo -e "  ${RED}✗ $DIR_NAME 备份失败${NC}"
-        ((FAILED++))
+        FAILED=$((FAILED+1))
     fi
     echo ""
 done
