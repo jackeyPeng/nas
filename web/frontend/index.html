@@ -57,9 +57,6 @@
                 <li :class="{active: page === 'monitor'}" @click="navigate('monitor')">
                     <span>📡</span> 监控告警
                 </li>
-                <li :class="{active: page === 'config'}" @click="navigate('config')">
-                    <span>🔧</span> 配置管理
-                </li>
                 <li :class="{active: page === 'system'}" @click="navigate('system')">
                     <span>🖥️</span> 系统设置
                 </li>
@@ -548,80 +545,6 @@
             </div>
 
             <!-- Config Management -->
-            <div x-show="page === 'config'" class="page">
-                <h2>配置管理</h2>
-
-                <h3>Samba 共享管理</h3>
-                <button class="btn btn-primary" @click="loadSambaShares()" style="margin-bottom:12px">刷新共享列表</button>
-                <table class="table">
-                    <thead><tr><th>共享名</th><th>路径</th><th>只读</th><th>允许用户</th><th>操作</th></tr></thead>
-                    <tbody>
-                        <template x-for="share in sambaShares" :key="share.name">
-                            <tr>
-                                <td x-text="share.name" style="font-weight:600"></td>
-                                <td x-text="share.path || '-'"></td>
-                                <td x-text="share['read only'] || 'no'"></td>
-                                <td x-text="share['valid users'] || 'all'"></td>
-                                <td><button class="btn btn-sm btn-danger" @click="deleteSambaShare(share.name)">删除</button></td>
-                            </tr>
-                        </template>
-                    </tbody>
-                </table>
-                <button class="btn btn-primary" @click="showAddShare = true" style="margin-top:12px">添加共享</button>
-
-                <div class="modal" x-show="showAddShare" x-cloak @click.self="showAddShare = false">
-                    <div class="modal-box">
-                        <h3>添加 Samba 共享</h3>
-                        <div class="form-group"><label>共享名</label><input type="text" x-model="shareForm.name" placeholder="如: movies"></div>
-                        <div class="form-group"><label>路径</label><input type="text" x-model="shareForm.path" placeholder="/data/media/movies"></div>
-                        <div class="form-group"><label>备注</label><input type="text" x-model="shareForm.comment"></div>
-                        <div class="form-group"><label>允许用户（逗号分隔，留空=所有）</label><input type="text" x-model="shareForm.valid_users" placeholder="dog,cat"></div>
-                        <div class="form-group">
-                            <label><input type="checkbox" x-model="shareForm.read_only"> 只读</label>
-                        </div>
-                        <div class="modal-actions">
-                            <button class="btn" @click="showAddShare = false">取消</button>
-                            <button class="btn btn-primary" @click="addSambaShare()">确认添加</button>
-                        </div>
-                    </div>
-                </div>
-
-                <h3 style="margin-top:24px">FTP 用户白名单</h3>
-                <table class="table">
-                    <thead><tr><th>用户名</th><th>操作</th></tr></thead>
-                    <tbody>
-                        <template x-for="u in vsftpdUsers" :key="u">
-                            <tr><td x-text="u"></td><td><button class="btn btn-sm btn-danger" @click="removeFtpUser(u)">移除</button></td></tr>
-                        </template>
-                    </tbody>
-                </table>
-                <div style="display:flex;gap:8px;margin-top:12px;align-items:center">
-                    <input type="text" x-model="ftpUserForm.username" placeholder="用户名" class="port-input">
-                    <button class="btn btn-success" @click="addFtpUser()">添加</button>
-                </div>
-
-                <h3 style="margin-top:24px">配置文件编辑器</h3>
-                <select x-model="configFileForm.name" @change="loadConfigFile()" class="port-input">
-                    <option value="">选择文件...</option>
-                    <option value="smb.conf">smb.conf (Samba)</option>
-                    <option value="vsftpd.conf">vsftpd.conf (FTP)</option>
-                    <option value="exports">exports (NFS)</option>
-                    <option value="nfs.conf">nfs.conf (NFS端口)</option>
-                    <option value="jail.local">jail.local (Fail2ban)</option>
-                    <option value="env">.env (NAS配置)</option>
-                </select>
-                <textarea x-model="configFileForm.content" class="config-textarea" rows="15"></textarea>
-                <button class="btn btn-primary" @click="saveConfigFile()" style="margin-top:8px" x-show="configFileForm.content">保存</button>
-
-                <h3 style="margin-top:24px">开机自启服务管理</h3>
-                <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
-                    <input type="text" x-model="svcToggleForm.service" placeholder="服务名 如: smbd" class="port-input">
-                    <button class="btn btn-success" @click="toggleService('enable')">启用</button>
-                    <button class="btn btn-danger" @click="toggleService('disable')">禁用</button>
-                </div>
-                <pre class="config-output" x-text="enabledServices || '点击下方加载'"></pre>
-                <button class="btn btn-primary" @click="loadEnabledServices()">加载服务列表</button>
-            </div>
             <!-- Disk Management -->
             <div x-show="page === 'diskmgmt'" class="page">
                 <h2>存储管理</h2>
@@ -1120,39 +1043,159 @@
             </div>
 
             <!-- System Settings -->
-            <div x-show="page === 'system'" class="page">
-                <h2>系统设置</h2>
-
-                <h3>网络配置</h3>
-                <pre class="config-output" x-text="sysNetwork || '点击加载'"></pre>
-                <button class="btn btn-primary" @click="loadSysNetwork()">加载网络配置</button>
-
-                <h3>时间与时区</h3>
-                <pre class="config-output" x-text="sysTime || '点击加载'"></pre>
-                <button class="btn btn-primary" @click="loadSysTime()">加载时间信息</button>
-
-                <h3>主机名</h3>
-                <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px">
-                    <input type="text" x-model="hostnameForm.hostname" placeholder="新主机名" class="port-input">
-                    <button class="btn btn-primary" @click="setHostname()">修改</button>
+            <div x-show="page === 'system'" class="page" x-init="if(page==='system') loadSystemOverview()">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+                    <h2 style="margin:0">系统设置</h2>
+                    <button class="btn btn-sm btn-primary" @click="loadSystemOverview()" style="font-size:12px">刷新</button>
                 </div>
 
-                <h3>SSH 配置 (sshd_config)</h3>
-                <pre class="config-output" x-text="sysSSHConfig || '点击加载'"></pre>
-                <button class="btn btn-primary" @click="loadSysSSHConfig()">加载 SSH 配置</button>
+                <!-- 主机名 -->
+                <div style="background:white;border:1px solid #e0e4e8;border-radius:8px;padding:16px;margin-bottom:12px">
+                    <h3 style="margin-top:0;margin-bottom:12px;font-size:15px">主机名</h3>
+                    <div style="display:flex;gap:12px;align-items:center">
+                        <input type="text" x-model="sysSettings.hostname" placeholder="主机名" class="port-input" style="max-width:300px">
+                        <button class="btn btn-primary" @click="saveHostname()">保存</button>
+                    </div>
+                </div>
 
-                <h3>内核参数 (sysctl)</h3>
-                <pre class="config-output" x-text="sysSysctl || '点击加载'"></pre>
-                <button class="btn btn-primary" @click="loadSysSysctl()">加载内核参数</button>
+                <!-- 网络信息（只读） -->
+                <div style="background:white;border:1px solid #e0e4e8;border-radius:8px;padding:16px;margin-bottom:12px">
+                    <h3 style="margin-top:0;margin-bottom:12px;font-size:15px">网络信息</h3>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:14px">
+                        <template x-for="iface in (sysSettings.network?.interfaces||[])" :key="iface.interface">
+                            <div style="display:flex;gap:8px;padding:4px 0">
+                                <span style="color:#475569;min-width:80px" x-text="iface.interface"></span>
+                                <strong style="font-family:monospace" x-text="iface.address"></strong>
+                            </div>
+                        </template>
+                        <div style="display:flex;gap:8px;padding:4px 0">
+                            <span style="color:#475569;min-width:80px">网关</span>
+                            <strong style="font-family:monospace" x-text="sysSettings.network?.gateway || '-'"></strong>
+                        </div>
+                        <div style="display:flex;gap:8px;padding:4px 0">
+                            <span style="color:#475569;min-width:80px">DNS</span>
+                            <strong style="font-family:monospace" x-text="(sysSettings.network?.dns||[]).join(', ') || '-'"></strong>
+                        </div>
+                    </div>
+                </div>
 
-                <h3>系统更新状态</h3>
-                <pre class="config-output" x-text="sysUpdates || '点击加载'"></pre>
-                <button class="btn btn-primary" @click="loadSysUpdates()">检查更新</button>
+                <!-- 时间与时区 -->
+                <div style="background:white;border:1px solid #e0e4e8;border-radius:8px;padding:16px;margin-bottom:12px">
+                    <h3 style="margin-top:0;margin-bottom:12px;font-size:15px">时间与时区</h3>
+                    <div style="display:flex;gap:16px;font-size:14px;margin-bottom:12px">
+                        <div><span style="color:#475569">当前时间：</span><strong x-text="sysSettings.time?.current"></strong></div>
+                        <div><span style="color:#475569">NTP 同步：</span><strong :style="sysSettings.time?.ntp_synced ? 'color:#16a34a' : 'color:#dc2626'" x-text="sysSettings.time?.ntp_synced ? '已同步' : '未同步'"></strong></div>
+                    </div>
+                    <div style="display:flex;gap:12px;align-items:center">
+                        <label style="color:#475569;font-size:14px">时区：</label>
+                        <select x-model="sysSettings.timezone" class="port-input" style="max-width:250px">
+                            <option value="Asia/Shanghai">Asia/Shanghai (中国标准时间)</option>
+                            <option value="Asia/Tokyo">Asia/Tokyo (日本标准时间)</option>
+                            <option value="Asia/Singapore">Asia/Singapore (新加坡)</option>
+                            <option value="America/New_York">America/New_York (美国东部)</option>
+                            <option value="America/Los_Angeles">America/Los_Angeles (美国西部)</option>
+                            <option value="Europe/London">Europe/London (英国)</option>
+                            <option value="Europe/Berlin">Europe/Berlin (德国)</option>
+                            <option value="UTC">UTC (协调世界时)</option>
+                        </select>
+                        <button class="btn btn-primary" @click="saveTimezone()">保存</button>
+                    </div>
+                </div>
 
-                <h3>开机自启服务</h3>
-                <pre class="config-output" x-text="sysEnabledServices || '点击加载'"></pre>
-                <button class="btn btn-primary" @click="loadSysEnabledServices()">加载服务列表</button>
+                <!-- SSH 配置 -->
+                <div style="background:white;border:1px solid #e0e4e8;border-radius:8px;padding:16px;margin-bottom:12px">
+                    <h3 style="margin-top:0;margin-bottom:12px;font-size:15px">SSH 远程登录</h3>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:14px">
+                        <div style="display:flex;align-items:center;gap:8px">
+                            <label style="color:#475569;min-width:100px">SSH 端口：</label>
+                            <input type="number" x-model="sysSettings.ssh.port" min="1" max="65535" class="port-input" style="width:100px">
+                        </div>
+                        <div style="display:flex;align-items:center;gap:8px">
+                            <label style="color:#475569;min-width:100px">最大重试次数：</label>
+                            <input type="number" x-model="sysSettings.ssh.max_auth_tries" min="1" max="20" class="port-input" style="width:80px">
+                        </div>
+                        <div style="display:flex;align-items:center;gap:8px">
+                            <label style="color:#475569;min-width:100px">Root 登录：</label>
+                            <label style="display:flex;align-items:center;gap:4px;cursor:pointer">
+                                <input type="checkbox" x-model="sysSettings.ssh.permit_root_login">
+                                <span x-text="sysSettings.ssh.permit_root_login ? '允许' : '禁止'"></span>
+                            </label>
+                        </div>
+                        <div style="display:flex;align-items:center;gap:8px">
+                            <label style="color:#475569;min-width:100px">密码认证：</label>
+                            <label style="display:flex;align-items:center;gap:4px;cursor:pointer">
+                                <input type="checkbox" x-model="sysSettings.ssh.password_auth">
+                                <span x-text="sysSettings.ssh.password_auth ? '允许' : '禁止'"></span>
+                            </label>
+                        </div>
+                    </div>
+                    <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+                        <button class="btn btn-primary" @click="saveSSHConfig()">保存并重启 SSH</button>
+                        <span style="font-size:12px;color:#dc2626">⚠️ 修改端口后需用新端口重新连接</span>
+                    </div>
+                </div>
+
+                <!-- 内核参数 -->
+                <div style="background:white;border:1px solid #e0e4e8;border-radius:8px;padding:16px;margin-bottom:12px">
+                    <h3 style="margin-top:0;margin-bottom:12px;font-size:15px">内核参数</h3>
+                    <div style="font-size:14px">
+                        <template x-for="param in (sysSettings.sysctl||[])" :key="param.key">
+                            <div style="display:flex;align-items:center;gap:12px;padding:6px 0;border-bottom:1px solid #f0f0f0">
+                                <span style="color:#475569;min-width:200px;font-family:monospace;font-size:13px" x-text="param.key"></span>
+                                <input type="text" x-model="param.value" class="port-input" style="width:120px;font-family:monospace">
+                                <span style="color:#888;font-size:12px;flex:1" x-text="param.description"></span>
+                                <button class="btn btn-sm btn-primary" @click="saveSysctl(param)" style="font-size:11px;padding:2px 8px">保存</button>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <!-- 系统更新 -->
+                <div style="background:white;border:1px solid #e0e4e8;border-radius:8px;padding:16px;margin-bottom:12px">
+                    <h3 style="margin-top:0;margin-bottom:12px;font-size:15px">系统更新</h3>
+                    <div style="display:flex;gap:16px;font-size:14px;margin-bottom:12px">
+                        <div>
+                            <span style="color:#475569">可更新包：</span>
+                            <strong :style="(sysSettings.updates?.upgradable_count||0) > 0 ? 'color:#f59e0b' : 'color:#16a34a'" x-text="sysSettings.updates?.upgradable_count || 0"></strong>
+                        </div>
+                        <div x-show="sysSettings.updates?.last_update">
+                            <span style="color:#475569">上次更新：</span>
+                            <strong x-text="sysSettings.updates?.last_update"></strong>
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:8px">
+                        <button class="btn btn-primary" @click="runUpdate('update')">刷新软件源</button>
+                        <button class="btn" @click="runUpdate('upgrade')" :disabled="(sysSettings.updates?.upgradable_count||0) === 0" style="background:#f59e0b;color:white;border:none">
+                            一键更新
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 服务管理 -->
+                <div style="background:white;border:1px solid #e0e4e8;border-radius:8px;padding:16px;margin-bottom:12px">
+                    <h3 style="margin-top:0;margin-bottom:12px;font-size:15px">服务管理</h3>
+                    <div style="font-size:14px">
+                        <template x-for="svc in (sysSettings.services||[])" :key="svc.name">
+                            <div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #f0f0f0">
+                                <span style="font-size:16px;min-width:24px" x-text="svc.active ? '🟢' : '🔴'"></span>
+                                <div style="flex:1">
+                                    <strong x-text="svc.display"></strong>
+                                    <span style="color:#888;font-size:12px;margin-left:8px" x-text="svc.name"></span>
+                                </div>
+                                <span style="font-size:12px;padding:2px 8px;border-radius:3px" :style="svc.enabled ? 'background:#dcfce7;color:#16a34a' : 'background:#fee2e2;color:#dc2626'" x-text="svc.enabled ? '自启' : '手动'"></span>
+                                <div style="display:flex;gap:4px">
+                                    <button x-show="!svc.active" class="btn btn-sm btn-success" @click="serviceAction(svc.name, 'start')" style="font-size:11px;padding:2px 8px">启动</button>
+                                    <button x-show="svc.active" class="btn btn-sm" @click="serviceAction(svc.name, 'restart')" style="font-size:11px;padding:2px 8px">重启</button>
+                                    <button x-show="svc.active" class="btn btn-sm btn-danger" @click="serviceAction(svc.name, 'stop')" style="font-size:11px;padding:2px 8px">停止</button>
+                                    <button x-show="!svc.enabled" class="btn btn-sm" @click="serviceAction(svc.name, 'enable')" style="font-size:11px;padding:2px 8px;border:1px solid #16a34a;color:#16a34a">自启</button>
+                                    <button x-show="svc.enabled" class="btn btn-sm" @click="serviceAction(svc.name, 'disable')" style="font-size:11px;padding:2px 8px;border:1px solid #dc2626;color:#dc2626">取消自启</button>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
             </div>
+
 
             <!-- Backup & Restore -->
             <div x-show="page === 'backup'" class="page">
