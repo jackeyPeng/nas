@@ -68,12 +68,15 @@ fi
 
 # ─── Memory ───
 section "内存"
-MEM_TOTAL=$(free -h | awk '/^Mem:/{print $2}')
-MEM_USED=$(free -h | awk '/^Mem:/{print $3}')
-MEM_AVAIL=$(free -h | awk '/^Mem:/{print $7}')
-MEM_PCT=$(free | awk '/^Mem:/{printf "%.0f", $3/$2*100}')
-SWAP_TOTAL=$(free -h | awk '/^Swap:/{print $2}')
-SWAP_USED=$(free -h | awk '/^Swap:/{print $3}')
+# Support both English and Chinese locale (Mem:/内存：)
+MEM_LINE=$(free -h | grep -E '^Mem:|^内存：')
+MEM_TOTAL=$(echo "$MEM_LINE" | awk '{print $2}')
+MEM_USED=$(echo "$MEM_LINE" | awk '{print $3}')
+MEM_AVAIL=$(echo "$MEM_LINE" | awk '{print $7}')
+MEM_PCT=$(free | grep -E '^Mem:|^内存：' | awk '{printf "%.0f", $3/$2*100}')
+SWAP_LINE=$(free -h | grep -E '^Swap:|^交换：')
+SWAP_TOTAL=$(echo "$SWAP_LINE" | awk '{print $2}')
+SWAP_USED=$(echo "$SWAP_LINE" | awk '{print $3}')
 echo -e "  总计:   $MEM_TOTAL"
 echo -e "  已用:   $MEM_USED ($MEM_PCT%)"
 echo -e "  可用:   $MEM_AVAIL"
@@ -128,7 +131,7 @@ if ls /dev/md* &>/dev/null; then
             STATE=$(echo "$MDSTAT_LINE" | awk '{print $3}')
             LEVEL=$(echo "$MDSTAT_LINE" | grep -oP 'raid\d+' || echo "?")
             DISKS=$(echo "$MDSTAT_LINE" | grep -oP '\[\d+\]' | wc -l)
-            FAILED=$(echo "$MDSTAT_LINE" | grep -c '(F)' || echo 0)
+            FAILED=$(echo "$MDSTAT_LINE" | grep -oP '\(F\)' | wc -l)
             echo -e "  $md: $LEVEL, $DISKS 盘, 状态 $STATE"
             
             if [[ $FAILED -gt 0 ]]; then
@@ -148,6 +151,9 @@ fi
 
 # ─── SMART ───
 section "磁盘健康 (SMART)"
+if ! command -v smartctl &>/dev/null; then
+    echo -e "  ${CYAN}smartctl 未安装，跳过 SMART 检查${NC}"
+else
 for dev in /dev/sd[a-z] /dev/nvme[0-9]n[0-9] /dev/vd[a-z]; do
     [[ -b "$dev" ]] || continue
     # Skip partitions
@@ -159,12 +165,13 @@ for dev in /dev/sd[a-z] /dev/nvme[0-9]n[0-9] /dev/vd[a-z]; do
     
     if [[ "$SMART" == "PASSED" ]]; then
         log_pass "$dev ($MODEL) ${TEMP}°C"
-    elif [[ "$SMART" == "N/A" ]]; then
-        echo -e "  ${CYAN}–${NC} $dev ($MODEL) SMART 不可用"
+    elif [[ "$SMART" == "N/A" || -z "$SMART" ]]; then
+        echo -e "  ${CYAN}–${NC} $dev ($MODEL) SMART 不可用（虚拟盘？）"
     else
         log_fail "$dev ($MODEL) SMART: $SMART"
     fi
 done
+fi
 
 # ─── Services ───
 section "核心服务"
