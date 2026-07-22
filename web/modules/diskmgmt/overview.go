@@ -477,8 +477,10 @@ func getCachedRAIDMembers() map[string]string {
 		return cachedRAIDMembers
 	}
 	cachedRAIDMembers = make(map[string]string)
-	out, _ := common.ExecOutput("ls", "/dev/md*")
-	for _, dev := range strings.Fields(out) {
+	// 不能用 exec.Command("ls", "/dev/md*") — Go 不走 shell, 通配符不展开
+	// 改用 filepath.Glob 在本地展开
+	mdDevs, _ := filepath.Glob("/dev/md[0-9]*")
+	for _, dev := range mdDevs {
 		if !regexp_match(`^/dev/md\d+$`, dev) {
 			continue
 		}
