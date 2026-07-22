@@ -244,9 +244,15 @@ func getDiskStatus() []DiskStatus {
 			if childDS.Mountpoint == "/" || childDS.Mountpoint == "/boot" || childDS.Mountpoint == "/boot/efi" {
 				childDS.Type = "system"
 				ds.Type = "system"
+			} else if childDS.FSType == "swap" {
+				// swap 分区不改父盘类型 — 系统盘上的 swap 不应把 system 覆盖成 data
+				childDS.Type = "swap"
 			} else if childDS.Mountpoint != "" {
 				childDS.Type = "data"
-				ds.Type = "data"
+				// 只有非系统盘才覆盖成 data — 已是 system 的保持 system
+				if ds.Type != "system" {
+					ds.Type = "data"
+				}
 			} else if childDS.FSType != "" {
 				childDS.Type = "data"
 			} else {
