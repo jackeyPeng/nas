@@ -97,11 +97,12 @@ web/
 #### PR 流程
 
 1. Fork 本仓库
-2. 创建功能分支：`git checkout -b feature/你的功能名`
-3. 编写代码并确保通过 `go build`
+2. 创建功能分支：`git checkout -b feature/你的功能名 develop`
+   > 完整分支规范见 `DEVELOPMENT.md` — 分支命名规范章节
+3. 编写代码并确保通过 `make fmt && make lint && make test && make build`
 4. 提交：`git commit -m "feat: 功能描述"`
 5. 推送：`git push origin feature/你的功能名`
-6. 创建 Pull Request
+6. 创建 Pull Request（PR 模板自动加载，请填写完整）
 
 **Commit 信息规范**（参考 [Conventional Commits](https://www.conventionalcommits.org/)）：
 
@@ -118,11 +119,11 @@ web/
 #### 测试
 
 ```bash
-# 运行所有测试（功能开发中）
-go test ./...
+# 运行所有测试
+make test
 
 # 运行特定模块测试
-go test ./modules/dashboard/
+cd web && go test ./modules/dashboard/
 ```
 
 > 测试框架正在完善中，欢迎贡献测试用例。

@@ -1,4 +1,4 @@
-.PHONY: build build-all test lint clean dev install release help
+.PHONY: build build-all test lint lint-all shellcheck fmt fmt-all clean dev install release help
 
 # 项目变量
 APP_NAME    := nas-panel
@@ -27,8 +27,10 @@ help:
 	@echo "  build-all   交叉编译全部平台"
 	@echo "  dev         本地开发运行"
 	@echo "  test        运行测试"
-	@echo "  lint        代码检查"
-	@echo "  fmt         格式化代码"
+	@echo "  lint        Go 代码检查 (golangci-lint)"
+	@echo "  lint-all    Go + Shell 全面检查 (golangci-lint + shellcheck)"
+	@echo "  fmt         Go 格式化 (gofmt)"
+	@echo "  fmt-all     Go + Shell + 前端全面格式化"
 	@echo "  clean       清理构建产物"
 	@echo ""
 	@echo "部署:"
@@ -68,9 +70,23 @@ test:
 	@echo "运行测试..."
 	cd $(SRC_DIR) && $(GO) test ./... -v -count=1
 
-## lint: 代码检查
+## fmt: 格式化 Go 代码
+fmt:
+	@echo "格式化 Go 代码..."
+	cd $(SRC_DIR) && $(GO) fmt ./...
+
+## fmt-all: 全面格式化 (Go + Shell + 前端)
+fmt-all: fmt
+	@echo "格式化 Shell 脚本 (shfmt)..."
+	@if command -v shfmt > /dev/null 2>&1; then \
+		shfmt -l -w scripts/*.sh; \
+	else \
+		echo "  shfmt 未安装，跳过 (go install mvdan.cc/sh/v3/cmd/shfmt@latest)"; \
+	fi
+
+## lint: Go 代码检查
 lint:
-	@echo "运行代码检查..."
+	@echo "运行 Go 代码检查..."
 	@if command -v golangci-lint > /dev/null 2>&1; then \
 		cd $(SRC_DIR) && golangci-lint run ./... ; \
 	else \
@@ -78,10 +94,25 @@ lint:
 		cd $(SRC_DIR) && $(GO) vet ./... ; \
 	fi
 
-## fmt: 格式化代码
-fmt:
-	@echo "格式化 Go 代码..."
-	cd $(SRC_DIR) && $(GO) fmt ./...
+## lint-all: Go + Shell 全面检查
+lint-all: lint
+	@echo "Shell 脚本检查 (shellcheck)..."
+	@if command -v shellcheck > /dev/null 2>&1; then \
+		shellcheck scripts/*.sh; \
+		echo "  ✓ Shell 检查通过"; \
+	else \
+		echo "  shellcheck 未安装，跳过 (apt-get install shellcheck)"; \
+	fi
+
+## shellcheck: 仅检查 Shell 脚本
+shellcheck:
+	@echo "Shell 脚本检查..."
+	@if command -v shellcheck > /dev/null 2>&1; then \
+		shellcheck scripts/*.sh; \
+		echo "  ✓ Shell 检查通过"; \
+	else \
+		echo "  shellcheck 未安装，跳过 (apt-get install shellcheck)"; \
+	fi
 
 ## clean: 清理构建产物
 clean:
