@@ -208,6 +208,44 @@ import "nas-panel/modules/myfeature"
 myfeature.RegisterRoutes(mux)
 ```
 
+---
+
+### 分支命名规范
+
+```
+<type>/<简短描述>
+```
+
+| 前缀 | 用途 | 从哪分支切 | 合到哪 |
+|------|------|-----------|-------|
+| `feature/` | 新功能开发 | `develop` | `develop` |
+| `fix/` | Bug 修复 | `develop` | `develop` |
+| `hotfix/` | 紧急生产修复 | `main` | `main` + `develop` |
+| `refactor/` | 重构 | `develop` | `develop` |
+| `docs/` | 文档变更 | `develop` | `develop` |
+| `release/` | 发布版本准备 | `develop` | `main` + `develop` |
+| `chore/` | CI/工具链/构建 | `develop` | `develop` |
+
+> **分支保护规则**：`main` 分支只接受从 `release/` 或 `hotfix/` 来的 PR，且必须通过 CI 检查 + 至少 1 人 review。
+
+### 版本号规范
+
+遵循 [语义化版本 2.0.0](https://semver.org/)：
+
+```
+主版本.次版本.补丁  （如 v1.2.3）
+```
+
+| 版本位 | 触发条件 | 示例 |
+|--------|---------|------|
+| **主版本** | 不兼容的 API 改动、重大架构变更 | `v2.0.0` |
+| **次版本** | 向下兼容的新功能、模块新增 | `v1.3.0` |
+| **补丁** | 向下兼容的 Bug 修复、小优化 | `v1.2.4` |
+
+> 版本号在 `CHANGELOG.md` 中记录，发布时通过 git tag 标记。
+
+---
+
 ## 测试指南
 
 ### 测试分类
@@ -254,6 +292,69 @@ cd web && go test ./common/ -v -run TestSudo
 | `common/sudo_test.go` | sudo/exec 命令（仅Linux） | ✅ |
 | `modules/*/` | 各功能模块 | 🔲 待建设 |
 
+### 测试要求
+
+| 项 | 要求 |
+|----|------|
+| 单元测试覆盖率 | 新增代码 ≥ 60%（CI 中通过 `go test -cover` 检查） |
+| Shell 脚本 | 所有 `.sh` 文件通过 `shellcheck` 检查，CI 中强制执行 |
+| Linux 专用测试 | 使用 `//go:build linux` 构建标签，非 Linux 平台自动跳过 |
+
+```bash
+# Shell 脚本检查
+shellcheck scripts/*.sh
+```
+
+---
+
+## 前端开发规范
+
+### 技术选型
+
+- **HTML/CSS**：原生，不引入框架
+- **JS 逻辑**：Alpine.js（已内联在 `index.html` 中）
+- **样式**：`style.css`，全小写连字符命名
+
+### API 调用规范
+
+所有后端 API 调用遵循统一模式：
+
+```javascript
+async function apiCall(url, options = {}) {
+    const resp = await fetch(url, {
+        headers: { 'Authorization': 'Bearer ' + getToken(), ...options.headers },
+        ...options
+    });
+    if (resp.status === 401) { logout(); return; }
+    if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ error: resp.statusText }));
+        showError(err.error || '请求失败');
+        return null;
+    }
+    return resp.json();
+}
+```
+
+### 错误状态处理
+
+- 每个 API 调用必须有 `.catch()` 或 try/catch 兜底
+- 用户操作（保存/删除等）完成后显示反馈提示
+- 全局 401 处理：自动跳转登录页
+
+### CSS 命名约定
+
+- 使用全小写连字符：`disk-card`、`service-status`、`progress-bar`
+- 避免深层嵌套（最多 3 层选择器）
+- 颜色变量统一在 `:root` 中定义
+
+### 新增页面/组件
+
+- 在 `index.html` 中新增 section，`x-data` 命名与模块对应
+- 非 Alpine.js 逻辑写在 `app.js` 中，按模块分组注释
+- 新增 CSS 写在 `style.css` 中，按页面区域注释分组
+
+---
+
 ## 提交规范
 
 遵循 [Conventional Commits](https://www.conventionalcommits.org/)：
@@ -284,6 +385,64 @@ feat: 添加磁盘健康状态实时监控
 Closes #12
 ```
 
+---
+
+## 版本发布流程
+
+### 发布步骤
+
+1. 从 `develop` 切出 `release/vX.Y.Z` 分支
+2. 更新 `CHANGELOG.md`（参照已有格式，记录本次变更）
+3. 更新 `TODO.md` 中的进度状态
+4. 运行完整测试：`make test && make lint && make build-all`
+5. 提交 PR：`release/vX.Y.Z` → `main`，经 review 后合并
+6. 在 `main` 上打 tag：`git tag vX.Y.Z && git push origin vX.Y.Z`
+7. 将 `main` 合并回 `develop`
+8. （可选）由维护者在 Gitee Releases 页面创建 Release 附件
+
+### CHANGELOG 格式
+
+参照 [Keep a Changelog](https://keepachangelog.com/)：
+
+```markdown
+## [v1.2.0] - 2026-07-26
+
+### Added
+- 新功能 A
+- 新功能 B
+
+### Fixed
+- Bug 修复 C
+- Bug 修复 D
+
+### Changed
+- 已有功能变更 E
+```
+
+### PR 描述规范
+
+每个 PR 必须包含：
+1. **变更类型**（feat/fix/refactor 等）
+2. **关联 Issue**（如有关联）
+3. **测试情况**（fmt / lint / test / build 是否通过）
+4. **额外说明**（需要 reviewer 特别关注的点）
+
+> PR 模板见 `.github/PULL_REQUEST_TEMPLATE.md`，创建 PR 时自动加载。
+
+### 文档更新约定
+
+| 变更类型 | 需要更新的文档 |
+|---------|--------------|
+| 新增功能模块 | `README.md` 功能列表、`TODO.md` 进度 |
+| API 变更 | `README.md` API 文档部分 |
+| 配置变更 | `.env.example`、`configs/` 下对应模板 |
+| 硬件/部署变更 | `HARDWARE_SPEC.md`、`setup.sh` |
+| 开发流程变更 | `DEVELOPMENT.md`、`CONTRIBUTING.md` |
+
+> **原则**：功能变更和文档变更在同一 PR 中提交，不单独提 doc PR。
+
+---
+
 ## 注意事项
 
 ### 跨平台开发
@@ -293,6 +452,47 @@ Closes #12
 3. **文件权限**：`os.Chmod` 在 Windows 上行为不同，测试时注意
 4. **行结束符**：统一 LF（.editorconfig 已配置）
 5. **缩进**：Go 用 Tab，其他用空格（.editorconfig 已配置）
+
+### 模块架构规范
+
+#### 模块间依赖
+
+```
+common/  ←  modules/*/    （√ 所有模块依赖 common）
+modules/A/  ←  modules/B/  （✗ 禁止模块间直接 import）
+```
+
+- 所有公共工具代码放在 `common/` 包中
+- 功能模块 **禁止直接 import 其他功能模块**（如 `diskmgmt` 不能 import `system`）
+- 如果模块 A 需要模块 B 的能力，请将共享逻辑下沉到 `common/` 包
+- 前端模块间通信通过 Alpine.js 的全局事件（`$dispatch` / `$watch`），禁止通过 DOM 耦合
+
+#### API 响应格式
+
+所有 API 遵循统一格式：
+
+```json
+// 成功
+{ "status": "ok", "data": { ... } }
+
+// 失败
+{ "error": "错误描述" }
+```
+
+- HTTP 状态码使用标准语义：200 成功、400 参数错误、401 未认证、403 无权限、500 服务端错误
+- 错误响应始终返回 JSON，不返回纯文本
+- 路径全部小写，支持连字符：`/api/disk/overview`、`/api/storage/quota`
+  > **例外**：Linux 标准术语保留原样（如 `LVM`、`SMART`、`UUID`）
+
+#### Go 构建标签约定
+
+| 场景 | 方式 | 示例 |
+|------|------|------|
+| 整个文件仅 Linux | 文件名 `_linux.go` | `sudo_linux.go` |
+| 文件内部分代码仅 Linux | `//go:build linux` | 仅在需要系统命令的函数上加 |
+| 跨平台兼容 | `runtime.GOOS` 判断 | 可选项、降级行为用 runtime |
+
+> 优先使用文件名约定（Go 自动识别），只在同一文件内混用跨平台和 Linux 代码时才用 build tag。
 
 ### 安全
 
@@ -317,6 +517,12 @@ Closes #12
 - [ ] 前端新增 API 调用有 loading/error 状态
 - [ ] Shell 脚本变量加了引号
 - [ ] 路径中没有硬编码 `/opt/nas`（用变量）
+- [ ] API 路径遵循全小写连字符命名
+- [ ] 新增模块没有直接 import 其他功能模块
+- [ ] 前端 API 调用遵循统一的 `apiCall` 模式
+- [ ] `go.sum` 已提交（不要加入 .gitignore）
+- [ ] 相关文档已同步更新（README / TODO / docs 等）
+- [ ] PR 描述填写完整（变更类型、测试情况、额外说明）
 
 ## 获取帮助
 

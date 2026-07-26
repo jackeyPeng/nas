@@ -45,6 +45,12 @@ jobs:
       - name: 运行 lint
         run: cd web && golangci-lint run ./... --timeout=5m
 
+      - name: Shell 脚本检查
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq shellcheck
+          shellcheck scripts/*.sh
+
   # ---- 阶段 2：单元测试 ----
   test:
     name: 单元测试
