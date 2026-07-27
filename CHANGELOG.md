@@ -1,5 +1,112 @@
 # NAS 项目变更日志
 
+## [2026-07-27] - rclone 远端同步模块
+
+### 版本 v1.3.0 → 待发布
+
+---
+
+### rclone 远端同步
+
+#### 概述
+通过 Web 面板管理 rclone 远端存储和同步任务，无需 SSH 登录服务器配置。
+
+#### 远端存储管理
+- 支持 5 种类型：S3（AWS/MinIO/阿里云OSS/腾讯云COS）、SFTP、WebDAV、FTP、Local
+- 卡片式展示，一键测试连接
+- 配置写入 rclone.conf，敏感信息不返回前端
+
+#### 同步任务管理
+- 三种模式：sync（单向同步，目标多余文件删除）、copy（仅复制）、bisync（双向同步）
+- 源路径白名单校验（禁止 /etc、/bin 等系统目录）
+- 带宽限制（KB/s）、并发数配置
+- 启用/禁用开关
+
+#### 同步日志
+- 记录每次运行的开始/结束时间、结果、输出
+- 保留最近 200 条，自动清理
+- 支持清空日志
+
+#### 安全
+- 远端名称正则校验（字母/数字/横线/下划线）
+- 任务 ID 随机生成（16位 hex）
+- 后端 API 全部走 JWT 认证
+
+#### API
+- `GET  /api/rclone/status` — rclone 安装状态
+- `GET  /api/rclone/remotes` — 远端列表
+- `POST /api/rclone/remotes` — 创建远端
+- `DELETE /api/rclone/remotes/{name}` — 删除远端
+- `POST /api/rclone/remotes/test` — 测试连接
+- `GET  /api/rclone/tasks` — 任务列表
+- `POST /api/rclone/tasks` — 创建任务
+- `PUT  /api/rclone/tasks/{id}` — 更新任务
+- `DELETE /api/rclone/tasks/{id}` — 删除任务
+- `POST /api/rclone/tasks/{id}/run` — 手动运行
+- `POST /api/rclone/tasks/{id}/toggle` — 启用/禁用
+- `GET  /api/rclone/logs` — 日志列表
+- `DELETE /api/rclone/logs` — 清空日志
+
+#### 待完善
+- 定时任务调度器（cron parser）
+- SSE 实时同步进度
+- bisync 双向同步基线管理
+
+---
+
+## [2026-07-22] - 用户管理模块重构
+
+### 版本 v1.3.0 → 待发布
+
+---
+
+### 用户管理模块重构
+
+#### 概述
+用户管理从简单列表重构为完整模块，包含4个Tab页：用户列表、用户组、权限矩阵、登录日志。
+
+#### 用户列表增强
+- 服务权限徽章：Samba/FTP/WebDAV 启用状态一目了然（启用=#0369a1深蓝，禁用=#94a3b8灰）
+- 私有目录路径 + 已用容量
+- 配额显示：已用/上限 GB，超80%显红#c2410c
+- 共享文件夹数量统计
+- 创建时间（取私有目录ctime）
+
+#### 向导式添加用户（4步）
+1. 基本信息：用户名（白名单校验：小写字母开头，2-32位）、密码（至少12位）、确认密码
+2. 服务权限：勾选 Samba/FTP/WebDAV
+3. 存储配额：私有目录配额（GB，0=无限制）
+4. 共享权限：各共享文件夹的读写/只读/禁止权限
+
+#### 用户组管理
+- 基于 Linux 用户组（GID >= 1000）
+- 创建/删除组
+- 查看组成员列表
+
+#### 权限矩阵
+- 表格展示：行=用户，列=共享文件夹
+- 点击格子直接切换权限（读写/只读/禁止）
+- 颜色区分：读写=#0369a1深蓝，只读=#c2410c橙红，禁止=#94a3b8灰
+
+#### 登录日志
+- 聚合 last 命令成功登录 + journalctl SSH 失败日志
+- 列：时间/用户/来源IP/服务/结果（成功绿/失败红）
+- 支持刷新，默认最近50条
+
+#### 服务开关
+- 可单独启用/禁用用户的 Samba/FTP/WebDAV 服务
+- 后端：smbpasswd -e/-d、vsftpd userlist、rclone htpasswd
+
+#### 私有目录配额
+- 支持 /data/private/xxx 的 XFS project quota
+- project name: private_username
+
+#### 后端重构
+- 拆分为6个文件：users.go/create.go/groups.go/matrix.go/logs.go/quota.go
+- 新API：/api/user-groups /api/users-matrix /api/users-login-log
+
+---
+
 ## [2026-07-21] - RAID 扩容 + 存储配额 + 系统设置重构
 
 ### 版本 v1.3.0 → 待发布
