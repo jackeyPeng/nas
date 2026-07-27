@@ -15,6 +15,7 @@ import (
 	"nas-panel/modules/diskmgmt"
 	"nas-panel/modules/firewall"
 	"nas-panel/modules/monitor"
+	"nas-panel/modules/rclone"
 	"nas-panel/modules/services"
 	"nas-panel/modules/storage"
 	"nas-panel/modules/system"
@@ -75,6 +76,7 @@ func main() {
 	diskmgmt.RegisterRoutes(mux)
 	system.RegisterRoutes(mux)
 	backup.RegisterRoutes(mux)
+	rclone.RegisterRoutes(mux)
 
 	// Serve frontend
 	frontendRoot, _ := fs.Sub(frontendFS, "frontend")
