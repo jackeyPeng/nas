@@ -63,6 +63,9 @@
                 <li :class="{active: page === 'backup'}" @click="navigate('backup')">
                     <span>💾</span> 备份恢复
                 </li>
+                <li :class="{active: page === 'rclone'}" @click="navigate('rclone')">
+                    <span>☁️</span> 远端同步
+                </li>
             </ul>
             <div class="sidebar-footer">
                 <button class="btn btn-sm" @click="logout()">退出登录</button>
@@ -247,7 +250,7 @@
                     </tbody>
                 </table>
 
-                <div class="logs-modal" x-show="logsModal" x-cloak @click.self="logsModal = false">
+                <div class="logs-modal" x-show="logsModal" x-cloak>
                     <div class="logs-box">
                         <div class="logs-header">
                             <h3 x-text="'日志: ' + logsService"></h3>
@@ -260,45 +263,282 @@
 
             <!-- Users -->
             <div x-show="page === 'users'" class="page">
-                <h2>用户管理</h2>
-                <button class="btn btn-primary" @click="showAddUser()">添加用户</button>
-                <table class="table">
-                    <thead>
-                        <tr><th>用户名</th><th>类型</th><th>操作</th></tr>
-                    </thead>
-                    <tbody>
-                        <template x-for="user in users" :key="user.username">
-                            <tr>
-                                <td x-text="user.username"></td>
-                                <td x-text="user.type"></td>
-                                <td class="actions">
-                                    <button class="btn btn-sm btn-warn" @click="showChangePassword(user.username)">改密</button>
-                                    <button class="btn btn-sm btn-danger" @click="deleteUser(user.username)">删除</button>
-                                </td>
-                            </tr>
-                        </template>
-                    </tbody>
-                </table>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+                    <h2 style="margin:0">用户管理</h2>
+                    <div style="display:flex;gap:8px">
+                        <button class="btn btn-primary" @click="openUserWizard()">添加用户</button>
+                    </div>
+                </div>
 
-                <div class="modal" x-show="addUserModal" x-cloak @click.self="addUserModal = false">
-                    <div class="modal-box">
-                        <h3>添加用户</h3>
-                        <div class="form-group">
-                            <label>用户名</label>
-                            <input type="text" x-model="addUserForm.username">
+                <!-- Tab 导航 -->
+                <div class="tab-nav" style="display:flex;gap:0;border-bottom:2px solid #e2e8f0;margin-bottom:20px">
+                    <button :class="{'tab-active': userTab === 'list'}" class="tab-btn" @click="userTab = 'list'">用户列表</button>
+                    <button :class="{'tab-active': userTab === 'groups'}" class="tab-btn" @click="userTab = 'groups'">用户组</button>
+                    <button :class="{'tab-active': userTab === 'matrix'}" class="tab-btn" @click="userTab = 'matrix'">权限矩阵</button>
+                    <button :class="{'tab-active': userTab === 'logs'}" class="tab-btn" @click="userTab = 'logs'">登录日志</button>
+                </div>
+
+                <!-- Tab: 用户列表 -->
+                <div x-show="userTab === 'list'">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>用户名</th>
+                                <th>服务权限</th>
+                                <th>私有目录</th>
+                                <th>配额</th>
+                                <th>共享</th>
+                                <th>创建时间</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template x-for="user in users" :key="user.username">
+                                <tr>
+                                    <td style="font-family:monospace;font-weight:600" x-text="user.username"></td>
+                                    <td>
+                                        <div style="display:flex;gap:4px;flex-wrap:wrap">
+                                            <span class="badge" :style="user.services.samba ? 'background:#0369a1;color:#fff' : 'background:#94a3b8;color:#fff'" style="font-size:11px;padding:2px 6px;border-radius:4px">Samba</span>
+                                            <span class="badge" :style="user.services.ftp ? 'background:#0369a1;color:#fff' : 'background:#94a3b8;color:#fff'" style="font-size:11px;padding:2px 6px;border-radius:4px">FTP</span>
+                                            <span class="badge" :style="user.services.webdav ? 'background:#0369a1;color:#fff' : 'background:#94a3b8;color:#fff'" style="font-size:11px;padding:2px 6px;border-radius:4px">WebDAV</span>
+                                        </div>
+                                    </td>
+                                    <td style="font-family:monospace;font-size:12px" x-text="user.private_dir || '-'"></td>
+                                    <td>
+                                        <template x-if="user.quota_gb > 0">
+                                            <span :style="parseFloat(user.quota_used) / user.quota_gb > 0.8 ? 'color:#c2410c;font-weight:600' : 'color:#475569'">
+                                                <span x-text="user.quota_used"></span> / <span x-text="user.quota_gb + 'G'"></span>
+                                            </span>
+                                        </template>
+                                        <template x-if="!user.quota_gb">
+                                            <span style="color:#94a3b8">无限制</span>
+                                        </template>
+                                    </td>
+                                    <td x-text="user.share_count + ' 个'"></td>
+                                    <td style="font-size:12px;color:#475569" x-text="user.created_at || '-'"></td>
+                                    <td class="actions">
+                                        <button class="btn btn-sm btn-warn" @click="showChangePassword(user.username)">改密</button>
+                                        <button class="btn btn-sm btn-danger" @click="deleteUser(user.username)">删除</button>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Tab: 用户组 -->
+                <div x-show="userTab === 'groups'">
+                    <div style="margin-bottom:16px">
+                        <button class="btn btn-primary" @click="openGroupModal()">创建用户组</button>
+                    </div>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>组名</th>
+                                <th>GID</th>
+                                <th>成员</th>
+                                <th>成员数</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template x-for="g in userGroups" :key="g.name">
+                                <tr>
+                                    <td style="font-weight:600" x-text="g.name"></td>
+                                    <td x-text="g.gid"></td>
+                                    <td style="font-size:12px" x-text="g.members.join(', ') || '-'"></td>
+                                    <td x-text="g.members.length"></td>
+                                    <td class="actions">
+                                        <button class="btn btn-sm btn-danger" @click="deleteGroup(g.name)">删除</button>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Tab: 权限矩阵 -->
+                <div x-show="userTab === 'matrix'">
+                    <div style="overflow-x:auto">
+                        <table class="table" style="min-width:600px">
+                            <thead>
+                                <tr>
+                                    <th style="position:sticky;left:0;background:#fff;z-index:1">用户 \ 资源</th>
+                                    <template x-for="folder in permMatrix.folders" :key="folder">
+                                        <th x-text="folder" style="text-align:center;font-size:12px"></th>
+                                    </template>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template x-for="username in permMatrix.users" :key="username">
+                                    <tr>
+                                        <td style="position:sticky;left:0;background:#fff;z-index:1;font-family:monospace;font-weight:600" x-text="username"></td>
+                                        <template x-for="folder in permMatrix.folders" :key="folder">
+                                            <td style="text-align:center">
+                                                <select :value="permMatrix.matrix[username]?.[folder] || 'noaccess'"
+                                                    @change="setMatrixPerm(username, folder, $event.target.value)"
+                                                    style="font-size:12px;padding:2px 4px;border:1px solid #cbd5e1;border-radius:4px"
+                                                    :style="permMatrix.matrix[username]?.[folder] === 'readwrite' ? 'color:#0369a1;font-weight:600' : (permMatrix.matrix[username]?.[folder] === 'readonly' ? 'color:#c2410c' : 'color:#94a3b8')">
+                                                    <option value="readwrite">读写</option>
+                                                    <option value="readonly">只读</option>
+                                                    <option value="noaccess">禁止</option>
+                                                </select>
+                                            </td>
+                                        </template>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Tab: 登录日志 -->
+                <div x-show="userTab === 'logs'">
+                    <div style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">
+                        <span style="font-size:13px;color:#475569">最近 50 条登录记录</span>
+                        <button class="btn btn-sm btn-primary" @click="loadLoginLogs()">刷新</button>
+                    </div>
+                    <div x-show="loginLogsLoading" style="text-align:center;padding:20px;color:#94a3b8">加载中...</div>
+                    <table class="table" x-show="!loginLogsLoading">
+                        <thead>
+                            <tr>
+                                <th>时间</th>
+                                <th>用户</th>
+                                <th>来源</th>
+                                <th>服务</th>
+                                <th>结果</th>
+                                <th>详情</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template x-for="log in loginLogs" :key="log.time + log.user">
+                                <tr>
+                                    <td style="font-size:12px" x-text="log.time"></td>
+                                    <td style="font-family:monospace" x-text="log.user"></td>
+                                    <td style="font-size:12px" x-text="log.source || '-'"></td>
+                                    <td x-text="log.service"></td>
+                                    <td>
+                                        <span :style="log.result === 'success' ? 'color:#16a34a;font-weight:600' : 'color:#dc2626;font-weight:600'"
+                                            x-text="log.result === 'success' ? '成功' : '失败'"></span>
+                                    </td>
+                                    <td style="font-size:12px;color:#475569" x-text="log.message"></td>
+                                </tr>
+                            </template>
+                            <tr x-show="!loginLogs.length">
+                                <td colspan="6" style="text-align:center;color:#94a3b8">暂无登录记录</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- 创建用户向导弹窗 -->
+                <div class="modal" x-show="addUserModal" x-cloak>
+                    <div class="modal-box" style="max-width:520px">
+                        <h3>添加用户 - 步骤 <span x-text="userWizardStep"></span>/4</h3>
+
+                        <!-- 步骤指示器 -->
+                        <div style="display:flex;gap:4px;margin-bottom:20px">
+                            <template x-for="i in 4" :key="i">
+                                <div :style="i <= userWizardStep ? 'background:#0369a1' : 'background:#e2e8f0'"
+                                    style="flex:1;height:4px;border-radius:2px"></div>
+                            </template>
                         </div>
-                        <div class="form-group">
-                            <label>密码（至少12位）</label>
-                            <input type="password" x-model="addUserForm.password">
+
+                        <!-- 步骤1: 基本信息 -->
+                        <div x-show="userWizardStep === 1">
+                            <div class="form-group">
+                                <label>用户名</label>
+                                <input type="text" x-model="userWizardForm.username" placeholder="小写字母开头，2-32位">
+                            </div>
+                            <div class="form-group">
+                                <label>密码（至少12位）</label>
+                                <input type="password" x-model="userWizardForm.password">
+                            </div>
+                            <div class="form-group">
+                                <label>确认密码</label>
+                                <input type="password" x-model="userWizardForm.password2">
+                            </div>
                         </div>
-                        <div class="modal-actions">
+
+                        <!-- 步骤2: 服务权限 -->
+                        <div x-show="userWizardStep === 2">
+                            <div class="form-group">
+                                <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                                    <input type="checkbox" x-model="userWizardForm.svc_samba">
+                                    <span>Samba 文件共享</span>
+                                </label>
+                            </div>
+                            <div class="form-group">
+                                <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                                    <input type="checkbox" x-model="userWizardForm.svc_ftp">
+                                    <span>FTP 文件传输</span>
+                                </label>
+                            </div>
+                            <div class="form-group">
+                                <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                                    <input type="checkbox" x-model="userWizardForm.svc_webdav">
+                                    <span>WebDAV 网络磁盘</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- 步骤3: 存储配额 -->
+                        <div x-show="userWizardStep === 3">
+                            <div class="form-group">
+                                <label>私有目录配额 (GB)</label>
+                                <input type="number" x-model="userWizardForm.quota_gb" min="0" placeholder="0 = 无限制">
+                                <small style="color:#64748b;font-size:12px">限制用户私有目录 /data/private/<span x-text="userWizardForm.username || '用户名'"></span> 的最大使用空间</small>
+                            </div>
+                        </div>
+
+                        <!-- 步骤4: 共享权限 -->
+                        <div x-show="userWizardStep === 4">
+                            <p style="font-size:13px;color:#475569;margin-bottom:12px">设置该用户对各共享文件夹的访问权限</p>
+                            <template x-for="folder in userWizardShares" :key="folder">
+                                <div class="form-group" style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+                                    <span style="min-width:100px;font-size:13px" x-text="folder"></span>
+                                    <select x-model="userWizardForm.sharePerms[folder]" style="flex:1;font-size:13px;padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px">
+                                        <option value="readwrite">读写</option>
+                                        <option value="readonly">只读</option>
+                                        <option value="noaccess">禁止</option>
+                                    </select>
+                                </div>
+                            </template>
+                            <p x-show="!userWizardShares.length" style="color:#94a3b8;font-size:13px">暂无共享文件夹</p>
+                        </div>
+
+                        <!-- 按钮 -->
+                        <div class="modal-actions" style="display:flex;justify-content:space-between;margin-top:24px">
                             <button class="btn" @click="addUserModal = false">取消</button>
-                            <button class="btn btn-primary" @click="addUser()">确认</button>
+                            <div style="display:flex;gap:8px">
+                                <button class="btn" x-show="userWizardStep > 1" @click="wizardPrev()">上一步</button>
+                                <button class="btn btn-primary" x-show="userWizardStep < 4" @click="wizardNext()">下一步</button>
+                                <button class="btn btn-success" x-show="userWizardStep === 4" @click="wizardSubmit()">创建用户</button>
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                <div class="modal" x-show="pwdModal" x-cloak @click.self="pwdModal = false">
+                <!-- 创建用户组弹窗 -->
+                <div class="modal" x-show="showGroupModal" x-cloak>
+                    <div class="modal-box">
+                        <h3>创建用户组</h3>
+                        <div class="form-group">
+                            <label>组名</label>
+                            <input type="text" x-model="groupForm.name" placeholder="如: family, guests">
+                        </div>
+                        <div class="form-group">
+                            <label>描述</label>
+                            <input type="text" x-model="groupForm.comment" placeholder="可选">
+                        </div>
+                        <div class="modal-actions">
+                            <button class="btn" @click="showGroupModal = false">取消</button>
+                            <button class="btn btn-primary" @click="createGroup()">创建</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal" x-show="pwdModal" x-cloak>
                     <div class="modal-box">
                         <h3>修改密码 - <span x-text="pwdUser"></span></h3>
                         <div class="form-group">
@@ -700,7 +940,13 @@
                     </div>
                 </div>
 
-<style>.disk-slot{width:calc((100% - 3vw) / 4);min-width:0;max-width:70px;display:flex;flex-direction:column;align-items:center;border-radius:3px;overflow:hidden;border:3px solid;}</style>
+<style>
+.disk-slot{width:calc((100% - 3vw) / 4);min-width:0;max-width:70px;display:flex;flex-direction:column;align-items:center;border-radius:3px;overflow:hidden;border:3px solid;}
+.tab-btn{padding:10px 20px;border:none;background:none;cursor:pointer;font-size:14px;color:#64748b;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all 0.2s;}
+.tab-btn:hover{color:#334155;}
+.tab-btn.tab-active{color:#0369a1;font-weight:600;border-bottom-color:#0369a1;}
+.badge{display:inline-block;font-size:11px;padding:2px 6px;border-radius:4px;}
+</style>
                 <!-- ════ 盘位图（NAS机箱正面，4槽位，浅色主题） ════ -->
                 <div x-show="storageOverview.system_disks?.length > 0 || storageOverview.pools?.length > 0" style="display:flex;justify-content:center;margin-bottom:20px">
                     <div style="display:inline-flex;flex-direction:column;align-items:center;gap:6px">
@@ -982,7 +1228,7 @@
                 </div>
 
                 <!-- 新建文件夹弹窗 -->
-                <div class="modal" x-show="showAddFolder" x-cloak @click.self="showAddFolder = false">
+                <div class="modal" x-show="showAddFolder" x-cloak>
                     <div class="modal-box">
                         <h3>新建共享文件夹</h3>
                         <div class="form-group">
@@ -1030,7 +1276,7 @@
                 </div>
 
                 <!-- 权限编辑弹窗 -->
-                <div class="modal" x-show="showFolderPerm" x-cloak @click.self="showFolderPerm = false">
+                <div class="modal" x-show="showFolderPerm" x-cloak>
                     <div class="modal-box">
                         <h3>权限设置 - <span x-text="folderPermForm.name"></span></h3>
                         <div class="form-group">
@@ -1061,7 +1307,7 @@
                 </div>
 
                 <!-- 扩容弹窗 -->
-                <div class="modal" x-show="showExtendPool" x-cloak @click.self="showExtendPool = false">
+                <div class="modal" x-show="showExtendPool" x-cloak>
                     <div class="modal-box">
                         <h3>扩容存储空间</h3>
                         <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">将新磁盘加入现有 LVM 存储空间，扩展容量。操作期间不需要停机，数据不受影响。</p>
@@ -1099,7 +1345,7 @@
                 </div>
 
                 <!-- RAID 扩容弹窗 -->
-                <div class="modal" x-show="showRAIDExpand" x-cloak @click.self="showRAIDExpand = false">
+                <div class="modal" x-show="showRAIDExpand" x-cloak>
                     <div class="modal-box">
                         <h3>扩容 RAID 阵列</h3>
                         <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">
@@ -1374,6 +1620,370 @@
                     </p>
                 </div>
             </div>
+
+            <!-- Rclone Remote Sync -->
+            <div x-show="page === 'rclone'" class="page">
+                <h2>远端同步</h2>
+
+                <!-- ═══ rclone 状态 ═══ -->
+                <div style="background:white;border:1px solid #e0e4e8;border-radius:12px;padding:20px;margin-bottom:24px" x-show="rcloneStatus.installed">
+                    <div style="display:flex;justify-content:space-between;align-items:center">
+                        <div>
+                            <span style="font-size:14px;font-weight:600;color:#334155">rclone 状态</span>
+                            <div style="font-size:13px;color:#64748b;margin-top:4px" x-text="rcloneStatus.version || '未知版本'"></div>
+                        </div>
+                        <span style="padding:4px 12px;border-radius:12px;font-size:13px;background:#dcfce7;color:#16a34a">已安装</span>
+                    </div>
+                </div>
+                <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:12px;padding:20px;margin-bottom:24px" x-show="!rcloneStatus.installed">
+                    <div style="font-size:14px;font-weight:600;color:#dc2626;margin-bottom:8px">⚠️ rclone 未安装</div>
+                    <p style="font-size:13px;color:#7f1d1d;margin:0">请先安装 rclone: <code style="background:#fee2e2;padding:2px 6px;border-radius:4px">curl https://rclone.org/install.sh | sudo bash</code></p>
+                </div>
+
+                <!-- ═══ 远端存储配置 ═══ -->
+                <div style="background:white;border:1px solid #e0e4e8;border-radius:12px;padding:20px;margin-bottom:24px">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+                        <h3 style="margin:0;font-size:16px">远端存储</h3>
+                        <button class="btn btn-primary btn-sm" @click="showAddRemote = true">添加远端</button>
+                    </div>
+
+                    <div x-show="!rcloneRemotes.length" style="text-align:center;padding:24px;color:#94a3b8">
+                        暂无远端存储，点击"添加远端"配置 S3/OSS/网盘等
+                    </div>
+
+                    <div x-show="rcloneRemotes.length" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">
+                        <template x-for="remote in rcloneRemotes" :key="remote.name">
+                            <div style="border:1px solid #e5e7eb;border-radius:8px;padding:16px">
+                                <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px">
+                                    <div>
+                                        <div style="font-weight:600;font-size:15px" x-text="remote.name"></div>
+                                        <div style="font-size:12px;color:#64748b;margin-top:2px" x-text="remote.type"></div>
+                                    </div>
+                                    <span style="padding:2px 8px;border-radius:10px;font-size:11px;background:#dbeafe;color:#1d4ed8">已配置</span>
+                                </div>
+                                <div style="display:flex;gap:8px;margin-top:12px">
+                                    <button class="btn btn-sm" @click="testRemote(remote.name)" :disabled="remoteTesting === remote.name" style="font-size:12px">
+                                        <span x-show="remoteTesting !== remote.name">测试连接</span>
+                                        <span x-show="remoteTesting === remote.name">测试中...</span>
+                                    </button>
+                                    <button class="btn btn-sm btn-danger" @click="deleteRemote(remote.name)" style="font-size:12px">删除</button>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <!-- ═══ 同步任务 ═══ -->
+                <div style="background:white;border:1px solid #e0e4e8;border-radius:12px;padding:20px;margin-bottom:24px">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+                        <h3 style="margin:0;font-size:16px">同步任务</h3>
+                        <button class="btn btn-primary btn-sm" @click="showAddTask = true" :disabled="!rcloneRemotes.length">新建任务</button>
+                    </div>
+
+                    <div x-show="!rcloneTasks.length" style="text-align:center;padding:24px;color:#94a3b8">
+                        <template x-if="!rcloneRemotes.length">
+                            <span>请先添加远端存储</span>
+                        </template>
+                        <template x-if="rcloneRemotes.length">
+                            <span>暂无同步任务</span>
+                        </template>
+                    </div>
+
+                    <div x-show="rcloneTasks.length">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>任务名称</th>
+                                    <th>源路径</th>
+                                    <th>目标</th>
+                                    <th>模式</th>
+                                    <th>定时</th>
+                                    <th>状态</th>
+                                    <th>最后运行</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template x-for="task in rcloneTasks" :key="task.id">
+                                    <tr>
+                                        <td style="font-weight:600" x-text="task.name"></td>
+                                        <td style="font-family:monospace;font-size:12px" x-text="task.source"></td>
+                                        <td style="font-family:monospace;font-size:12px" x-text="task.remote + ':' + task.dest_path"></td>
+                                        <td>
+                                            <span style="padding:2px 8px;border-radius:10px;font-size:11px"
+                                                :style="task.mode === 'sync' ? 'background:#dbeafe;color:#1d4ed8' : task.mode === 'copy' ? 'background:#dcfce7;color:#16a34a' : 'background:#fef3c7;color:#d97706'"
+                                                x-text="task.mode === 'sync' ? '单向同步' : task.mode === 'copy' ? '仅复制' : '双向同步'"></span>
+                                        </td>
+                                        <td style="font-size:12px;font-family:monospace" x-text="task.schedule || '手动'"></td>
+                                        <td>
+                                            <span style="padding:2px 8px;border-radius:10px;font-size:11px"
+                                                :style="task.enabled ? 'background:#dcfce7;color:#16a34a' : 'background:#f3f4f6;color:#6b7280'"
+                                                x-text="task.enabled ? '启用' : '禁用'"></span>
+                                            <template x-if="task.last_result === 'running'">
+                                                <span style="padding:2px 8px;border-radius:10px;font-size:11px;background:#fef3c7;color:#d97706;margin-left:4px">运行中</span>
+                                            </template>
+                                        </td>
+                                        <td style="font-size:12px">
+                                            <div x-text="task.last_run || '-'"></div>
+                                            <div x-show="task.last_result" style="font-size:11px;margin-top:2px"
+                                                :style="task.last_result === 'success' ? 'color:#16a34a' : task.last_result === 'failed' ? 'color:#dc2626' : 'color:#d97706'"
+                                                x-text="task.last_result === 'success' ? '成功' : task.last_result === 'failed' ? '失败' : '运行中'"></div>
+                                        </td>
+                                        <td class="actions" style="white-space:nowrap">
+                                            <button class="btn btn-sm btn-success" @click="runTask(task.id)" :disabled="task.last_result === 'running'" style="font-size:11px;padding:2px 8px">运行</button>
+                                            <button class="btn btn-sm" @click="toggleTask(task.id)" style="font-size:11px;padding:2px 8px"
+                                                x-text="task.enabled ? '禁用' : '启用'"></button>
+                                            <button class="btn btn-sm btn-danger" @click="deleteTask(task.id)" style="font-size:11px;padding:2px 8px">删除</button>
+                                        </td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- ═══ 同步日志 ═══ -->
+                <div style="background:white;border:1px solid #e0e4e8;border-radius:12px;padding:20px">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+                        <h3 style="margin:0;font-size:16px">同步日志</h3>
+                        <div style="display:flex;gap:8px">
+                            <button class="btn btn-sm" @click="loadRcloneLogs()">刷新</button>
+                            <button class="btn btn-sm btn-danger" @click="clearRcloneLogs()" x-show="rcloneLogs.length">清空日志</button>
+                        </div>
+                    </div>
+
+                    <div x-show="!rcloneLogs.length" style="text-align:center;padding:24px;color:#94a3b8">
+                        暂无同步日志
+                    </div>
+
+                    <div x-show="rcloneLogs.length" style="max-height:400px;overflow-y:auto">
+                        <template x-for="log in rcloneLogs" :key="log.id">
+                            <div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px;margin-bottom:8px">
+                                <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px">
+                                    <div>
+                                        <span style="font-weight:600" x-text="log.task_name"></span>
+                                        <span style="font-size:12px;color:#64748b;margin-left:8px" x-text="log.start_time"></span>
+                                    </div>
+                                    <span style="padding:2px 8px;border-radius:10px;font-size:11px"
+                                        :style="log.result === 'success' ? 'background:#dcfce7;color:#16a34a' : 'background:#fee2e2;color:#dc2626'"
+                                        x-text="log.result === 'success' ? '成功' : '失败'"></span>
+                                </div>
+                                <div x-show="log.message" style="font-size:12px;color:#64748b;margin-bottom:8px" x-text="log.message"></div>
+                                <details x-show="log.output" style="font-size:12px">
+                                    <summary style="cursor:pointer;color:#64748b">查看输出</summary>
+                                    <pre style="background:#f8fafc;padding:8px;border-radius:4px;margin-top:8px;overflow-x:auto;max-height:200px;overflow-y:auto" x-text="log.output"></pre>
+                                </details>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <!-- ═══ 添加远端弹窗 ═══ -->
+                <div class="modal-overlay" x-show="showAddRemote" x-cloak>
+                    <div class="modal" @click.outside="showAddRemote = false">
+                        <h3>添加远端存储</h3>
+                        <div class="form-group">
+                            <label>名称</label>
+                            <input type="text" x-model="remoteForm.name" placeholder="如: my-s3, backup-oss">
+                            <small style="color:#64748b">只能包含字母、数字、横线和下划线</small>
+                        </div>
+                        <div class="form-group">
+                            <label>类型</label>
+                            <select x-model="remoteForm.type" @change="updateRemoteFormFields()">
+                                <option value="">选择存储类型</option>
+                                <option value="s3">S3 兼容存储 (AWS S3 / MinIO / OSS / COS)</option>
+                                <option value="sftp">SFTP (SSH 文件传输)</option>
+                                <option value="webdav">WebDAV</option>
+                                <option value="ftp">FTP</option>
+                                <option value="local">本地路径</option>
+                            </select>
+                        </div>
+
+                        <!-- S3 配置 -->
+                        <template x-if="remoteForm.type === 's3'">
+                            <div>
+                                <div class="form-group">
+                                    <label>服务商</label>
+                                    <select x-model="remoteForm.provider">
+                                        <option value="AWS">AWS S3</option>
+                                        <option value="Minio">MinIO</option>
+                                        <option value="Alibaba">阿里云 OSS</option>
+                                        <option value="Tencent">腾讯云 COS</option>
+                                        <option value="Other">其他 S3 兼容</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Endpoint</label>
+                                    <input type="text" x-model="remoteForm.endpoint" placeholder="如: s3.amazonaws.com 或 oss-cn-hangzhou.aliyuncs.com">
+                                </div>
+                                <div class="form-group">
+                                    <label>Access Key ID</label>
+                                    <input type="text" x-model="remoteForm.access_key_id" placeholder="Access Key ID">
+                                </div>
+                                <div class="form-group">
+                                    <label>Secret Access Key</label>
+                                    <input type="password" x-model="remoteForm.secret_access_key" placeholder="Secret Access Key">
+                                </div>
+                                <div class="form-group">
+                                    <label>Region (可选)</label>
+                                    <input type="text" x-model="remoteForm.region" placeholder="如: us-east-1 或 cn-hangzhou">
+                                </div>
+                            </div>
+                        </template>
+
+                        <!-- SFTP 配置 -->
+                        <template x-if="remoteForm.type === 'sftp'">
+                            <div>
+                                <div class="form-group">
+                                    <label>主机地址</label>
+                                    <input type="text" x-model="remoteForm.host" placeholder="如: 192.168.1.100 或 example.com">
+                                </div>
+                                <div class="form-group">
+                                    <label>端口</label>
+                                    <input type="text" x-model="remoteForm.port" placeholder="默认 22" value="22">
+                                </div>
+                                <div class="form-group">
+                                    <label>用户名</label>
+                                    <input type="text" x-model="remoteForm.user" placeholder="SSH 用户名">
+                                </div>
+                                <div class="form-group">
+                                    <label>密码</label>
+                                    <input type="password" x-model="remoteForm.pass" placeholder="SSH 密码">
+                                </div>
+                            </div>
+                        </template>
+
+                        <!-- WebDAV 配置 -->
+                        <template x-if="remoteForm.type === 'webdav'">
+                            <div>
+                                <div class="form-group">
+                                    <label>URL</label>
+                                    <input type="text" x-model="remoteForm.url" placeholder="如: https://dav.example.com/remote.php/dav/files/user/">
+                                </div>
+                                <div class="form-group">
+                                    <label>供应商</label>
+                                    <select x-model="remoteForm.vendor">
+                                        <option value="nextcloud">Nextcloud</option>
+                                        <option value="owncloud">ownCloud</option>
+                                        <option value="sharepoint">SharePoint</option>
+                                        <option value="other">其他</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>用户名</label>
+                                    <input type="text" x-model="remoteForm.user" placeholder="WebDAV 用户名">
+                                </div>
+                                <div class="form-group">
+                                    <label>密码</label>
+                                    <input type="password" x-model="remoteForm.pass" placeholder="WebDAV 密码">
+                                </div>
+                            </div>
+                        </template>
+
+                        <!-- FTP 配置 -->
+                        <template x-if="remoteForm.type === 'ftp'">
+                            <div>
+                                <div class="form-group">
+                                    <label>主机地址</label>
+                                    <input type="text" x-model="remoteForm.host" placeholder="如: ftp.example.com">
+                                </div>
+                                <div class="form-group">
+                                    <label>端口</label>
+                                    <input type="text" x-model="remoteForm.port" placeholder="默认 21" value="21">
+                                </div>
+                                <div class="form-group">
+                                    <label>用户名</label>
+                                    <input type="text" x-model="remoteForm.user" placeholder="FTP 用户名">
+                                </div>
+                                <div class="form-group">
+                                    <label>密码</label>
+                                    <input type="password" x-model="remoteForm.pass" placeholder="FTP 密码">
+                                </div>
+                            </div>
+                        </template>
+
+                        <!-- Local 配置 -->
+                        <template x-if="remoteForm.type === 'local'">
+                            <div>
+                                <div class="form-group">
+                                    <label>本地路径</label>
+                                    <input type="text" x-model="remoteForm.local_path" placeholder="如: /mnt/backup 或 /data/external">
+                                    <small style="color:#64748b">远端将映射到此本地路径</small>
+                                </div>
+                            </div>
+                        </template>
+
+                        <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:20px">
+                            <button class="btn" @click="showAddRemote = false">取消</button>
+                            <button class="btn btn-primary" @click="createRemote()" :disabled="remoteCreating">
+                                <span x-show="!remoteCreating">创建</span>
+                                <span x-show="remoteCreating">创建中...</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ═══ 新建任务弹窗 ═══ -->
+                <div class="modal-overlay" x-show="showAddTask" x-cloak>
+                    <div class="modal" @click.outside="showAddTask = false">
+                        <h3>新建同步任务</h3>
+                        <div class="form-group">
+                            <label>任务名称</label>
+                            <input type="text" x-model="taskForm.name" placeholder="如: 文档备份到S3">
+                        </div>
+                        <div class="form-group">
+                            <label>源路径（本地）</label>
+                            <input type="text" x-model="taskForm.source" placeholder="如: /data/nas1/documents">
+                            <small style="color:#64748b">必须是绝对路径，不能是系统目录</small>
+                        </div>
+                        <div class="form-group">
+                            <label>远端存储</label>
+                            <select x-model="taskForm.remote">
+                                <option value="">选择远端</option>
+                                <template x-for="r in rcloneRemotes" :key="r.name">
+                                    <option :value="r.name" x-text="r.name + ' (' + r.type + ')'"></option>
+                                </template>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>目标路径（远端）</label>
+                            <input type="text" x-model="taskForm.dest_path" placeholder="如: backup/documents">
+                            <small style="color:#64748b">远端存储中的路径，不需要以 / 开头</small>
+                        </div>
+                        <div class="form-group">
+                            <label>同步模式</label>
+                            <select x-model="taskForm.mode">
+                                <option value="sync">单向同步（源 → 目标，目标多余文件会被删除）</option>
+                                <option value="copy">仅复制（源 → 目标，不删除目标文件）</option>
+                                <option value="bisync">双向同步（需要预先建立基线）</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>定时同步（cron 表达式，留空表示手动）</label>
+                            <input type="text" x-model="taskForm.schedule" placeholder="如: 0 2 * * * 表示每天凌晨2点">
+                            <small style="color:#64748b">格式: 分 时 日 月 周，如 0 2 * * * = 每天 02:00</small>
+                        </div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                            <div class="form-group">
+                                <label>带宽限制 (KB/s)</label>
+                                <input type="number" x-model="taskForm.bandwidth" placeholder="0 = 不限">
+                            </div>
+                            <div class="form-group">
+                                <label>并发数</label>
+                                <input type="number" x-model="taskForm.transfers" placeholder="默认 4" value="4">
+                            </div>
+                        </div>
+                        <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:20px">
+                            <button class="btn" @click="showAddTask = false">取消</button>
+                            <button class="btn btn-primary" @click="createTask()" :disabled="taskCreating">
+                                <span x-show="!taskCreating">创建任务</span>
+                                <span x-show="taskCreating">创建中...</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
         </main>
     </div>
 

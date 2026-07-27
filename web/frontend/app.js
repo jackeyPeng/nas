@@ -73,6 +73,18 @@ function nasPanel() {
         // Backup
         backups: [],
         backupLoading: false,
+        // Rclone
+        rcloneStatus: {},
+        rcloneRemotes: [],
+        rcloneTasks: [],
+        rcloneLogs: [],
+        showAddRemote: false,
+        showAddTask: false,
+        remoteForm: { name: '', type: '', provider: 'AWS', endpoint: '', access_key_id: '', secret_access_key: '', region: '', host: '', port: '22', user: '', pass: '', url: '', vendor: 'nextcloud', local_path: '' },
+        remoteCreating: false,
+        remoteTesting: '',
+        taskForm: { name: '', source: '', remote: '', dest_path: '', mode: 'sync', schedule: '', bandwidth: 0, transfers: 4 },
+        taskCreating: false,
         // System settings
         // System settings (new unified)
         sysSettings: {
@@ -93,6 +105,23 @@ function nasPanel() {
         pwdModal: false,
         pwdUser: '',
         pwdForm: { password: '' },
+        // Users module - new
+        userTab: 'list', // list | groups | matrix | logs
+        userGroups: [],
+        groupForm: { name: '', comment: '', members: '' },
+        showGroupModal: false,
+        permMatrix: { folders: [], users: [], matrix: {} },
+        loginLogs: [],
+        loginLogsLoading: false,
+        // User wizard
+        userWizardStep: 1,
+        userWizardForm: {
+            username: '', password: '', password2: '',
+            svc_samba: true, svc_ftp: true, svc_webdav: true,
+            quota_gb: 0,
+            sharePerms: {} // folder -> perm
+        },
+        userWizardShares: [],
         toast: { show: false, msg: '', type: 'success' },
 
         init() {
@@ -156,12 +185,13 @@ function nasPanel() {
             switch (page) {
                 case 'dashboard': this.loadDashboard(); break;
                 case 'services': this.loadServices(); break;
-                case 'users': this.loadUsers(); break;
+                case 'users': this.loadUsers(); this.loadUserGroups(); this.loadPermMatrix(); this.loadLoginLogs(); break;
                 case 'diskmgmt': this.loadStorageOverview(); this.loadWizardStatus(); this.loadSharedFolders(); break;
                 case 'firewall': this.loadFirewall(); break;
                 case 'monitor': this.initMonitorRefresh(); this.loadAlertConfig(); break;
                 case 'system': this.loadSystemOverview(); break;
                 case 'backup': this.loadBackups(); break;
+                case 'rclone': this.loadRcloneStatus(); this.loadRcloneRemotes(); this.loadRcloneTasks(); this.loadRcloneLogs(); break;
             }
         },
 
@@ -269,6 +299,165 @@ function nasPanel() {
             if (data) {
                 this.showToast(data.message || '删除成功', 'success');
                 this.loadUsers();
+            }
+        },
+
+        // ===== Users module - new functions =====
+
+        async loadUserGroups() {
+            const data = await this.api('/user-groups');
+            if (data) this.userGroups = data.groups || [];
+        },
+
+        async loadPermMatrix() {
+            const data = await this.api('/users-matrix');
+            if (data) this.permMatrix = data;
+        },
+
+        async loadLoginLogs() {
+            this.loginLogsLoading = true;
+            const data = await this.api('/users-login-log?limit=50');
+            if (data) this.loginLogs = data.entries || [];
+            this.loginLogsLoading = false;
+        },
+
+        // User wizard
+        openUserWizard() {
+            this.userWizardStep = 1;
+            this.userWizardForm = {
+                username: '', password: '', password2: '',
+                svc_samba: true, svc_ftp: true, svc_webdav: true,
+                quota_gb: 0,
+                sharePerms: {}
+            };
+            // Load available shares for step 4
+            this.userWizardShares = this.permMatrix.folders || [];
+            for (const f of this.userWizardShares) {
+                this.userWizardForm.sharePerms[f] = 'noaccess';
+            }
+            this.addUserModal = true;
+        },
+
+        wizardNext() {
+            if (this.userWizardStep === 1) {
+                if (!this.userWizardForm.username) {
+                    this.showToast('请输入用户名', 'error'); return;
+                }
+                if (this.userWizardForm.password.length < 12) {
+                    this.showToast('密码至少12位', 'error'); return;
+                }
+                if (this.userWizardForm.password !== this.userWizardForm.password2) {
+                    this.showToast('两次密码输入不一致', 'error'); return;
+                }
+            }
+            if (this.userWizardStep < 4) this.userWizardStep++;
+        },
+
+        wizardPrev() {
+            if (this.userWizardStep > 1) this.userWizardStep--;
+        },
+
+        async wizardSubmit() {
+            const f = this.userWizardForm;
+            let body = `username=${encodeURIComponent(f.username)}&password=${encodeURIComponent(f.password)}`;
+            body += `&svc_samba=${f.svc_samba}&svc_ftp=${f.svc_ftp}&svc_webdav=${f.svc_webdav}`;
+            body += `&quota_gb=${f.quota_gb}`;
+            for (const [folder, perm] of Object.entries(f.sharePerms)) {
+                body += `&share_${encodeURIComponent(folder)}=${perm}`;
+            }
+            const data = await this.api('/users', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: body
+            });
+            if (data) {
+                this.showToast(data.message || '创建成功', 'success');
+                this.addUserModal = false;
+                this.loadUsers();
+                this.loadPermMatrix();
+            }
+        },
+
+        // Service toggle
+        async toggleUserService(username, service, enabled) {
+            const body = `${service}=${enabled}`;
+            const data = await this.api(`/users/${username}/services`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: body
+            });
+            if (data) {
+                this.showToast(data.message || '服务权限已更新', 'success');
+                this.loadUsers();
+            }
+        },
+
+        // Quota
+        async setUserQuota(username, quotaGB) {
+            const data = await this.api(`/users/${username}/quota`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `quota_gb=${quotaGB}`
+            });
+            if (data) {
+                this.showToast(data.message || '配额已更新', 'success');
+                this.loadUsers();
+            }
+        },
+
+        // Groups
+        openGroupModal() {
+            this.groupForm = { name: '', comment: '', members: '' };
+            this.showGroupModal = true;
+        },
+
+        async createGroup() {
+            if (!this.groupForm.name) {
+                this.showToast('请输入组名', 'error'); return;
+            }
+            const data = await this.api('/user-groups', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `name=${encodeURIComponent(this.groupForm.name)}&comment=${encodeURIComponent(this.groupForm.comment)}`
+            });
+            if (data) {
+                this.showToast(data.message || '创建成功', 'success');
+                this.showGroupModal = false;
+                this.loadUserGroups();
+            }
+        },
+
+        async deleteGroup(name) {
+            if (!confirm(`确定删除用户组 ${name}？`)) return;
+            const data = await this.api(`/user-groups/${name}`, { method: 'DELETE' });
+            if (data) {
+                this.showToast(data.message || '删除成功', 'success');
+                this.loadUserGroups();
+            }
+        },
+
+        async updateGroupMembers(name, members) {
+            const data = await this.api(`/user-groups/${name}/members`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `members=${encodeURIComponent(members)}`
+            });
+            if (data) {
+                this.showToast(data.message || '成员已更新', 'success');
+                this.loadUserGroups();
+            }
+        },
+
+        // Matrix permission
+        async setMatrixPerm(username, folder, perm) {
+            const data = await this.api('/users-matrix', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `username=${encodeURIComponent(username)}&folder=${encodeURIComponent(folder)}&permission=${perm}`
+            });
+            if (data) {
+                this.showToast(data.message || '权限已更新', 'success');
+                this.loadPermMatrix();
             }
         },
 
@@ -1118,6 +1307,162 @@ function nasPanel() {
             if (data) {
                 this.showToast('备份已删除', 'success');
                 this.loadBackups();
+            }
+        },
+
+        // ═══ Rclone 远端同步 ═══
+        async loadRcloneStatus() {
+            const data = await this.api('/rclone/status');
+            if (data) this.rcloneStatus = data;
+        },
+
+        async loadRcloneRemotes() {
+            const data = await this.api('/rclone/remotes');
+            if (data) this.rcloneRemotes = data.remotes || [];
+        },
+
+        async loadRcloneTasks() {
+            const data = await this.api('/rclone/tasks');
+            if (data) this.rcloneTasks = data.tasks || [];
+        },
+
+        async loadRcloneLogs() {
+            const data = await this.api('/rclone/logs');
+            if (data) this.rcloneLogs = data.logs || [];
+        },
+
+        async createRemote() {
+            if (!this.remoteForm.name || !this.remoteForm.type) {
+                this.showToast('请填写名称和类型', 'error');
+                return;
+            }
+            this.remoteCreating = true;
+            let body = `name=${encodeURIComponent(this.remoteForm.name)}&type=${encodeURIComponent(this.remoteForm.type)}`;
+            // 根据类型附加配置参数
+            const f = this.remoteForm;
+            if (f.type === 's3') {
+                body += `&rc_provider=${encodeURIComponent(f.provider)}&rc_endpoint=${encodeURIComponent(f.endpoint)}`;
+                body += `&rc_access_key_id=${encodeURIComponent(f.access_key_id)}&rc_secret_access_key=${encodeURIComponent(f.secret_access_key)}`;
+                if (f.region) body += `&rc_region=${encodeURIComponent(f.region)}`;
+            } else if (f.type === 'sftp') {
+                body += `&rc_host=${encodeURIComponent(f.host)}&rc_port=${encodeURIComponent(f.port)}`;
+                body += `&rc_user=${encodeURIComponent(f.user)}&rc_pass=${encodeURIComponent(f.pass)}`;
+            } else if (f.type === 'webdav') {
+                body += `&rc_url=${encodeURIComponent(f.url)}&rc_vendor=${encodeURIComponent(f.vendor)}`;
+                body += `&rc_user=${encodeURIComponent(f.user)}&rc_pass=${encodeURIComponent(f.pass)}`;
+            } else if (f.type === 'ftp') {
+                body += `&rc_host=${encodeURIComponent(f.host)}&rc_port=${encodeURIComponent(f.port)}`;
+                body += `&rc_user=${encodeURIComponent(f.user)}&rc_pass=${encodeURIComponent(f.pass)}`;
+            } else if (f.type === 'local') {
+                body += `&rc_local_path=${encodeURIComponent(f.local_path)}`;
+            }
+            const data = await this.api('/rclone/remotes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: body
+            });
+            this.remoteCreating = false;
+            if (data && !data.error) {
+                this.showToast(data.message || '远端已创建', 'success');
+                this.showAddRemote = false;
+                this.remoteForm = { name: '', type: '', provider: 'AWS', endpoint: '', access_key_id: '', secret_access_key: '', region: '', host: '', port: '22', user: '', pass: '', url: '', vendor: 'nextcloud', local_path: '' };
+                this.loadRcloneRemotes();
+            } else if (data && data.error) {
+                this.showToast('创建失败: ' + data.error, 'error');
+            }
+        },
+
+        async deleteRemote(name) {
+            if (!confirm('确定删除远端 "' + name + '"？相关同步任务将无法运行。')) return;
+            const data = await this.api('/rclone/remotes/' + encodeURIComponent(name), { method: 'DELETE' });
+            if (data && !data.error) {
+                this.showToast(data.message || '远端已删除', 'success');
+                this.loadRcloneRemotes();
+            } else if (data && data.error) {
+                this.showToast('删除失败: ' + data.error, 'error');
+            }
+        },
+
+        async testRemote(name) {
+            this.remoteTesting = name;
+            const data = await this.api('/rclone/remotes/test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `name=${encodeURIComponent(name)}`
+            });
+            this.remoteTesting = '';
+            if (data) {
+                if (data.ok) {
+                    this.showToast('连接成功: ' + name, 'success');
+                } else {
+                    this.showToast('连接失败: ' + (data.error || data.message), 'error');
+                }
+            }
+        },
+
+        async createTask() {
+            if (!this.taskForm.name || !this.taskForm.source || !this.taskForm.remote || !this.taskForm.dest_path) {
+                this.showToast('请填写必填项', 'error');
+                return;
+            }
+            this.taskCreating = true;
+            const t = this.taskForm;
+            const body = `name=${encodeURIComponent(t.name)}&source=${encodeURIComponent(t.source)}&remote=${encodeURIComponent(t.remote)}&dest_path=${encodeURIComponent(t.dest_path)}&mode=${encodeURIComponent(t.mode)}&schedule=${encodeURIComponent(t.schedule)}&bandwidth=${t.bandwidth}&transfers=${t.transfers}`;
+            const data = await this.api('/rclone/tasks', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: body
+            });
+            this.taskCreating = false;
+            if (data && !data.error) {
+                this.showToast(data.message || '任务已创建', 'success');
+                this.showAddTask = false;
+                this.taskForm = { name: '', source: '', remote: '', dest_path: '', mode: 'sync', schedule: '', bandwidth: 0, transfers: 4 };
+                this.loadRcloneTasks();
+            } else if (data && data.error) {
+                this.showToast('创建失败: ' + data.error, 'error');
+            }
+        },
+
+        async deleteTask(id) {
+            if (!confirm('确定删除此同步任务？')) return;
+            const data = await this.api('/rclone/tasks/' + encodeURIComponent(id), { method: 'DELETE' });
+            if (data && !data.error) {
+                this.showToast(data.message || '任务已删除', 'success');
+                this.loadRcloneTasks();
+            } else if (data && data.error) {
+                this.showToast('删除失败: ' + data.error, 'error');
+            }
+        },
+
+        async runTask(id) {
+            const data = await this.api('/rclone/tasks/' + encodeURIComponent(id) + '/run', { method: 'POST' });
+            if (data && !data.error) {
+                this.showToast(data.message || '任务已开始执行', 'success');
+                this.loadRcloneTasks();
+                // 3秒后刷新日志
+                setTimeout(() => { this.loadRcloneTasks(); this.loadRcloneLogs(); }, 3000);
+            } else if (data && data.error) {
+                this.showToast('启动失败: ' + data.error, 'error');
+            }
+        },
+
+        async toggleTask(id) {
+            const data = await this.api('/rclone/tasks/' + encodeURIComponent(id) + '/toggle', { method: 'POST' });
+            if (data && !data.error) {
+                this.showToast(data.message || '状态已切换', 'success');
+                this.loadRcloneTasks();
+            } else if (data && data.error) {
+                this.showToast('操作失败: ' + data.error, 'error');
+            }
+        },
+
+        async clearRcloneLogs() {
+            if (!confirm('确定清空所有同步日志？')) return;
+            const data = await this.api('/rclone/logs', { method: 'DELETE' });
+            if (data && !data.error) {
+                this.showToast('日志已清空', 'success');
+                this.loadRcloneLogs();
             }
         }
     };
