@@ -83,7 +83,7 @@ function nasPanel() {
         remoteForm: { name: '', type: '', provider: 'AWS', endpoint: '', access_key_id: '', secret_access_key: '', region: '', host: '', port: '22', user: '', pass: '', url: '', vendor: 'nextcloud', local_path: '' },
         remoteCreating: false,
         remoteTesting: '',
-        taskForm: { name: '', source: '', remote: '', dest_path: '', mode: 'sync', schedule: '', bandwidth: 0, transfers: 4 },
+        taskForm: { name: '', direction: 'upload', source: '', remote: '', dest_path: '', mode: 'sync', schedule: '', bandwidth: 0, transfers: 4 },
         taskCreating: false,
         // System settings
         // System settings (new unified)
@@ -1407,7 +1407,7 @@ function nasPanel() {
             }
             this.taskCreating = true;
             const t = this.taskForm;
-            const body = `name=${encodeURIComponent(t.name)}&source=${encodeURIComponent(t.source)}&remote=${encodeURIComponent(t.remote)}&dest_path=${encodeURIComponent(t.dest_path)}&mode=${encodeURIComponent(t.mode)}&schedule=${encodeURIComponent(t.schedule)}&bandwidth=${t.bandwidth}&transfers=${t.transfers}`;
+            const body = `name=${encodeURIComponent(t.name)}&direction=${encodeURIComponent(t.direction)}&source=${encodeURIComponent(t.source)}&remote=${encodeURIComponent(t.remote)}&dest_path=${encodeURIComponent(t.dest_path)}&mode=${encodeURIComponent(t.mode)}&schedule=${encodeURIComponent(t.schedule)}&bandwidth=${t.bandwidth}&transfers=${t.transfers}`;
             const data = await this.api('/rclone/tasks', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -1417,7 +1417,7 @@ function nasPanel() {
             if (data && !data.error) {
                 this.showToast(data.message || '任务已创建', 'success');
                 this.showAddTask = false;
-                this.taskForm = { name: '', source: '', remote: '', dest_path: '', mode: 'sync', schedule: '', bandwidth: 0, transfers: 4 };
+                this.taskForm = { name: '', direction: 'upload', source: '', remote: '', dest_path: '', mode: 'sync', schedule: '', bandwidth: 0, transfers: 4 };
                 this.loadRcloneTasks();
             } else if (data && data.error) {
                 this.showToast('创建失败: ' + data.error, 'error');

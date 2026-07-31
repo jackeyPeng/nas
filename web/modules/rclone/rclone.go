@@ -33,6 +33,7 @@ type Remote struct {
 type SyncTask struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
+	Direction   string `json:"direction"`    // upload(本地→远端) | download(远端→本地)，默认 upload
 	Source      string `json:"source"`       // 本地路径，如 /data/nas1/docs
 	Remote      string `json:"remote"`       // 远端名称
 	DestPath    string `json:"dest_path"`    // 远端路径，如 backup/docs
@@ -341,6 +342,7 @@ func handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	}
 	r.ParseForm()
 	name := strings.TrimSpace(r.FormValue("name"))
+	direction := strings.TrimSpace(r.FormValue("direction"))
 	source := strings.TrimSpace(r.FormValue("source"))
 	remote := strings.TrimSpace(r.FormValue("remote"))
 	destPath := strings.TrimSpace(r.FormValue("dest_path"))
@@ -359,6 +361,9 @@ func handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	if mode != "sync" && mode != "copy" && mode != "bisync" {
 		mode = "sync"
 	}
+	if direction != "download" {
+		direction = "upload"
+	}
 	// 安全检查：source 必须是绝对路径
 	if !strings.HasPrefix(source, "/") {
 		http.Error(w, `{"error":"source must be absolute path"}`, http.StatusBadRequest)
@@ -376,6 +381,7 @@ func handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	task := SyncTask{
 		ID:        generateID(),
 		Name:      name,
+		Direction: direction,
 		Source:    source,
 		Remote:    remote,
 		DestPath:  destPath,
@@ -415,6 +421,9 @@ func handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 	for i, t := range tasks {
 		if t.ID != id {
 			continue
+		}
+		if v := r.FormValue("direction"); v == "upload" || v == "download" {
+			tasks[i].Direction = v
 		}
 		if v := r.FormValue("name"); v != "" {
 			tasks[i].Name = v
@@ -560,9 +569,15 @@ func executeTask(task SyncTask) {
 		args = append(args, "sync")
 	}
 
-	// 源和目标
-	src := task.Source
-	dst := fmt.Sprintf("%s:%s", task.Remote, task.DestPath)
+	// 源和目标（按方向交换）
+	localPath := task.Source
+	remotePath := fmt.Sprintf("%s:%s", task.Remote, task.DestPath)
+	var src, dst string
+	if task.Direction == "download" {
+		src, dst = remotePath, localPath
+	} else {
+		src, dst = localPath, remotePath
+	}
 	args = append(args, src, dst)
 
 	// 选项
