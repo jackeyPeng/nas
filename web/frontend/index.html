@@ -1933,16 +1933,18 @@
                 <div class="modal" x-show="showAddTask" x-cloak>
                     <div class="modal-box" style="max-width:520px;width:520px">
                         <h3>新建同步任务</h3>
-                        <div class="form-group">
-                            <label>任务名称</label>
-                            <input type="text" x-model="taskForm.name" placeholder="如: 文档备份到S3">
-                        </div>
-                        <div class="form-group">
-                            <label>同步方向</label>
-                            <select x-model="taskForm.direction">
-                                <option value="upload">上传：本地 → 远端（备份到云）</option>
-                                <option value="download">下载：远端 → 本地（从云恢复）</option>
-                            </select>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                            <div class="form-group">
+                                <label>任务名称</label>
+                                <input type="text" x-model="taskForm.name" placeholder="如: 文档备份到S3">
+                            </div>
+                            <div class="form-group">
+                                <label>同步方向</label>
+                                <select x-model="taskForm.direction">
+                                    <option value="upload">上传：本地 → 远端</option>
+                                    <option value="download">下载：远端 → 本地</option>
+                                </select>
+                            </div>
                         </div>
                         <div class="form-group">
                             <label x-text="taskForm.direction === 'download' ? '本地路径（保存到）' : '源路径（本地）'"></label>
@@ -1954,19 +1956,20 @@
                             </select>
                             <small style="color:#64748b">仅允许选择已配置的共享目录</small>
                         </div>
-                        <div class="form-group">
-                            <label>远端存储</label>
-                            <select x-model="taskForm.remote">
-                                <option value="">选择远端</option>
-                                <template x-for="r in rcloneRemotes" :key="r.name">
-                                    <option :value="r.name" x-text="r.name + ' (' + r.type + ')'"></option>
-                                </template>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label x-text="taskForm.direction === 'download' ? '远端路径（来源）' : '目标路径（远端）'"></label>
-                            <input type="text" x-model="taskForm.dest_path" placeholder="如: backup/documents">
-                            <small style="color:#64748b">远端存储中的路径，不需要以 / 开头</small>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                            <div class="form-group">
+                                <label>远端存储</label>
+                                <select x-model="taskForm.remote">
+                                    <option value="">选择远端</option>
+                                    <template x-for="r in rcloneRemotes" :key="r.name">
+                                        <option :value="r.name" x-text="r.name + ' (' + r.type + ')'"></option>
+                                    </template>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label x-text="taskForm.direction === 'download' ? '远端路径（来源）' : '目标路径（远端）'"></label>
+                                <input type="text" x-model="taskForm.dest_path" placeholder="如: backup/documents">
+                            </div>
                         </div>
                         <div class="form-group">
                             <label>同步模式</label>
@@ -1977,19 +1980,26 @@
                             </select>
                             <small style="color:#b45309" x-show="taskForm.direction === 'download' && taskForm.mode === 'sync'">⚠️ 下载+sync 模式会删除本地多余文件，恢复到与远端完全一致</small>
                         </div>
-                        <div class="form-group">
-                            <label>定时同步（cron 表达式，留空表示手动）</label>
-                            <input type="text" x-model="taskForm.schedule" placeholder="如: 0 2 * * * 表示每天凌晨2点">
-                            <small style="color:#64748b">格式: 分 时 日 月 周，如 0 2 * * * = 每天 02:00</small>
-                        </div>
-                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-                            <div class="form-group">
-                                <label>带宽限制 (KB/s)</label>
-                                <input type="number" x-model="taskForm.bandwidth" placeholder="0 = 不限">
+                        <div style="border:1px solid #e2e8f0;border-radius:8px;margin-bottom:16px">
+                            <div @click="showTaskAdvanced = !showTaskAdvanced" style="padding:10px 14px;cursor:pointer;display:flex;align-items:center;gap:6px;color:#475569;font-size:13px;font-weight:600;user-select:none">
+                                <span x-text="showTaskAdvanced ? '▾' : '▸'"></span>
+                                <span>高级选项（定时 / 带宽 / 并发）</span>
                             </div>
-                            <div class="form-group">
-                                <label>并发数</label>
-                                <input type="number" x-model="taskForm.transfers" placeholder="默认 4" value="4">
+                            <div x-show="showTaskAdvanced" style="padding:0 14px 14px">
+                                <div class="form-group">
+                                    <label>定时同步（cron 表达式，留空表示手动）</label>
+                                    <input type="text" x-model="taskForm.schedule" placeholder="如: 0 2 * * * = 每天 02:00">
+                                </div>
+                                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                                    <div class="form-group" style="margin-bottom:0">
+                                        <label>带宽限制 (KB/s)</label>
+                                        <input type="number" x-model="taskForm.bandwidth" placeholder="0 = 不限">
+                                    </div>
+                                    <div class="form-group" style="margin-bottom:0">
+                                        <label>并发数</label>
+                                        <input type="number" x-model="taskForm.transfers" placeholder="默认 4" value="4">
+                                    </div>
+                                </div>
                             </div>
                         </div>
                         <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:20px">
