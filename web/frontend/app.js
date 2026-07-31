@@ -11,7 +11,19 @@ function nasPanel() {
         storage: {},
         smartStatus: '',
         firewallStatus: '',
-        firewallForm: { port: '', proto: 'tcp' },
+        firewall: { loaded: false, installed: false, active: false, default_incoming: '', rules: [] },
+        firewallPresets: [
+            { label: 'SSH (22)', port: '22', proto: 'tcp' },
+            { label: 'Samba (445)', port: '445', proto: 'tcp' },
+            { label: 'Samba (139)', port: '139', proto: 'tcp' },
+            { label: 'FTP (21)', port: '21', proto: 'tcp' },
+            { label: 'FTP 被动 (30000:31000)', port: '30000:31000', proto: 'tcp' },
+            { label: 'NFS (2049)', port: '2049', proto: 'any' },
+            { label: 'WebDAV (8080)', port: '8080', proto: 'tcp' },
+            { label: '面板 (8090)', port: '8090', proto: 'tcp' },
+        ],
+        firewallForm: { port: '', proto: 'tcp', action: 'allow', from: '', comment: '' },
+        firewallSaving: false,
         monitor: {},
         monitorTimer: null,
         monitorShowDetail: false,
@@ -230,7 +242,11 @@ function nasPanel() {
 
         async loadFirewall() {
             const data = await this.api('/firewall');
-            if (data) this.firewallStatus = data;
+            if (data && !data.error) {
+                data.loaded = true;
+                data.rules = data.rules || [];
+                this.firewall = data;
+            }
         },
 
         async svcAction(name, action) {
@@ -465,19 +481,58 @@ function nasPanel() {
             }
         },
 
-        async firewallAction(action) {
-            if (!this.firewallForm.port) {
+        applyPreset(p) {
+            this.firewallForm.port = p.port;
+            this.firewallForm.proto = p.proto;
+            this.firewallForm.action = 'allow';
+            if (!this.firewallForm.comment) this.firewallForm.comment = p.label.replace(/\s*\(.*\)/, '');
+        },
+
+        async addFirewallRule() {
+            const f = this.firewallForm;
+            if (!f.port) {
                 this.showToast('请输入端口号', 'error');
                 return;
             }
-            const data = await this.api(`/firewall/${action}`, {
+            this.firewallSaving = true;
+            const body = `port=${encodeURIComponent(f.port)}&proto=${encodeURIComponent(f.proto)}&action=${encodeURIComponent(f.action)}&from=${encodeURIComponent(f.from)}&comment=${encodeURIComponent(f.comment)}`;
+            const data = await this.api('/firewall/rules', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: `port=${encodeURIComponent(this.firewallForm.port)}&proto=${encodeURIComponent(this.firewallForm.proto)}`
+                body: body
             });
-            if (data) {
+            this.firewallSaving = false;
+            if (data && !data.error) {
+                this.showToast(data.message || '规则已添加', 'success');
+                this.firewallForm = { port: '', proto: 'tcp', action: 'allow', from: '', comment: '' };
+                this.loadFirewall();
+            } else if (data && data.error) {
+                this.showToast('添加失败: ' + data.error, 'error');
+            }
+        },
+
+        async deleteFirewallRule(rule) {
+            const desc = (rule.proto === 'any' ? rule.port : rule.port + '/' + rule.proto) + (rule.v6 ? ' (v6)' : '');
+            if (!confirm(`确定删除规则 #${rule.num}（${desc}）？`)) return;
+            const data = await this.api('/firewall/rules/' + rule.num, { method: 'DELETE' });
+            if (data && !data.error) {
+                this.showToast(data.message || '规则已删除', 'success');
+                this.loadFirewall();
+            } else if (data && data.error) {
+                this.showToast('删除失败: ' + data.error, 'error');
+            }
+        },
+
+        async toggleFirewall() {
+            const enabling = !this.firewall.active;
+            if (enabling && !confirm('启用防火墙？会自动放行 SSH(22) 和面板(8090)。')) return;
+            if (!enabling && !confirm('确定禁用防火墙？所有端口将完全开放。')) return;
+            const data = await this.api('/firewall/' + (enabling ? 'enable' : 'disable'), { method: 'POST' });
+            if (data && !data.error) {
                 this.showToast(data.message || '操作成功', 'success');
                 this.loadFirewall();
+            } else if (data && data.error) {
+                this.showToast('操作失败: ' + data.error, 'error');
             }
         },
 
