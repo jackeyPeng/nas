@@ -1779,8 +1779,8 @@
                 </div>
 
                 <!-- ═══ 添加远端弹窗 ═══ -->
-                <div class="modal" x-show="showAddRemote" x-cloak>
-                    <div class="modal-box" style="max-width:520px;width:520px">
+                <div class="modal-overlay" x-show="showAddRemote" x-cloak>
+                    <div class="modal" @click.outside="showAddRemote = false">
                         <h3>添加远端存储</h3>
                         <div class="form-group">
                             <label>名称</label>
@@ -1924,8 +1924,8 @@
                 </div>
 
                 <!-- ═══ 新建任务弹窗 ═══ -->
-                <div class="modal" x-show="showAddTask" x-cloak>
-                    <div class="modal-box" style="max-width:520px;width:520px">
+                <div class="modal-overlay" x-show="showAddTask" x-cloak>
+                    <div class="modal" @click.outside="showAddTask = false">
                         <h3>新建同步任务</h3>
                         <div class="form-group">
                             <label>任务名称</label>
