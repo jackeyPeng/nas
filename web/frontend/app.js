@@ -80,12 +80,14 @@ function nasPanel() {
         sharedDirs: [],
         rcloneLogs: [],
         showAddRemote: false,
+        editingRemote: '',   // 非空 = 编辑模式
         showAddTask: false,
+        editingTask: null,   // 非空 = 编辑模式（任务对象）
         showTaskAdvanced: false,
         remoteForm: { name: '', type: '', provider: 'AWS', endpoint: '', access_key_id: '', secret_access_key: '', region: '', host: '', port: '22', user: '', pass: '', url: '', vendor: 'nextcloud', local_path: '' },
         remoteCreating: false,
         remoteTesting: '',
-        taskForm: { name: '', direction: 'upload', source: '', remote: '', dest_path: '', mode: 'sync', schedule: '', bandwidth: 0, transfers: 4 },
+        taskForm: { name: '', direction: 'upload', source: '', sub_path: '', remote: '', dest_path: '', mode: 'sync', schedule: '', bandwidth: 0, transfers: 4 },
         taskCreating: false,
         // System settings
         // System settings (new unified)
@@ -1338,6 +1340,48 @@ function nasPanel() {
             if (data) this.rcloneLogs = data.logs || [];
         },
 
+        blankRemoteForm() {
+            return { name: '', type: '', provider: 'AWS', endpoint: '', access_key_id: '', secret_access_key: '', region: '', host: '', port: '22', user: '', pass: '', url: '', vendor: 'nextcloud', local_path: '' };
+        },
+
+        blankTaskForm() {
+            return { name: '', direction: 'upload', source: '', sub_path: '', remote: '', dest_path: '', mode: 'sync', schedule: '', bandwidth: 0, transfers: 4 };
+        },
+
+        openAddRemote() {
+            this.editingRemote = '';
+            this.remoteForm = this.blankRemoteForm();
+            this.showAddRemote = true;
+        },
+
+        async editRemote(name) {
+            const data = await this.api('/rclone/remotes/' + encodeURIComponent(name));
+            if (!data || data.error) {
+                this.showToast('读取远端配置失败: ' + (data && data.error || ''), 'error');
+                return;
+            }
+            const f = this.blankRemoteForm();
+            f.name = data.name;
+            f.type = data.type;
+            const c = data.config || {};
+            // 回填各类型字段（敏感字段后端返回 ********，提交时后端会跳过）
+            f.provider = c.provider || f.provider;
+            f.endpoint = c.endpoint || '';
+            f.access_key_id = c.access_key_id || '';
+            f.secret_access_key = c.secret_access_key || '';
+            f.region = c.region || '';
+            f.host = c.host || '';
+            f.port = c.port || (data.type === 'ftp' ? '21' : '22');
+            f.user = c.user || '';
+            f.pass = c.pass || '';
+            f.url = c.url || '';
+            f.vendor = c.vendor || f.vendor;
+            f.local_path = c.local_path || c.path || '';
+            this.remoteForm = f;
+            this.editingRemote = name;
+            this.showAddRemote = true;
+        },
+
         async createRemote() {
             if (!this.remoteForm.name || !this.remoteForm.type) {
                 this.showToast('请填写名称和类型', 'error');
@@ -1345,8 +1389,27 @@ function nasPanel() {
             }
             this.remoteCreating = true;
             let body = `name=${encodeURIComponent(this.remoteForm.name)}&type=${encodeURIComponent(this.remoteForm.type)}`;
-            // 根据类型附加配置参数
+            body += this.remoteConfigBody();
+            const data = await this.api('/rclone/remotes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: body
+            });
+            this.remoteCreating = false;
+            if (data && !data.error) {
+                this.showToast(data.message || '远端已创建', 'success');
+                this.showAddRemote = false;
+                this.remoteForm = this.blankRemoteForm();
+                this.loadRcloneRemotes();
+            } else if (data && data.error) {
+                this.showToast('创建失败: ' + data.error, 'error');
+            }
+        },
+
+        // remoteConfigBody 根据类型生成 rc_* 参数（创建/更新共用）
+        remoteConfigBody() {
             const f = this.remoteForm;
+            let body = '';
             if (f.type === 's3') {
                 body += `&rc_provider=${encodeURIComponent(f.provider)}&rc_endpoint=${encodeURIComponent(f.endpoint)}`;
                 body += `&rc_access_key_id=${encodeURIComponent(f.access_key_id)}&rc_secret_access_key=${encodeURIComponent(f.secret_access_key)}`;
@@ -1363,19 +1426,28 @@ function nasPanel() {
             } else if (f.type === 'local') {
                 body += `&rc_local_path=${encodeURIComponent(f.local_path)}`;
             }
-            const data = await this.api('/rclone/remotes', {
-                method: 'POST',
+            return body;
+        },
+
+        async saveRemote() {
+            if (!this.editingRemote) {
+                return this.createRemote();
+            }
+            this.remoteCreating = true;
+            const body = this.remoteConfigBody().replace(/^&/, '');
+            const data = await this.api('/rclone/remotes/' + encodeURIComponent(this.editingRemote), {
+                method: 'PUT',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: body
             });
             this.remoteCreating = false;
             if (data && !data.error) {
-                this.showToast(data.message || '远端已创建', 'success');
+                this.showToast(data.message || '远端已更新', 'success');
                 this.showAddRemote = false;
-                this.remoteForm = { name: '', type: '', provider: 'AWS', endpoint: '', access_key_id: '', secret_access_key: '', region: '', host: '', port: '22', user: '', pass: '', url: '', vendor: 'nextcloud', local_path: '' };
+                this.editingRemote = '';
                 this.loadRcloneRemotes();
             } else if (data && data.error) {
-                this.showToast('创建失败: ' + data.error, 'error');
+                this.showToast('保存失败: ' + data.error, 'error');
             }
         },
 
@@ -1407,14 +1479,78 @@ function nasPanel() {
             }
         },
 
+        // 任务本地完整路径 = 共享目录 + 可选子路径
+        taskFullSource() {
+            const t = this.taskForm;
+            if (!t.sub_path) return t.source;
+            const sub = t.sub_path.replace(/^\/+|\/+$/g, '');
+            return sub ? t.source + '/' + sub : t.source;
+        },
+
+        openAddTask() {
+            this.editingTask = null;
+            this.taskForm = this.blankTaskForm();
+            this.showTaskAdvanced = false;
+            this.showAddTask = true;
+        },
+
+        editTask(task) {
+            // 拆分 source 为 共享目录 + 子路径
+            const f = this.blankTaskForm();
+            f.name = task.name;
+            f.direction = task.direction || 'upload';
+            f.remote = task.remote;
+            f.dest_path = task.dest_path;
+            f.mode = task.mode;
+            f.schedule = task.schedule || '';
+            f.bandwidth = task.bandwidth || 0;
+            f.transfers = task.transfers || 4;
+            f.source = task.source;
+            // 若 source 是某个共享目录的子路径，拆出 sub_path
+            for (const d of this.sharedDirs) {
+                if (task.source.startsWith(d + '/')) {
+                    f.source = d;
+                    f.sub_path = task.source.slice(d.length + 1);
+                    break;
+                }
+            }
+            this.taskForm = f;
+            this.editingTask = task;
+            this.showTaskAdvanced = !!(task.schedule || task.bandwidth > 0);
+            this.showAddTask = true;
+        },
+
+        async createSubDir() {
+            const t = this.taskForm;
+            if (!t.source || !t.sub_path) return;
+            const data = await this.api('/rclone/mkdir', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `dir=${encodeURIComponent(t.source)}&sub=${encodeURIComponent(t.sub_path)}`
+            });
+            if (data && !data.error) {
+                this.showToast('目录已创建: ' + data.path, 'success');
+            } else if (data && data.error) {
+                this.showToast('创建失败: ' + data.error, 'error');
+            }
+        },
+
+        async saveTask() {
+            if (this.editingTask) {
+                return this.updateTask();
+            }
+            return this.createTask();
+        },
+
         async createTask() {
-            if (!this.taskForm.name || !this.taskForm.source || !this.taskForm.remote || !this.taskForm.dest_path) {
+            const fullSource = this.taskFullSource();
+            if (!this.taskForm.name || !fullSource || !this.taskForm.remote || !this.taskForm.dest_path) {
                 this.showToast('请填写必填项', 'error');
                 return;
             }
             this.taskCreating = true;
             const t = this.taskForm;
-            const body = `name=${encodeURIComponent(t.name)}&direction=${encodeURIComponent(t.direction)}&source=${encodeURIComponent(t.source)}&remote=${encodeURIComponent(t.remote)}&dest_path=${encodeURIComponent(t.dest_path)}&mode=${encodeURIComponent(t.mode)}&schedule=${encodeURIComponent(t.schedule)}&bandwidth=${t.bandwidth}&transfers=${t.transfers}`;
+            const body = `name=${encodeURIComponent(t.name)}&direction=${encodeURIComponent(t.direction)}&source=${encodeURIComponent(fullSource)}&remote=${encodeURIComponent(t.remote)}&dest_path=${encodeURIComponent(t.dest_path)}&mode=${encodeURIComponent(t.mode)}&schedule=${encodeURIComponent(t.schedule)}&bandwidth=${t.bandwidth}&transfers=${t.transfers}`;
             const data = await this.api('/rclone/tasks', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -1424,10 +1560,35 @@ function nasPanel() {
             if (data && !data.error) {
                 this.showToast(data.message || '任务已创建', 'success');
                 this.showAddTask = false;
-                this.taskForm = { name: '', direction: 'upload', source: '', remote: '', dest_path: '', mode: 'sync', schedule: '', bandwidth: 0, transfers: 4 };
+                this.taskForm = this.blankTaskForm();
                 this.loadRcloneTasks();
             } else if (data && data.error) {
                 this.showToast('创建失败: ' + data.error, 'error');
+            }
+        },
+
+        async updateTask() {
+            const fullSource = this.taskFullSource();
+            const t = this.taskForm;
+            if (!t.name || !fullSource || !t.remote || !t.dest_path) {
+                this.showToast('请填写必填项', 'error');
+                return;
+            }
+            this.taskCreating = true;
+            const body = `name=${encodeURIComponent(t.name)}&direction=${encodeURIComponent(t.direction)}&source=${encodeURIComponent(fullSource)}&remote=${encodeURIComponent(t.remote)}&dest_path=${encodeURIComponent(t.dest_path)}&mode=${encodeURIComponent(t.mode)}&schedule=${encodeURIComponent(t.schedule)}&bandwidth=${t.bandwidth}&transfers=${t.transfers}`;
+            const data = await this.api('/rclone/tasks/' + encodeURIComponent(this.editingTask.id), {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: body
+            });
+            this.taskCreating = false;
+            if (data && !data.error) {
+                this.showToast(data.message || '任务已更新', 'success');
+                this.showAddTask = false;
+                this.editingTask = null;
+                this.loadRcloneTasks();
+            } else if (data && data.error) {
+                this.showToast('保存失败: ' + data.error, 'error');
             }
         },
 

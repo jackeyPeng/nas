@@ -162,8 +162,11 @@ func RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/rclone/remotes", common.AuthMiddleware(handleListRemotes))
 	mux.HandleFunc("POST /api/rclone/remotes", common.AuthMiddleware(handleCreateRemote))
 	mux.HandleFunc("DELETE /api/rclone/remotes/{name}", common.AuthMiddleware(handleDeleteRemote))
+	mux.HandleFunc("GET /api/rclone/remotes/{name}", common.AuthMiddleware(handleGetRemote))
+	mux.HandleFunc("PUT /api/rclone/remotes/{name}", common.AuthMiddleware(handleUpdateRemote))
 	mux.HandleFunc("POST /api/rclone/remotes/test", common.AuthMiddleware(handleTestRemote))
 	mux.HandleFunc("GET /api/rclone/shared-dirs", common.AuthMiddleware(handleSharedDirs))
+	mux.HandleFunc("POST /api/rclone/mkdir", common.AuthMiddleware(handleMkdir))
 
 	// 同步任务
 	mux.HandleFunc("GET /api/rclone/tasks", common.AuthMiddleware(handleListTasks))
@@ -272,6 +275,147 @@ func handleCreateRemote(w http.ResponseWriter, r *http.Request) {
 	common.JSONResponse(w, map[string]interface{}{
 		"message": fmt.Sprintf("远端 %s 已创建", name),
 		"output":  string(out),
+	})
+}
+
+// sensitiveKeys 脱敏的敏感字段
+var sensitiveKeys = map[string]bool{
+	"secret_access_key": true, "pass": true, "password": true,
+	"client_secret": true, "token": true, "key": true,
+}
+
+// handleGetRemote 返回单个远端的配置（敏感字段脱敏为 "********"）
+func handleGetRemote(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if name == "" {
+		http.Error(w, `{"error":"name required"}`, http.StatusBadRequest)
+		return
+	}
+	conf := getRcloneConf()
+	data, err := common.SudoOutput("cat", conf)
+	if err != nil {
+		http.Error(w, `{"error":"读取 rclone 配置失败"}`, http.StatusInternalServerError)
+		return
+	}
+	// 解析 ini 段落
+	section := "[" + name + "]"
+	inSection := false
+	cfg := map[string]string{}
+	rtype := ""
+	found := false
+	for _, line := range strings.Split(data, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == section {
+			inSection = true
+			found = true
+			continue
+		}
+		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+			inSection = false
+			continue
+		}
+		if !inSection || !strings.Contains(trimmed, "=") {
+			continue
+		}
+		parts := strings.SplitN(trimmed, "=", 2)
+		key := strings.TrimSpace(parts[0])
+		val := strings.TrimSpace(parts[1])
+		if key == "type" {
+			rtype = val
+		}
+		if sensitiveKeys[key] {
+			if val != "" {
+				cfg[key] = "********"
+			}
+		} else {
+			cfg[key] = val
+		}
+	}
+	if !found {
+		http.Error(w, `{"error":"远端不存在"}`, http.StatusNotFound)
+		return
+	}
+	common.JSONResponse(w, map[string]interface{}{
+		"name":   name,
+		"type":   rtype,
+		"config": cfg,
+	})
+}
+
+// handleUpdateRemote 更新远端配置（留空的敏感字段保持不变）
+func handleUpdateRemote(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if name == "" {
+		http.Error(w, `{"error":"name required"}`, http.StatusBadRequest)
+		return
+	}
+	r.ParseForm()
+	args := []string{"config", "update", name}
+	count := 0
+	for key, vals := range r.Form {
+		if !strings.HasPrefix(key, "rc_") || len(vals) == 0 {
+			continue
+		}
+		k := strings.TrimPrefix(key, "rc_")
+		v := vals[0]
+		// 留空或占位符 = 不修改该字段
+		if v == "" || v == "********" {
+			continue
+		}
+		args = append(args, k+"="+v)
+		count++
+	}
+	if count == 0 {
+		common.JSONResponse(w, map[string]interface{}{"message": "没有需要修改的字段"})
+		return
+	}
+	cmd := rcloneCmdSudo(args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, string(out)), http.StatusInternalServerError)
+		return
+	}
+	common.JSONResponse(w, map[string]interface{}{
+		"message": fmt.Sprintf("远端 %s 已更新", name),
+		"output":  string(out),
+	})
+}
+
+// handleMkdir 在共享目录下创建子目录
+func handleMkdir(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	dir := strings.TrimSpace(r.FormValue("dir")) // 必须是共享目录白名单内
+	sub := strings.TrimSpace(r.FormValue("sub")) // 子路径，如 backup/2026
+	if dir == "" || sub == "" {
+		http.Error(w, `{"error":"dir 和 sub 必填"}`, http.StatusBadRequest)
+		return
+	}
+	if !isUnderSharedDir(dir) {
+		http.Error(w, `{"error":"dir 必须是已配置的共享目录"}`, http.StatusBadRequest)
+		return
+	}
+	// 防穿越：不允许 ..、绝对路径、首尾斜杠
+	if strings.Contains(sub, "..") || strings.HasPrefix(sub, "/") || strings.Contains(sub, "\\") {
+		http.Error(w, `{"error":"子路径不能包含 .. 或以 / 开头"}`, http.StatusBadRequest)
+		return
+	}
+	sub = strings.Trim(sub, "/")
+	full := filepath.Join(dir, sub)
+	// 二次确认拼出来的路径仍在共享目录内
+	if !isUnderSharedDir(full) {
+		http.Error(w, `{"error":"目标路径超出共享目录范围"}`, http.StatusBadRequest)
+		return
+	}
+	out, err := common.SudoOutput("mkdir", "-p", full)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"创建失败: %s: %v"}`, out, err), http.StatusInternalServerError)
+		return
+	}
+	// 属主对齐父共享目录（保持 Samba 可写）
+	common.SudoExec("bash", "-c", fmt.Sprintf("chown --reference=%s %s", dir, full))
+	common.JSONResponse(w, map[string]interface{}{
+		"message": "目录已创建",
+		"path":    full,
 	})
 }
 
@@ -498,8 +642,8 @@ func handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 		if v := r.FormValue("mode"); v != "" {
 			tasks[i].Mode = v
 		}
-		if v := r.FormValue("schedule"); v != "" {
-			tasks[i].Schedule = v
+		if _, ok := r.Form["schedule"]; ok {
+			tasks[i].Schedule = r.FormValue("schedule") // 允许清空（回到手动）
 		}
 		if v := r.FormValue("bandwidth"); v != "" {
 			tasks[i].Bandwidth, _ = strconv.Atoi(v)
