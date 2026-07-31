@@ -81,6 +81,7 @@ function nasPanel() {
         rcloneLogs: [],
         showAddRemote: false,
         showAddTask: false,
+        showTaskAdvanced: false,
         remoteForm: { name: '', type: '', provider: 'AWS', endpoint: '', access_key_id: '', secret_access_key: '', region: '', host: '', port: '22', user: '', pass: '', url: '', vendor: 'nextcloud', local_path: '' },
         remoteCreating: false,
         remoteTesting: '',
