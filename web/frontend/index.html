@@ -1694,7 +1694,8 @@
                             <thead>
                                 <tr>
                                     <th>任务名称</th>
-                                    <th>源路径</th>
+                                    <th>方向</th>
+                                    <th>源</th>
                                     <th>目标</th>
                                     <th>模式</th>
                                     <th>定时</th>
@@ -1707,8 +1708,13 @@
                                 <template x-for="task in rcloneTasks" :key="task.id">
                                     <tr>
                                         <td style="font-weight:600" x-text="task.name"></td>
-                                        <td style="font-family:monospace;font-size:12px" x-text="task.source"></td>
-                                        <td style="font-family:monospace;font-size:12px" x-text="task.remote + ':' + task.dest_path"></td>
+                                        <td>
+                                            <span style="padding:2px 8px;border-radius:10px;font-size:11px"
+                                                :style="task.direction === 'download' ? 'background:#ede9fe;color:#7c3aed' : 'background:#e0f2fe;color:#0369a1'"
+                                                x-text="task.direction === 'download' ? '⬇ 下载' : '⬆ 上传'"></span>
+                                        </td>
+                                        <td style="font-family:monospace;font-size:12px" x-text="task.direction === 'download' ? task.remote + ':' + task.dest_path : task.source"></td>
+                                        <td style="font-family:monospace;font-size:12px" x-text="task.direction === 'download' ? task.source : task.remote + ':' + task.dest_path"></td>
                                         <td>
                                             <span style="padding:2px 8px;border-radius:10px;font-size:11px"
                                                 :style="task.mode === 'sync' ? 'background:#dbeafe;color:#1d4ed8' : task.mode === 'copy' ? 'background:#dcfce7;color:#16a34a' : 'background:#fef3c7;color:#d97706'"
@@ -1932,7 +1938,14 @@
                             <input type="text" x-model="taskForm.name" placeholder="如: 文档备份到S3">
                         </div>
                         <div class="form-group">
-                            <label>源路径（本地）</label>
+                            <label>同步方向</label>
+                            <select x-model="taskForm.direction">
+                                <option value="upload">上传：本地 → 远端（备份到云）</option>
+                                <option value="download">下载：远端 → 本地（从云恢复）</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label x-text="taskForm.direction === 'download' ? '本地路径（保存到）' : '源路径（本地）'"></label>
                             <input type="text" x-model="taskForm.source" placeholder="如: /data/nas1/documents">
                             <small style="color:#64748b">必须是绝对路径，不能是系统目录</small>
                         </div>
@@ -1946,7 +1959,7 @@
                             </select>
                         </div>
                         <div class="form-group">
-                            <label>目标路径（远端）</label>
+                            <label x-text="taskForm.direction === 'download' ? '远端路径（来源）' : '目标路径（远端）'"></label>
                             <input type="text" x-model="taskForm.dest_path" placeholder="如: backup/documents">
                             <small style="color:#64748b">远端存储中的路径，不需要以 / 开头</small>
                         </div>
@@ -1957,6 +1970,7 @@
                                 <option value="copy">仅复制（源 → 目标，不删除目标文件）</option>
                                 <option value="bisync">双向同步（需要预先建立基线）</option>
                             </select>
+                            <small style="color:#b45309" x-show="taskForm.direction === 'download' && taskForm.mode === 'sync'">⚠️ 下载+sync 模式会删除本地多余文件，恢复到与远端完全一致</small>
                         </div>
                         <div class="form-group">
                             <label>定时同步（cron 表达式，留空表示手动）</label>
