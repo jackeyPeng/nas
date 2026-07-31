@@ -1644,7 +1644,7 @@
                 <div style="background:white;border:1px solid #e0e4e8;border-radius:12px;padding:20px;margin-bottom:24px">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
                         <h3 style="margin:0;font-size:16px">远端存储</h3>
-                        <button class="btn btn-primary btn-sm" @click="showAddRemote = true">添加远端</button>
+                        <button class="btn btn-primary btn-sm" @click="openAddRemote()">添加远端</button>
                     </div>
 
                     <div x-show="!rcloneRemotes.length" style="text-align:center;padding:24px;color:#94a3b8">
@@ -1666,6 +1666,7 @@
                                         <span x-show="remoteTesting !== remote.name">测试连接</span>
                                         <span x-show="remoteTesting === remote.name">测试中...</span>
                                     </button>
+                                    <button class="btn btn-sm" @click="editRemote(remote.name)" style="font-size:12px">编辑</button>
                                     <button class="btn btn-sm btn-danger" @click="deleteRemote(remote.name)" style="font-size:12px">删除</button>
                                 </div>
                             </div>
@@ -1677,7 +1678,7 @@
                 <div style="background:white;border:1px solid #e0e4e8;border-radius:12px;padding:20px;margin-bottom:24px">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
                         <h3 style="margin:0;font-size:16px">同步任务</h3>
-                        <button class="btn btn-primary btn-sm" @click="showAddTask = true" :disabled="!rcloneRemotes.length">新建任务</button>
+                        <button class="btn btn-primary btn-sm" @click="openAddTask()" :disabled="!rcloneRemotes.length">新建任务</button>
                     </div>
 
                     <div x-show="!rcloneTasks.length" style="text-align:center;padding:24px;color:#94a3b8">
@@ -1737,6 +1738,7 @@
                                         </td>
                                         <td class="actions" style="white-space:nowrap">
                                             <button class="btn btn-sm btn-success" @click="runTask(task.id)" :disabled="task.last_result === 'running'" style="font-size:11px;padding:2px 8px">运行</button>
+                                            <button class="btn btn-sm" @click="editTask(task)" style="font-size:11px;padding:2px 8px">编辑</button>
                                             <button class="btn btn-sm" @click="toggleTask(task.id)" style="font-size:11px;padding:2px 8px"
                                                 x-text="task.enabled ? '禁用' : '启用'"></button>
                                             <button class="btn btn-sm btn-danger" @click="deleteTask(task.id)" style="font-size:11px;padding:2px 8px">删除</button>
@@ -1784,18 +1786,19 @@
                     </div>
                 </div>
 
-                <!-- ═══ 添加远端弹窗 ═══ -->
+                <!-- ═══ 添加/编辑远端弹窗 ═══ -->
                 <div class="modal" x-show="showAddRemote" x-cloak>
                     <div class="modal-box" style="max-width:520px;width:520px">
-                        <h3>添加远端存储</h3>
+                        <h3 x-text="editingRemote ? '编辑远端存储' : '添加远端存储'"></h3>
                         <div class="form-group">
                             <label>名称</label>
-                            <input type="text" x-model="remoteForm.name" placeholder="如: my-s3, backup-oss">
-                            <small style="color:#64748b">只能包含字母、数字、横线和下划线</small>
+                            <input type="text" x-model="remoteForm.name" placeholder="如: my-s3, backup-oss" :disabled="!!editingRemote">
+                            <small style="color:#64748b" x-show="!editingRemote">只能包含字母、数字、横线和下划线</small>
+                            <small style="color:#64748b" x-show="editingRemote">名称不可修改</small>
                         </div>
                         <div class="form-group">
                             <label>类型</label>
-                            <select x-model="remoteForm.type" @change="updateRemoteFormFields()">
+                            <select x-model="remoteForm.type" @change="updateRemoteFormFields()" :disabled="!!editingRemote">
                                 <option value="">选择存储类型</option>
                                 <option value="s3">S3 兼容存储 (AWS S3 / MinIO / OSS / COS)</option>
                                 <option value="sftp">SFTP (SSH 文件传输)</option>
@@ -1803,6 +1806,7 @@
                                 <option value="ftp">FTP</option>
                                 <option value="local">本地路径</option>
                             </select>
+                            <small style="color:#64748b" x-show="editingRemote">类型不可修改</small>
                         </div>
 
                         <!-- S3 配置 -->
@@ -1921,18 +1925,18 @@
 
                         <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:20px">
                             <button class="btn" @click="showAddRemote = false">取消</button>
-                            <button class="btn btn-primary" @click="createRemote()" :disabled="remoteCreating">
-                                <span x-show="!remoteCreating">创建</span>
-                                <span x-show="remoteCreating">创建中...</span>
+                            <button class="btn btn-primary" @click="saveRemote()" :disabled="remoteCreating">
+                                <span x-show="!remoteCreating" x-text="editingRemote ? '保存' : '创建'"></span>
+                                <span x-show="remoteCreating" x-text="editingRemote ? '保存中...' : '创建中...'"></span>
                             </button>
                         </div>
                     </div>
                 </div>
 
-                <!-- ═══ 新建任务弹窗 ═══ -->
+                <!-- ═══ 新建/编辑任务弹窗 ═══ -->
                 <div class="modal" x-show="showAddTask" x-cloak>
                     <div class="modal-box" style="max-width:520px;width:520px">
-                        <h3>新建同步任务</h3>
+                        <h3 x-text="editingTask ? '编辑同步任务' : '新建同步任务'"></h3>
                         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
                             <div class="form-group">
                                 <label>任务名称</label>
@@ -1948,13 +1952,19 @@
                         </div>
                         <div class="form-group">
                             <label x-text="taskForm.direction === 'download' ? '本地路径（保存到）' : '源路径（本地）'"></label>
-                            <select x-model="taskForm.source">
-                                <option value="">选择共享目录</option>
-                                <template x-for="d in sharedDirs" :key="d">
-                                    <option :value="d" x-text="d"></option>
-                                </template>
-                            </select>
-                            <small style="color:#64748b">仅允许选择已配置的共享目录</small>
+                            <div style="display:flex;gap:8px">
+                                <select x-model="taskForm.source" style="flex:1">
+                                    <option value="">选择共享目录</option>
+                                    <template x-for="d in sharedDirs" :key="d">
+                                        <option :value="d" x-text="d"></option>
+                                    </template>
+                                </select>
+                            </div>
+                            <div style="display:flex;gap:8px;margin-top:8px">
+                                <input type="text" x-model="taskForm.sub_path" placeholder="子目录（可选），如: backup/2026" style="flex:1">
+                                <button class="btn btn-sm" @click="createSubDir()" :disabled="!taskForm.source || !taskForm.sub_path" style="white-space:nowrap">创建目录</button>
+                            </div>
+                            <small style="color:#64748b">从共享目录选择，可补充子目录；子目录不存在时点"创建目录"自动建立</small>
                         </div>
                         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
                             <div class="form-group">
@@ -2004,9 +2014,9 @@
                         </div>
                         <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:20px">
                             <button class="btn" @click="showAddTask = false">取消</button>
-                            <button class="btn btn-primary" @click="createTask()" :disabled="taskCreating">
-                                <span x-show="!taskCreating">创建任务</span>
-                                <span x-show="taskCreating">创建中...</span>
+                            <button class="btn btn-primary" @click="saveTask()" :disabled="taskCreating">
+                                <span x-show="!taskCreating" x-text="editingTask ? '保存' : '创建'"></span>
+                                <span x-show="taskCreating" x-text="editingTask ? '保存中...' : '创建中...'"></span>
                             </button>
                         </div>
                     </div>
