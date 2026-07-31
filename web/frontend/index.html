@@ -1946,8 +1946,13 @@
                         </div>
                         <div class="form-group">
                             <label x-text="taskForm.direction === 'download' ? '本地路径（保存到）' : '源路径（本地）'"></label>
-                            <input type="text" x-model="taskForm.source" placeholder="如: /data/nas1/documents">
-                            <small style="color:#64748b">必须是绝对路径，不能是系统目录</small>
+                            <select x-model="taskForm.source">
+                                <option value="">选择共享目录</option>
+                                <template x-for="d in sharedDirs" :key="d">
+                                    <option :value="d" x-text="d"></option>
+                                </template>
+                            </select>
+                            <small style="color:#64748b">仅允许选择已配置的共享目录</small>
                         </div>
                         <div class="form-group">
                             <label>远端存储</label>
