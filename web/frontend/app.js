@@ -77,6 +77,7 @@ function nasPanel() {
         rcloneStatus: {},
         rcloneRemotes: [],
         rcloneTasks: [],
+        sharedDirs: [],
         rcloneLogs: [],
         showAddRemote: false,
         showAddTask: false,
@@ -191,7 +192,7 @@ function nasPanel() {
                 case 'monitor': this.initMonitorRefresh(); this.loadAlertConfig(); break;
                 case 'system': this.loadSystemOverview(); break;
                 case 'backup': this.loadBackups(); break;
-                case 'rclone': this.loadRcloneStatus(); this.loadRcloneRemotes(); this.loadRcloneTasks(); this.loadRcloneLogs(); break;
+                case 'rclone': this.loadRcloneStatus(); this.loadRcloneRemotes(); this.loadRcloneTasks(); this.loadRcloneLogs(); this.loadSharedDirs(); break;
             }
         },
 
@@ -1324,6 +1325,11 @@ function nasPanel() {
         async loadRcloneTasks() {
             const data = await this.api('/rclone/tasks');
             if (data) this.rcloneTasks = data.tasks || [];
+        },
+
+        async loadSharedDirs() {
+            const data = await this.api('/rclone/shared-dirs');
+            if (data) this.sharedDirs = data.dirs || [];
         },
 
         async loadRcloneLogs() {

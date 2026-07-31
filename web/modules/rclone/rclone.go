@@ -163,6 +163,7 @@ func RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/rclone/remotes", common.AuthMiddleware(handleCreateRemote))
 	mux.HandleFunc("DELETE /api/rclone/remotes/{name}", common.AuthMiddleware(handleDeleteRemote))
 	mux.HandleFunc("POST /api/rclone/remotes/test", common.AuthMiddleware(handleTestRemote))
+	mux.HandleFunc("GET /api/rclone/shared-dirs", common.AuthMiddleware(handleSharedDirs))
 
 	// 同步任务
 	mux.HandleFunc("GET /api/rclone/tasks", common.AuthMiddleware(handleListTasks))
@@ -320,6 +321,54 @@ func handleTestRemote(w http.ResponseWriter, r *http.Request) {
 
 // ---------- 同步任务 ----------
 
+// listSharedDirs 从 smb.conf 解析已配置共享的本地路径清单
+func listSharedDirs() []string {
+	smbConf, err := common.SudoOutput("cat", "/etc/samba/smb.conf")
+	if err != nil {
+		return []string{}
+	}
+	var dirs []string
+	seen := map[string]bool{}
+	var currentName string
+	for _, line := range strings.Split(smbConf, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+			currentName = strings.Trim(trimmed, "[]")
+			continue
+		}
+		if currentName == "" || currentName == "global" || currentName == "homes" ||
+			currentName == "printers" || currentName == "print$" {
+			continue
+		}
+		if strings.HasPrefix(strings.ToLower(trimmed), "path") && strings.Contains(trimmed, "=") {
+			parts := strings.SplitN(trimmed, "=", 2)
+			p := strings.TrimSpace(parts[1])
+			if p != "" && !seen[p] {
+				seen[p] = true
+				dirs = append(dirs, p)
+			}
+		}
+	}
+	return dirs
+}
+
+// handleSharedDirs 返回可选的本地共享目录清单（前端下拉用）
+func handleSharedDirs(w http.ResponseWriter, r *http.Request) {
+	common.JSONResponse(w, map[string]interface{}{"dirs": listSharedDirs()})
+}
+
+// isUnderSharedDir 校验路径是否在某个已配置共享目录范围内（等于共享路径或为其子路径）
+func isUnderSharedDir(p string) bool {
+	p = filepath.Clean(p)
+	for _, dir := range listSharedDirs() {
+		dir = filepath.Clean(dir)
+		if p == dir || strings.HasPrefix(p, dir+"/") {
+			return true
+		}
+	}
+	return false
+}
+
 func handleListTasks(w http.ResponseWriter, r *http.Request) {
 	tasks := loadTasks()
 	// 按创建时间倒序
@@ -377,6 +426,11 @@ func handleCreateTask(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// 白名单校验：source 必须在已配置共享目录范围内
+	if !isUnderSharedDir(source) {
+		http.Error(w, `{"error":"本地路径必须在已配置的共享目录范围内，请从下拉列表选择"}`, http.StatusBadRequest)
+		return
+	}
 
 	task := SyncTask{
 		ID:        generateID(),
@@ -429,6 +483,10 @@ func handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 			tasks[i].Name = v
 		}
 		if v := r.FormValue("source"); v != "" {
+			if !isUnderSharedDir(v) {
+				http.Error(w, `{"error":"本地路径必须在已配置的共享目录范围内"}`, http.StatusBadRequest)
+				return
+			}
 			tasks[i].Source = v
 		}
 		if v := r.FormValue("remote"); v != "" {
