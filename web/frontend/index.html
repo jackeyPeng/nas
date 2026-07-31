@@ -556,18 +556,125 @@
             <!-- Storage -->
             <!-- Firewall -->
             <div x-show="page === 'firewall'" class="page">
-                <h2>防火墙</h2>
-                <div class="firewall-actions">
-                    <input type="text" x-model="firewallForm.port" placeholder="端口号" class="port-input">
-                    <select x-model="firewallForm.proto">
-                        <option value="tcp">TCP</option>
-                        <option value="udp">UDP</option>
-                    </select>
-                    <button class="btn btn-success" @click="firewallAction('allow')">允许</button>
-                    <button class="btn btn-danger" @click="firewallAction('deny')">拒绝</button>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+                    <h2 style="margin:0">防火墙</h2>
+                    <button class="btn btn-sm btn-primary" @click="loadFirewall()" style="font-size:12px">刷新</button>
                 </div>
-                <h3>当前规则</h3>
-                <pre class="config-output" x-text="firewallStatus"></pre>
+
+                <!-- 未安装 -->
+                <div x-show="firewall.loaded && !firewall.installed" style="background:white;border:1px solid #e0e4e8;border-radius:12px;padding:32px;text-align:center;color:#64748b">
+                    系统未安装 UFW 防火墙组件
+                </div>
+
+                <template x-if="firewall.installed">
+                <div>
+                <!-- 状态卡片 -->
+                <div style="background:white;border:1px solid #e0e4e8;border-radius:12px;padding:20px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center">
+                    <div style="display:flex;gap:32px;align-items:center">
+                        <div>
+                            <div style="font-size:12px;color:#64748b;margin-bottom:4px">运行状态</div>
+                            <div style="display:flex;align-items:center;gap:6px">
+                                <span :style="'width:10px;height:10px;border-radius:50%;display:inline-block;background:' + (firewall.active ? '#16a34a' : '#cbd5e1')"></span>
+                                <span style="font-weight:700;font-size:15px" :style="'color:' + (firewall.active ? '#15803d' : '#475569')" x-text="firewall.active ? '已启用' : '未启用'"></span>
+                            </div>
+                        </div>
+                        <div>
+                            <div style="font-size:12px;color:#64748b;margin-bottom:4px">默认传入策略</div>
+                            <div style="font-weight:700;font-size:15px;color:#1e293b" x-text="firewall.active ? ({deny:'拒绝',allow:'允许',reject:'驳回'}[firewall.default_incoming] || firewall.default_incoming) : '-'"></div>
+                        </div>
+                        <div>
+                            <div style="font-size:12px;color:#64748b;margin-bottom:4px">规则数量</div>
+                            <div style="font-weight:700;font-size:15px;color:#1e293b" x-text="firewall.rules.length"></div>
+                        </div>
+                    </div>
+                    <button class="btn btn-sm" :class="firewall.active ? 'btn-danger' : 'btn-success'" @click="toggleFirewall()"
+                        x-text="firewall.active ? '禁用防火墙' : '启用防火墙'"></button>
+                </div>
+
+                <!-- 未启用提示 -->
+                <div x-show="!firewall.active" style="background:#fef9c3;border:1px solid #fde047;border-radius:12px;padding:16px;margin-bottom:20px;color:#854d0e;font-size:13px">
+                    ⚠️ 防火墙当前未启用，以下规则不会生效。启用时会自动放行 SSH(22) 和面板(8090)，不会把自己锁在门外。
+                </div>
+
+                <!-- 添加规则 -->
+                <div style="background:white;border:1px solid #e0e4e8;border-radius:12px;padding:20px;margin-bottom:20px">
+                    <h3 style="margin:0 0 14px;font-size:15px">添加规则</h3>
+                    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+                        <span style="font-size:12px;color:#64748b;align-self:center">常用:</span>
+                        <template x-for="p in firewallPresets" :key="p.port">
+                            <button class="btn btn-sm" style="font-size:11px;padding:3px 10px" @click="applyPreset(p)" x-text="p.label"></button>
+                        </template>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1.2fr 0.8fr 0.8fr 1.4fr 1.4fr auto;gap:10px;align-items:end">
+                        <div class="form-group" style="margin:0">
+                            <label>端口</label>
+                            <input type="text" x-model="firewallForm.port" placeholder="22 或 30000:31000">
+                        </div>
+                        <div class="form-group" style="margin:0">
+                            <label>协议</label>
+                            <select x-model="firewallForm.proto">
+                                <option value="tcp">TCP</option>
+                                <option value="udp">UDP</option>
+                                <option value="any">TCP+UDP</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="margin:0">
+                            <label>动作</label>
+                            <select x-model="firewallForm.action">
+                                <option value="allow">允许</option>
+                                <option value="deny">拒绝</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="margin:0">
+                            <label>来源 IP（留空=任意）</label>
+                            <input type="text" x-model="firewallForm.from" placeholder="如: 192.168.1.0/24">
+                        </div>
+                        <div class="form-group" style="margin:0">
+                            <label>备注（可选）</label>
+                            <input type="text" x-model="firewallForm.comment" placeholder="如: Samba 文件共享">
+                        </div>
+                        <button class="btn btn-primary" @click="addFirewallRule()" :disabled="firewallSaving" x-text="firewallSaving ? '添加中...' : '添加'"></button>
+                    </div>
+                </div>
+
+                <!-- 规则列表 -->
+                <div style="background:white;border:1px solid #e0e4e8;border-radius:12px;padding:20px">
+                    <h3 style="margin:0 0 14px;font-size:15px">规则列表 <span style="color:#64748b;font-weight:400;font-size:13px" x-text="'(' + firewall.rules.length + ' 条)'"></span></h3>
+                    <div x-show="!firewall.rules.length" style="text-align:center;padding:24px;color:#94a3b8">暂无规则</div>
+                    <table class="table" x-show="firewall.rules.length">
+                        <thead>
+                            <tr>
+                                <th style="width:50px">#</th>
+                                <th>端口/协议</th>
+                                <th>动作</th>
+                                <th>来源</th>
+                                <th style="width:70px">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template x-for="rule in firewall.rules" :key="rule.num">
+                                <tr>
+                                    <td style="color:#64748b;font-family:monospace;font-size:12px" x-text="rule.num"></td>
+                                    <td style="font-family:monospace;font-size:13px">
+                                        <span x-text="rule.proto === 'any' ? rule.port : rule.port + '/' + rule.proto"></span>
+                                        <span x-show="rule.v6" style="margin-left:6px;padding:1px 6px;border-radius:8px;font-size:10px;background:#ede9fe;color:#7c3aed">v6</span>
+                                    </td>
+                                    <td>
+                                        <span style="padding:2px 10px;border-radius:10px;font-size:12px;font-weight:600"
+                                            :style="rule.action === 'allow' ? 'background:#dcfce7;color:#16a34a' : 'background:#fee2e2;color:#dc2626'"
+                                            x-text="rule.action === 'allow' ? '允许' : '拒绝'"></span>
+                                    </td>
+                                    <td style="font-family:monospace;font-size:12px" x-text="rule.from === 'Anywhere' ? '任意' : rule.from"></td>
+                                    <td>
+                                        <button class="btn btn-sm btn-danger" @click="deleteFirewallRule(rule)" style="font-size:11px;padding:2px 8px">删除</button>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+                </div>
+                </template>
             </div>
 
             <!-- Monitor -->
