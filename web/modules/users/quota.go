@@ -2,18 +2,11 @@ package users
 
 import (
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 
 	"nas-panel/common"
 )
-
-// dirExists 判断目录是否存在
-func dirExists(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && info.IsDir()
-}
 
 // privateDirQuota 查询私有目录配额
 func privateDirQuota(username string) (usedGB float64, limitGB int) {
