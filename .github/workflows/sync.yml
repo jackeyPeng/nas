@@ -1,0 +1,26 @@
+name: Sync Gitee to GitHub
+on:
+  schedule:
+    - cron: '0 0 * * *'   # 每天 UTC 0 点执行，可按需修改
+  workflow_dispatch:       # 允许手动触发
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Add Gitee remote and sync
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}   # 如果 Gitee 仓库是私有的
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          # 如果 Gitee 仓库是公开的，https 地址无需 token
+          git remote add gitee https://gitee.com/你的用户名/仓库.git
+          git fetch gitee --prune
+          git push origin refs/remotes/gitee/*:refs/heads/*
+          git push origin --tags
