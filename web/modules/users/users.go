@@ -9,11 +9,24 @@ import (
 	"nas-panel/common"
 )
 
-// getUsers returns NAS users from Samba and FTP
-func getUsers() []map[string]string {
-	var users []map[string]string
+// NASUser 用户完整信息（列表 API 返回）
+type NASUser struct {
+	Username   string            `json:"username"`
+	Services   map[string]bool   `json:"services"`    // samba/ftp/webdav/nfs
+	PrivateDir string            `json:"private_dir"` // /data/private/xxx
+	PrivateUsed string           `json:"private_used"` // 已用容量，如 "1.2G"
+	QuotaGB    int               `json:"quota_gb"`    // 私有目录配额，0=无限制
+	QuotaUsed  string            `json:"quota_used"`  // 配额已用
+	ShareCount int               `json:"share_count"` // 有权限的共享文件夹数
+	Groups     []string          `json:"groups"`      // 所属组
+	CreatedAt  string            `json:"created_at"`  // 创建时间（私有目录 ctime）
+}
 
-	// Get Samba users (requires root for passdb.tdb access)
+// getUsers 返回增强版用户列表：系统用户 ∩ NAS 服务用户
+func getUsers() []NASUser {
+	userMap := map[string]*NASUser{}
+
+	// Samba 用户（pdbedit）
 	out, err := common.SudoOutput("pdbedit", "-L")
 	if err == nil {
 		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
@@ -21,182 +34,220 @@ func getUsers() []map[string]string {
 				continue
 			}
 			parts := strings.SplitN(line, ":", 2)
-			username := parts[0]
-			users = append(users, map[string]string{
-				"username": username,
-				"type":     "samba",
-			})
+			name := parts[0]
+			u := getOrCreate(userMap, name)
+			u.Services["samba"] = true
 		}
 	}
 
-	// Also check vsftpd userlist
+	// FTP 用户（vsftpd userlist）
 	if data, err := common.ExecOutput("cat", "/etc/vsftpd.userlist"); err == nil {
 		for _, line := range strings.Split(strings.TrimSpace(data), "\n") {
-			line = strings.TrimSpace(line)
+			name := strings.TrimSpace(line)
+			if name == "" {
+				continue
+			}
+			u := getOrCreate(userMap, name)
+			u.Services["ftp"] = true
+		}
+	}
+
+	// WebDAV 用户（rclone htpasswd）
+	if data, err := common.SudoOutput("cat", "/etc/rclone-htpasswd"); err == nil {
+		for _, line := range strings.Split(strings.TrimSpace(data), "\n") {
 			if line == "" {
 				continue
 			}
-			found := false
-			for _, u := range users {
-				if u["username"] == line {
-					found = true
-					break
-				}
-			}
-			if !found {
-				users = append(users, map[string]string{
-					"username": line,
-					"type":     "ftp",
-				})
-			}
+			parts := strings.SplitN(line, ":", 2)
+			u := getOrCreate(userMap, parts[0])
+			u.Services["webdav"] = true
 		}
 	}
 
+	// 补充每个用户的附加信息
+	smbConf, _ := common.SudoOutput("cat", "/etc/samba/smb.conf")
+	shareCount := countSharesPerUser(smbConf)
+
+	for name, u := range userMap {
+		// 私有目录 + 容量
+		privDir := "/data/private/" + name
+		if dirExists(privDir) {
+			u.PrivateDir = privDir
+			u.PrivateUsed = dirSize(privDir)
+		}
+		// 组信息
+		u.Groups = userGroups(name)
+		// 共享文件夹数量
+		u.ShareCount = shareCount[name]
+		// 创建时间（用私有目录的创建时间近似）
+		if u.PrivateDir != "" {
+			u.CreatedAt = dirCtime(privDir)
+		}
+		// 配额（查私有目录的 project quota）
+		usedGB, limitGB := privateDirQuota(name)
+		u.QuotaGB = limitGB
+		if limitGB > 0 {
+			u.QuotaUsed = fmt.Sprintf("%.1fG", usedGB)
+		}
+	}
+
+	// 转 slice
+	users := make([]NASUser, 0, len(userMap))
+	for _, u := range userMap {
+		users = append(users, *u)
+	}
 	return users
 }
 
-// addUser creates a new NAS user
-func addUser(username, password string) error {
-	out, err := common.SudoExec("/opt/nas/scripts/add-user.sh", username, password)
-	if err != nil {
-		return fmt.Errorf("%s: %v", out, err)
+func getOrCreate(m map[string]*NASUser, name string) *NASUser {
+	if u, ok := m[name]; ok {
+		return u
 	}
-	return nil
+	u := &NASUser{
+		Username: name,
+		Services: map[string]bool{},
+		Groups:   []string{},
+	}
+	m[name] = u
+	return u
 }
 
-// removeUser deletes a NAS user
-func removeUser(username string, deleteData bool) error {
-	args := []string{username}
-	if deleteData {
-		args = append(args, "--delete-data")
-	}
-	out, err := common.SudoExec("/opt/nas/scripts/remove-user.sh", args...)
-	if err != nil {
-		return fmt.Errorf("%s: %v", out, err)
-	}
-	return nil
+func dirExists(path string) bool {
+	out, err := common.SudoOutput("test", "-d", path)
+	_ = out
+	return err == nil
 }
 
-// changePassword changes user password for system, Samba, and WebDAV.
-// Since common.SudoExec/SudoOutput don't support stdin, we pipe via bash -c.
-func changePassword(username, password string) error {
-	// System password (requires root)
-	cred := username + ":" + password
-	out, err := common.SudoExec("bash", "-c", fmt.Sprintf("printf '%%s\\n' %s | chpasswd", shellQuote(cred)))
+func dirSize(path string) string {
+	out, err := common.SudoOutput("du", "-sh", path)
 	if err != nil {
-		return fmt.Errorf("chpasswd failed: %s: %v", out, err)
+		return "-"
 	}
-
-	// Samba password (requires root) — smbpasswd -a reads password twice from stdin
-	out, err = common.SudoExec("bash", "-c", fmt.Sprintf(
-		"printf '%%s\\n%%s\\n' %s %s | smbpasswd -a %s -s",
-		shellQuote(password), shellQuote(password), shellQuote(username),
-	))
-	if err != nil {
-		return fmt.Errorf("smbpasswd failed: %s: %v", out, err)
+	fields := strings.Fields(out)
+	if len(fields) >= 1 {
+		return fields[0]
 	}
-
-	// Update htpasswd for WebDAV (requires root) — best-effort
-	common.SudoExec("htpasswd", "-b", "/etc/rclone-htpasswd", username, password)
-
-	return nil
+	return "-"
 }
 
-// handleUsers handles GET (list) and POST (create)
+func dirCtime(path string) string {
+	out, err := common.SudoOutput("stat", "-c", "%y", path)
+	if err != nil {
+		return ""
+	}
+	fields := strings.Fields(out)
+	if len(fields) >= 1 {
+		return fields[0]
+	}
+	return ""
+}
+
+func userGroups(username string) []string {
+	out, err := common.ExecOutput("id", "-nG", username)
+	if err != nil {
+		return []string{}
+	}
+	groups := strings.Fields(out)
+	// 过滤掉和用户同名的主组，减少噪音
+	var result []string
+	for _, g := range groups {
+		if g != username {
+			result = append(result, g)
+		}
+	}
+	return result
+}
+
+// countSharesPerUser 解析 smb.conf，统计每个用户在多少个共享的 valid_users 里
+func countSharesPerUser(conf string) map[string]int {
+	counts := map[string]int{}
+	currentShare := ""
+	for _, line := range strings.Split(conf, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			currentShare = line
+			continue
+		}
+		if strings.HasPrefix(line, "valid users") && currentShare != "" {
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			for _, u := range strings.Split(parts[1], ",") {
+				u = strings.TrimSpace(u)
+				if u != "" && !strings.HasPrefix(u, "@") {
+					counts[u]++
+				}
+			}
+		}
+	}
+	return counts
+}
+
+// --- HTTP handlers ---
+
 func handleUsers(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		users := getUsers()
-		common.JSONResponse(w, map[string]interface{}{
-			"users": users,
-		})
+		common.JSONResponse(w, map[string]interface{}{"users": users})
 		return
 	}
 
 	if r.Method == http.MethodPost {
-		username := r.FormValue("username")
-		password := r.FormValue("password")
-		if username == "" || password == "" {
-			http.Error(w, `{"error": "username and password required"}`, http.StatusBadRequest)
-			return
-		}
-		if len(password) < 12 {
-			http.Error(w, `{"error": "password must be at least 12 characters"}`, http.StatusBadRequest)
-			return
-		}
-		err := addUser(username, password)
-		if err != nil {
-			http.Error(w, fmt.Sprintf(`{"error": %q}`, err.Error()), http.StatusInternalServerError)
-			return
-		}
-		common.JSONResponse(w, map[string]interface{}{
-			"message": "用户 " + username + " 添加成功",
-		})
-	}
-}
-
-// handleUserAction handles DELETE (remove) and PUT/POST (password change)
-func handleUserAction(w http.ResponseWriter, r *http.Request) {
-	path := strings.TrimPrefix(r.URL.Path, "/api/users/")
-	parts := strings.Split(path, "/")
-	if len(parts) < 1 {
-		http.Error(w, `{"error": "invalid path"}`, http.StatusBadRequest)
-		return
-	}
-
-	username := parts[0]
-
-	// POST /api/users/create — 向导式创建用户
-	if username == "create" {
-		if r.Method != http.MethodPost {
-			http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
-			return
-		}
 		handleCreateUser(w, r)
 		return
 	}
 
+	http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+}
+
+func handleUserAction(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/api/users/")
+	parts := strings.Split(path, "/")
+	if len(parts) < 1 || parts[0] == "" {
+		http.Error(w, `{"error":"invalid path"}`, http.StatusBadRequest)
+		return
+	}
+	username := parts[0]
+
+	// PUT /api/users/{name}/password
 	if len(parts) >= 2 && parts[1] == "password" {
-		// Change password
 		if r.Method != http.MethodPut && r.Method != http.MethodPost {
-			http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
+			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
 			return
 		}
 		password := r.FormValue("password")
 		if password == "" || len(password) < 12 {
-			http.Error(w, `{"error": "password must be at least 12 characters"}`, http.StatusBadRequest)
+			http.Error(w, `{"error":"密码至少12位"}`, http.StatusBadRequest)
 			return
 		}
-		err := changePassword(username, password)
-		if err != nil {
-			http.Error(w, fmt.Sprintf(`{"error": %q}`, err.Error()), http.StatusInternalServerError)
+		if err := changePassword(username, password); err != nil {
+			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
 			return
 		}
-		common.JSONResponse(w, map[string]interface{}{
-			"message": "密码修改成功",
-		})
+		common.JSONResponse(w, map[string]interface{}{"message": "密码修改成功"})
 		return
 	}
 
-	// PUT /api/users/{name}/services — 更新服务开关
+	// PUT /api/users/{name}/services — 服务开关
 	if len(parts) >= 2 && parts[1] == "services" {
 		if r.Method != http.MethodPut && r.Method != http.MethodPost {
-			http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
+			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
 			return
 		}
-		services := map[string]bool{
-			"samba":  r.FormValue("samba") == "true",
-			"ftp":    r.FormValue("ftp") == "true",
-			"webdav": r.FormValue("webdav") == "true",
+		services := map[string]bool{}
+		for _, svc := range []string{"samba", "ftp", "webdav"} {
+			services[svc] = r.FormValue(svc) == "true"
 		}
 		if err := updateUserServices(username, services); err != nil {
-			http.Error(w, fmt.Sprintf(`{"error": %q}`, err.Error()), http.StatusInternalServerError)
+			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
 			return
 		}
-		common.JSONResponse(w, map[string]interface{}{"message": "服务开关已更新"})
+		common.JSONResponse(w, map[string]interface{}{"message": "服务权限已更新"})
 		return
 	}
 
-	// GET/PUT /api/users/{name}/quota — 配额查询/设置
+	// GET/PUT /api/users/{name}/quota — 私有目录配额
 	if len(parts) >= 2 && parts[1] == "quota" {
 		if r.Method == http.MethodGet {
 			usedGB, limitGB := privateDirQuota(username)
@@ -207,53 +258,86 @@ func handleUserAction(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		if r.Method == http.MethodPut || r.Method == http.MethodPost {
-			quotaStr := r.FormValue("quota_gb")
-			quotaGB, err := strconv.Atoi(quotaStr)
-			if err != nil || quotaGB < 0 {
-				http.Error(w, `{"error": "quota_gb 必须是非负整数"}`, http.StatusBadRequest)
-				return
-			}
-			if err := setPrivateDirQuota(username, quotaGB); err != nil {
-				http.Error(w, fmt.Sprintf(`{"error": %q}`, err.Error()), http.StatusInternalServerError)
-				return
-			}
-			common.JSONResponse(w, map[string]interface{}{"message": "配额已更新"})
+		if r.Method != http.MethodPut && r.Method != http.MethodPost {
+			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
 			return
 		}
-		http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
+		quotaStr := r.FormValue("quota_gb")
+		quotaGB, err := strconv.Atoi(quotaStr)
+		if err != nil || quotaGB < 0 {
+			http.Error(w, `{"error":"quota_gb 必须是非负整数(0=无限制)"}`, http.StatusBadRequest)
+			return
+		}
+		if err := setPrivateDirQuota(username, quotaGB); err != nil {
+			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
+			return
+		}
+		msg := fmt.Sprintf("用户 %s 私有目录配额已设置为 %dGB", username, quotaGB)
+		if quotaGB == 0 {
+			msg = fmt.Sprintf("用户 %s 私有目录配额已取消", username)
+		}
+		common.JSONResponse(w, map[string]interface{}{"message": msg})
 		return
 	}
 
-	// Delete user
+	// DELETE /api/users/{name}
 	if r.Method == http.MethodDelete {
 		deleteData := r.URL.Query().Get("delete_data") == "true"
-		err := removeUser(username, deleteData)
+		out, err := removeUser(username, deleteData)
 		if err != nil {
-			http.Error(w, fmt.Sprintf(`{"error": %q}`, err.Error()), http.StatusInternalServerError)
+			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
 			return
 		}
-		common.JSONResponse(w, map[string]interface{}{
-			"message": "用户 " + username + " 已删除",
-		})
+		_ = out
+		common.JSONResponse(w, map[string]interface{}{"message": "用户 " + username + " 已删除"})
 		return
 	}
+
+	http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
 }
 
-// RegisterRoutes registers user routes on the given mux
+// changePassword 修改系统 + Samba + WebDAV 密码
+func changePassword(username, password string) error {
+	cred := username + ":" + password
+	out, err := common.SudoExec("bash", "-c", fmt.Sprintf("printf '%%s\n' %s | chpasswd", shellQuote(cred)))
+	if err != nil {
+		return fmt.Errorf("chpasswd 失败: %s: %v", out, err)
+	}
+
+	out, err = common.SudoExec("bash", "-c", fmt.Sprintf(
+		"printf '%%s\n%%s\n' %s %s | smbpasswd -a %s -s",
+		shellQuote(password), shellQuote(password), shellQuote(username),
+	))
+	if err != nil {
+		return fmt.Errorf("smbpasswd 失败: %s: %v", out, err)
+	}
+
+	common.SudoExec("htpasswd", "-b", "/etc/rclone-htpasswd", username, password)
+	return nil
+}
+
+func removeUser(username string, deleteData bool) (string, error) {
+	args := []string{username}
+	if deleteData {
+		args = append(args, "--delete-data")
+	}
+	out, err := common.SudoExec("/opt/nas/scripts/remove-user.sh", args...)
+	if err != nil {
+		return out, fmt.Errorf("%s: %v", out, err)
+	}
+	return out, nil
+}
+
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// RegisterRoutes 注册用户模块路由
 func RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/users", common.AuthMiddleware(handleUsers))
 	mux.HandleFunc("/api/users/", common.AuthMiddleware(handleUserAction))
 	mux.HandleFunc("/api/user-groups", common.AuthMiddleware(handleGroups))
 	mux.HandleFunc("/api/user-groups/", common.AuthMiddleware(handleGroupAction))
-	mux.HandleFunc("/api/permission-matrix", common.AuthMiddleware(handleMatrix))
-	mux.HandleFunc("/api/login-logs", common.AuthMiddleware(handleLoginLog))
-}
-
-// --- helpers ---
-
-// shellQuote wraps a string in single quotes, escaping any embedded single
-// quotes so it is safe to interpolate into a bash -c command.
-func shellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+	mux.HandleFunc("/api/users-matrix", common.AuthMiddleware(handleMatrix))
+	mux.HandleFunc("/api/users-login-log", common.AuthMiddleware(handleLoginLog))
 }

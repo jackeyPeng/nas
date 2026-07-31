@@ -107,10 +107,10 @@ func listGroups() []UserGroup {
 		gid := parts[2]
 		membersStr := parts[3]
 
-		// 只列 GID >= 1000 的用户组（排除系统组）
+		// 只列 GID >= 1000 的用户组（排除系统组；nogroup gid=65534 也排除）
 		gidNum := 0
 		fmt.Sscanf(gid, "%d", &gidNum)
-		if gidNum < 1000 {
+		if gidNum < 1000 || gidNum >= 60000 {
 			continue
 		}
 
