@@ -3,6 +3,7 @@ package users
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"nas-panel/common"
@@ -144,6 +145,16 @@ func handleUserAction(w http.ResponseWriter, r *http.Request) {
 
 	username := parts[0]
 
+	// POST /api/users/create — 向导式创建用户
+	if username == "create" {
+		if r.Method != http.MethodPost {
+			http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
+			return
+		}
+		handleCreateUser(w, r)
+		return
+	}
+
 	if len(parts) >= 2 && parts[1] == "password" {
 		// Change password
 		if r.Method != http.MethodPut && r.Method != http.MethodPost {
@@ -166,6 +177,54 @@ func handleUserAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// PUT /api/users/{name}/services — 更新服务开关
+	if len(parts) >= 2 && parts[1] == "services" {
+		if r.Method != http.MethodPut && r.Method != http.MethodPost {
+			http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
+			return
+		}
+		services := map[string]bool{
+			"samba":  r.FormValue("samba") == "true",
+			"ftp":    r.FormValue("ftp") == "true",
+			"webdav": r.FormValue("webdav") == "true",
+		}
+		if err := updateUserServices(username, services); err != nil {
+			http.Error(w, fmt.Sprintf(`{"error": %q}`, err.Error()), http.StatusInternalServerError)
+			return
+		}
+		common.JSONResponse(w, map[string]interface{}{"message": "服务开关已更新"})
+		return
+	}
+
+	// GET/PUT /api/users/{name}/quota — 配额查询/设置
+	if len(parts) >= 2 && parts[1] == "quota" {
+		if r.Method == http.MethodGet {
+			usedGB, limitGB := privateDirQuota(username)
+			common.JSONResponse(w, map[string]interface{}{
+				"username": username,
+				"used_gb":  usedGB,
+				"limit_gb": limitGB,
+			})
+			return
+		}
+		if r.Method == http.MethodPut || r.Method == http.MethodPost {
+			quotaStr := r.FormValue("quota_gb")
+			quotaGB, err := strconv.Atoi(quotaStr)
+			if err != nil || quotaGB < 0 {
+				http.Error(w, `{"error": "quota_gb 必须是非负整数"}`, http.StatusBadRequest)
+				return
+			}
+			if err := setPrivateDirQuota(username, quotaGB); err != nil {
+				http.Error(w, fmt.Sprintf(`{"error": %q}`, err.Error()), http.StatusInternalServerError)
+				return
+			}
+			common.JSONResponse(w, map[string]interface{}{"message": "配额已更新"})
+			return
+		}
+		http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
 	// Delete user
 	if r.Method == http.MethodDelete {
 		deleteData := r.URL.Query().Get("delete_data") == "true"
@@ -185,6 +244,10 @@ func handleUserAction(w http.ResponseWriter, r *http.Request) {
 func RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/users", common.AuthMiddleware(handleUsers))
 	mux.HandleFunc("/api/users/", common.AuthMiddleware(handleUserAction))
+	mux.HandleFunc("/api/user-groups", common.AuthMiddleware(handleGroups))
+	mux.HandleFunc("/api/user-groups/", common.AuthMiddleware(handleGroupAction))
+	mux.HandleFunc("/api/permission-matrix", common.AuthMiddleware(handleMatrix))
+	mux.HandleFunc("/api/login-logs", common.AuthMiddleware(handleLoginLog))
 }
 
 // --- helpers ---
