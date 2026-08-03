@@ -5,6 +5,8 @@
 
 基于 Debian 13 (trixie) 的轻量级家用/小型办公 NAS 解决方案。全部原生 systemd 服务（不使用 Docker），配合 Go 单二进制 Web 管理面板，追求稳定、高性能、易维护。
 
+> **产品理念**：协议只是系统能力，数据才是系统核心。用户应该管理的是**存储、共享、用户、权限、应用**，而不是 Samba、NFS、RAID 这些技术名词。
+
 ## 项目愿景
 
 本项目有两条并行主线：
@@ -111,7 +113,8 @@ nas/
 │       └── style.css
 ├── docs/               # 文档
 │   ├── nas-product-manual.md   # 产品技术手册
-│   └── nas-product-manual.pdf
+│   ├── nas-product-manual.pdf
+│   └── architecture-v1.0.md   # 架构宪法（二十条评审结论）
 ├── .env.example        # 环境变量模板（复制为 .env 填入密码）
 ├── CHANGELOG.md        # 变更日志
 ├── TODO.md             # 优化路线图
