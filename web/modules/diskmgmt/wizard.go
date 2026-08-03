@@ -3,9 +3,11 @@ package diskmgmt
 import (
 	"fmt"
 	"net/http"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"nas-panel/common"
 )
@@ -205,8 +207,32 @@ func handleWizardSetup(w http.ResponseWriter, r *http.Request) {
 		resultMount = "/data/nas1"
 		steps = setupRaid1(unusedDevs[:2], resultMount, nasUser)
 
+	case "raid0":
+		if len(unusedDevs) < 2 {
+			http.Error(w, `{"error":"RAID0 至少需要 2 块磁盘"}`, http.StatusBadRequest)
+			return
+		}
+		resultMount = "/data/nas1"
+		steps = setupRaidN(unusedDevs, resultMount, nasUser, 0) // raid0
+
+	case "raid5":
+		if len(unusedDevs) < 3 {
+			http.Error(w, `{"error":"RAID5 至少需要 3 块磁盘"}`, http.StatusBadRequest)
+			return
+		}
+		resultMount = "/data/nas1"
+		steps = setupRaidN(unusedDevs, resultMount, nasUser, 5) // raid5
+
+	case "raid6":
+		if len(unusedDevs) < 4 {
+			http.Error(w, `{"error":"RAID6 至少需要 4 块磁盘"}`, http.StatusBadRequest)
+			return
+		}
+		resultMount = "/data/nas1"
+		steps = setupRaidN(unusedDevs, resultMount, nasUser, 6) // raid6
+
 	default:
-		http.Error(w, `{"error":"未知模式: single/merge/separate/raid1"}`, http.StatusBadRequest)
+		http.Error(w, `{"error":"未知模式: single/merge/separate/raid0/raid1/raid5/raid6"}`, http.StatusBadRequest)
 		return
 	}
 
@@ -337,6 +363,60 @@ func setupRaid1(devs []string, mountPoint, nasUser string) []string {
 	uuid := strings.TrimSpace(uuidOut)
 	writeFstab(uuid, mountPoint, "xfs")
 	steps = append(steps, "写入 fstab 持久化")
+	// chown
+	common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountPoint)
+	steps = append(steps, "设置权限")
+	return steps
+}
+
+// setupRaidN: mdadm RAID0/5/6 → single mount (通用版)
+func setupRaidN(devs []string, mountPoint, nasUser string, level int) []string {
+	var steps []string
+	mdadmPath := "/usr/sbin/mdadm"
+	if _, err := exec.LookPath("mdadm"); err != nil {
+		exec.Command("sudo", "apt-get", "install", "-y", "mdadm").Run()
+	} else {
+		mdadmPath = "mdadm"
+	}
+	// 找下一个可用 md 设备号
+	mdDev := "/dev/md0"
+	for i := 0; ; i++ {
+		mdDev = fmt.Sprintf("/dev/md%d", i)
+		if _, err := os.Stat(mdDev); os.IsNotExist(err) {
+			break
+		}
+	}
+	levelStr := fmt.Sprintf("raid%d", level)
+	args := []string{"--create", mdDev, "--level=" + fmt.Sprintf("%d", level), "--raid-devices=" + fmt.Sprintf("%d", len(devs)), "--run"}
+	for _, dev := range devs {
+		common.SudoExec("/usr/sbin/wipefs", "-a", dev)
+		args = append(args, dev)
+	}
+	common.SudoExec(mdadmPath, args...)
+	steps = append(steps, fmt.Sprintf("创建 %s", levelStr))
+	// 等待设备出现
+	for i := 0; i < 10; i++ {
+		if _, err := os.Stat(mdDev); err == nil {
+			break
+		}
+		time.Sleep(time.Second)
+	}
+	// Format
+	common.SudoExec("mkfs.xfs", "-f", mdDev)
+	steps = append(steps, "格式化 xfs")
+	// Mount
+	common.SudoExec("mkdir", "-p", mountPoint)
+	common.SudoExec("mount", mdDev, mountPoint)
+	steps = append(steps, "挂载 → "+mountPoint)
+	// fstab
+	uuidOut, _ := common.ExecOutput("blkid", "-s", "UUID", "-o", "value", mdDev)
+	uuid := strings.TrimSpace(uuidOut)
+	writeFstab(uuid, mountPoint, "xfs")
+	steps = append(steps, "写入 fstab 持久化")
+	// Save mdadm config
+	common.SudoExec(mdadmPath, "--detail", "--scan", ">>", "/etc/mdadm/mdadm.conf")
+	common.SudoExec("update-initramfs", "-u")
+	steps = append(steps, "保存 RAID 配置")
 	// chown
 	common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountPoint)
 	steps = append(steps, "设置权限")

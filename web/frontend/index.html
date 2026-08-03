@@ -201,6 +201,28 @@
                     </div>
                 </div>
 
+                <!-- 存储池总览卡片 -->
+                <div x-show="storageOverview.pools?.length > 0" style="margin-top:16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px">
+                    <template x-for="pool in (storageOverview.pools||[])" :key="pool.name">
+                        <div style="border:1px solid #e0e4e8;border-radius:8px;padding:12px"
+                            :style="pool.healthy ? 'background:linear-gradient(135deg,#f0f7ff,#e8f4ff)' : 'background:linear-gradient(135deg,#fef3f2,#fee2e2)'">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                                <span style="font-size:14px;font-weight:700" x-text="pool.display_name"></span>
+                                <span style="font-size:11px;padding:1px 6px;border-radius:3px"
+                                    :style="pool.healthy ? 'background:#dcfce7;color:#16a34a' : 'background:#fee2e2;color:#dc2626'"
+                                    x-text="pool.healthy ? '● 正常' : '● 异常'"></span>
+                            </div>
+                            <div style="font-size:11px;color:#6b7280;margin-bottom:4px" x-text="pool.raid_level ? ('RAID'+pool.raid_level) : (pool.type==='lvm'?'LVM':pool.type==='single'?'单盘':'独立')"></div>
+                            <div style="display:flex;align-items:center;gap:6px">
+                                <span style="font-size:13px;font-weight:600" x-text="pool.used + ' / ' + pool.size"></span>
+                            </div>
+                            <div style="width:100%;background:#e5e7eb;border-radius:4px;height:6px;overflow:hidden;margin-top:4px">
+                                <div :style="'width:' + parseFloat(pool.percent||'0') + '%'" style="background:#4a9eff;height:100%;border-radius:4px"></div>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+
                 <h3>服务状态</h3>
                 <table class="table">
                     <thead>

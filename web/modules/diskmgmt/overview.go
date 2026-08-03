@@ -49,34 +49,40 @@ type PoolSummary struct {
 	Volumes     []VolumeSummary  `json:"volumes"`               // ★ 逻辑卷列表
 }
 
-// VolumeSummary 逻辑卷 — 池上可分配空间，未来快照/配额/压缩的挂载点
+// VolumeSummary 逻辑卷 — 池上可分配空间，快照/配额/压缩的挂载点
 type VolumeSummary struct {
-	Name       string          `json:"name"`        // data, md0 (内部)
-	DisplayName string         `json:"display_name"` // 卷1
-	Device     string          `json:"device"`     // /dev/vg_nas/data, /dev/md0 (UI 不展示)
-	MountPoint string          `json:"mountpoint"`  // /data/nas1
-	FSType     string          `json:"fstype"`     // xfs, ext4, btrfs
-	Size       string          `json:"size"`
-	Used       string          `json:"used"`
-	Avail      string          `json:"avail"`
-	Percent    string          `json:"percent"`
-	Healthy    bool            `json:"healthy"`
-	Folders    []SharedFolder  `json:"folders,omitempty"` // 这个卷下的共享文件夹
+	Name               string          `json:"name"`               // data, md0 (内部)
+	DisplayName        string          `json:"display_name"`        // 卷1
+	Device             string          `json:"device"`              // /dev/vg_nas/data, /dev/md0 (UI 不展示)
+	MountPoint         string          `json:"mountpoint"`          // /data/nas1
+	FSType             string          `json:"fstype"`              // xfs, ext4, btrfs
+	Size               string          `json:"size"`
+	Used               string          `json:"used"`
+	Avail              string          `json:"avail"`
+	Percent            string          `json:"percent"`
+	Healthy            bool            `json:"healthy"`
+	QuotaEnabled       bool            `json:"quota_enabled,omitempty"`        // 预留：配额
+	CompressionEnabled bool            `json:"compression,omitempty"`         // 预留：压缩
+	SnapshotCount      int             `json:"snapshot_count,omitempty"`      // 预留：快照数
+	Folders            []SharedFolder  `json:"folders,omitempty"`             // 这个卷下的共享文件夹
 }
 
 // DiskSummary 物理盘 — 只描述硬件
 type DiskSummary struct {
-	Device     string            `json:"device"`     // /dev/sdb
-	Friendly   string            `json:"friendly"`   // 磁盘 1
-	Size       string            `json:"size"`
-	Interface  string            `json:"interface"`  // SATA, NVMe, VirtIO, USB
-	Rotational string            `json:"rotational"` // 0=SSD 1=HDD
-	Model      string            `json:"model"`
-	Temp       string            `json:"temp"`
-	Smart      string            `json:"smart"`
-	Status     string            `json:"status"` // system, data, unused, pool_member
-	Pool       string            `json:"pool,omitempty"`
-	Partitions []PartitionInfo   `json:"partitions,omitempty"`
+	Device       string            `json:"device"`       // /dev/sdb
+	Friendly     string            `json:"friendly"`     // 磁盘 1
+	Size         string            `json:"size"`
+	Interface    string            `json:"interface"`    // SATA, NVMe, VirtIO, USB
+	Rotational   string            `json:"rotational"`   // 0=SSD 1=HDD
+	Model        string            `json:"model"`
+	Temp         string            `json:"temp"`
+	Smart        string            `json:"smart"`
+	Serial       string            `json:"serial,omitempty"`        // 序列号
+	PowerOnHours string            `json:"power_on_hours,omitempty"` // 通电时间
+	BadBlocks    string            `json:"bad_blocks,omitempty"`     // 坏块
+	Status       string            `json:"status"`                   // system, data, unused, pool_member
+	Pool         string            `json:"pool,omitempty"`
+	Partitions   []PartitionInfo   `json:"partitions,omitempty"`
 }
 
 // PartitionInfo 分区/卷信息
@@ -121,10 +127,6 @@ func handleStorageOverview(w http.ResponseWriter, r *http.Request) {
 	mountDisplay := make(map[string]string) // mount path → pool display name
 
 	// 按 device 分组挂载点：同一个 Pool（md0 或 vg_nas）下可能有多个 Volume
-	// 但目前每个 mount 就是一个 Volume，pool 按 device 归类
-	type poolKey struct {
-		device string
-	}
 	poolMounts := make(map[string][]map[string]string) // device → mounts
 	poolOrder := []string{}                           // 保持顺序
 
@@ -298,15 +300,16 @@ func handleStorageOverview(w http.ResponseWriter, r *http.Request) {
 			realStatus = "system"
 		}
 		ds := DiskSummary{
-			Device:     d.Device,
-			Friendly:   fmt.Sprintf("磁盘 %d", diskID),
-			Size:       d.Size,
-			Interface:  d.Interface,
-			Rotational: d.Rotational,
-			Model:      d.Model,
-			Temp:       d.Temp,
-			Smart:      d.Smart,
-			Status:     realStatus,
+			Device:       d.Device,
+			Friendly:     fmt.Sprintf("磁盘 %d", diskID),
+			Size:         d.Size,
+			Interface:    d.Interface,
+			Rotational:   d.Rotational,
+			Model:        d.Model,
+			Temp:         d.Temp,
+			Smart:        d.Smart,
+			Serial:       d.Serial,
+			Status:       realStatus,
 		}
 		// 分区列表
 		for _, c := range d.Children {
