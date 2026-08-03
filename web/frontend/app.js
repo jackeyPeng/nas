@@ -64,6 +64,8 @@ function nasPanel() {
         // Wizard
         wizard: {},
         wizardMode: '',
+        wizardGoal: '',
+        wizardGoalText: '',
         wizardLoading: false,
         allDisks: [],
         progressSteps: [],
@@ -881,7 +883,6 @@ function nasPanel() {
             const data = await this.api('/disk/wizard/status');
             if (data) {
                 this.wizard = data;
-                // Also load full disk list for display
                 const diskData = await this.api('/disk/status');
                 if (diskData && diskData.disks) {
                     let id = 0;
@@ -897,6 +898,21 @@ function nasPanel() {
             }
         },
 
+        selectWizardGoal(goal) {
+            this.wizardGoal = goal;
+            this.wizardMode = '';
+            const labels = { safety: '数据安全', capacity: '最大容量', performance: '更高性能', balance: '平衡' };
+            this.wizardGoalText = labels[goal] || goal;
+        },
+
+        get wizardFilteredOptions() {
+            if (!this.wizardGoal || !this.wizard.raid_options) return [];
+            const opts = this.wizard.raid_options.filter(o => o.goal === this.wizardGoal);
+            if (opts.length === 0) {
+                return this.wizard.raid_options;
+            }
+            return opts;
+        },
         // Wizard: setup (streaming with progress)
         async wizardSetup(mode) {
             if (!mode) { this.showToast('请选择存储方式', 'error'); return; }
