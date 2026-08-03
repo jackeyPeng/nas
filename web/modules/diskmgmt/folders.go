@@ -11,12 +11,13 @@ import (
 	"nas-panel/common"
 )
 
-// SharedFolder represents a shared directory in a storage space
+// SharedFolder represents a shared directory in a storage volume
 type SharedFolder struct {
 	Name        string `json:"name"`          // photos (用户可见)
 	Path       string `json:"path,omitempty"` // /data/nas1/photos (仅高级模式返回)
-	Pool       string `json:"pool"`          // 存储空间1
+	Pool       string `json:"pool"`          // 存储池1
 	PoolName   string `json:"pool_name"`     // nas1 (内部)
+	Source     string `json:"source"`        // local, usb, remote_smb, remote_nfs, s3
 	Size       string `json:"size"`
 	SambaShare bool   `json:"samba_share"`
 	Permission string `json:"permission"`    // readwrite, readonly, noaccess

@@ -10,6 +10,7 @@ type RaidOption struct {
 	ID          string `json:"id"`           // single, merge, raid0, raid1, raid5, raid6, separate
 	Name        string `json:"name"`         // LVM单盘, 容量合并, RAID0, RAID1, RAID5, RAID6, 独立模式
 	Icon        string `json:"icon"`         // 💾 📦 ⚡ 🛡️ 🔒 🔒🔒 📁
+	Goal        string `json:"goal"`         // ★ safety, capacity, performance, balance
 	Safety      string `json:"safety"`       // low, medium, high, veryhigh
 	SafetyText  string `json:"safety_text"`  // 无冗余, 基本安全, 安全, 极高安全
 	UsableRatio string `json:"usable_ratio"` // 100%, 50%, (n-1)/n, (n-2)/n
@@ -41,6 +42,7 @@ func getRaidOptions(diskCount int, minSizeGB float64) []RaidOption {
 			ID:          "single",
 			Name:        "LVM 单盘",
 			Icon:        "💾",
+			Goal:        "capacity",
 			Safety:      "low",
 			SafetyText:  "无冗余",
 			UsableRatio: "100%",
@@ -61,6 +63,7 @@ func getRaidOptions(diskCount int, minSizeGB float64) []RaidOption {
 			ID:          "merge",
 			Name:        "容量合并 (LVM)",
 			Icon:        "📦",
+			Goal:        "capacity",
 			Safety:      "low",
 			SafetyText:  "无冗余",
 			UsableRatio: "100%",
@@ -81,6 +84,7 @@ func getRaidOptions(diskCount int, minSizeGB float64) []RaidOption {
 			ID:          "raid0",
 			Name:        "RAID0 条带",
 			Icon:        "⚡",
+			Goal:        "performance",
 			Safety:      "low",
 			SafetyText:  "无冗余",
 			UsableRatio: "100%",
@@ -102,6 +106,7 @@ func getRaidOptions(diskCount int, minSizeGB float64) []RaidOption {
 			ID:          "raid1",
 			Name:        "RAID1 镜像",
 			Icon:        "🛡️",
+			Goal:        "safety",
 			Safety:      "high",
 			SafetyText:  "安全",
 			UsableRatio: "50%",
@@ -123,6 +128,7 @@ func getRaidOptions(diskCount int, minSizeGB float64) []RaidOption {
 			ID:          "raid5",
 			Name:        "RAID5",
 			Icon:        "🔒",
+			Goal:        "balance",
 			Safety:      "high",
 			SafetyText:  "安全",
 			UsableRatio: ratio,
@@ -144,6 +150,7 @@ func getRaidOptions(diskCount int, minSizeGB float64) []RaidOption {
 			ID:          "raid6",
 			Name:        "RAID6",
 			Icon:        "🔒🔒",
+			Goal:        "safety",
 			Safety:      "veryhigh",
 			SafetyText:  "极高安全",
 			UsableRatio: ratio,
@@ -163,6 +170,7 @@ func getRaidOptions(diskCount int, minSizeGB float64) []RaidOption {
 			ID:          "separate",
 			Name:        "独立模式",
 			Icon:        "📁",
+			Goal:        "balance",
 			Safety:      "medium",
 			SafetyText:  "各盘独立",
 			UsableRatio: "100%",
