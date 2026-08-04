@@ -427,21 +427,47 @@ func handleStorageOverview(w http.ResponseWriter, r *http.Request) {
 
 // detectPoolDevice 从 mount device 提取 Pool 级别的设备名
 // /dev/md0 → /dev/md0 (RAID 池)
-// /dev/vg_nas/data → /dev/vg_nas (LVM VG 池)
+// /dev/vg_nas/data 或 /dev/mapper/vg_nas-data → /dev/vg_nas (LVM VG 池)
 // /dev/sdb1 → /dev/sdb1 (单盘池)
 func detectPoolDevice(device string) string {
-	// LVM: /dev/vg_nas/data 或 /dev/mapper/vg_nas-data
-	if strings.Contains(device, "vg_") || strings.Contains(device, "mapper/") {
-		// 提取 VG 名
-		if idx := strings.Index(device, "/vg_"); idx >= 0 {
-			return device[:idx+strings.Index(device[idx+1:], "/")+idx+1] // /dev/vg_nas
+	// LVM: /dev/vg_nas/data — 直接取 VG 路径
+	if strings.HasPrefix(device, "/dev/vg_") {
+		// /dev/vg_nas/data → /dev/vg_nas
+		if idx := strings.LastIndex(device, "/"); idx > 4 {
+			return device[:idx]
 		}
-		if strings.Contains(device, "mapper/") {
-			// /dev/mapper/vg_nas-data → vg_nas
-			parts := strings.Split(strings.TrimPrefix(device, "/dev/mapper/"), "-")
-			if len(parts) >= 1 {
-				return "/dev/" + parts[0]
+		return device
+	}
+	// LVM mapper: /dev/mapper/vg_nas-data → /dev/vg_nas
+	if strings.Contains(device, "/dev/mapper/") {
+		// mapper 命名: vgname-lvname，VG 名中的 - 会变成 --
+		// 用 vgs 确认更可靠，但这里先简单处理：查 pvs 映射
+		// 由于 getCachedPVMappings 在此函数之后才初始化，
+		// 这里用 vgs 直接查
+		vgsOut, _ := common.SudoOutput("/usr/sbin/vgs", "--noheadings", "-o", "vg_name")
+		bestVG := ""
+		for _, line := range strings.Split(vgsOut, "\n") {
+			vg := strings.TrimSpace(line)
+			if vg == "" {
+				continue
 			}
+			// mapper 设备名里包含 vg 名（- 替换）
+			mapperName := strings.TrimPrefix(device, "/dev/mapper/")
+			// LVM mapper 规则: vg 中的 - 变成 --, / 变成 -
+			// 简单匹配: 如果 mapper 名以 vg 名(替换-为--)开头
+			vgEscaped := strings.ReplaceAll(vg, "-", "--")
+			if strings.HasPrefix(mapperName, vgEscaped+"-") || strings.HasPrefix(mapperName, vg+"-") {
+				bestVG = vg
+				break
+			}
+			// 兜底: 去掉最后一段 - 后面的部分匹配
+			if strings.Contains(mapperName, vg) {
+				bestVG = vg
+				break
+			}
+		}
+		if bestVG != "" {
+			return "/dev/" + bestVG
 		}
 		return device
 	}
