@@ -101,19 +101,19 @@
                                     </div>
                                     <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;min-height:0">
                                         <template x-if="slotNum <= (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length">
-                                            <span style="font-size:11px;font-weight:600;color:#bfdbfe;font-family:monospace" x-text="(storageOverview.pools||[]).flatMap(function(p){return p.disks||[];})[slotNum-1].device"></span>
+                                            <span style="font-size:13px;font-weight:600;color:#bfdbfe;font-family:monospace" x-text="(storageOverview.pools||[]).flatMap(function(p){return p.disks||[];})[slotNum-1].device"></span>
                                         </template>
                                         <template x-if="slotNum <= (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length">
-                                            <span style="font-size:10px;color:#93c5fd" x-text="(storageOverview.pools||[]).flatMap(function(p){return p.disks||[];})[slotNum-1].size + ' ' + (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];})[slotNum-1].interface"></span>
+                                            <span style="font-size:12px;color:#93c5fd" x-text="(storageOverview.pools||[]).flatMap(function(p){return p.disks||[];})[slotNum-1].size + ' ' + (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];})[slotNum-1].interface"></span>
                                         </template>
                                         <template x-if="slotNum > (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length && slotNum - (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length <= (storageOverview.free_disks || []).length">
-                                            <span style="font-size:11px;font-weight:600;color:#92400e;font-family:monospace" x-text="storageOverview.free_disks[slotNum - (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length - 1].device"></span>
+                                            <span style="font-size:13px;font-weight:600;color:#92400e;font-family:monospace" x-text="storageOverview.free_disks[slotNum - (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length - 1].device"></span>
                                         </template>
                                         <template x-if="slotNum > (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length && slotNum - (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length <= (storageOverview.free_disks || []).length">
-                                            <span style="font-size:10px;color:#b45309" x-text="storageOverview.free_disks[slotNum - (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length - 1].size + ' 待配置'"></span>
+                                            <span style="font-size:12px;color:#b45309" x-text="storageOverview.free_disks[slotNum - (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length - 1].size + ' 待配置'"></span>
                                         </template>
                                         <template x-if="slotNum > (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length + (storageOverview.free_disks || []).length">
-                                            <span style="font-size:11px;color:rgba(255,255,255,0.5)">空</span>
+                                            <span style="font-size:13px;color:rgba(255,255,255,0.5)">空</span>
                                         </template>
                                     </div>
                                 </div>
@@ -1039,32 +1039,32 @@
                 <h2>存储管理</h2>
 
                 <!-- ════ 存储总览 ════ -->
-                <div x-show="storageOverview.total_capacity || storageOverview.system_disks?.length" style="background:linear-gradient(135deg,#1a3a5c,#2d6a9f);color:white;border-radius:10px;padding:18px;margin-bottom:20px">
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-                        <strong style="font-size:16px">📊 存储总览</strong>
-                        <button @click="loadStorageOverview(); loadWizardStatus(); loadSharedFolders()" style="background:rgba(255,255,255,0.2);color:white;border:none;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:12px">刷新</button>
+                <div x-show="storageOverview.total_capacity || storageOverview.system_disks?.length" style="background:linear-gradient(135deg,#1a3a5c,#2d6a9f);color:white;border-radius:12px;padding:20px;margin-bottom:24px">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+                        <strong style="font-size:18px">📊 存储总览</strong>
+                        <button @click="loadStorageOverview(); loadWizardStatus(); loadSharedFolders()" style="background:rgba(255,255,255,0.2);color:white;border:none;padding:6px 16px;border-radius:6px;cursor:pointer;font-size:14px">刷新</button>
                     </div>
-                    <div style="display:flex;gap:24px;align-items:center;font-size:14px;flex-wrap:wrap">
-                        <div>总容量: <strong x-text="storageOverview.total_capacity"></strong></div>
-                        <div>已用: <strong x-text="storageOverview.total_used"></strong></div>
-                        <div>可用: <strong x-text="storageOverview.total_avail"></strong></div>
-                        <div style="flex:1;min-width:120px;max-width:200px" x-show="storageOverview.total_capacity">
-                            <div style="background:rgba(255,255,255,0.2);border-radius:4px;height:10px;overflow:hidden">
-                                <div :style="'width:'+(storageOverview.used_percent||0)+'%'" style="background:#4ade80;height:100%;border-radius:4px;transition:width 0.5s"></div>
+                    <div style="display:flex;gap:28px;align-items:center;font-size:16px;flex-wrap:wrap">
+                        <div>总容量: <strong style="font-size:18px" x-text="storageOverview.total_capacity"></strong></div>
+                        <div>已用: <strong style="font-size:18px" x-text="storageOverview.total_used"></strong></div>
+                        <div>可用: <strong style="font-size:18px" x-text="storageOverview.total_avail"></strong></div>
+                        <div style="flex:1;min-width:140px;max-width:240px" x-show="storageOverview.total_capacity">
+                            <div style="background:rgba(255,255,255,0.2);border-radius:6px;height:12px;overflow:hidden">
+                                <div :style="'width:'+(storageOverview.used_percent||0)+'%'" style="background:#4ade80;height:100%;border-radius:6px;transition:width 0.5s"></div>
                             </div>
                         </div>
-                        <span style="font-size:13px;opacity:0.9" x-show="storageOverview.total_capacity" x-text="(storageOverview.used_percent||0)+'%'"></span>
+                        <span style="font-size:15px;opacity:0.9" x-show="storageOverview.total_capacity" x-text="(storageOverview.used_percent||0)+'%'"></span>
                     </div>
-                    <div style="display:flex;gap:16px;margin-top:10px;font-size:13px;opacity:0.85;flex-wrap:wrap">
-                        <span x-show="storageOverview.total_capacity">存储空间: <strong x-text="storageOverview.pools?.length||0"></strong></span>
+                    <div style="display:flex;gap:20px;margin-top:12px;font-size:15px;opacity:0.85;flex-wrap:wrap">
+                        <span x-show="storageOverview.total_capacity">存储池: <strong x-text="storageOverview.pools?.length||0"></strong></span>
                         <span>系统盘: <strong x-text="storageOverview.system_disks?.length||0"></strong></span>
                         <span x-show="storageOverview.unconfigured_count > 0" style="color:#fca5a5">空闲盘: <strong x-text="storageOverview.unconfigured_count"></strong></span>
                         <span x-show="storageOverview.has_issues" style="color:#fca5a5">⚠️ 有异常</span>
                         <span x-show="!storageOverview.has_issues && storageOverview.total_capacity" style="color:#86efac">✓ 一切正常</span>
                     </div>
-                    <div x-show="storageOverview.has_issues" style="margin-top:8px;font-size:13px;background:rgba(252,165,165,0.15);padding:8px 12px;border-radius:6px">
+                    <div x-show="storageOverview.has_issues" style="margin-top:10px;font-size:14px;background:rgba(252,165,165,0.15);padding:10px 14px;border-radius:8px">
                         <template x-for="issue in (storageOverview.issues||[])">
-                            <div style="padding:2px 0">⚠️ <span x-text="issue"></span></div>
+                            <div style="padding:3px 0">⚠️ <span x-text="issue"></span></div>
                         </template>
                     </div>
                 </div>
@@ -1079,7 +1079,7 @@
                 <!-- ════ 盘位图（NAS机箱正面，4槽位，浅色主题） ════ -->
                 <div x-show="storageOverview.system_disks?.length > 0 || storageOverview.pools?.length > 0" style="display:flex;justify-content:center;margin-bottom:20px">
                     <div style="display:inline-flex;flex-direction:column;align-items:center;gap:6px">
-                        <span style="font-size:13px;font-weight:600;color:#1e3a5f">📦 盘位图</span>
+                        <span style="font-size:15px;font-weight:600;color:#1e3a5f">📦 盘位图</span>
                         <!-- NAS机箱外壳: 24vw高 x 32vw宽, padding 1.2vw(四边一致), gap 1vw -->
                         <div style="height:24vw;max-height:240px;width:32vw;max-width:320px;background:linear-gradient(145deg,#e8ecf0,#d4dae0);border-radius:6px;padding:1.2vw;border:3px solid #9ca3af;box-shadow:0 4px 12px rgba(0,0,0,0.08),inset 0 1px 2px rgba(255,255,255,0.8);display:flex;gap:1vw;align-items:stretch">
                             <!-- 固定4个槽位, 每个槽位内: 编号在上 + 盘体在下 -->
@@ -1106,118 +1106,118 @@
                                     <!-- 盘体信息区 -->
                                     <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:0">
                                         <template x-if="slotNum <= (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length">
-                                            <span style="font-size:11px;font-weight:600;color:#bfdbfe;font-family:monospace" x-text="(storageOverview.pools||[]).flatMap(function(p){return p.disks||[];})[slotNum-1].device"></span>
+                                            <span style="font-size:13px;font-weight:600;color:#bfdbfe;font-family:monospace" x-text="(storageOverview.pools||[]).flatMap(function(p){return p.disks||[];})[slotNum-1].device"></span>
                                         </template>
                                         <template x-if="slotNum <= (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length">
-                                            <span style="font-size:10px;color:#93c5fd" x-text="(storageOverview.pools||[]).flatMap(function(p){return p.disks||[];})[slotNum-1].size + ' ' + (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];})[slotNum-1].interface"></span>
+                                            <span style="font-size:12px;color:#93c5fd" x-text="(storageOverview.pools||[]).flatMap(function(p){return p.disks||[];})[slotNum-1].size + ' ' + (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];})[slotNum-1].interface"></span>
                                         </template>
                                         <template x-if="slotNum > (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length && slotNum - (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length <= (storageOverview.free_disks || []).length">
-                                            <span style="font-size:11px;font-weight:600;color:#92400e;font-family:monospace" x-text="storageOverview.free_disks[slotNum - (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length - 1].device"></span>
+                                            <span style="font-size:13px;font-weight:600;color:#92400e;font-family:monospace" x-text="storageOverview.free_disks[slotNum - (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length - 1].device"></span>
                                         </template>
                                         <template x-if="slotNum > (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length && slotNum - (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length <= (storageOverview.free_disks || []).length">
-                                            <span style="font-size:10px;color:#b45309" x-text="storageOverview.free_disks[slotNum - (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length - 1].size + ' 待配置'"></span>
+                                            <span style="font-size:12px;color:#b45309" x-text="storageOverview.free_disks[slotNum - (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length - 1].size + ' 待配置'"></span>
                                         </template>
                                         <template x-if="slotNum > (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length + (storageOverview.free_disks || []).length">
-                                            <span style="font-size:11px;color:rgba(255,255,255,0.5)">空</span>
+                                            <span style="font-size:13px;color:rgba(255,255,255,0.5)">空</span>
                                         </template>
                                     </div>
                                 </div>
                             </template>
                         </div>
                         <!-- 图例 -->
-                        <div style="display:flex;gap:16px;font-size:12px;color:#475569">
-                            <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:2px;background:#1e3a5f;border:2px solid #1e3a5f"></span>已安装</span>
-                            <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:2px;background:linear-gradient(180deg,#fef3c7,#fde68a);border:2px solid #d97706"></span>待配置</span>
-                            <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:2px;background:#6b7280;border:2px solid #374151"></span>空闲</span>
-                            <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:2px;background:linear-gradient(180deg,#fee2e2,#fecaca);border:2px solid #dc2626"></span>故障</span>
+                        <div style="display:flex;gap:20px;font-size:14px;color:#475569">
+                            <span style="display:flex;align-items:center;gap:4px"><span style="width:14px;height:14px;border-radius:3px;background:#1e3a5f;border:2px solid #1e3a5f"></span>已安装</span>
+                            <span style="display:flex;align-items:center;gap:4px"><span style="width:14px;height:14px;border-radius:3px;background:linear-gradient(180deg,#fef3c7,#fde68a);border:2px solid #d97706"></span>待配置</span>
+                            <span style="display:flex;align-items:center;gap:4px"><span style="width:14px;height:14px;border-radius:3px;background:#6b7280;border:2px solid #374151"></span>空闲</span>
+                            <span style="display:flex;align-items:center;gap:4px"><span style="width:14px;height:14px;border-radius:3px;background:linear-gradient(180deg,#fee2e2,#fecaca);border:2px solid #dc2626"></span>故障</span>
                         </div>
                     </div>
                 </div>
                 <!-- ════ 存储池区域（四层模型：Pool → Volume → Folder） ════ -->
-                <div x-show="storageOverview.pools?.length > 0" style="margin-bottom:20px">
-                    <h3 style="margin-bottom:8px;border-bottom:2px solid #4a9eff;padding-bottom:4px">🗄️ 存储池</h3>
+                <div x-show="storageOverview.pools?.length > 0" style="margin-bottom:24px">
+                    <h3 style="margin-bottom:10px;border-bottom:2px solid #4a9eff;padding-bottom:6px;font-size:17px">🗄️ 存储池</h3>
                     <template x-for="pool in (storageOverview.pools||[])" :key="pool.name">
-                        <div style="border:2px solid #e0e4e8;border-radius:10px;margin-bottom:16px;overflow:hidden"
+                        <div style="border:2px solid #e0e4e8;border-radius:12px;margin-bottom:20px;overflow:hidden"
                             :style="!pool.healthy ? 'border-color:#fca5a5' : ''">
                             <!-- 存储池头部 -->
-                            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 16px"
+                            <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 20px"
                                 :style="pool.healthy ? 'background:linear-gradient(135deg,#f0f7ff,#e0f0ff)' : 'background:linear-gradient(135deg,#fef3f2,#fee2e2)'">
-                                <div style="display:flex;align-items:center;gap:10px">
+                                <div style="display:flex;align-items:center;gap:12px">
                                     <div>
-                                        <span style="font-size:15px;font-weight:700" x-text="pool.display_name"></span>
-                                        <span style="background:#dbeafe;color:#1e40af;padding:1px 8px;border-radius:4px;font-size:11px;margin-left:8px" x-text="pool.raid_level ? ('RAID'+pool.raid_level) : (pool.type==='lvm'?'LVM':pool.type==='single'?'单盘':'独立')"></span>
-                                        <span x-show="!pool.healthy" style="color:#dc2626;font-size:12px;margin-left:6px">⚠️ 异常</span>
+                                        <span style="font-size:17px;font-weight:700" x-text="pool.display_name"></span>
+                                        <span style="background:#dbeafe;color:#1e40af;padding:2px 10px;border-radius:6px;font-size:13px;margin-left:10px" x-text="pool.raid_level ? ('RAID'+pool.raid_level) : (pool.type==='lvm'?'LVM':pool.type==='single'?'单盘':'独立')"></span>
+                                        <span x-show="!pool.healthy" style="color:#dc2626;font-size:14px;margin-left:8px">⚠️ 异常</span>
                                     </div>
                                 </div>
-                                <div style="display:flex;align-items:center;gap:8px">
-                                    <span style="font-size:13px" x-text="pool.used + ' / ' + pool.size"></span>
-                                    <div style="width:100px;background:#e5e7eb;border-radius:4px;height:6px;overflow:hidden">
-                                        <div :style="'width:' + parseFloat(pool.percent||'0') + '%'" style="background:#4a9eff;height:100%;border-radius:4px"></div>
+                                <div style="display:flex;align-items:center;gap:10px">
+                                    <span style="font-size:15px" x-text="pool.used + ' / ' + pool.size"></span>
+                                    <div style="width:120px;background:#e5e7eb;border-radius:6px;height:8px;overflow:hidden">
+                                        <div :style="'width:' + parseFloat(pool.percent||'0') + '%'" style="background:#4a9eff;height:100%;border-radius:6px"></div>
                                     </div>
-                                    <span style="font-size:12px;color:#888" x-text="pool.percent"></span>
+                                    <span style="font-size:14px;color:#666" x-text="pool.percent"></span>
                                 </div>
                             </div>
                             <!-- 存储池内容 -->
-                            <div style="padding:12px 16px">
+                            <div style="padding:16px 20px">
                                 <!-- 成员磁盘 -->
-                                <div style="font-size:14px;font-weight:600;color:#0f4c5c;margin-bottom:4px">💽 成员磁盘</div>
+                                <div style="font-size:16px;font-weight:600;color:#0f4c5c;margin-bottom:6px">💽 成员磁盘</div>
                                 <template x-for="disk in (pool.disks||[])" :key="disk.device">
-                                    <div style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:13px;border-bottom:1px solid #f0f0f0">
-                                        <span :style="disk.smart==='PASSED'?'color:#16a34a':'color:#dc2626'">●</span>
-                                        <strong x-text="disk.device" style="font-family:monospace"></strong>
+                                    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;font-size:15px;border-bottom:1px solid #f0f0f0">
+                                        <span style="font-size:16px" :style="disk.smart==='PASSED'?'color:#16a34a':'color:#dc2626'">●</span>
+                                        <strong x-text="disk.device" style="font-family:monospace;font-size:15px"></strong>
                                         <span style="color:#475569" x-text="disk.size"></span>
-                                        <span style="font-size:11px;background:#e0f2fe;padding:1px 6px;border-radius:3px;color:#0369a1" x-text="disk.interface"></span>
-                                        <span x-show="disk.model" style="font-size:12px;color:#334155" x-text="disk.model"></span>
-                                        <span x-show="disk.temp" style="font-size:12px;color:#c2410c" x-text="disk.temp"></span>
-                                        <span x-show="disk.smart" style="font-size:12px" :style="disk.smart==='PASSED'?'color:#16a34a':'color:#dc2626'" x-text="disk.smart==='PASSED'?'✓健康':'✗异常'"></span>
+                                        <span style="font-size:13px;background:#e0f2fe;padding:2px 8px;border-radius:4px;color:#0369a1" x-text="disk.interface"></span>
+                                        <span x-show="disk.model" style="font-size:14px;color:#334155" x-text="disk.model"></span>
+                                        <span x-show="disk.temp" style="font-size:14px;color:#c2410c" x-text="disk.temp"></span>
+                                        <span x-show="disk.smart" style="font-size:14px" :style="disk.smart==='PASSED'?'color:#16a34a':'color:#dc2626'" x-text="disk.smart==='PASSED'?'✓健康':'✗异常'"></span>
                                     </div>
                                 </template>
 
                                 <!-- 卷列表（Volume 层） -->
                                 <template x-for="(vol, vi) in (pool.volumes||[])" :key="vol.mountpoint">
-                                    <div style="margin-top:10px;border:1px solid #e0e7ff;border-radius:6px;padding:10px;background:#fafbff">
+                                    <div style="margin-top:14px;border:1px solid #e0e7ff;border-radius:8px;padding:14px;background:#fafbff">
                                         <!-- 卷头 -->
-                                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-                                            <div style="display:flex;align-items:center;gap:8px">
-                                                <span style="font-size:13px;font-weight:600;color:#3730a3" x-text="vol.display_name"></span>
-                                                <span style="font-size:11px;background:#e0e7ff;padding:1px 6px;border-radius:3px;color:#3730a3" x-text="vol.fstype"></span>
-                                                <span style="font-size:11px;color:#6b7280" x-text="vol.mountpoint"></span>
+                                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                                            <div style="display:flex;align-items:center;gap:10px">
+                                                <span style="font-size:15px;font-weight:600;color:#3730a3" x-text="vol.display_name"></span>
+                                                <span style="font-size:13px;background:#e0e7ff;padding:2px 8px;border-radius:4px;color:#3730a3" x-text="vol.fstype"></span>
+                                                <span style="font-size:13px;color:#6b7280;font-family:monospace" x-text="vol.mountpoint"></span>
                                             </div>
-                                            <div style="display:flex;align-items:center;gap:6px">
-                                                <span style="font-size:12px" x-text="vol.used + ' / ' + vol.size"></span>
-                                                <div style="width:80px;background:#e5e7eb;border-radius:4px;height:5px;overflow:hidden">
-                                                    <div :style="'width:' + parseFloat(vol.percent||'0') + '%'" style="background:#6366f1;height:100%;border-radius:4px"></div>
+                                            <div style="display:flex;align-items:center;gap:8px">
+                                                <span style="font-size:14px" x-text="vol.used + ' / ' + vol.size"></span>
+                                                <div style="width:100px;background:#e5e7eb;border-radius:6px;height:7px;overflow:hidden">
+                                                    <div :style="'width:' + parseFloat(vol.percent||'0') + '%'" style="background:#6366f1;height:100%;border-radius:6px"></div>
                                                 </div>
-                                                <span style="font-size:11px;color:#888" x-text="vol.percent"></span>
+                                                <span style="font-size:13px;color:#888" x-text="vol.percent"></span>
                                             </div>
                                         </div>
                                         <!-- 卷下的共享文件夹 -->
                                         <template x-for="f in (vol.folders||[])" :key="f.name">
-                                            <div style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:13px;border-bottom:1px solid #f0f0f0">
-                                                <span style="color:#6366f1">▸</span>
+                                            <div style="display:flex;align-items:center;gap:10px;padding:7px 0;font-size:15px;border-bottom:1px solid #f0f0f0">
+                                                <span style="color:#6366f1;font-size:16px">▸</span>
                                                 <strong x-text="f.name"></strong>
                                                 <span style="color:#475569" x-text="f.size || ''"></span>
-                                                <span style="font-size:11px;padding:1px 6px;border-radius:3px"
+                                                <span style="font-size:13px;padding:2px 8px;border-radius:4px"
                                                     :style="f.permission==='readwrite'?'background:#dcfce7;color:#16a34a':f.permission==='readonly'?'background:#fef3c7;color:#92400e':'background:#fee2e2;color:#dc2626'"
                                                     x-text="f.permission==='readwrite'?'读写':f.permission==='readonly'?'只读':'未共享'"></span>
-                                                <span x-show="f.recycle_bin" style="font-size:11px;color:#16a34a">♻️</span>
-                                                <span x-show="f.quota_gb > 0" style="font-size:11px;padding:1px 6px;border-radius:3px;background:#e0e7ff;color:#3730a3" x-text="'配额 ' + (f.quota_used || '0') + ' / ' + f.quota_gb + 'G'"></span>
+                                                <span x-show="f.recycle_bin" style="font-size:14px;color:#16a34a">♻️</span>
+                                                <span x-show="f.quota_gb > 0" style="font-size:13px;padding:2px 8px;border-radius:4px;background:#e0e7ff;color:#3730a3" x-text="'配额 ' + (f.quota_used || '0') + ' / ' + f.quota_gb + 'G'"></span>
                                                 <span style="flex:1"></span>
-                                                <button class="btn btn-sm" style="font-size:11px;padding:2px 8px" @click="editFolderPermission(f)">权限</button>
-                                                <button class="btn btn-sm btn-danger" style="font-size:11px;padding:2px 8px" @click="deleteFolder(f)">删除</button>
+                                                <button class="btn btn-sm" style="font-size:13px;padding:4px 12px" @click="editFolderPermission(f)">权限</button>
+                                                <button class="btn btn-sm btn-danger" style="font-size:13px;padding:4px 12px" @click="deleteFolder(f)">删除</button>
                                             </div>
                                         </template>
-                                        <div x-show="!vol.folders?.length" style="font-size:12px;color:#9ca3af;padding:4px 0">暂无文件夹</div>
-                                        <button class="btn btn-sm btn-primary" style="margin-top:6px;font-size:11px;padding:3px 10px" @click="folderForm.pool = vol.mountpoint; showAddFolder = true">+ 新建文件夹</button>
+                                        <div x-show="!vol.folders?.length" style="font-size:14px;color:#9ca3af;padding:6px 0">暂无文件夹</div>
+                                        <button class="btn btn-sm btn-primary" style="margin-top:8px;font-size:13px;padding:5px 14px" @click="folderForm.pool = vol.mountpoint; showAddFolder = true">+ 新建文件夹</button>
                                     </div>
                                 </template>
-                                <div x-show="!pool.volumes?.length" style="font-size:12px;color:#9ca3af;padding:4px 0">暂无卷</div>
+                                <div x-show="!pool.volumes?.length" style="font-size:14px;color:#9ca3af;padding:6px 0">暂无卷</div>
 
                                 <!-- 操作按钮 -->
-                                <div style="display:flex;gap:8px;margin-top:12px;padding-top:8px;border-top:1px solid #f0f0f0">
-                                    <button x-show="storageOverview.unconfigured_count > 0 && (pool.type==='lvm' || pool.type==='single')" class="btn btn-sm" style="font-size:11px;padding:3px 10px;background:#dbeafe;color:#1e40af;border:1px solid #3b82f6" @click="showExtendPool = true">扩容</button>
-                                    <button x-show="storageOverview.unconfigured_count > 0 && (pool.type==='raid1' || pool.type==='raid5' || pool.type==='raid6')" class="btn btn-sm" style="font-size:11px;padding:3px 10px;background:#dcfce7;color:#166534;border:1px solid #16a34a" @click="openRAIDExpand(pool)">扩容</button>
-                                    <button class="btn btn-sm" style="font-size:11px;padding:3px 10px;border:1px solid #dc2626;color:#dc2626;background:white" @click="resetStorage()">重置</button>
+                                <div style="display:flex;gap:10px;margin-top:14px;padding-top:10px;border-top:1px solid #f0f0f0">
+                                    <button x-show="storageOverview.unconfigured_count > 0 && (pool.type==='lvm' || pool.type==='single')" class="btn btn-sm" style="font-size:13px;padding:5px 14px;background:#dbeafe;color:#1e40af;border:1px solid #3b82f6" @click="showExtendPool = true">扩容</button>
+                                    <button x-show="storageOverview.unconfigured_count > 0 && (pool.type==='raid1' || pool.type==='raid5' || pool.type==='raid6')" class="btn btn-sm" style="font-size:13px;padding:5px 14px;background:#dcfce7;color:#166534;border:1px solid #16a34a" @click="openRAIDExpand(pool)">扩容</button>
+                                    <button class="btn btn-sm" style="font-size:13px;padding:5px 14px;border:1px solid #dc2626;color:#dc2626;background:white" @click="resetStorage()">重置</button>
                                 </div>
                             </div>
                         </div>
@@ -1225,25 +1225,25 @@
                 </div>
 
                 <!-- ════ 其它磁盘（系统盘+空闲盘） ════ -->
-                <div x-show="storageOverview.system_disks?.length > 0 || storageOverview.free_disks?.length > 0" style="margin-bottom:20px">
-                    <h3 style="margin-bottom:8px;border-bottom:2px solid #9ca3af;padding-bottom:4px">💽 其它磁盘</h3>
+                <div x-show="storageOverview.system_disks?.length > 0 || storageOverview.free_disks?.length > 0" style="margin-bottom:24px">
+                    <h3 style="margin-bottom:10px;border-bottom:2px solid #9ca3af;padding-bottom:6px;font-size:17px">💽 其它磁盘</h3>
                     <!-- 系统盘 -->
                     <template x-for="disk in (storageOverview.system_disks||[])" :key="disk.device">
-                        <div style="border:1px solid #e0e4e8;border-radius:8px;padding:10px;margin-bottom:8px;background:#f9fafb">
-                            <div style="display:flex;align-items:center;gap:8px">
-                                <span style="font-size:11px;padding:2px 8px;border-radius:4px;background:#e5e7eb;color:#6b7280">系统盘</span>
-                                <strong style="font-size:14px;font-family:monospace" x-text="disk.device"></strong>
-                                <span style="color:#475569;font-size:13px" x-text="disk.size"></span>
-                                <span style="font-size:11px;background:#e0f2fe;padding:1px 6px;border-radius:3px;color:#0369a1" x-text="disk.interface"></span>
-                                <span x-show="disk.model" style="font-size:12px;color:#334155" x-text="disk.model"></span>
-                                <span x-show="disk.smart" style="font-size:12px" :style="disk.smart==='PASSED'?'color:#16a34a':'color:#dc2626'" x-text="disk.smart==='PASSED'?'✓健康':'✗异常'"></span>
+                        <div style="border:1px solid #e0e4e8;border-radius:10px;padding:14px;margin-bottom:10px;background:#f9fafb">
+                            <div style="display:flex;align-items:center;gap:10px">
+                                <span style="font-size:13px;padding:3px 10px;border-radius:6px;background:#e5e7eb;color:#6b7280">系统盘</span>
+                                <strong style="font-size:16px;font-family:monospace" x-text="disk.device"></strong>
+                                <span style="color:#475569;font-size:15px" x-text="disk.size"></span>
+                                <span style="font-size:13px;background:#e0f2fe;padding:2px 8px;border-radius:4px;color:#0369a1" x-text="disk.interface"></span>
+                                <span x-show="disk.model" style="font-size:14px;color:#334155" x-text="disk.model"></span>
+                                <span x-show="disk.smart" style="font-size:14px" :style="disk.smart==='PASSED'?'color:#16a34a':'color:#dc2626'" x-text="disk.smart==='PASSED'?'✓健康':'✗异常'"></span>
                             </div>
-                            <div x-show="disk.partitions?.length" style="margin-left:20px;margin-top:6px">
+                            <div x-show="disk.partitions?.length" style="margin-left:24px;margin-top:8px">
                                 <template x-for="p in (disk.partitions||[])" :key="p.device">
-                                    <div style="display:flex;gap:6px;font-size:11px;padding:1px 0;color:#475569">
+                                    <div style="display:flex;gap:8px;font-size:13px;padding:2px 0;color:#475569">
                                         <span style="font-family:monospace" x-text="p.name"></span>
                                         <span x-text="p.size"></span>
-                                        <span style="background:#e0f2fe;padding:0 4px;border-radius:2px;color:#0369a1" x-show="p.fstype" x-text="p.fstype"></span>
+                                        <span style="background:#e0f2fe;padding:1px 6px;border-radius:3px;color:#0369a1" x-show="p.fstype" x-text="p.fstype"></span>
                                         <span style="color:#2563eb" x-show="p.mountpoint" x-text="p.mountpoint"></span>
                                     </div>
                                 </template>
@@ -1252,11 +1252,11 @@
                     </template>
                     <!-- 空闲盘 -->
                     <template x-for="disk in (storageOverview.free_disks||[])" :key="disk.device">
-                        <div style="border:1px solid #fca5a5;border-radius:8px;padding:10px;margin-bottom:8px;background:#fef3f2">
-                            <div style="display:flex;align-items:center;gap:8px">
-                                <span style="font-size:11px;padding:2px 8px;border-radius:4px;background:#fee2e2;color:#dc2626">待配置</span>
-                                <strong style="font-size:14px;font-family:monospace" x-text="disk.device"></strong>
-                                <span style="color:#475569;font-size:13px" x-text="disk.size"></span>
+                        <div style="border:1px solid #fca5a5;border-radius:10px;padding:14px;margin-bottom:10px;background:#fef3f2">
+                            <div style="display:flex;align-items:center;gap:10px">
+                                <span style="font-size:13px;padding:3px 10px;border-radius:6px;background:#fee2e2;color:#dc2626">待配置</span>
+                                <strong style="font-size:16px;font-family:monospace" x-text="disk.device"></strong>
+                                <span style="color:#475569;font-size:15px" x-text="disk.size"></span>
                                 <span style="font-size:11px;background:#e0f2fe;padding:1px 6px;border-radius:3px;color:#0369a1" x-text="disk.interface"></span>
                                 <span x-show="disk.model" style="font-size:12px;color:#334155" x-text="disk.model"></span>
                                 <span x-show="disk.smart" style="font-size:12px" :style="disk.smart==='PASSED'?'color:#16a34a':'color:#dc2626'" x-text="disk.smart==='PASSED'?'✓健康':'✗异常'"></span>
