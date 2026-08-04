@@ -1,5 +1,59 @@
 # NAS 项目变更日志
 
+## [2026-08-03] - 存储四层模型重构 + Design System v2.0
+
+### 版本 v1.3.0 → 待发布
+
+---
+
+### 1. 存储四层模型（Architecture v1.0 第五/六条落地）
+
+- 后端数据模型从三层（Disk→Pool→Folder）重构为四层（Physical Disk → Storage Pool → Volume → Shared Folder）
+- `PoolSummary` 瘦身：移除 mountpoint/fstype/folders（下放到 Volume），保留 type/raid_level/healthy/memberdisks/volumes
+- 新增 `VolumeSummary` 结构体：挂载点/文件系统/容量/健康状态 + 预留 QuotaEnabled/CompressionEnabled/SnapshotCount
+- `SharedFolder` 加 Source(local/usb/remote)/Owner/多协议开关(NFS/FTP/WebDAV/S3)/Description
+- `DiskSummary` 加 Serial/PowerOnHours/BadBlocks
+- `RaidOption` 加 Goal(safety/capacity/performance/balance)
+- handler 按 `detectPoolDevice()` 归类 Pool，每个 Pool 下构造 Volume 列表，文件夹通过 mountpoint 匹配到 Volume
+
+### 2. RAID 向导补全 + 目标导向
+
+- wizard.go 补 raid0/raid5/raid6 三种模式分支（原只有 single/merge/separate/raid1）
+- 新增 `setupRaidN` 通用函数：自动找可用 md 设备号、等待设备出现、保存 mdadm.conf、update-initramfs
+- 向导改两步：首步选目标（数据安全/最大容量/更高性能/平衡），不出现 RAID 字样；二步展开匹配方案
+
+### 3. detectPoolDevice LVM mapper bug 修复
+
+- `/dev/mapper/vg_nas-data` 路径解析字符串截断导致 LVM 成员盘（如 sdd）丢失
+- 改用 `vgs --noheadings -o vg_name` 直接查 VG 名，按 LVM mapper 命名规则精确匹配
+
+### 4. 首页 Pool 总览卡片
+
+- 仪表盘底部按 Pool 维度展示容量/健康状态/进度条卡片
+- 盘位图保留在上方，两层视图并存
+
+### 5. 存储管理页布局优化
+
+- 字体整体放大 2-4px（11→13/12→14/13→15/14→16/15→17）
+- 间距加宽（padding 12→16、margin 16→20/24）
+- 圆角加大（6/8→8/10/12）
+- 进度条加粗（5-6→7-8px）
+- 按钮放大触屏友好（padding 2-3→4-5px，font-size 11→13px）
+
+### 6. NAS Panel Design System v2.0
+
+- CSS 变量系统：配色梯度（7 色语义色 + light 变体）/ 字体 7 级（12-28px）/ 间距 4px 基线 / 阴影 5 级 / 圆角 6 级
+- 组件升级：Table 表头 uppercase + letter-spacing，行 hover 高亮；卡片 hover 升阴影；表单 focus 3px ring；Modal 背景 backdrop-filter blur；深色代码块 Catppuccin Mocha 配色
+- 工具类：text-sm / text-muted / font-mono / flex / gap-N / mt-N / mb-N
+
+### 7. Architecture v1.0 架构宪法
+
+- 归档外部建议原文（docx+PDF）到 docs/external/
+- docs/architecture-v1.0.md：二十条建议逐条评审结论（✅已采纳14/🔶部分采纳2/📅排期4/❌不采纳附理由）
+- README 补产品理念："协议只是系统能力，数据才是系统核心"
+
+---
+
 ## [2026-07-31] - rclone 增强 + 防火墙模块重写
 
 ### 版本 v1.3.0 → 待发布

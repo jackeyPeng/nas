@@ -1,8 +1,8 @@
 # NAS 项目优化路线图
 
-> 最后更新: 2026-07-31
+> 最后更新: 2026-08-03
 >
-> 完成 13/26 项 (50%)，剩余: 性能调优 / HTTPS / 官网上线 / 移动设备支持 / 多语言 / 版本更新 / rclone调度器 / AI功能 / 插件系统 / 回收站分散 / 四层模型重构 / BT下载(插件) / 多媒体播放(插件) / 关于页面
+> 完成 14/26 项 (54%)，剩余: 性能调优 / HTTPS / 官网上线 / 移动设备支持 / 多语言 / 版本更新 / rclone调度器 / AI功能 / 插件系统 / 回收站分散 / BT下载(插件) / 多媒体播放(插件) / 关于页面
 
 ## 📋 待优化清单
 
@@ -138,53 +138,55 @@ LVM 扩容和 RAID 扩容均已完成，支持在线扩容不丢数据。
 
 ---
 
-#### 8. 存储管理（三层抽象模型）
+#### 8. 存储管理（四层抽象模型）
 **状态**: ✅ 已完成  
 **优先级**: 中  
 **描述**:  
-存储管理重构为三层抽象模型（物理磁盘→存储空间→共享文件夹），参考群晖/TrueNAS专业建议，屏蔽底层路径。
+存储管理重构为四层抽象模型（Physical Disk → Storage Pool → Volume → Shared Folder），参考群晖/TrueNAS 专业建议，屏蔽底层路径。
 
-**架构设计**:
-- 物理磁盘层：接口识别(SATA/NVMe/VirtIO)、温度、SMART、序列号、分区信息
-- 存储空间层：RAID组合(LVM/RAID0/1/5/6/独立)、文件系统(xfs)、健康状态
-- 共享文件夹层：三级权限(读写/只读/禁止)、回收站(Samba vfs recycle)
+**架构设计（四层）**:
+- **物理磁盘层**：接口识别(SATA/NVMe/VirtIO/USB)、温度、SMART、序列号、通电时间、坏块、分区信息
+- **存储池层**：RAID/LVM VG 组成的数据池，UI 不暴露底层实现（md0/vg_nas），展示类型+RAID级别+健康状态
+- **逻辑卷层**：池上可分配空间，挂载点/文件系统/容量，预留 Quota/Compression/Snapshot 能力位
+- **共享文件夹层**：三级权限(读写/只读/禁止)、回收站、配额、Source(local/usb/remote)、多协议开关(SMB/NFS/FTP/WebDAV/S3)、备注
 
 **RAID方案推荐引擎**:
-- 根据空闲盘数动态推荐：1盘→LVM单盘，2盘→RAID1，3盘→RAID5，4盘→RAID5
+- 根据空闲盘数动态推荐：1盘→LVM单盘，2盘→RAID1，3盘→RAID5，4盘→RAID6
+- 每方案标注目标(goal)：数据安全(safety)/最大容量(capacity)/更高性能(performance)/平衡(balance)
 - 每方案显示：安全等级/可用容量/利用率/注意事项/推荐标记
-- 1盘用LVM(非直接格式化)方便后期vgextend扩容
 
-**存储配置向导(SSE流式)**:
+**存储配置向导（目标导向 + SSE 流式）**:
+- 首步选目标（数据安全/最大容量/更高性能/平衡），不出现 RAID 字样
+- 二步展示匹配方案 + 技术细节 + 人话解释
 - 7种模式：single(LVM)/merge(LVM合并)/raid0/raid1/raid5/raid6/separate
 - 实时进度推送：每步完成即推送事件
 - 自动选择下一个可用挂载点(/data/nas2,nas3...)，避免覆盖已有空间
 
-**盘位图(NAS机箱式)**:
+**盘位图（NAS机箱式）**:
 - 固定4槽位，浅色机箱外壳
 - 四色状态：深蓝(已安装)/黄(待配置)/灰(空闲)/红(故障)
-- 槽位号紫色36px，槽位内显示设备路径+容量+接口
+- 槽位号紫色，槽位内显示设备路径+容量+接口
 
-**LVM扩容(SSE)**:
-- 5步流式进度：wipe→pvcreate→vgextend→lvextend→xfs_growfs
-- 风险提示：合并后任一盘故障全丢
+**LVM扩容 + RAID扩容(SSE)**:
+- LVM扩容5步流式进度：wipe→pvcreate→vgextend→lvextend→xfs_growfs
+- RAID扩容：mdadm --add + --grow，支持RAID1/5/6
 
 **共享文件夹管理**:
-- CRUD + 权限(读写/只读/禁止访问) + 回收站
+- CRUD + 权限(读写/只读/禁止访问) + 回收站 + 配额
 - Samba vfs objects = recycle
 
 **API清单**:
-- `/api/disk/overview` — 存储总览(嵌套结构)
-- `/api/disk/wizard/status` — 向导状态+方案列表
+- `/api/disk/overview` — 存储总览(四层嵌套结构: Pool→Volume→Folder)
+- `/api/disk/wizard/status` — 向导状态+方案列表(含goal字段)
 - `/api/disk/wizard/setup-stream` — SSE配置
 - `/api/disk/wizard/reset-stream` — SSE重置
 - `/api/disk/pool/extend-stream` — SSE扩容
+- `/api/disk/raid/expand-stream` — RAID扩容(SSE)
 - `/api/disk/folders` — 文件夹CRUD
 - `/api/disk/folders/permission` — 权限管理
 
-**待完善**:
-- [ ] RAID1扩容逻辑（不能vgextend，需走独立空间2或RAID5重建）
-- [ ] RAID5在线扩容（mdadm --grow）
-- [ ] 存储配额(quota)
+**首页 Pool 总览卡片**:
+- 仪表盘底部按 Pool 维度展示容量/健康状态卡片，盘位图保留在上方
 
 ---
 
@@ -640,32 +642,34 @@ NAS 里的视频/音乐/照片直接在浏览器播放，带媒体库海报墙�
 ---
 
 #### 26. 存储四层模型重构（Disk → Pool → Volume → SharedFolder）
-**状态**: ⏳ 待规划（依据《Architecture v1.0》第五/六条，中期）  
+**状态**: ✅ 已完成（依据《Architecture v1.0》第五/六条）  
 **优先级**: 中  
 **描述**:  
-现状"存储空间"把 RAID（mdadm）+ VG/LV（LVM）+ 文件系统三层职责揉在一起。增加 Volume 层后，快照/配额/压缩才有挂靠的地方。这是项目中期最值得做的一次架构重构。
+将"存储空间"的 RAID（mdadm）+ VG/LV（LVM）+ 文件系统三层职责分离，增加 Volume 层，快照/配额/压缩有了挂靠的地方。
 
-**目标模型**:
-```
-Physical Disk    → 只描述硬件（型号/SMART/温度/序列号），不出现 md0/vg0
-Storage Pool     → RAID/LVM 组成的数据池，UI 不暴露底层实现
-Volume           → 池上逻辑卷，未来的快照/配额/压缩挂载点
-Shared Folder    → 用户使用的对象，落在 Volume 上
-```
+**完成内容**:
 
-**迁移策略**: 现有部署（1盘LVM/2盘RAID1 等）映射为"1 Pool = 1 Volume"特例，保证存量数据零迁移。
+- ✅ 后端数据模型重构：
+  - `PoolSummary` 瘦身：移除 mountpoint/fstype/folders（下放到 Volume），保留 type/raid_level/healthy/memberdisks/volumes
+  - 新增 `VolumeSummary`：Name/Device/MountPoint/FSType/Size/Healthy + 预留 QuotaEnabled/CompressionEnabled/SnapshotCount
+  - `SharedFolder` 加 Source(local/usb/remote)/Owner/多协议开关(NFS/FTP/WebDAV/S3)/Description
+  - `DiskSummary` 加 Serial/PowerOnHours/BadBlocks
+  - `RaidOption` 加 Goal(safety/capacity/performance/balance)
+  - handler 按 `detectPoolDevice()` 归类 Pool，每个 Pool 下构造 Volume 列表
+  - 文件夹通过 mountpoint 匹配到 Volume
+  - `detectPoolDevice` 修复 LVM mapper 路径解析 bug（vgs 直查 VG 名）
 
-**关联变更**:
-- RAID 向导首步改目标导向话术（数据安全/最大容量/性能/平衡），不出现 RAID 字样直到确认页
-- Storage 首页加 Pool 总览卡片（容量/已用/健康），盘位图保留
-- Shared Folder 内部模型加 Source 字段（Local/USB/Remote，V1 只用 Local）
+- ✅ wizard.go 补全 raid0/raid5/raid6 模式分支 + `setupRaidN` 通用函数（自动找 md 设备号、等待设备出现、保存 mdadm.conf）
 
-**待办**:
-- [ ] diskmgmt 数据模型重构：Disk/Pool/Volume/SharedFolder 四层分离
-- [ ] 存储管理页树状布局升级为四层
-- [ ] Pool 总览卡片（首页顶部）
-- [ ] RAID 向导改目标导向
-- [ ] SharedFolder 加 Source 字段预留
+- ✅ 前端存储管理页改四层树状：Pool 卡片 → 成员磁盘 + Volume 节点 → 每个 Volume 下文件夹列表
+
+- ✅ RAID 向导改目标导向两步：首步 4 个大卡片（数据安全/最大容量/更高性能/平衡），选目标后展开匹配方案
+
+- ✅ 首页加 Pool 总览卡片（容量/健康状态/进度条），盘位图保留在上方
+
+- ✅ 存储管理页布局优化：字体整体放大 2-4px、间距加宽、圆角加大、按钮触屏友好
+
+- ✅ Design System v2.0：CSS 变量系统（配色梯度/字体7级/间距4px基线/阴影5级/圆角6级）+ 组件升级
 
 ---
 
@@ -706,10 +710,10 @@ Shared Folder    → 用户使用的对象，落在 Volume 上
 | 类别 | 总数 | 已完成 | 进行中 | 待办 |
 |------|------|--------|--------|------|
 | 高优先级 | 2 | 2 | 0 | 0 |
-| 中优先级 | 13 | 6 | 1 | 6 |
+| 中优先级 | 13 | 7 | 1 | 5 |
 | 低优先级 | 11 | 5 | 0 | 6 |
-| **合计** | **26** | **13** | **1** | **12** |
+| **合计** | **26** | **14** | **1** | **11** |
 
-**完成率**: 50.0%（13/26）
+**完成率**: 53.8%（14/26）
 
-> 注：条目总数 26（新增 #25 回收站分散、#26 四层模型重构，均依据《Architecture v1.0》）；#23 BT下载、#24 多媒体播放为非核心功能，规划为插件（依赖 #21 插件系统）；官网已建成标记为进行中，仅剩部署上线。
+> 注：#26 存储四层模型重构已完成（结构体/handler/前端树状/向导目标导向/Pool卡片/布局优化/Design System v2.0 全部落地）；#8 存储管理描述已更新为四层模型；#23 BT下载、#24 多媒体播放为非核心功能，规划为插件（依赖 #21 插件系统）；官网已建成标记为进行中，仅剩部署上线。

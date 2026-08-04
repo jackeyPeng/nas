@@ -41,7 +41,7 @@ setup.sh 已支持 x86_64 普通 PC / N100 小主机 / VM，与树莓派共用�
 - 用户自行安装 Docker 使用不受任何限制，只是面板看不见也不管。
 
 ### 五、存储四层模型（Disk → Pool → Volume → Shared Folder）
-**结论：📅 采纳排期 —— 全文最有价值的一条，进 TODO 中期重构。**
+**结论：✅ 已完成 —— 2026-08-03 落地。**
 现状"存储空间"把 RAID（mdadm）+ VG/LV（LVM）+ 文件系统三层职责揉在一起，快照/配额/压缩将来无处挂靠。增加 Volume 层后职责清晰：
 - **Physical Disk**：真实硬件（型号/SMART/温度/序列号/通电时间），UI 不出现 md0/vg0 等逻辑设备名——盘位图已是这个视角。
 - **Storage Pool**：RAID/LVM 组成的数据池，UI 不暴露底层是 mdadm 还是 LVM。
@@ -50,10 +50,10 @@ setup.sh 已支持 x86_64 普通 PC / N100 小主机 / VM，与树莓派共用�
 迁移策略：现有部署（1盘LVM/2盘RAID1 等）在模型上映射为"1 Pool = 1 Volume"的特例，重构时保证存量数据零迁移。
 
 ### 六、Storage 模型细分（Disk 只描述硬件 / Pool 隐藏实现 / Volume 承载能力 / SharedFolder 面向用户）
-**结论：✅ 已采纳 —— 作为第五条重构的设计细则。**
+**结论：✅ 已完成 —— 随第五条落地，2026-08-03。**
 - Disk 只描述硬件 ✅（盘位图/SMART 页面已符合）
 - Pool 不暴露 mdadm/LVM 细节 ✅（动态 RAID 方案引擎已按盘数自动推荐，用户不需要知道是 mdadm）
-- Volume 承载快照/配额/压缩 📅（随第五条落地）
+- Volume 承载快照/配额/压缩 ✅（VolumeSummary 已预留 QuotaEnabled/CompressionEnabled/SnapshotCount）
 - SharedFolder 面向用户 ✅（共享文件夹管理已是独立页面）
 
 ### 七、协议是共享目录的属性，不是一级菜单
