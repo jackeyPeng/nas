@@ -1070,7 +1070,7 @@
                 </div>
 
 <style>
-.disk-slot{width:calc((100% - 3vw) / 4);min-width:0;max-width:70px;display:flex;flex-direction:column;align-items:center;border-radius:3px;overflow:hidden;border:3px solid;}
+.disk-slot{width:calc((100% - 3vw) / 4);min-width:0;max-width:100px;display:flex;flex-direction:column;align-items:center;border-radius:4px;overflow:hidden;border:3px solid;}
 .tab-btn{padding:10px 20px;border:none;background:none;cursor:pointer;font-size:14px;color:#64748b;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all 0.2s;}
 .tab-btn:hover{color:#334155;}
 .tab-btn.tab-active{color:#0369a1;font-weight:600;border-bottom-color:#0369a1;}
@@ -1081,8 +1081,8 @@
                     <div style="display:inline-flex;flex-direction:column;align-items:center;gap:6px">
                         <span style="font-size:15px;font-weight:600;color:#1e3a5f">📦 盘位图</span>
                         <!-- NAS机箱外壳: 24vw高 x 32vw宽, padding 1.2vw(四边一致), gap 1vw -->
-                        <div style="height:24vw;max-height:240px;width:32vw;max-width:320px;background:linear-gradient(145deg,#e8ecf0,#d4dae0);border-radius:6px;padding:1.2vw;border:3px solid #9ca3af;box-shadow:0 4px 12px rgba(0,0,0,0.08),inset 0 1px 2px rgba(255,255,255,0.8);display:flex;gap:1vw;align-items:stretch">
-                            <!-- 固定4个槽位, 每个槽位内: 编号在上 + 盘体在下 -->
+                        <div style="height:26vw;max-height:260px;width:40vw;max-width:400px;background:linear-gradient(145deg,#e8ecf0,#d4dae0);border-radius:8px;padding:1.2vw;border:3px solid #9ca3af;box-shadow:0 4px 12px rgba(0,0,0,0.08),inset 0 1px 2px rgba(255,255,255,0.8);display:flex;gap:1vw;align-items:stretch">
+                            <!-- 固定4个槽位 -->
                             <template x-for="slotNum in 4" :key="slotNum">
                                 <div class="disk-slot"
                                     :style="(function(){
