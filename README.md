@@ -256,6 +256,7 @@ Each module is independent, sharing `common/` package for auth/JSON/sudo.
 
 - **Website**: https://www.z1.sale
 - **Gitee**: https://gitee.com/gitdogcat/nas
+- **GitHub**: https://github.com/jackeyPeng/nas
 - **Issues**: https://gitee.com/gitdogcat/nas/issues
 - **Downloads**: https://file.abwen.com
 - **Changelog**: [CHANGELOG.md](CHANGELOG.md)

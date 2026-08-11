@@ -319,3 +319,13 @@ Web 面板采用模块化架构，添加新功能只需：
 - 你可以自由使用、修改、分发本软件
 - 如果你修改了代码并通过网络提供服务，必须同时公开修改后的源代码
 - 详见 [LICENSE](LICENSE) 文件
+
+## 链接
+
+- **官网**: https://www.z1.sale
+- **Gitee**: https://gitee.com/gitdogcat/nas
+- **GitHub**: https://github.com/jackeyPeng/nas
+- **Issues**: https://gitee.com/gitdogcat/nas/issues
+- **软件下载**: https://file.abwen.com
+- **变更日志**: [CHANGELOG.md](CHANGELOG.md)
+- **优化路线图**: [TODO.md](TODO.md)
