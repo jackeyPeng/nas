@@ -80,6 +80,26 @@ Pick "Data Safety" or "Max Capacity" — the system recommends the best option. 
 
 ## Quick Deploy
 
+### One-line install (recommended)
+
+```bash
+# Interactive (prompts for password)
+curl -fsSL https://get.z1.sale | bash
+
+# Or with password pre-set (unattended/CI)
+NAS_PASS=mySecurePass123 curl -fsSL https://get.z1.sale | bash
+```
+
+The installer will:
+1. Auto-detect network (GitHub for international, Gitee for China)
+2. Clone the repo (or download tar if git not installed)
+3. Prompt for NAS password (min 12 chars)
+4. Generate `.env` automatically
+5. Run `setup.sh` (10-step deployment)
+6. Print access URLs when done
+
+### Manual install
+
 ```bash
 # 1. Clone repo
 git clone https://gitee.com/gitdogcat/nas.git ~/soft/nas
@@ -94,8 +114,6 @@ cp /opt/nas/.env.example /opt/nas/.env
 # 4. Deploy
 sudo bash /opt/nas/scripts/setup.sh
 ```
-
-setup.sh auto-detects the sudo user as the NAS management user.
 
 > Deployment takes ~5-10 minutes. Access at `http://<NAS IP>:8090`.
 
@@ -122,6 +140,7 @@ nas/
 │   ├── nas-panel.service
 │   └── ...
 ├── scripts/            # Management scripts
+│   ├── install.sh      # One-line installer (curl | bash)
 │   ├── setup.sh        # One-click deploy (10 steps)
 │   ├── cleanup.sh      # Cleanup (--keep-data to preserve data)
 │   ├── monitor.sh      # Monitoring (cron, 5-min)

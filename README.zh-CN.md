@@ -125,6 +125,26 @@ nas/
 
 ## 快速部署
 
+### 一行命令安装（推荐）
+
+```bash
+# 交互式（提示输入密码）
+curl -fsSL https://get.z1.sale | bash
+
+# 或通过环境变量传入密码（无人值守/CI）
+NAS_PASS=mySecurePass123 curl -fsSL https://get.z1.sale | bash
+```
+
+安装脚本会自动：
+1. 检测网络（国外用 GitHub，国内用 Gitee）
+2. 克隆仓库（没装 git 时自动下载 tar 包）
+3. 交互式输入 NAS 密码（至少 12 位，不回显）
+4. 自动生成 `.env`
+5. 执行 `setup.sh`（10 步部署）
+6. 完成后显示访问地址
+
+### 手动安装
+
 ```bash
 # 1. 克隆仓库
 git clone https://gitee.com/gitdogcat/nas.git ~/soft/nas
@@ -139,8 +159,6 @@ cp /opt/nas/.env.example /opt/nas/.env
 # 4. 执行部署（自动检测当前用户作为 NAS 用户）
 sudo bash /opt/nas/scripts/setup.sh
 ```
-
-部署脚本会自动识别执行 sudo 的用户名作为 NAS 管理用户，无需手动指定。
 
 详细部署步骤请参阅 `docs/nas-product-manual.md`
 
