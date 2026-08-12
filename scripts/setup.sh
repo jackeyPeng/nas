@@ -250,7 +250,7 @@ if command -v filebrowser &>/dev/null; then
     echo "  FileBrowser 已安装，跳过"
 else
     download_file /tmp/filebrowser.tar.gz \
-        "https://file.abwen.com/filebroswer/linux-${ARCH}-filebrowser.tar.gz" \
+        "https://get.z1.sale/filebroswer/linux-${ARCH}-filebrowser.tar.gz" \
         "https://github.com/filebrowser/filebrowser/releases/download/${FILEBROWSER_VERSION}/linux-${ARCH}-filebrowser.tar.gz" \
         "https://ghfast.top/https://github.com/filebrowser/filebrowser/releases/download/${FILEBROWSER_VERSION}/linux-${ARCH}-filebrowser.tar.gz"
     cd /tmp && tar xzf filebrowser.tar.gz && mv filebrowser /usr/local/bin/ && cd -
@@ -298,7 +298,7 @@ RCLONE_VERSION=$(rclone version 2>/dev/null | head -1 | grep -oP 'v\K[0-9]+\.[0-
 if [ -z "$RCLONE_VERSION" ] || [ "$(echo "$RCLONE_VERSION < 1.62" | bc 2>/dev/null || echo 1)" = "1" ]; then
     echo "  升级 rclone..."
     if download_file /tmp/rclone-latest.deb \
-        "https://file.abwen.com/minio/rclone-v1.74.4-linux-amd64.deb"; then
+        "https://get.z1.sale/minio/rclone-v1.74.4-linux-amd64.deb"; then
         sudo dpkg -i /tmp/rclone-latest.deb 2>/dev/null || true
         echo "  ✓ rclone 已升级到 $(rclone version | head -1)"
     else
@@ -399,8 +399,8 @@ if [ -f "$NAS_DIR/web/nas-panel" ]; then
     cp "$NAS_DIR/web/nas-panel" /usr/local/bin/nas-panel
     chmod +x /usr/local/bin/nas-panel
 elif download_file /usr/local/bin/nas-panel \
-    "https://file.abwen.com/control/nas-panel-${ARCH}.latest" \
-    "https://file.abwen.com/control/nas-panel.latest" \
+    "https://get.z1.sale/control/nas-panel-${ARCH}.latest" \
+    "https://get.z1.sale/control/nas-panel.latest" \
     "https://ghfast.top/https://github.com/gitdogcat/nas/releases/download/v1.0.0/nas-panel-linux-${ARCH}"; then
     chmod +x /usr/local/bin/nas-panel
 else

@@ -3,8 +3,8 @@
 # Z1 NAS — One-line Installer
 #
 # Usage:
-#   curl -fsSL https://get.z1.sale | bash
-#   NAS_PASS=myPass123 curl -fsSL https://get.z1.sale | bash
+#   curl -fsSL https://get.z1.sale/install.sh | bash
+#   NAS_PASS=myPass123 curl -fsSL https://get.z1.sale/install.sh | bash
 #   curl -fsSL https://raw.githubusercontent.com/jackeyPeng/nas/master/scripts/install.sh | bash
 # ═══════════════════════════════════════════════════════════════
 set -euo pipefail
