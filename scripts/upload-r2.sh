@@ -19,7 +19,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 ENV_FILE=""
-for p in "$PROJECT_DIR/.env" "$HOME/soft/nas/.env" "$HOME/.env"; do
+for p in "$HOME/.hermes/.env" "$PROJECT_DIR/.env" "$HOME/soft/nas/.env"; do
     if [ -f "$p" ]; then
         ENV_FILE="$p"
         break
@@ -28,7 +28,8 @@ done
 
 if [ -z "$ENV_FILE" ]; then
     echo "ERROR: .env file not found"
-    echo "Create ~/soft/nas/.env with CLOUDFLARE_ID, CLOUDFLARE_KEY_ID, CLOUDFLARE_SECRET, CLOUDFLARE_S3_API"
+    echo "Checked: ~/.hermes/.env, $PROJECT_DIR/.env, ~/soft/nas/.env"
+    echo "Create ~/.hermes/.env with CLOUDFLARE_ID, CLOUDFLARE_KEY_ID, CLOUDFLARE_SECRET, CLOUDFLARE_S3_API"
     exit 1
 fi
 
@@ -38,7 +39,7 @@ source "$ENV_FILE"
 set +a
 
 # ── 校验 ──────────────────────────────────────────────────────────
-BUCKET="NAS"
+BUCKET="nas"
 INSTALL_SH="$SCRIPT_DIR/install.sh"
 
 if [ ! -f "$INSTALL_SH" ]; then
@@ -63,29 +64,40 @@ export AWS_ACCESS_KEY_ID="$CLOUDFLARE_KEY_ID"
 export AWS_SECRET_ACCESS_KEY="$CLOUDFLARE_SECRET"
 export AWS_DEFAULT_REGION="auto"
 
-# 用 aws-cli 或 rclone 上传
-if command -v aws &>/dev/null; then
-    aws s3 cp "$INSTALL_SH" "s3://$BUCKET/install.sh" \
-        --endpoint-url "$CLOUDFLARE_S3_API" \
-        --content-type "text/x-shellscript" \
-        --cache-control "no-cache"
-    echo "[OK] Uploaded via aws-cli"
-elif command -v rclone &>/dev/null; then
-    # rclone 需要预配置 remote，这里用环境变量方式
-    rclone copy "$INSTALL_SH" ":s3,provider=Cloudflare,endpoint=$CLOUDFLARE_S3_API,access_key_id=$CLOUDFLARE_KEY_ID,secret_access_key=$CLOUDFLARE_SECRET:$BUCKET/" \
-        --no-check-certificate
-    echo "[OK] Uploaded via rclone"
-else
-    echo "ERROR: Neither aws-cli nor rclone found. Install one of them:"
-    echo "  sudo apt install awscli   # or"
-    echo "  curl https://rclone.org/install.sh | sudo bash"
+# ── 上传（boto3，最兼容 R2）─────────────────────────────────────
+UPLOAD_FILE="$INSTALL_SH" BUCKET="$BUCKET" REMOTE_KEY="install.sh" python3 -c "
+import boto3, sys, os
+
+s3 = boto3.client('s3',
+    endpoint_url=os.environ['CLOUDFLARE_S3_API'],
+    aws_access_key_id=os.environ['CLOUDFLARE_KEY_ID'],
+    aws_secret_access_key=os.environ['CLOUDFLARE_SECRET'],
+    region_name='auto'
+)
+
+upload_file = os.environ.get('UPLOAD_FILE', '')
+bucket = os.environ.get('BUCKET', '')
+remote_key = os.environ.get('REMOTE_KEY', '')
+
+with open(upload_file, 'rb') as f:
+    s3.put_object(
+        Bucket=bucket,
+        Key=remote_key,
+        Body=f,
+        ContentType='text/x-shellscript',
+        CacheControl='no-cache'
+    )
+print('[OK] Uploaded', remote_key, 'to R2 bucket:', bucket)
+" 2>&1 || {
+    echo "ERROR: Upload failed (boto3 not installed?)"
+    echo "Install: pip3 install boto3"
     exit 1
-fi
+}
 
 echo ""
 echo "[DONE] install.sh uploaded to R2 bucket: $BUCKET"
 echo ""
-echo "  Public URL (via file.abwen.com): https://file.abwen.com/nas/install.sh"
-echo "  Short URL (if configured):       https://get.z1.sale"
-echo ""
-echo "  Test: curl -fsSL https://file.abwen.com/nas/install.sh | bash"
+Public URL: https://file.abwen.com/install.sh
+Test:        curl -fsSL https://file.abwen.com/install.sh | bash
+
+(To use https://get.z1.sale/install.sh, configure DNS redirect to file.abwen.com/install.sh)
