@@ -84,10 +84,10 @@ Pick "Data Safety" or "Max Capacity" — the system recommends the best option. 
 
 ```bash
 # Interactive (prompts for password)
-curl -fsSL https://get.z1.sale | bash
+curl -fsSL https://get.z1.sale/install.sh | bash
 
 # Or with password pre-set (unattended/CI)
-NAS_PASS=mySecurePass123 curl -fsSL https://get.z1.sale | bash
+NAS_PASS=mySecurePass123 curl -fsSL https://get.z1.sale/install.sh | bash
 ```
 
 The installer will:

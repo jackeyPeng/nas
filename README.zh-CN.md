@@ -129,10 +129,10 @@ nas/
 
 ```bash
 # 交互式（提示输入密码）
-curl -fsSL https://get.z1.sale | bash
+curl -fsSL https://get.z1.sale/install.sh | bash
 
 # 或通过环境变量传入密码（无人值守/CI）
-NAS_PASS=mySecurePass123 curl -fsSL https://get.z1.sale | bash
+NAS_PASS=mySecurePass123 curl -fsSL https://get.z1.sale/install.sh | bash
 ```
 
 安装脚本会自动：
