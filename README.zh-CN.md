@@ -344,6 +344,6 @@ Web 面板采用模块化架构，添加新功能只需：
 - **Gitee**: https://gitee.com/gitdogcat/nas
 - **GitHub**: https://github.com/jackeyPeng/nas
 - **Issues**: https://gitee.com/gitdogcat/nas/issues
-- **软件下载**: https://file.abwen.com
+- **软件下载**: https://get.z1.sale
 - **变更日志**: [CHANGELOG.md](CHANGELOG.md)
 - **优化路线图**: [TODO.md](TODO.md)
