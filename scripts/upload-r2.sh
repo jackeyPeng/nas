@@ -40,6 +40,7 @@ set +a
 
 # ── 校验 ──────────────────────────────────────────────────────────
 BUCKET="nas"
+BUCKET_WEB="www-z1-sale"  # get.z1.sale 指向的 bucket
 INSTALL_SH="$SCRIPT_DIR/install.sh"
 
 if [ ! -f "$INSTALL_SH" ]; then
@@ -65,7 +66,8 @@ export AWS_SECRET_ACCESS_KEY="$CLOUDFLARE_SECRET"
 export AWS_DEFAULT_REGION="auto"
 
 # ── 上传（boto3，最兼容 R2）─────────────────────────────────────
-UPLOAD_FILE="$INSTALL_SH" BUCKET="$BUCKET" REMOTE_KEY="install.sh" python3 -c "
+# 上传到两个 bucket: nas (file.abwen.com) + www-z1-sale (get.z1.sale)
+UPLOAD_FILE="$INSTALL_SH" python3 -c "
 import boto3, sys, os
 
 s3 = boto3.client('s3',
@@ -76,18 +78,20 @@ s3 = boto3.client('s3',
 )
 
 upload_file = os.environ.get('UPLOAD_FILE', '')
-bucket = os.environ.get('BUCKET', '')
-remote_key = os.environ.get('REMOTE_KEY', '')
+buckets = ['nas', 'www-z1-sale']
 
 with open(upload_file, 'rb') as f:
+    content = f.read()
+
+for bucket in buckets:
     s3.put_object(
         Bucket=bucket,
-        Key=remote_key,
-        Body=f,
+        Key='install.sh',
+        Body=content,
         ContentType='text/x-shellscript',
         CacheControl='no-cache'
     )
-print('[OK] Uploaded', remote_key, 'to R2 bucket:', bucket)
+    print(f'[OK] Uploaded install.sh to R2 bucket: {bucket}')
 " 2>&1 || {
     echo "ERROR: Upload failed (boto3 not installed?)"
     echo "Install: pip3 install boto3"
