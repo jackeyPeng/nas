@@ -20,6 +20,7 @@ import (
 	"nas-panel/modules/storage"
 	"nas-panel/modules/system"
 	"nas-panel/modules/users"
+	"nas-panel/modules/version"
 )
 
 //go:embed frontend/*
@@ -77,6 +78,7 @@ func main() {
 	system.RegisterRoutes(mux)
 	backup.RegisterRoutes(mux)
 	rclone.RegisterRoutes(mux)
+	version.RegisterRoutes(mux)
 
 	// Serve frontend
 	frontendRoot, _ := fs.Sub(frontendFS, "frontend")
