@@ -389,16 +389,101 @@ Closes #12
 
 ## 版本发布流程
 
-### 发布步骤
+### 版本号规范
 
-1. 从 `develop` 切出 `release/vX.Y.Z` 分支
-2. 更新 `CHANGELOG.md`（参照已有格式，记录本次变更）
-3. 更新 `TODO.md` 中的进度状态
-4. 运行完整测试：`make test && make lint && make build-all`
-5. 提交 PR：`release/vX.Y.Z` → `main`，经 review 后合并
-6. 在 `main` 上打 tag：`git tag vX.Y.Z && git push origin vX.Y.Z`
-7. 将 `main` 合并回 `develop`
-8. （可选）由维护者在 Gitee Releases 页面创建 Release 附件
+遵循语义化版本，加 beta/stable 通道：
+
+| 通道 | Tag 格式 | 示例 | 说明 |
+|------|---------|------|------|
+| **beta** | `v1.4.0-beta.1` | 开发中，测试用 | 递增 `-beta.N` |
+| **stable** | `v1.4.0` | 验证通过后发布 | beta 验证通过后打 |
+
+### 发布包内容
+
+```
+nas-v1.4.0-linux-amd64.tar.gz
+├── nas-panel              ← 预编译二进制 (strip后 ~7.5M)
+├── frontend/              ← 前端文件 (index.html/style.css/app.js/alpinejs.min.js)
+├── scripts/               ← 部署脚本 (setup.sh/cleanup.sh/...)
+├── configs/               ← 服务配置模板 (smb.conf/vsftpd.conf/...)
+├── .env.example           ← 配置模板
+└── VERSION                ← 版本元数据
+```
+
+### 存储位置
+
+| 位置 | 用途 | URL |
+|------|------|-----|
+| Gitee Release | git 托管，版本历史 | `https://gitee.com/gitdogcat/nas/releases` |
+| R2 (beta) | 快速下载 | `https://get.z1.sale/releases/beta/nas-v1.4.0-beta.1-linux-amd64.tar.gz` |
+| R2 (stable) | 快速下载 | `https://get.z1.sale/releases/stable/nas-v1.3.0-linux-amd64.tar.gz` |
+| R2 (latest) | install.sh 默认 | `https://get.z1.sale/releases/stable/latest-linux-amd64.tar.gz` |
+
+### 发版步骤
+
+```bash
+# 1. Beta 发版
+git tag v1.4.0-beta.1
+git push origin v1.4.0-beta.1
+bash scripts/release.sh beta
+
+# 2. 验证通过后打 stable
+git tag v1.4.0
+git push origin v1.4.0
+bash scripts/release.sh stable
+```
+
+### 安装方式
+
+```bash
+# 稳定版（默认 — 走预编译包）
+curl -fsSL https://get.z1.sale/install.sh | bash
+
+# Beta 版
+NAS_CHANNEL=beta curl -fsSL https://get.z1.sale/install.sh | bash
+
+# 指定版本
+NAS_VERSION=v1.3.0 curl -fsSL https://get.z1.sale/install.sh | bash
+
+# 强制源码模式
+NAS_CHANNEL=source curl -fsSL https://get.z1.sale/install.sh | bash
+
+# 密码预置 + beta
+NAS_PASS=*** NAS_CHANNEL=beta curl -fsSL https://get.z1.sale/install.sh | bash
+```
+
+### release.sh 脚本
+
+`scripts/release.sh` 负责完整发版流程：
+
+1. **build** — 交叉编译 linux/amd64 + linux/arm64，注入 ldflags 版本号
+2. **pack** — 打包 tar.gz（二进制 + 前端 + 脚本 + 配置 + VERSION）
+3. **upload** — 上传到 Cloudflare R2（beta/stable 不同目录）
+4. **latest** — stable 发版时更新 `latest-linux-{arch}.tar.gz` 指针
+5. **Gitee Release** — stable 发版时上传附件到 Gitee Release
+
+### 版本号 API
+
+`GET /api/version` 返回当前运行版本：
+
+```json
+{
+  "version": "v1.3.0",
+  "build_time": "2026-08-13T15:00:00Z",
+  "git_commit": "abc1234",
+  "go_version": "go1.25.0",
+  "os": "linux",
+  "arch": "amd64"
+}
+```
+
+版本号通过 Go ldflags 在编译时注入：
+```bash
+go build -ldflags "\
+  -X nas-panel/modules/version.Version=v1.3.0 \
+  -X nas-panel/modules/version.BuildTime=2026-08-13T15:00:00Z \
+  -X nas-panel/modules/version.GitCommit=abc1234" .
+```
 
 ### CHANGELOG 格式
 
