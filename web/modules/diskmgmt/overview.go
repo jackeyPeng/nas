@@ -192,7 +192,7 @@ func handleStorageOverview(w http.ResponseWriter, r *http.Request) {
 			Size:        formatSize(totalSize),
 			Used:        formatSize(totalUsed),
 			Avail:       formatSize(totalAvail),
-			Percent:     calcPercent(formatSize(totalSize), formatSize(totalUsed)),
+			Percent:     calcPercent(totalSize, totalUsed),
 			Healthy:     healthy,
 			Volumes:     []VolumeSummary{},
 		}
@@ -358,17 +358,22 @@ func handleStorageOverview(w http.ResponseWriter, r *http.Request) {
 	overview.TotalCapacity = totalSize
 	overview.TotalUsed = totalUsed
 	overview.TotalAvail = totalAvail
-	overview.UsedPercent = calcPercent(totalSize, totalUsed)
+	overview.UsedPercent = calcPercent(
+		parseSizeToGB(totalSize), parseSizeToGB(totalUsed))
 
 	// 5. 系统盘共享目录 (/data/system)
 	systemSharePath := "/data/system"
-	if _, err := os.Stat(systemSharePath); err == nil || os.IsNotExist(err) {
-		common.SudoExec("mkdir", "-p", systemSharePath)
-		nasUser, _ := common.ReadEnvFile(common.GetEnvFilePath(), "NAS_USER")
-		if nasUser == "" {
-			nasUser = "root"
+	if _, err := os.Stat(systemSharePath); err != nil && !os.IsNotExist(err) {
+		// 其他错误（如权限不足），跳过
+	} else {
+		if os.IsNotExist(err) {
+			common.SudoExec("mkdir", "-p", systemSharePath)
+			nasUser, _ := common.ReadEnvFile(common.GetEnvFilePath(), "NAS_USER")
+			if nasUser == "" {
+				nasUser = "root"
+			}
+			common.SudoExec("chown", "-R", nasUser+":"+nasUser, systemSharePath)
 		}
-		common.SudoExec("chown", "-R", nasUser+":"+nasUser, systemSharePath)
 
 		sizeOut, _ := common.SudoOutput("du", "-sh", systemSharePath)
 		overview.SystemShareSize = parseDuSize(sizeOut)
@@ -647,14 +652,12 @@ func formatSize(gb float64) string {
 	return fmt.Sprintf("%.0fM", gb*1024)
 }
 
-// calcPercent calculates used percentage
-func calcPercent(total, used string) string {
-	t := parseSizeToGB(total)
-	u := parseSizeToGB(used)
-	if t <= 0 {
+// calcPercent calculates used percentage from GB floats (no format round-trip)
+func calcPercent(totalGB, usedGB float64) string {
+	if totalGB <= 0 {
 		return "0"
 	}
-	return fmt.Sprintf("%.0f", (u/t)*100)
+	return fmt.Sprintf("%.0f", (usedGB/totalGB)*100)
 }
 
 // getRAIDStatus reads mdadm RAID arrays
@@ -664,12 +667,12 @@ func getRAIDStatus() []RAIDStatus {
 	if err != nil {
 		return arrays
 	}
+	mdstat, _ := os.ReadFile("/proc/mdstat")
 	for _, dev := range strings.Fields(out) {
 		if !regexp_match(`^/dev/md\d+$`, dev) {
 			continue
 		}
 		ra := RAIDStatus{Device: dev}
-		mdstat, _ := os.ReadFile("/proc/mdstat")
 		mdName := strings.TrimPrefix(dev, "/dev/")
 		for _, line := range strings.Split(string(mdstat), "\n") {
 			if strings.HasPrefix(line, mdName) {
@@ -721,10 +724,11 @@ func extractRAIDLevel(line string) string {
 	return "unknown"
 }
 
+var percentRe = regexp.MustCompile(`(\d+\.?\d*)%`)
+
 // extractPercent gets percentage from [====....] 12.5%
 func extractPercent(s string) string {
-	re := regexp.MustCompile(`(\d+\.?\d*)%`)
-	matches := re.FindStringSubmatch(s)
+	matches := percentRe.FindStringSubmatch(s)
 	if len(matches) >= 2 {
 		return matches[1] + "%"
 	}

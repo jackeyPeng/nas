@@ -341,8 +341,8 @@ func handleQuickSetup(w http.ResponseWriter, r *http.Request) {
 
 	if uuid != "" {
 		fstabLine := fmt.Sprintf("UUID=%s %s %s defaults 0 2", uuid, mountpoint, fstype)
-		fstabData, _ := os.ReadFile("/etc/fstab")
-		fstabLines := strings.Split(string(fstabData), "\n")
+		fstabData, _ := common.SudoOutput("cat", "/etc/fstab")
+		fstabLines := strings.Split(fstabData, "\n")
 		found := false
 		for _, line := range fstabLines {
 			if strings.Contains(line, uuid) {
@@ -351,7 +351,7 @@ func handleQuickSetup(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if !found {
-			content := string(fstabData)
+			content := fstabData
 			if !strings.HasSuffix(content, "\n") {
 				content += "\n"
 			}
