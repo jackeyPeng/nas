@@ -1,5 +1,46 @@
 # NAS 项目变更日志
 
+## [2026-08-12] - 一行安装 + i18n + 品牌更名
+
+### 版本 v1.3.0 → 待发布
+
+---
+
+### 1. 一行安装方式
+
+- 新增 `scripts/install.sh` — 一行安装器（`curl -fsSL https://get.z1.sale/install.sh | bash`）
+- 自动检测网络（GitHub/Gitee 源），没装 git 时下载 tar 包
+- 交互式设密码（`read -s` 不回显，12 位校验），或 `NAS_PASS=xxx` 环境变量传入（无人值守）
+- 自动生成 .env，调用 setup.sh，完成后显示访问地址
+- 新增 `scripts/upload-r2.sh` — 上传 install.sh 到 Cloudflare R2（boto3，双 bucket）
+
+### 2. 官网多语言
+
+- VitePress locales i18n：英文默认（根路径），中文 `/zh/`
+- 7 个英文页面完整翻译（index/product/features/download/support/community/about）
+- 修复 VitePress home 布局 nav 不渲染（根级 themeConfig 补 nav/sidebar）
+- 修复 locale key 必须为 `'root'` 才能正确渲染语言切换
+- 下载页加一行安装方式
+
+### 3. README 双语
+
+- 新建英文 README.md（默认，Gitee/GitHub 首页显示英文）
+- 中文移至 README.zh-CN.md
+- 顶部互相链接切换
+
+### 4. 品牌更名
+
+- 系统名称"NAS 家用存储系统"→"Z1"
+- 官网标题/版权/footer 更名
+- 全站 `file.abwen.com` 替换为 `get.z1.sale`（同一 R2 bucket）
+
+### 5. 官网部署上线
+
+- www.z1.sale 已部署上线
+- get.z1.sale/install.sh 已通
+
+---
+
 ## [2026-08-03] - 存储四层模型重构 + Design System v2.0
 
 ### 版本 v1.3.0 → 待发布

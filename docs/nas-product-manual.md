@@ -171,6 +171,20 @@ Samba、NFS 都是内核级服务（NFS 直接在内核空间运行），用 Doc
 
 ### 安装命令
 
+**一行命令安装（推荐）：**
+
+```bash
+# 交互式（提示输入密码）
+curl -fsSL https://get.z1.sale/install.sh | bash
+
+# 无人值守（环境变量传入密码）
+NAS_PASS=mySecurePass123 curl -fsSL https://get.z1.sale/install.sh | bash
+```
+
+安装脚本自动检测网络（GitHub/Gitee），克隆仓库，交互式设密码，生成 .env，执行 setup.sh，完成后显示访问地址。
+
+**手动安装：**
+
 ```bash
 sudo apt-get update
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
