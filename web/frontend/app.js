@@ -73,6 +73,8 @@ function nasPanel() {
         progressTitle: '',
         // Storage overview
         storageOverview: {},
+        showDiskDetail: false,
+        selectedDisk: null,
         // Shared folders
         sharedFolders: [],
         showAddFolder: false,
