@@ -31,6 +31,23 @@ type StorageOverview struct {
 	Unconfigured  int             `json:"unconfigured_count"`
 	HasIssues     bool            `json:"has_issues"`
 	Issues        []string        `json:"issues,omitempty"`
+	Stats         StorageStats    `json:"stats"`                    // 四层计数（总览卡片）
+	Alerts        []StorageAlert  `json:"alerts,omitempty"`         // 告警栏（高温/SMART失败/RAID降级）
+}
+
+// StorageStats 四层对象计数（总览页顶部统计卡片）
+type StorageStats struct {
+	TotalDisks   int `json:"total_disks"`    // 物理磁盘总数（含系统盘）
+	TotalPools   int `json:"total_pools"`
+	TotalVolumes int `json:"total_volumes"`
+	TotalShares  int `json:"total_shares"`
+}
+
+// StorageAlert 总览页告警条目
+type StorageAlert struct {
+	Level   string `json:"level"`   // warning / critical
+	Message string `json:"message"` // "磁盘 sdd 温度 52°C，建议检查机箱散热"
+	Device  string `json:"device,omitempty"`
 }
 
 // PoolSummary 存储池 — RAID/LVM VG/单盘，不暴露底层实现
@@ -422,6 +439,73 @@ func handleStorageOverview(w http.ResponseWriter, r *http.Request) {
 			} else {
 				overview.Issues = append(overview.Issues, fmt.Sprintf("RAID %s 状态: %s", ra.Device, ra.State))
 			}
+		}
+	}
+
+	// 7. 统计计数（总览卡片）+ 告警栏
+	overview.Stats.TotalDisks = len(overview.SystemDisks) + len(overview.FreeDisks)
+	volCount := 0
+	shareCount := 0
+	poolMemberDevs := map[string]bool{}
+	for _, p := range overview.Pools {
+		volCount += len(p.Volumes)
+		for _, v := range p.Volumes {
+			shareCount += len(v.Folders)
+		}
+		for _, md := range p.MemberDisks {
+			poolMemberDevs[md.Device] = true
+		}
+	}
+	overview.Stats.TotalDisks += len(poolMemberDevs)
+	overview.Stats.TotalPools = len(overview.Pools)
+	overview.Stats.TotalVolumes = volCount
+	overview.Stats.TotalShares = shareCount + len(overview.SystemFolders)
+
+	// 告警：磁盘温度 / SMART / RAID 状态
+	allDisks := append([]DiskSummary{}, overview.SystemDisks...)
+	allDisks = append(allDisks, overview.FreeDisks...)
+	for _, p := range overview.Pools {
+		allDisks = append(allDisks, p.MemberDisks...)
+	}
+	for _, d := range allDisks {
+		dev := strings.TrimPrefix(d.Device, "/dev/")
+		if d.Temp != "" && d.Temp != "-" {
+			temp := 0
+			fmt.Sscanf(d.Temp, "%d", &temp)
+			if temp >= 50 {
+				overview.Alerts = append(overview.Alerts, StorageAlert{
+					Level:   "warning",
+					Message: fmt.Sprintf("磁盘 %s 温度 %d°C，建议检查机箱散热", dev, temp),
+					Device:  dev,
+				})
+			} else if temp >= 45 {
+				overview.Alerts = append(overview.Alerts, StorageAlert{
+					Level:   "warning",
+					Message: fmt.Sprintf("磁盘 %s 温度偏高 %d°C", dev, temp),
+					Device:  dev,
+				})
+			}
+		}
+		if d.Smart == "FAILED" {
+			overview.Alerts = append(overview.Alerts, StorageAlert{
+				Level:   "critical",
+				Message: fmt.Sprintf("磁盘 %s SMART 检测失败，建议尽快备份并更换", dev),
+				Device:  dev,
+			})
+		}
+	}
+	for _, ra := range raidStatuses {
+		if ra.State != "active" && ra.State != "clean" {
+			lvl := "warning"
+			msg := fmt.Sprintf("RAID %s 状态异常: %s", ra.Device, ra.State)
+			if ra.SyncPercent != "" {
+				msg = fmt.Sprintf("RAID %s 正在重建/同步 %s", ra.Device, ra.SyncPercent)
+			}
+			if ra.State == "degraded" || ra.State == "FAILED" {
+				lvl = "critical"
+				msg = fmt.Sprintf("RAID %s 已降级，数据处于风险中，建议尽快处理", ra.Device)
+			}
+			overview.Alerts = append(overview.Alerts, StorageAlert{Level: lvl, Message: msg, Device: ra.Device})
 		}
 	}
 
