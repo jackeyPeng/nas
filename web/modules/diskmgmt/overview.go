@@ -824,3 +824,78 @@ func regexp_match(pattern, s string) bool {
 	matched, _ := regexp.MatchString(pattern, s)
 	return matched
 }
+
+// ═══════════════════════════════════════════════════
+// 维护页操作日志
+// ═══════════════════════════════════════════════════
+
+// OpLogEntry 操作日志条目
+type OpLogEntry struct {
+	Time    string `json:"time"`
+	Action  string `json:"action"`  // success / warning / error
+	Message string `json:"message"`
+}
+
+// handleOperationsLog returns last N disk operations from journalctl
+func handleOperationsLog(w http.ResponseWriter, r *http.Request) {
+	limit := r.URL.Query().Get("limit")
+	if limit == "" {
+		limit = "20"
+	}
+
+	// 过滤 nas-panel 日志中与存储操作相关的条目
+	out, err := common.ExecOutput("journalctl", "-u", "nas-panel", "--no-pager", "-n", limit, "-o", "short-iso")
+	if err != nil {
+		common.JSONResponse(w, map[string]interface{}{"operations": []OpLogEntry{}})
+		return
+	}
+
+	var entries []OpLogEntry
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	for _, line := range lines {
+		if len(line) < 20 {
+			continue
+		}
+		// 格式: 2026-08-14T10:23:00 hostname nas-panel[pid]: message
+		timeStr := ""
+		msg := ""
+		if len(line) > 25 {
+			timeStr = strings.TrimSpace(line[:25])
+			parts := strings.SplitN(line, "]: ", 2)
+			if len(parts) == 2 {
+				msg = parts[1]
+			} else {
+				msg = line[26:]
+			}
+		}
+		if msg == "" {
+			msg = line
+		}
+		action := "success"
+		lowerMsg := strings.ToLower(msg)
+		if strings.Contains(lowerMsg, "error") || strings.Contains(lowerMsg, "fail") || strings.Contains(lowerMsg, "失败") {
+			action = "error"
+		} else if strings.Contains(lowerMsg, "warn") || strings.Contains(lowerMsg, "警告") {
+			action = "warning"
+		}
+		// 过滤只保留存储相关日志
+		if !strings.Contains(lowerMsg, "disk") && !strings.Contains(lowerMsg, "pool") &&
+			!strings.Contains(lowerMsg, "raid") && !strings.Contains(lowerMsg, "lvm") &&
+			!strings.Contains(lowerMsg, "volume") && !strings.Contains(lowerMsg, "share") &&
+			!strings.Contains(lowerMsg, "scrub") && !strings.Contains(lowerMsg, "rebuild") &&
+			!strings.Contains(lowerMsg, "expand") && !strings.Contains(lowerMsg, "replace") &&
+			!strings.Contains(lowerMsg, "磁盘") && !strings.Contains(lowerMsg, "存储") &&
+			!strings.Contains(lowerMsg, "池") && !strings.Contains(lowerMsg, "卷") &&
+			!strings.Contains(lowerMsg, "扩容") && !strings.Contains(lowerMsg, "重建") &&
+			!strings.Contains(lowerMsg, "替换") && !strings.Contains(lowerMsg, "清理") {
+			continue
+		}
+		entries = append(entries, OpLogEntry{
+			Time:    timeStr,
+			Action:  action,
+			Message: strings.TrimSpace(msg),
+		})
+	}
+
+	common.JSONResponse(w, map[string]interface{}{"operations": entries})
+}
