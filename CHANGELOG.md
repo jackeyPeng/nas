@@ -1,5 +1,33 @@
 # NAS 项目变更日志
 
+## [2026-08-14] - 存储管理 5 Tab 重构 + 操作日志 API
+
+### 版本 v1.3.0 → 待发布
+
+---
+
+### 1. 存储管理 5 Tab 布局（按 Z1_Storage_UI_Prototype.md）
+
+- 从单页滚动重构为 5 个 Tab：📊 存储总览 / 💾 物理磁盘 / 🗄️ 存储池 / 🧙 创建向导 / 🔧 维护
+- 统计卡片：白底阴影，22px 四色数字，一行 4 列（flex + max-width:65%）
+- 拓扑树：Pool 行（40×40px 图标区 + Badge + 进度条）+ Volume 卡片（边框 + 协议 tag）+ Folder 行（协议 tag）
+- 物理磁盘：卡片网格（auto-fill, minmax 160px），颜色编码（绿/蓝/黄/红/虚线），点击展开详情面板
+- 存储池：池卡片 + 右侧操作按钮（扩容/替换盘/清理）+ RAID/LVM 双列详情面板
+- 创建向导：5 步指示器（已完成绿/当前蓝/待办灰），选磁盘→定目标→确认方案→创建卷→完成
+- 维护：2×2 操作卡片 + 操作日志（时间/状态 Badge/内容）
+- Tab 样式：默认灰 #6b7280，悬停浅灰 #f3f4f6，选中蓝 #3b82f6 + 浅蓝背景 #eff6ff
+
+### 2. 操作日志 API
+
+- 新增 `GET /api/disk/operations?limit=20`，从 journalctl 解析 nas-panel 日志，过滤存储相关条目
+- 返回 `{operations: [{time, action, message}]}`，action 为 success/warning/error
+
+### 3. Alpine.js 布局修复
+
+- `x-show` 与 `display:flex` 分离到两层 div，避免 Alpine.js 覆盖 flex 布局
+
+---
+
 ## [2026-08-12] - 一行安装 + i18n + 品牌更名
 
 ### 版本 v1.3.0 → 待发布
