@@ -76,6 +76,7 @@ function nasPanel() {
         diskmgmtTab: 'overview',
         showDiskDetail: false,
         selectedDisk: null,
+        operationsLog: [],
         // Shared folders
         sharedFolders: [],
         showAddFolder: false,
@@ -983,6 +984,12 @@ function nasPanel() {
         scrollToWizard() {
             const el = document.getElementById('wizard-section');
             if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        },
+
+        // Maintenance operations log
+        async loadOperationsLog() {
+            const data = await this.api('/disk/operations?limit=20');
+            if (data) this.operationsLog = data.operations || [];
         },
 
         // Shared folders
