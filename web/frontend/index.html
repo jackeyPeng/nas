@@ -1050,7 +1050,7 @@
                 <!-- ═══════════════ Tab 1: 存储总览 ═══════════════ -->
                 <div x-show="diskmgmtTab==='overview'" x-transition>
                     <!-- 统计卡片 -->
-                    <div x-show="storageOverview.stats" style="display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:12px;margin-bottom:14px">
+                    <div x-show="storageOverview.stats" style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:14px">
                         <div style="background:#fff;border-radius:10px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.06);text-align:center">
                             <div style="font-size:22px;font-weight:700;color:#22c55e" x-text="storageOverview.stats?.total_disks ?? 0"></div>
                             <div style="font-size:11px;color:#6b7280;margin-top:4px">物理磁盘</div>
