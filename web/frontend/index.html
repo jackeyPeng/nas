@@ -1113,7 +1113,12 @@
                         <div x-show="!storageOverview.pools||storageOverview.pools.length===0" style="padding:20px;text-align:center;color:var(--text-muted);font-size:14px">暂无存储池 — 使用创建向导创建第一个存储池</div>
                     </div>
                 </div>
-                <div x-show="storageOverview.total_capacity || storageOverview.system_disks?.length" style="background:linear-gradient(135deg,#1a3a5c,#2d6a9f);color:white;border-radius:12px;padding:20px;margin-bottom:24px">
+
+                <!-- ════════════════════════════════════════════════
+                Tab 2: 💾 物理磁盘
+                ════════════════════════════════════════════════ -->
+                <div x-show="diskmgmtTab==='disks'" x-transition>
+                <!-- ════ 盘位图（NAS机箱正面，4槽位，浅色主题） ════ -->
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
                         <strong style="font-size:18px">📊 存储总览</strong>
                         <button @click="loadStorageOverview(); loadWizardStatus(); loadSharedFolders()" style="background:rgba(255,255,255,0.2);color:white;border:none;padding:6px 16px;border-radius:6px;cursor:pointer;font-size:14px">刷新</button>
@@ -1344,6 +1349,11 @@
                         </div>
                     </div>
                 </div>
+                </div>
+                <!-- ════════════════════════════════════════════════
+                Tab 3: 🗄️ 存储池
+                ════════════════════════════════════════════════ -->
+                <div x-show="diskmgmtTab==='pools'" x-transition>
                 <!-- ════ 存储池区域（四层模型：Pool → Volume → Folder） ════ -->
                 <div x-show="storageOverview.pools?.length > 0" style="margin-bottom:24px">
                     <h3 style="margin-bottom:10px;border-bottom:2px solid #4a9eff;padding-bottom:6px;font-size:17px">🗄️ 存储池</h3>
@@ -1506,7 +1516,11 @@
                         <div x-show="!(storageOverview.system_folders||[]).length" style="font-size:13px;color:#9ca3af;padding:8px 0">暂无文件夹，可在系统盘上创建共享目录使用。后续添加数据盘后可迁移。</div>
                     </div>
                 </div>
-
+                </div>
+                <!-- ════════════════════════════════════════════════
+                Tab 4: 🧙 创建向导
+                ════════════════════════════════════════════════ -->
+                <div x-show="diskmgmtTab==='wizard'" x-transition>
                 <!-- ════ 存储配置向导（目标导向） ════ -->
                 <div x-show="storageOverview.unconfigured_count > 0" id="wizard-section" style="border:2px solid #4a9eff;border-radius:10px;padding:20px;margin-bottom:16px;background:#f8fbff">
                     <h3 style="margin-bottom:4px">🚀 存储配置向导</h3>
@@ -1803,6 +1817,7 @@
                         </div>
                         <pre class="config-output" x-text="diskFstab || diskPartitions || diskLVM || diskIOStat || diskSmartDetail || '点击上方按钮加载'" style="max-height:250px;overflow:auto;font-size:11px"></pre>
                     </div>
+                </div>
                 </div>
             </div>
 
