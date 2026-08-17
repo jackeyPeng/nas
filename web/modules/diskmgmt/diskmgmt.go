@@ -39,6 +39,13 @@ func RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/disk/raid/reshape-status", common.AuthMiddleware(handleRAIDReshapeStatus))
 	// Maintenance operations log
 	mux.HandleFunc("/api/disk/operations", common.AuthMiddleware(handleOperationsLog))
+	// Replace disk
+	mux.HandleFunc("/api/disk/replace", common.AuthMiddleware(handleReplaceDisk))
+	// Scrub
+	mux.HandleFunc("/api/disk/scrub", common.AuthMiddleware(handleScrub))
+	mux.HandleFunc("/api/disk/scrub/status", common.AuthMiddleware(handleScrubStatus))
+	// SMART scan
+	mux.HandleFunc("/api/disk/smart-scan", common.AuthMiddleware(handleSMARTScan))
 	// Folder quota
 	mux.HandleFunc("/api/disk/folders/quota", common.AuthMiddleware(handleFolderQuota))
 	// Shared folders

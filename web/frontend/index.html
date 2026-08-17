@@ -1198,9 +1198,9 @@
                                     </div>
                                 </div>
                                 <div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0">
-                                    <button class="btn btn-secondary btn-sm" style="font-size:11px;width:60px">扩容</button>
-                                    <button class="btn btn-secondary btn-sm" style="font-size:11px;width:60px">替换盘</button>
-                                    <button class="btn btn-secondary btn-sm" style="font-size:11px;width:60px">清理</button>
+                                    <button class="btn btn-secondary btn-sm" style="font-size:11px;width:60px" @click="openExtendPool(pool)">扩容</button>
+                                    <button class="btn btn-secondary btn-sm" style="font-size:11px;width:60px" @click="openReplaceDisk(pool)">替换盘</button>
+                                    <button class="btn btn-secondary btn-sm" style="font-size:11px;width:60px" @click="scrubPool(pool)">清理</button>
                                 </div>
                             </div>
                             <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;border-top:1px solid #e5e7eb;padding-top:12px">
@@ -1286,10 +1286,10 @@
                 <div x-show="diskmgmtTab==='maintenance'" x-transition x-init="loadOperationsLog()">
                     <div style="font-size:14px;font-weight:600;color:#374151;margin-bottom:14px">维护操作</div>
                     <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:20px">
-                        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;display:flex;align-items:flex-start;gap:12px;cursor:pointer;transition:all 0.15s"><span style="font-size:20px">🔄</span><div><div style="font-size:14px;font-weight:600;margin-bottom:4px">替换故障盘</div><div style="font-size:12px;color:#6b7280">拔出坏盘，插入新盘，自动重建</div></div></div>
-                        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;display:flex;align-items:flex-start;gap:12px;cursor:pointer;transition:all 0.15s"><span style="font-size:20px">➕</span><div><div style="font-size:14px;font-weight:600;margin-bottom:4px">扩容存储池</div><div style="font-size:12px;color:#6b7280">添加新磁盘到现有池</div></div></div>
-                        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;display:flex;align-items:flex-start;gap:12px;cursor:pointer;transition:all 0.15s"><span style="font-size:20px">🧹</span><div><div style="font-size:14px;font-weight:600;margin-bottom:4px">数据清理</div><div style="font-size:12px;color:#6b7280">扫描静默数据损坏</div></div></div>
-                        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;display:flex;align-items:flex-start;gap:12px;cursor:pointer;transition:all 0.15s"><span style="font-size:20px">📊</span><div><div style="font-size:14px;font-weight:600;margin-bottom:4px">SMART 检测</div><div style="font-size:12px;color:#6b7280">批量扫描所有磁盘</div></div></div>
+                        <div @click="openReplaceDisk(null)" style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;display:flex;align-items:flex-start;gap:12px;cursor:pointer;transition:all 0.15s"><span style="font-size:20px">🔄</span><div><div style="font-size:14px;font-weight:600;margin-bottom:4px">替换故障盘</div><div style="font-size:12px;color:#6b7280">拔出坏盘，插入新盘，自动重建</div></div></div>
+                        <div @click="diskmgmtTab='pools'" style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;display:flex;align-items:flex-start;gap:12px;cursor:pointer;transition:all 0.15s"><span style="font-size:20px">➕</span><div><div style="font-size:14px;font-weight:600;margin-bottom:4px">扩容存储池</div><div style="font-size:12px;color:#6b7280">添加新磁盘到现有池</div></div></div>
+                        <div @click="scrubPool(null)" style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;display:flex;align-items:flex-start;gap:12px;cursor:pointer;transition:all 0.15s"><span style="font-size:20px">🧹</span><div><div style="font-size:14px;font-weight:600;margin-bottom:4px">数据清理</div><div style="font-size:12px;color:#6b7280">扫描静默数据损坏</div></div></div>
+                        <div @click="startSMARTScan()" style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;display:flex;align-items:flex-start;gap:12px;cursor:pointer;transition:all 0.15s"><span style="font-size:20px">📊</span><div><div style="font-size:14px;font-weight:600;margin-bottom:4px">SMART 检测</div><div style="font-size:12px;color:#6b7280">批量扫描所有磁盘</div></div></div>
                     </div>
                     <div style="font-size:14px;font-weight:600;color:#374151;margin-bottom:10px">操作日志</div>
                     <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:12px;max-height:400px;overflow-y:auto">
@@ -1301,6 +1301,50 @@
                             </div>
                         </template>
                         <div x-show="!operationsLog||operationsLog.length===0" style="text-align:center;color:#6b7280;padding:20px;font-size:13px">暂无操作日志</div>
+                    </div>
+                </div>
+            </div>
+            <!-- ═══════════════ 扩容弹窗 ═══════════════ -->
+            <div class="modal" x-show="showExtendPool" x-cloak @click.self="showExtendPool=false">
+                <div class="modal-box" style="max-width:420px">
+                    <h3>扩容存储池</h3>
+                    <div class="form-group">
+                        <label>存储池</label>
+                        <input type="text" disabled :value="poolExtendForm.vg_name" style="background:#f3f4f6">
+                    </div>
+                    <div class="form-group">
+                        <label>新磁盘设备</label>
+                        <input type="text" x-model="poolExtendForm.device" placeholder="/dev/sdc">
+                        <div style="font-size:11px;color:#6b7280;margin-top:4px">输入磁盘设备路径，如 /dev/sdc</div>
+                    </div>
+                    <div class="modal-actions">
+                        <button class="btn" @click="showExtendPool=false">取消</button>
+                        <button class="btn btn-primary" @click="extendPoolStream()">开始扩容</button>
+                    </div>
+                </div>
+            </div>
+            <!-- ═══════════════ 替换盘弹窗 ═══════════════ -->
+            <div class="modal" x-show="showReplaceDisk" x-cloak @click.self="showReplaceDisk=false">
+                <div class="modal-box" style="max-width:420px">
+                    <h3>替换磁盘</h3>
+                    <div class="form-group">
+                        <label>RAID 设备</label>
+                        <input type="text" x-model="replaceDiskForm.md_device" placeholder="/dev/md0">
+                    </div>
+                    <div class="form-group">
+                        <label>故障盘 (要移除的)</label>
+                        <input type="text" x-model="replaceDiskForm.old_device" placeholder="/dev/sdb">
+                    </div>
+                    <div class="form-group">
+                        <label>新磁盘 (替换用的)</label>
+                        <input type="text" x-model="replaceDiskForm.new_device" placeholder="/dev/sdc">
+                    </div>
+                    <div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:6px;padding:8px 12px;font-size:12px;margin-bottom:12px">
+                        ⚠️ 新磁盘数据将被擦除；RAID 将自动开始重建
+                    </div>
+                    <div class="modal-actions">
+                        <button class="btn" @click="showReplaceDisk=false">取消</button>
+                        <button class="btn btn-primary" @click="replaceDisk()">开始替换</button>
                     </div>
                 </div>
             </div>
