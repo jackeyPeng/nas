@@ -63,6 +63,7 @@ function nasPanel() {
         poolExtendForm: { device: '', vg_name: 'vg_nas' },
         // Wizard
         wizard: {},
+        wizardStatus: {},
         wizardMode: '',
         wizardGoal: '',
         wizardGoalText: '',
@@ -85,6 +86,8 @@ function nasPanel() {
         folderPermForm: { name: '', path: '', pool: '', permission: 'readwrite', valid_users: '', recycle_bin: false },
         // Pool extend
         showExtendPool: false,
+        showReplaceDisk: false,
+        replaceDiskForm: { md_device: '', old_device: '', new_device: '', pool_name: '' },
         // RAID expand
         showRAIDExpand: false,
         raidExpandForm: { mdDevice: '', device: '', poolName: '', raidType: '' },
@@ -887,6 +890,14 @@ function nasPanel() {
             const data = await this.api('/disk/wizard/status');
             if (data) {
                 this.wizard = data;
+                // Map unused_disks to available_disks for the wizard UI
+                this.wizardStatus = {
+                    available_disks: data.unused_disks || [],
+                    pool: data.pool,
+                    existing_mounts: data.existing_mounts,
+                    has_storage: data.has_storage,
+                    raid_options: data.raid_options
+                };
                 const diskData = await this.api('/disk/status');
                 if (diskData && diskData.disks) {
                     let id = 0;
@@ -1261,6 +1272,98 @@ function nasPanel() {
             this.wizardLoading = false;
             this.progressTitle = '';
             setTimeout(() => { this.loadStorageOverview(); this.loadWizardStatus(); this.loadSharedFolders(); }, 2000);
+        },
+
+        // ===== Pool operations =====
+
+        // Open extend pool dialog for a specific pool
+        openExtendPool(pool) {
+            if (!pool) {
+                this.showToast('请先从存储池列表选择', 'error');
+                return;
+            }
+            this.poolExtendForm = {
+                device: '',
+                vg_name: pool.name || 'vg_nas',
+                lv_name: pool.volumes?.[0]?.name || 'data'
+            };
+            this.showExtendPool = true;
+        },
+
+        // Open replace disk dialog
+        openReplaceDisk(pool) {
+            this.replaceDiskForm = {
+                md_device: pool ? pool.device : '',
+                old_device: '',
+                new_device: '',
+                pool_name: pool ? pool.display_name : ''
+            };
+            this.showReplaceDisk = true;
+        },
+
+        // Execute disk replacement
+        async replaceDisk() {
+            const f = this.replaceDiskForm;
+            if (!f.md_device || !f.old_device || !f.new_device) {
+                this.showToast('请填写所有字段', 'error'); return;
+            }
+            if (!confirm(`⚠️ 确定替换磁盘？\n从 ${f.md_device} 移除 ${f.old_device}\n添加 ${f.new_device}\n\n新磁盘上的数据将被擦除！`)) return;
+
+            const params = new URLSearchParams({
+                md_device: f.md_device,
+                old_device: f.old_device,
+                new_device: f.new_device,
+                confirm: 'yes'
+            });
+            const data = await this.api('/disk/replace', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: params.toString()
+            });
+            if (data) {
+                this.showToast(data.message || '替换盘操作完成', 'success');
+                if (data.rebuild && data.rebuild.active) {
+                    this.showToast('重建进行中: ' + (data.rebuild.progress || '') + '%', 'info');
+                }
+                this.showReplaceDisk = false;
+                this.loadStorageOverview();
+            }
+        },
+
+        // Trigger scrub on a pool or all pools
+        async scrubPool(pool) {
+            const target = pool ? pool.device + ' (' + pool.display_name + ')' : '所有 RAID 阵列';
+            if (!confirm(`确定对 ${target} 执行数据清理？\n\n清理过程会扫描所有数据块，期间性能可能略有下降。`)) return;
+
+            const params = new URLSearchParams({ confirm: 'yes' });
+            if (pool && pool.device) {
+                params.set('md_device', pool.device);
+            }
+            const data = await this.api('/disk/scrub', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: params.toString()
+            });
+            if (data) {
+                this.showToast(data.message || '清理已启动', 'success');
+                this.loadOperationsLog();
+            }
+        },
+
+        // Start SMART self-test on all disks
+        async startSMARTScan() {
+            if (!confirm('确定对所有非系统磁盘执行 SMART 快速检测？\n约需 2 分钟。')) return;
+
+            const params = new URLSearchParams({ type: 'short', confirm: 'yes' });
+            const data = await this.api('/disk/smart-scan', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: params.toString()
+            });
+            if (data) {
+                this.showToast(data.message || 'SMART 检测已启动', 'success');
+                this.loadOperationsLog();
+            }
         },
 
         // System settings — new unified page
