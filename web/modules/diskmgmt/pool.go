@@ -324,5 +324,141 @@ func parseFloatSafe(s string) float64 {
 	return f
 }
 
+// handlePoolDelete destroys a storage pool and releases all its disks
+func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	poolType := r.FormValue("pool_type")
+	poolDevice := r.FormValue("pool_device")
+	confirm := r.FormValue("confirm")
+
+	if confirm != "yes" {
+		http.Error(w, `{"error":"请加 confirm=yes 确认"}`, http.StatusBadRequest)
+		return
+	}
+
+	var steps []string
+
+	switch poolType {
+	case "lvm":
+		// 1. Find and unmount all LVs in this VG
+		vgName := extractVGName(poolDevice)
+		if vgName == "" {
+			vgName = "vg_nas"
+		}
+		lvsOut, _ := common.SudoOutput("/usr/sbin/lvs", "--noheadings", "-o", "lv_name,lv_path", vgName)
+		for _, line := range strings.Split(lvsOut, "\n") {
+			fields := strings.Fields(strings.TrimSpace(line))
+			if len(fields) >= 2 {
+				lvPath := fields[1]
+				// Find mountpoint
+				mntOut, _ := common.ExecOutput("findmnt", "-n", "-o", "TARGET", "--source", lvPath)
+				mountPoint := strings.TrimSpace(mntOut)
+				if mountPoint != "" {
+					common.SudoExec("umount", "-l", mountPoint)
+					steps = append(steps, "卸载 "+mountPoint)
+				}
+				common.SudoExec("/usr/sbin/lvremove", "-f", lvPath)
+				steps = append(steps, "删除 LV "+lvPath)
+			}
+		}
+		// 2. Remove VG
+		common.SudoExec("/usr/sbin/vgremove", "-f", vgName)
+		steps = append(steps, "删除 VG "+vgName)
+		// 3. Remove PVs
+		pvsOut, _ := common.SudoOutput("/usr/sbin/pvs", "--noheadings", "-o", "pv_name")
+		for _, pvName := range strings.Fields(pvsOut) {
+			if strings.HasPrefix(pvName, "/dev/") {
+				common.SudoExec("/usr/sbin/pvremove", "-f", pvName)
+				common.SudoExec("/usr/sbin/wipefs", "-a", pvName)
+				steps = append(steps, "释放 "+pvName)
+			}
+		}
+
+	case "raid1", "raid0", "raid5", "raid6":
+		// 1. Unmount
+		mntOut, _ := common.ExecOutput("findmnt", "-n", "-o", "TARGET", "--source", poolDevice)
+		mountPoint := strings.TrimSpace(mntOut)
+		if mountPoint != "" {
+			common.SudoExec("umount", "-l", mountPoint)
+			steps = append(steps, "卸载 "+mountPoint)
+		}
+		// 2. Stop RAID
+		common.SudoExec("/usr/sbin/mdadm", "--stop", poolDevice)
+		steps = append(steps, "停止 "+poolDevice)
+		// 3. Zero superblocks on member disks
+		disks := getDiskStatus()
+		for _, d := range disks {
+			if d.Name == "sr0" || strings.HasPrefix(d.Name, "loop") {
+				continue
+			}
+			if isSystemDisk(d.Device) {
+				continue
+			}
+			common.SudoExec("/usr/sbin/mdadm", "--zero-superblock", d.Device)
+			common.SudoExec("/usr/sbin/wipefs", "-a", d.Device)
+			steps = append(steps, "释放 "+d.Device)
+		}
+
+	case "single":
+		// Independent disk: unmount + wipe
+		mntOut, _ := common.ExecOutput("findmnt", "-n", "-o", "TARGET", "--source", poolDevice)
+		mountPoint := strings.TrimSpace(mntOut)
+		if mountPoint != "" {
+			common.SudoExec("umount", "-l", mountPoint)
+			steps = append(steps, "卸载 "+mountPoint)
+		}
+		common.SudoExec("/usr/sbin/wipefs", "-a", poolDevice)
+		steps = append(steps, "释放 "+poolDevice)
+
+	default:
+		http.Error(w, fmt.Sprintf(`{"error":"未知池类型: %s"}`, poolType), http.StatusBadRequest)
+		return
+	}
+
+	// Clean fstab entries for /data/nas*
+	fstabData, _ := common.SudoOutput("cat", "/etc/fstab")
+	if fstabData != "" {
+		lines := strings.Split(fstabData, "\n")
+		var newLines []string
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+				newLines = append(newLines, line)
+				continue
+			}
+			fields := strings.Fields(trimmed)
+			if len(fields) >= 2 && strings.HasPrefix(fields[1], "/data/nas") {
+				continue
+			}
+			newLines = append(newLines, line)
+		}
+		content := strings.Join(newLines, "\n")
+		if content != fstabData {
+			common.SafeWriteFile("/etc/fstab", content)
+			steps = append(steps, "清理 fstab")
+		}
+	}
+
+	// Clean Samba shares for nas*
+	smbConf, _ := common.SudoOutput("cat", "/etc/samba/smb.conf")
+	if smbConf != "" {
+		newConf := removeSambaSharesByPrefix(smbConf, "nas")
+		if newConf != smbConf {
+			common.SafeWriteFile("/etc/samba/smb.conf", newConf)
+			common.SudoExec("systemctl", "restart", "smbd")
+			steps = append(steps, "清理 Samba 共享")
+		}
+	}
+
+	common.JSONResponse(w, map[string]interface{}{
+		"message": fmt.Sprintf("存储池已删除，释放 %d 步", len(steps)),
+		"steps":   steps,
+	})
+}
+
 // ensure json import is used
 var _ = json.Marshal
