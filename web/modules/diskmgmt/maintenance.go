@@ -3,6 +3,7 @@ package diskmgmt
 import (
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -88,16 +89,13 @@ func handleScrub(w http.ResponseWriter, r *http.Request) {
 
 	if mdDevice == "" {
 		// Find all md devices and scrub them
-		entries, err := common.ExecOutput("ls", "/dev/md*")
-		if err != nil {
+		matches, err := filepath.Glob("/dev/md*")
+		if err != nil || len(matches) == 0 {
 			http.Error(w, `{"error":"没有找到 RAID 设备"}`, http.StatusInternalServerError)
 			return
 		}
 		var results []string
-		for _, md := range strings.Fields(entries) {
-			if strings.Contains(md, "No such file") {
-				continue
-			}
+		for _, md := range matches {
 			out, err := common.SudoExec("/usr/sbin/mdadm", "--action=check", md)
 			if err != nil {
 				results = append(results, fmt.Sprintf("%s: 失败 — %s", md, out))
@@ -137,12 +135,9 @@ func handleScrubStatus(w http.ResponseWriter, r *http.Request) {
 	mdDevice := r.URL.Query().Get("md_device")
 	if mdDevice == "" {
 		// Find all md devices
-		entries, _ := common.ExecOutput("ls", "/dev/md*")
+		matches, _ := filepath.Glob("/dev/md*")
 		results := make(map[string]interface{})
-		for _, md := range strings.Fields(entries) {
-			if strings.Contains(md, "No such file") {
-				continue
-			}
+		for _, md := range matches {
 			results[md] = getRebuildStatus(md)
 		}
 		common.JSONResponse(w, map[string]interface{}{"scrub_status": results})
