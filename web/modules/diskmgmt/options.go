@@ -26,7 +26,7 @@ type RaidOption struct {
 // diskCount: number of unused disks
 // minSizeGB: smallest disk size in GB (for capacity calculation)
 func getRaidOptions(diskCount int, minSizeGB float64) []RaidOption {
-	var options []RaidOption
+	options := make([]RaidOption, 0)
 
 	if diskCount == 0 {
 		return options

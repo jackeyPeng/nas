@@ -25,7 +25,7 @@ type WizardDisk struct {
 // WizardStatus returns current storage state + available disks
 func handleWizardStatus(w http.ResponseWriter, r *http.Request) {
 	disks := getDiskStatus()
-	var unused []WizardDisk
+	unused := make([]WizardDisk, 0)
 	globalID := 0 // global disk number, matches overview numbering
 	for _, d := range disks {
 		if d.Name == "sr0" || d.Name == "zram0" || strings.HasPrefix(d.Name, "loop") {
