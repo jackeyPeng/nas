@@ -2,6 +2,7 @@ package diskmgmt
 
 import (
 	"net/http"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -140,8 +141,9 @@ func isDataNasMount(path string) bool {
 
 // stopRAIDArrays stops all /dev/mdN arrays individually (not --scan)
 func stopRAIDArrays() {
-	out, _ := common.ExecOutput("ls", "/dev/md*")
-	for _, dev := range strings.Fields(out) {
+	matches, _ := filepath.Glob("/dev/md[0-9]*")
+	for _, dev := range matches {
+		// Only match /dev/mdN (not /dev/mdNp1 partitions)
 		if regexp_match(`^/dev/md\d+$`, dev) {
 			common.SudoExec("/usr/sbin/mdadm", "--stop", dev)
 		}
