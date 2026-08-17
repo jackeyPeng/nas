@@ -234,7 +234,7 @@ func setupLVMSingleStream(w http.ResponseWriter, dev, mountPoint, nasUser string
 	stepDone("创建卷组 vg_nas")
 
 	stepRunning("创建逻辑卷 (lvcreate)")
-	out, err = common.SudoExec("/usr/sbin/lvcreate", "-l", "100%FREE", "-n", "data", vgName)
+	out, err = common.SudoExec("/usr/sbin/lvcreate", "-y", "-l", "100%FREE", "-n", "data", vgName)
 	if checkExecError(w, "创建逻辑卷", out, err) { return }
 	lvPath := "/dev/" + vgName + "/data"
 	stepDone("创建逻辑卷 data")
@@ -277,7 +277,7 @@ func setupLVMMergeStream(w http.ResponseWriter, devs []string, mountPoint, nasUs
 	stepDone("创建卷组 vg_nas")
 
 	stepRunning("创建逻辑卷 (lvcreate)")
-	out, err = common.SudoExec("/usr/sbin/lvcreate", "-l", "100%FREE", "-n", "data", vgName)
+	out, err = common.SudoExec("/usr/sbin/lvcreate", "-y", "-l", "100%FREE", "-n", "data", vgName)
 	if checkExecError(w, "创建逻辑卷", out, err) { return }
 	lvPath := "/dev/" + vgName + "/data"
 	stepDone("创建逻辑卷 data")
