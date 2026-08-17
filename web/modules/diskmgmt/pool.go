@@ -182,7 +182,7 @@ func handlePoolCreate(w http.ResponseWriter, r *http.Request) {
 	steps = append(steps, "vgcreate "+vgName+" ("+devicesStr+")")
 
 	// 3. lvcreate
-	out, err = common.SudoExec("/usr/sbin/lvcreate", "-l", "100%FREE", "-n", lvName, vgName)
+	out, err = common.SudoExec("/usr/sbin/lvcreate", "-y", "-l", "100%FREE", "-n", lvName, vgName)
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":"lvcreate 失败: %s"}`, out), http.StatusInternalServerError)
 		return
