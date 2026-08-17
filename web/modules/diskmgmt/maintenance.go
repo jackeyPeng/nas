@@ -167,37 +167,16 @@ func getRebuildStatus(mdDevice string) map[string]interface{} {
 		"active": false,
 	}
 
-	for _, line := range strings.Split(data, "\n") {
-		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, devName) {
+	lines := strings.Split(data, "\n")
+	for i := 0; i < len(lines); i++ {
+		line := strings.TrimSpace(lines[i])
+		if !strings.HasPrefix(line, devName+" ") && !strings.HasPrefix(line, devName+":") {
 			continue
 		}
 
 		status["active"] = true
 
-		// Check for rebuild/sync/check progress
-		if strings.Contains(line, "recovery") || strings.Contains(line, "resync") || strings.Contains(line, "check") || strings.Contains(line, "reshape") {
-			// Parse progress percentage
-			parts := strings.Split(line, " ")
-			for _, part := range parts {
-				if strings.Contains(part, "%") {
-					status["progress"] = strings.TrimSuffix(part, "%")
-				}
-				if strings.Contains(part, "speed") {
-					status["speed"] = strings.TrimSuffix(part, "K/sec")
-				}
-				if strings.Contains(part, "finish") {
-					status["eta"] = strings.Split(part, "=")[1]
-					// Clean up
-					status["eta"] = strings.TrimSuffix(status["eta"].(string), "min")
-				}
-			}
-		} else {
-			status["progress"] = "100"
-			status["state"] = "idle"
-		}
-
-		// Check the state line
+		// Check for state
 		if strings.Contains(line, "active") {
 			status["state"] = "active"
 		}
@@ -207,8 +186,39 @@ func getRebuildStatus(mdDevice string) map[string]interface{} {
 		if strings.Contains(line, "degraded") {
 			status["state"] = "degraded"
 		}
-		if strings.Contains(line, "_") {
-			status["state"] = "degraded"
+
+		// The progress line is 1-2 lines after the md device line
+		// mdstat format: md0 : ... \n blocks ... \n [>...] check = N%
+		found := false
+		for offset := 1; offset <= 2 && i+offset < len(lines); offset++ {
+			nextLine := strings.TrimSpace(lines[i+offset])
+			if strings.Contains(nextLine, "recovery") || strings.Contains(nextLine, "resync") ||
+				strings.Contains(nextLine, "check") || strings.Contains(nextLine, "reshape") {
+				parts := strings.Fields(nextLine)
+				for _, part := range parts {
+					if strings.Contains(part, "%") {
+						status["progress"] = strings.TrimSuffix(part, "%")
+					}
+					// Handle key=value format: finish=1.4min, speed=206087K/sec
+					if strings.Contains(part, "=") {
+						kv := strings.SplitN(part, "=", 2)
+						if len(kv) == 2 {
+							if kv[0] == "finish" {
+								status["eta"] = kv[1]
+							}
+							if kv[0] == "speed" {
+								status["speed"] = kv[1]
+							}
+						}
+					}
+				}
+				found = true
+				break
+			}
+		}
+		if !found {
+			status["progress"] = "100"
+			status["state"] = "idle"
 		}
 	}
 
