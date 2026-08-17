@@ -1366,6 +1366,41 @@ function nasPanel() {
             }
         },
 
+        // Delete pool
+        async deletePool(pool) {
+            if (!pool) return;
+            const poolName = pool.display_name || pool.name;
+            if (!confirm(`⚠️ 确定删除 ${poolName}？\n\n` +
+                `• 所有数据将被永久删除\n` +
+                `• 磁盘将被释放为空闲状态\n` +
+                `• 此操作不可恢复！\n\n` +
+                `输入 "${poolName}" 确认删除：`)) return;
+
+            const confirmName = prompt(`请输入 "${poolName}" 确认删除：`);
+            if (confirmName !== poolName) {
+                this.showToast('名称不匹配，已取消', 'error');
+                return;
+            }
+
+            const params = new URLSearchParams({
+                pool_name: pool.name,
+                pool_type: pool.type,
+                pool_device: pool.device || '',
+                confirm: 'yes'
+            });
+            const data = await this.api('/disk/pool/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: params.toString()
+            });
+            if (data) {
+                this.showToast(data.message || '存储池已删除', 'success');
+                this.loadStorageOverview();
+                this.loadWizardStatus();
+                this.loadSharedFolders();
+            }
+        },
+
         // System settings — new unified page
         async loadSystemOverview() {
             const data = await this.api('/system/overview');
