@@ -579,13 +579,13 @@ func extractVGName(device string) string {
 
 // findDiskPoolDevice 找到物理盘属于哪个 Pool device
 func findDiskPoolDevice(device string, poolOrder []string) string {
-	// 1. 直接匹配
+	// 1. Direct match
 	for _, pd := range poolOrder {
 		if pd == device {
 			return pd
 		}
 	}
-	// 2. LVM PV → VG 映射
+	// 2. LVM PV → VG mapping
 	pvToVG := getCachedPVMappings()
 	if vgName, ok := pvToVG[device]; ok {
 		vgDev := "/dev/" + vgName
@@ -595,10 +595,43 @@ func findDiskPoolDevice(device string, poolOrder []string) string {
 			}
 		}
 	}
-	// 3. RAID 成员 → md 设备
+	// 3. RAID member → md device
 	raidMembers := getCachedRAIDMembers()
 	if mdDev, ok := raidMembers[device]; ok {
 		return mdDev
+	}
+	// 4. Partition → parent disk (for single/separate mode)
+	// e.g. /dev/sdb1 → /dev/sdb
+	for _, pd := range poolOrder {
+		// If pool device is a partition, check if our disk is its parent
+		if strings.HasPrefix(pd, device) && len(pd) > len(device) {
+			rest := pd[len(device):]
+			// rest should be just digits (partition number) or pN (NVMe)
+			isPart := true
+			for _, c := range rest {
+				if c < '0' || c > '9' {
+					isPart = false
+					break
+				}
+			}
+			if isPart {
+				return pd
+			}
+		}
+		// Reverse: if our disk is a partition, check if pool device is its parent
+		if strings.HasPrefix(device, pd) && len(device) > len(pd) {
+			rest := device[len(pd):]
+			isPart := true
+			for _, c := range rest {
+				if c < '0' || c > '9' {
+					isPart = false
+					break
+				}
+			}
+			if isPart {
+				return pd
+			}
+		}
 	}
 	return ""
 }
