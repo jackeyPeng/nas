@@ -255,6 +255,21 @@ function nasPanel() {
             this.installingServices = false;
         },
 
+        async installService(name) {
+            if (!confirm(`确定安装 ${name}？`)) return;
+            this.installMsg = `正在安装 ${name}...`;
+            const data = await this.api('/services/install', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `service=${encodeURIComponent(name)}`
+            });
+            if (data) {
+                this.showToast(data.message || `${name} 安装完成`, 'success');
+                setTimeout(() => this.loadServices(), 2000);
+            }
+            this.installMsg = '';
+        },
+
         async loadUsers() {
             const data = await this.api('/users');
             if (data) this.users = data.users || [];

@@ -266,10 +266,17 @@
                                           x-text="svc.active === 'active' ? '● 运行中' : '○ 已停止'"></span>
                                 </td>
                                 <td class="actions">
-                                    <button class="btn btn-sm btn-success" @click="svcAction(svc.name, 'start')">启动</button>
-                                    <button class="btn btn-sm btn-warn" @click="svcAction(svc.name, 'stop')">停止</button>
-                                    <button class="btn btn-sm btn-primary" @click="svcAction(svc.name, 'restart')">重启</button>
-                                    <button class="btn btn-sm" @click="showLogs(svc.name)">日志</button>
+                                    <template x-if="svc.active === 'not-installed'">
+                                        <button class="btn btn-sm btn-primary" @click="installService(svc.name)" x-text="'安装 '+svc.display_name"></button>
+                                    </template>
+                                    <template x-if="svc.active !== 'not-installed'">
+                                        <span>
+                                            <button class="btn btn-sm btn-success" @click="svcAction(svc.name, 'start')">启动</button>
+                                            <button class="btn btn-sm btn-warn" @click="svcAction(svc.name, 'stop')">停止</button>
+                                            <button class="btn btn-sm btn-primary" @click="svcAction(svc.name, 'restart')">重启</button>
+                                            <button class="btn btn-sm" @click="showLogs(svc.name)">日志</button>
+                                        </span>
+                                    </template>
                                 </td>
                             </tr>
                         </template>

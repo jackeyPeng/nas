@@ -99,9 +99,12 @@ func GetServices() []map[string]interface{} {
 	var result []map[string]interface{}
 	for _, svc := range NasServices {
 		active := "unknown"
+		// Check if unit file exists
 		out, err := common.ExecOutput("systemctl", "is-active", svc.Name)
 		if err == nil {
 			active = strings.TrimSpace(out)
+		} else if strings.Contains(err.Error(), "not found") || strings.Contains(out, "could not be found") {
+			active = "not-installed"
 		}
 		result = append(result, map[string]interface{}{
 			"name":         svc.Name,
