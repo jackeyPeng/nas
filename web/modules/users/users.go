@@ -26,6 +26,26 @@ type NASUser struct {
 func getUsers() []NASUser {
 	userMap := map[string]*NASUser{}
 
+	// Include all Linux users (UID >= 1000, filter system accounts)
+	if data, err := common.ExecOutput("cat", "/etc/passwd"); err == nil {
+		for _, line := range strings.Split(strings.TrimSpace(data), "\n") {
+			parts := strings.Split(line, ":")
+			if len(parts) >= 4 {
+				uid := parts[2]
+				// Skip system users (UID < 1000 or specific system accounts)
+				if uidInt, err := strconv.Atoi(uid); err == nil && uidInt < 1000 {
+					continue
+				}
+				name := parts[0]
+				// Skip common system-ish accounts
+				if name == "nobody" || name == "nogroup" {
+					continue
+				}
+				getOrCreate(userMap, name)
+			}
+		}
+	}
+
 	// Samba 用户（pdbedit）
 	out, err := common.SudoOutput("pdbedit", "-L")
 	if err == nil {
