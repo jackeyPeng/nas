@@ -76,15 +76,27 @@ func handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		steps = append(steps, fmt.Sprintf(format, args...))
 	}
 
-	// 1. 创建系统用户
+	// 1. Create system user (inline, no external script dependency)
 	addStep("创建系统用户 %s", req.Username)
-	out, err := common.SudoExec("/opt/nas/scripts/add-user.sh", req.Username, req.Password)
+	out, err := common.SudoExec("useradd", "-m", "-s", "/bin/bash", req.Username)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":"创建用户失败: %s: %v"}`, out, err), http.StatusInternalServerError)
+		// Check if user already exists
+		if out2, err2 := common.SudoExec("id", req.Username); err2 == nil && out2 != "" {
+			addStep("用户 %s 已存在，跳过系统用户创建", req.Username)
+		} else {
+			http.Error(w, fmt.Sprintf(`{"error":"创建系统用户失败: %s"}`, out+": "+err.Error()), http.StatusInternalServerError)
+			return
+		}
+	}
+	// Set password
+	out, err = common.SudoExec("sh", "-c", fmt.Sprintf("echo '%s:%s' | chpasswd", req.Username, req.Password))
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"设置密码失败: %s"}`, out+": "+err.Error()), http.StatusInternalServerError)
 		return
 	}
+	addStep("设置密码")
 
-	// 2. 更新服务开关（add-user.sh 默认全开，按需关闭）
+		// 2. 更新服务开关（默认全关，按需开启）
 	if !req.Services["samba"] {
 		addStep("关闭 Samba 服务")
 		disableSambaUser(req.Username)
