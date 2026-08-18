@@ -27,6 +27,8 @@ deploy_to() {
         user="jacky"
     elif [ "$ip" = "[REDACTED]" ]; then
         user="fm"
+    elif [ "$ip" = "[REDACTED]" ]; then
+        user="fm"
     else
         echo "未知服务器: $ip"
         return 1
