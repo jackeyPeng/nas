@@ -78,6 +78,7 @@ function nasPanel() {
         diskmgmtTab: 'overview',
         showDiskDetail: false,
         selectedDisk: null,
+        selectedDiskDevice: '',
         operationsLog: [],
         // Shared folders
         sharedFolders: [],
