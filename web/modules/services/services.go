@@ -131,6 +131,25 @@ func handleInstallServices(w http.ResponseWriter, r *http.Request) {
 	common.SudoExec("systemctl", "start", "rclone-s3")
 	steps = append(steps, "S3 已启动")
 
+	// FileBrowser - try get.z1.sale first, then fallback
+	out, _ = common.SudoExec("bash", "-c", `
+		ARCH=$(uname -m | sed "s/x86_64/amd64/;s/aarch64/arm64/")
+		VER="v2.32.0"
+		curl -fsSL "https://get.z1.sale/filebrowser_${VER}_linux_${ARCH}.tar.gz" -o /tmp/fb.tar.gz 2>/dev/null || \
+		curl -fsSL "https://file.abwen.com/control/filebrowser_${VER}_linux_${ARCH}.tar.gz" -o /tmp/fb.tar.gz 2>/dev/null || \
+		curl -fsSL "https://github.com/filebrowser/filebrowser/releases/download/${VER}/linux-${ARCH}-filebrowser.tar.gz" -o /tmp/fb.tar.gz 2>/dev/null
+		if [ -f /tmp/fb.tar.gz ]; then tar xzf /tmp/fb.tar.gz -C /usr/local/bin filebrowser && chmod +x /usr/local/bin/filebrowser && echo "ok"; fi
+	`)
+	if strings.TrimSpace(out) == "ok" {
+		common.SudoExec("sh", "-c", "cat > /etc/systemd/system/filebrowser.service << 'UNIT'\n[Unit]\nDescription=FileBrowser\nAfter=network.target\n[Service]\nType=simple\nExecStart=/usr/local/bin/filebrowser -a :8081 -r /data\nRestart=on-failure\n[Install]\nWantedBy=multi-user.target\nUNIT")
+		common.SudoExec("systemctl", "daemon-reload")
+		common.SudoExec("systemctl", "enable", "filebrowser")
+		common.SudoExec("systemctl", "start", "filebrowser")
+		steps = append(steps, "FileBrowser 已启动")
+	} else {
+		steps = append(steps, "FileBrowser 下载失败，请手动安装")
+	}
+
 	common.JSONResponse(w, map[string]interface{}{
 		"message": fmt.Sprintf("服务安装完成，共 %d 步", len(steps)),
 		"steps":   steps,

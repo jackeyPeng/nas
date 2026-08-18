@@ -45,6 +45,7 @@ systemctl start rclone-webdav
 echo "[5/7] 安装 FileBrowser..."
 ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
 FB_VER="v2.32.0"
+curl -fsSL "https://get.z1.sale/filebrowser_${FB_VER}_linux_${ARCH}.tar.gz" -o /tmp/fb.tar.gz 2>/dev/null || \
 curl -fsSL "https://file.abwen.com/control/filebrowser_${FB_VER}_linux_${ARCH}.tar.gz" -o /tmp/fb.tar.gz 2>/dev/null || \
 curl -fsSL "https://github.com/filebrowser/filebrowser/releases/download/${FB_VER}/linux-${ARCH}-filebrowser.tar.gz" -o /tmp/fb.tar.gz 2>/dev/null
 if [ -f /tmp/fb.tar.gz ]; then
