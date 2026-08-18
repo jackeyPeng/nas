@@ -216,13 +216,23 @@ func installSingleService(name string) (string, error) {
 		out, _ := common.SudoExec("bash", "-c", `
 			ARCH=$(uname -m | sed "s/x86_64/amd64/;s/aarch64/arm64/")
 			VER="v2.32.0"
-			curl -fsSL "https://get.z1.sale/filebrowser_${VER}_linux_${ARCH}.tar.gz" -o /tmp/fb.tar.gz 2>/dev/null || \
-			curl -fsSL "https://file.abwen.com/control/filebrowser_${VER}_linux_${ARCH}.tar.gz" -o /tmp/fb.tar.gz 2>/dev/null || \
-			curl -fsSL "https://github.com/filebrowser/filebrowser/releases/download/${VER}/linux-${ARCH}-filebrowser.tar.gz" -o /tmp/fb.tar.gz 2>/dev/null
-			if [ -f /tmp/fb.tar.gz ]; then tar xzf /tmp/fb.tar.gz -C /usr/local/bin filebrowser && chmod +x /usr/local/bin/filebrowser && echo "ok"; fi
+			DL_ERR=""
+			curl -fsSL --connect-timeout 10 --max-time 60 "https://get.z1.sale/filebrowser_${VER}_linux_${ARCH}.tar.gz" -o /tmp/fb.tar.gz 2>/tmp/fb.err || DL_ERR="get.z1.sale: $(cat /tmp/fb.err)"
+			if [ ! -f /tmp/fb.tar.gz ]; then
+				curl -fsSL --connect-timeout 10 --max-time 60 "https://file.abwen.com/control/filebrowser_${VER}_linux_${ARCH}.tar.gz" -o /tmp/fb.tar.gz 2>/tmp/fb.err || DL_ERR="${DL_ERR}; file.abwen.com: $(cat /tmp/fb.err)"
+			fi
+			if [ ! -f /tmp/fb.tar.gz ]; then
+				curl -fsSL --connect-timeout 10 --max-time 60 "https://github.com/filebrowser/filebrowser/releases/download/${VER}/linux-${ARCH}-filebrowser.tar.gz" -o /tmp/fb.tar.gz 2>/tmp/fb.err || DL_ERR="${DL_ERR}; github: $(cat /tmp/fb.err)"
+			fi
+			if [ -f /tmp/fb.tar.gz ]; then tar xzf /tmp/fb.tar.gz -C /usr/local/bin filebrowser && chmod +x /usr/local/bin/filebrowser && echo "ok"; else echo "FAIL:${DL_ERR}"; fi
 		`)
 		if strings.TrimSpace(out) != "ok" {
-			return "", fmt.Errorf("FileBrowser download failed")
+			// Include download error details
+			errMsg := "FileBrowser download failed"
+			if strings.HasPrefix(strings.TrimSpace(out), "FAIL:") {
+				errMsg = strings.TrimPrefix(strings.TrimSpace(out), "FAIL:")
+			}
+			return "", fmt.Errorf("%s", errMsg)
 		}
 		common.SudoExec("sh", "-c", "cat > /etc/systemd/system/filebrowser.service << 'UNIT'\n[Unit]\nDescription=FileBrowser\nAfter=network.target\n[Service]\nType=simple\nExecStart=/usr/local/bin/filebrowser -a :8081 -r /data\nRestart=on-failure\n[Install]\nWantedBy=multi-user.target\nUNIT")
 		common.SudoExec("systemctl", "daemon-reload")
