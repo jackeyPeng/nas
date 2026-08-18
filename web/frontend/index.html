@@ -266,10 +266,10 @@
                                           x-text="svc.active === 'active' ? '● 运行中' : '○ 已停止'"></span>
                                 </td>
                                 <td class="actions">
-                                    <template x-if="svc.active === 'not-installed'">
+                                    <template x-if="svc.active === 'not-installed' || svc.active === 'unknown'">
                                         <button class="btn btn-sm btn-primary" @click="installService(svc.name)" x-text="'安装 '+svc.display_name"></button>
                                     </template>
-                                    <template x-if="svc.active !== 'not-installed'">
+                                    <template x-if="svc.active !== 'not-installed' && svc.active !== 'unknown'">
                                         <span>
                                             <button class="btn btn-sm btn-success" @click="svcAction(svc.name, 'start')">启动</button>
                                             <button class="btn btn-sm btn-warn" @click="svcAction(svc.name, 'stop')">停止</button>
