@@ -36,12 +36,21 @@ deploy_to() {
     
     echo ">>> 部署到 $user@$ip"
     
+    # 0. 安装依赖（首次部署时）
+    echo "  [0/5] 检查依赖..."
+    ssh -o ConnectTimeout=10 "$user@$ip" '
+        for pkg in xfsprogs parted smartmontools lvm2 mdadm curl; do
+            dpkg -l $pkg 2>/dev/null | grep -q "^ii" || sudo apt-get install -y -qq $pkg 2>/dev/null
+        done
+        echo "    依赖已就绪"
+    '
+    
     # 1. 上传二进制
-    echo "  [1/4] 上传二进制..."
+    echo "  [1/5] 上传二进制..."
     scp -o ConnectTimeout=10 "$BINARY" "$user@$ip:/tmp/nas-panel.new"
     
     # 2. 备份旧版本
-    echo "  [2/4] 备份旧版本..."
+    echo "  [2/5] 备份旧版本..."
     ssh -o ConnectTimeout=10 "$user@$ip" "
         if [ -f /usr/local/bin/nas-panel ]; then
             sudo cp /usr/local/bin/nas-panel /usr/local/bin/nas-panel.bak.\$(date +%Y%m%d%H%M%S)
@@ -52,7 +61,7 @@ deploy_to() {
     "
     
     # 3. 替换二进制
-    echo "  [3/4] 替换二进制..."
+    echo "  [3/5] 替换二进制..."
     ssh -o ConnectTimeout=10 "$user@$ip" "
         sudo mv /tmp/nas-panel.new /usr/local/bin/nas-panel
         sudo chmod +x /usr/local/bin/nas-panel
@@ -60,7 +69,7 @@ deploy_to() {
     "
     
     # 4. 重启服务
-    echo "  [4/4] 重启服务..."
+    echo "  [4/5] 重启服务..."
     ssh -o ConnectTimeout=10 "$user@$ip" "
         sudo systemctl restart nas-panel
         sleep 2
