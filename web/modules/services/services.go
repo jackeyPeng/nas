@@ -81,8 +81,58 @@ func handleServiceAction(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// RegisterRoutes registers service routes on the given mux
+// RegisterRoutes registers services routes
 func RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/services", common.AuthMiddleware(handleServiceList))
 	mux.HandleFunc("/api/services/", common.AuthMiddleware(handleServiceAction))
+	mux.HandleFunc("/api/services/install", common.AuthMiddleware(handleInstallServices))
+}
+
+// handleInstallServices installs all NAS services
+func handleInstallServices(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	steps := []string{}
+
+	out, err := common.SudoExec("apt-get", "update", "-qq")
+	if err != nil {
+		steps = append(steps, "apt update 完成")
+	}
+
+	out, err = common.SudoExec("apt-get", "install", "-y", "-qq",
+		"samba", "nfs-kernel-server", "vsftpd", "rclone", "fail2ban")
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"安装失败: %s"}`, out+": "+err.Error()), http.StatusInternalServerError)
+		return
+	}
+	steps = append(steps, "apt-get 安装完成")
+
+	// Enable and start services
+	for _, svc := range []string{"smbd", "nmbd", "nfs-kernel-server", "vsftpd", "fail2ban"} {
+		common.SudoExec("systemctl", "enable", svc)
+		common.SudoExec("systemctl", "start", svc)
+		steps = append(steps, svc+" 已启动")
+	}
+
+	// WebDAV
+	common.SudoExec("sh", "-c", "cat > /etc/systemd/system/rclone-webdav.service << 'UNIT'\n[Unit]\nDescription=Rclone WebDAV Server\nAfter=network.target\n[Service]\nType=simple\nExecStart=/usr/bin/rclone serve webdav /data --addr :8080\nRestart=on-failure\n[Install]\nWantedBy=multi-user.target\nUNIT")
+	common.SudoExec("systemctl", "daemon-reload")
+	common.SudoExec("systemctl", "enable", "rclone-webdav")
+	common.SudoExec("systemctl", "start", "rclone-webdav")
+	steps = append(steps, "WebDAV 已启动")
+
+	// S3
+	common.SudoExec("sh", "-c", "cat > /etc/systemd/system/rclone-s3.service << 'UNIT'\n[Unit]\nDescription=Rclone S3 Server\nAfter=network.target\n[Service]\nType=simple\nExecStart=/usr/bin/rclone serve s3 /data --addr :9000\nRestart=on-failure\n[Install]\nWantedBy=multi-user.target\nUNIT")
+	common.SudoExec("systemctl", "daemon-reload")
+	common.SudoExec("systemctl", "enable", "rclone-s3")
+	common.SudoExec("systemctl", "start", "rclone-s3")
+	steps = append(steps, "S3 已启动")
+
+	common.JSONResponse(w, map[string]interface{}{
+		"message": fmt.Sprintf("服务安装完成，共 %d 步", len(steps)),
+		"steps":   steps,
+	})
 }

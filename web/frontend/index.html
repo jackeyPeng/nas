@@ -247,6 +247,10 @@
             <!-- Services -->
             <div x-show="page === 'services'" class="page">
                 <h2>服务管理</h2>
+                <div style="display:flex;gap:8px;margin-bottom:12px">
+                    <button class="btn btn-sm btn-primary" @click="installServices()" :disabled="installingServices" x-text="installingServices ? '安装中...' : '🔧 一键安装所有服务'"></button>
+                    <span x-show="installMsg" style="font-size:12px;color:#6b7280" x-text="installMsg"></span>
+                </div>
                 <table class="table">
                     <thead>
                         <tr><th>服务</th><th>端口</th><th>说明</th><th>状态</th><th>操作</th></tr>

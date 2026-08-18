@@ -7,6 +7,8 @@ function nasPanel() {
         loginForm: { username: '', password: '' },
         dashboard: {},
         services: [],
+        installingServices: false,
+        installMsg: '',
         users: [],
         storage: {},
         smartStatus: '',
@@ -236,6 +238,21 @@ function nasPanel() {
         async loadServices() {
             const data = await this.api('/services');
             if (data) this.services = data.services || [];
+        },
+
+        async installServices() {
+            if (!confirm('确定要安装所有NAS服务？\n\n包括: Samba, NFS, FTP, WebDAV, FileBrowser, S3, Fail2ban\n\n安装过程可能需要几分钟，请耐心等待。')) return;
+            this.installingServices = true;
+            this.installMsg = '正在安装...';
+            const data = await this.api('/services/install', { method: 'POST' });
+            if (data) {
+                this.installMsg = data.message || '安装完成';
+                this.showToast(data.message || '安装完成', 'success');
+                setTimeout(() => this.loadServices(), 2000);
+            } else {
+                this.installMsg = '安装失败';
+            }
+            this.installingServices = false;
         },
 
         async loadUsers() {
