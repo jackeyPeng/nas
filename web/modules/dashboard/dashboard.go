@@ -103,8 +103,13 @@ func GetServices() []map[string]interface{} {
 		out, err := common.ExecOutput("systemctl", "is-active", svc.Name)
 		if err == nil {
 			active = strings.TrimSpace(out)
-		} else if strings.Contains(err.Error(), "not found") || strings.Contains(out, "could not be found") {
-			active = "not-installed"
+		} else {
+			// Check if error is "not found" (exit code 4) vs "failed" (exit code 3)
+			if strings.Contains(out, "inactive") && strings.Contains(err.Error(), "exit status 4") {
+				active = "not-installed"
+			} else if strings.Contains(err.Error(), "exit status 3") {
+				active = "failed" // service exists but not running
+			}
 		}
 		result = append(result, map[string]interface{}{
 			"name":         svc.Name,

@@ -177,7 +177,11 @@ function nasPanel() {
             }
             const ct = res.headers.get('content-type');
             if (ct && ct.includes('application/json')) {
-                return res.json();
+                const data = await res.json();
+                if (!res.ok && data.error) {
+                    this.showToast(data.error, 'error');
+                }
+                return data;
             }
             return res.text();
         },
@@ -246,9 +250,14 @@ function nasPanel() {
             this.installMsg = '正在安装...';
             const data = await this.api('/services/install', { method: 'POST' });
             if (data) {
-                this.installMsg = data.message || '安装完成';
-                this.showToast(data.message || '安装完成', 'success');
-                setTimeout(() => this.loadServices(), 2000);
+                if (data.error) {
+                    this.showToast(`安装失败: ${data.error}`, 'error');
+                    this.installMsg = `安装失败: ${data.error}`;
+                } else {
+                    this.installMsg = data.message || '安装完成';
+                    this.showToast(data.message || '安装完成', 'success');
+                    setTimeout(() => this.loadServices(), 2000);
+                }
             } else {
                 this.installMsg = '安装失败';
             }
@@ -264,10 +273,18 @@ function nasPanel() {
                 body: `service=${encodeURIComponent(name)}`
             });
             if (data) {
-                this.showToast(data.message || `${name} 安装完成`, 'success');
-                setTimeout(() => this.loadServices(), 2000);
+                if (data.error) {
+                    this.showToast(`安装失败: ${data.error}`, 'error');
+                    this.installMsg = `安装 ${name} 失败: ${data.error}`;
+                } else {
+                    const steps = (data.steps || []).join(' → ');
+                    this.showToast(data.message || `${name} 安装完成`, 'success');
+                    this.installMsg = `${name}: ${steps || data.message}`;
+                    setTimeout(() => this.loadServices(), 2000);
+                }
+            } else {
+                this.installMsg = `安装 ${name} 失败`;
             }
-            this.installMsg = '';
         },
 
         async loadUsers() {
