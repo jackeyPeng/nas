@@ -68,6 +68,7 @@ function nasPanel() {
         wizardGoal: '',
         wizardGoalText: '',
         wizardLoading: false,
+        wizMode: '',
         allDisks: [],
         progressSteps: [],
         progressShow: false,
@@ -922,11 +923,78 @@ function nasPanel() {
 
         get wizardFilteredOptions() {
             if (!this.wizardGoal || !this.wizard.raid_options) return [];
-            const opts = this.wizard.raid_options.filter(o => o.goal === this.wizardGoal);
+            const opts = this.wizard.raid_options.filter(o => {
+                if (o.goal !== this.wizardGoal) return false;
+                if (this.wizDisks && this.wizDisks.length > 0) {
+                    if (this.wizDisks.length < o.min_disks) return false;
+                    if (o.max_disks > 0 && this.wizDisks.length > o.max_disks) return false;
+                }
+                return true;
+            });
             if (opts.length === 0) {
-                return this.wizard.raid_options;
+                return this.wizard.raid_options.filter(o => {
+                    if (this.wizDisks && this.wizDisks.length > 0) {
+                        if (this.wizDisks.length < o.min_disks) return false;
+                        if (o.max_disks > 0 && this.wizDisks.length > o.max_disks) return false;
+                    }
+                    return true;
+                });
             }
             return opts;
+        },
+        // Wizard: start setup from UI
+        async startWizardSetup() {
+            if (!this.wizMode) { this.showToast('请选择存储方案', 'error'); return; }
+            if (!this.wizDisks || this.wizDisks.length === 0) { this.showToast('请选择磁盘', 'error'); return; }
+
+            this.wizStep = 5;
+            this.wizardLoading = true;
+            this.progressSteps = [];
+            this.progressShow = true;
+            this.progressTitle = '创建存储池';
+
+            try {
+                const token = this.token;
+                const resp = await fetch(`/api/disk/wizard/setup-stream?mode=${this.wizMode}&confirm=yes`, {
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+                const reader = resp.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop();
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const ev = JSON.parse(line.slice(6));
+                                if (ev.status === 'running') {
+                                    this.progressSteps.push({ name: ev.step, status: 'running' });
+                                } else if (ev.status === 'done') {
+                                    const last = this.progressSteps[this.progressSteps.length - 1];
+                                    if (last && last.status === 'running' && last.name === ev.step) {
+                                        last.status = 'done';
+                                    } else {
+                                        this.progressSteps.push({ name: ev.step, status: 'done' });
+                                    }
+                                } else if (ev.status === 'complete') {
+                                    this.progressSteps.push({ name: ev.detail || '完成', status: 'complete' });
+                                } else if (ev.status === 'error') {
+                                    this.progressSteps.push({ name: ev.step + ': ' + (ev.detail||''), status: 'error' });
+                                }
+                            } catch(e) {}
+                        }
+                    }
+                }
+            } catch(e) {
+                this.progressSteps.push({ name: '错误: ' + e.message, status: 'error' });
+            }
+            this.wizardLoading = false;
+            setTimeout(() => { this.loadStorageOverview(); this.loadWizardStatus(); this.loadSharedFolders(); }, 2000);
         },
         // Wizard: setup (streaming with progress)
         async wizardSetup(mode) {
