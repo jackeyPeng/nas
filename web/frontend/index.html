@@ -1061,7 +1061,10 @@
                     <div x-show="storageOverview.pools?.length > 0" style="background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,0.08);margin-bottom:16px">
                         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
                             <span style="font-size:14px;font-weight:600;color:#374151">存储拓扑</span>
-                            <span style="font-size:12px;color:#22c55e" x-show="!storageOverview.has_issues">全部正常 ✓</span>
+                            <div style="display:flex;gap:8px;align-items:center">
+                                <button class="btn btn-primary btn-sm" @click="showAddFolder=true" style="font-size:12px">+ 创建共享文件夹</button>
+                                <span style="font-size:12px;color:#22c55e" x-show="!storageOverview.has_issues">全部正常 ✓</span>
+                            </div>
                         </div>
                         <template x-for="pool in (storageOverview.pools||[])" :key="pool.name">
                             <div style="margin-bottom:10px">
@@ -1108,6 +1111,54 @@
                             </div>
                         </template>
                         <div x-show="!storageOverview.pools||storageOverview.pools.length===0" style="text-align:center;color:#6b7280;padding:20px;font-size:13px">暂无存储池</div>
+                    </div>
+                </div>
+                <!-- 创建共享文件夹弹窗 -->
+                <div class="modal" x-show="showAddFolder" x-cloak @click.self="showAddFolder=false">
+                    <div class="modal-box" style="max-width:440px">
+                        <h3>创建共享文件夹</h3>
+                        <div class="form-group">
+                            <label>存储卷 (挂载点)</label>
+                            <select x-model="folderForm.pool" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+                                <option value="">请选择...</option>
+                                <template x-for="pool in (storageOverview.pools||[])" :key="pool.name">
+                                    <template x-for="vol in (pool.volumes||[])" :key="vol.name">
+                                        <option :value="vol.mountpoint" x-text="vol.mountpoint + ' (' + vol.fstype + ' ' + vol.size + ')'"></option>
+                                    </template>
+                                </template>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>文件夹名称</label>
+                            <input type="text" x-model="folderForm.name" placeholder="如: documents, photos, media">
+                        </div>
+                        <div class="form-group">
+                            <label>权限</label>
+                            <select x-model="folderForm.permission" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+                                <option value="readwrite">读写</option>
+                                <option value="readonly">只读</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>授权用户 (逗号分隔)</label>
+                            <input type="text" x-model="folderForm.valid_users" placeholder="如: fm, jacky">
+                        </div>
+                        <div class="form-group">
+                            <label>配额 (GB, 0=无限制)</label>
+                            <input type="number" x-model="folderForm.quota_gb" min="0" value="0" style="width:120px">
+                        </div>
+                        <div style="display:flex;gap:16px;margin-bottom:12px">
+                            <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer">
+                                <input type="checkbox" x-model="folderForm.recycle_bin"> 回收站
+                            </label>
+                            <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer">
+                                <input type="checkbox" x-model="folderForm.nfs"> NFS 导出
+                            </label>
+                        </div>
+                        <div class="modal-actions">
+                            <button class="btn" @click="showAddFolder=false">取消</button>
+                            <button class="btn btn-primary" @click="createFolder()">创建</button>
+                        </div>
                     </div>
                 </div>
 
