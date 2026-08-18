@@ -1245,10 +1245,11 @@
                         </div>
                         <div x-show="wizStep===2">
                             <div style="font-size:14px;font-weight:600;color:#374151;margin-bottom:12px">你的首要目标是什么？</div>
-                            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px">
+                            <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:16px">
                                 <div @click="wizGoal='safety'" :style="wizGoal==='safety'?'border:2px solid #3b82f6;background:#eff6ff':'border:2px solid #e5e7eb'" style="border-radius:10px;padding:16px;text-align:center;cursor:pointer;transition:all 0.15s;background:#fff"><div style="font-size:28px;margin-bottom:6px">🛡️</div><div style="font-size:14px;font-weight:600">数据安全</div><div style="font-size:12px;color:#6b7280;margin-top:4px;line-height:1.5">能容忍磁盘损坏</div><div style="font-size:11px;color:#6b7280;margin-top:6px">推荐 RAID 1/5/6</div></div>
-                                <div @click="wizGoal='capacity'" :style="wizGoal==='capacity'?'border:2px solid #3b82f6;background:#eff6ff':'border:2px solid #e5e7eb'" style="border-radius:10px;padding:16px;text-align:center;cursor:pointer;transition:all 0.15s;background:#fff"><div style="font-size:28px;margin-bottom:6px">💾</div><div style="font-size:14px;font-weight:600">最大容量</div><div style="font-size:12px;color:#6b7280;margin-top:4px;line-height:1.5">最大化可用空间</div><div style="font-size:11px;color:#6b7280;margin-top:6px">推荐 RAID 0 / JBOD</div></div>
-                                <div @click="wizGoal='performance'" :style="wizGoal==='performance'?'border:2px solid #3b82f6;background:#eff6ff':'border:2px solid #e5e7eb'" style="border-radius:10px;padding:16px;text-align:center;cursor:pointer;transition:all 0.15s;background:#fff"><div style="font-size:28px;margin-bottom:6px">⚡</div><div style="font-size:14px;font-weight:600">读写性能</div><div style="font-size:12px;color:#6b7280;margin-top:4px;line-height:1.5">追求传输速度</div><div style="font-size:11px;color:#6b7280;margin-top:6px">推荐 RAID 0/10</div></div>
+                                <div @click="wizGoal='capacity'" :style="wizGoal==='capacity'?'border:2px solid #3b82f6;background:#eff6ff':'border:2px solid #e5e7eb'" style="border-radius:10px;padding:16px;text-align:center;cursor:pointer;transition:all 0.15s;background:#fff"><div style="font-size:28px;margin-bottom:6px">💾</div><div style="font-size:14px;font-weight:600">最大容量</div><div style="font-size:12px;color:#6b7280;margin-top:4px;line-height:1.5">最大化可用空间</div><div style="font-size:11px;color:#6b7280;margin-top:6px">推荐 RAID 0 / LVM</div></div>
+                                <div @click="wizGoal='performance'" :style="wizGoal==='performance'?'border:2px solid #3b82f6;background:#eff6ff':'border:2px solid #e5e7eb'" style="border-radius:10px;padding:16px;text-align:center;cursor:pointer;transition:all 0.15s;background:#fff"><div style="font-size:28px;margin-bottom:6px">⚡</div><div style="font-size:14px;font-weight:600">读写性能</div><div style="font-size:12px;color:#6b7280;margin-top:4px;line-height:1.5">追求传输速度</div><div style="font-size:11px;color:#6b7280;margin-top:6px">推荐 RAID 0</div></div>
+                                <div @click="wizGoal='balance'" :style="wizGoal==='balance'?'border:2px solid #3b82f6;background:#eff6ff':'border:2px solid #e5e7eb'" style="border-radius:10px;padding:16px;text-align:center;cursor:pointer;transition:all 0.15s;background:#fff"><div style="font-size:28px;margin-bottom:6px">⚖️</div><div style="font-size:14px;font-weight:600">平衡</div><div style="font-size:12px;color:#6b7280;margin-top:4px;line-height:1.5">兼顾容量与安全</div><div style="font-size:11px;color:#6b7280;margin-top:6px">推荐 RAID 5</div></div>
                             </div>
                             <div style="display:flex;justify-content:space-between">
                                 <button class="btn btn-secondary" @click="wizStep=1" style="font-size:13px">← 上一步</button>
@@ -1256,28 +1257,60 @@
                             </div>
                         </div>
                         <div x-show="wizStep===3">
-                            <div style="font-size:14px;font-weight:600;color:#374151;margin-bottom:12px">推荐方案</div>
-                            <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:16px;margin-bottom:12px">
-                                <div style="font-size:16px;font-weight:700;color:#166534;margin-bottom:8px" x-text="'🛡️ '+'RAID '+(wizGoal==='safety'?(wizDisks.length>=4?'6':'5'):wizGoal==='capacity'?'0':'0')+' — '+(wizGoal==='safety'?'兼顾安全与容量':wizGoal==='capacity'?'最大化可用空间':'极致读写性能')"></div>
-                                <div style="font-size:13px;line-height:1.7;color:#374151"><div>• 可用容量: 取决于所选 RAID 级别</div><div>• 磁盘数: <strong x-text="wizDisks.length"></strong></div><div>• 容错: 1 盘 (RAID 5)</div></div>
+                            <div style="font-size:14px;font-weight:600;color:#374151;margin-bottom:12px">选择存储方案</div>
+                            <div style="display:grid;gap:12px;margin-bottom:16px">
+                                <template x-for="opt in wizardFilteredOptions" :key="opt.id">
+                                    <div @click="wizMode=opt.id" :style="wizMode===opt.id?'border:2px solid #3b82f6;background:#eff6ff':'border:2px solid #e5e7eb'" style="border-radius:10px;padding:16px;cursor:pointer;transition:all 0.15s;background:#fff">
+                                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                                            <span style="font-size:22px" x-text="opt.icon"></span>
+                                            <span style="font-size:15px;font-weight:700" x-text="opt.name"></span>
+                                            <span x-show="opt.recommended" class="badge" style="background:#dcfce7;color:#166534;font-size:11px">推荐</span>
+                                        </div>
+                                        <div style="font-size:13px;color:#374151;margin-bottom:6px" x-text="opt.description"></div>
+                                        <div style="display:flex;gap:16px;font-size:12px;color:#6b7280">
+                                            <span>可用容量: <strong style="color:#374151" x-text="opt.usable_size"></strong></span>
+                                            <span>安全性: <strong style="color:#374151" x-text="opt.safety_text"></strong></span>
+                                            <span>最少 <strong style="color:#374151" x-text="opt.min_disks"></strong> 盘</span>
+                                        </div>
+                                        <div x-show="opt.warning" style="margin-top:6px;font-size:11px;color:#92400e;background:#fef3c7;border-radius:4px;padding:4px 8px" x-text="opt.warning"></div>
+                                    </div>
+                                </template>
                             </div>
-                            <div style="display:flex;justify-content:space-between"><button class="btn btn-secondary" @click="wizStep=2" style="font-size:13px">← 上一步</button><button class="btn btn-primary" @click="wizStep=4" style="font-size:13px">确认并创建 →</button></div>
+                            <div style="display:flex;justify-content:space-between">
+                                <button class="btn btn-secondary" @click="wizStep=2" style="font-size:13px">← 上一步</button>
+                                <button class="btn btn-primary" @click="wizStep=4" :disabled="!wizMode" style="font-size:13px">下一步 →</button>
+                            </div>
                         </div>
                         <div x-show="wizStep===4">
-                            <div style="font-size:14px;font-weight:600;color:#374151;margin-bottom:12px">创建逻辑卷</div>
-                            <div style="display:grid;gap:12px;max-width:500px;margin-bottom:16px">
-                                <div><label style="font-size:13px;color:#374151;display:block;margin-bottom:4px">卷名称</label><input type="text" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px" placeholder="vol-data" x-model="volName"></div>
-                                <div><label style="font-size:13px;color:#374151;display:block;margin-bottom:4px">文件系统</label><select style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px"><option>XFS (推荐)</option><option>Btrfs</option></select></div>
-                                <div><label style="font-size:13px;color:#374151;display:block;margin-bottom:4px">共享文件夹 (可选)</label><input type="text" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px" placeholder="shared"></div>
+                            <div style="font-size:14px;font-weight:600;color:#374151;margin-bottom:12px">确认创建</div>
+                            <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:16px;margin-bottom:16px">
+                                <div style="font-size:13px;color:#374151;line-height:1.8">
+                                    <div>方案: <strong x-text="(wizardFilteredOptions.find(function(o){return o.id===wizMode})||{}).name||wizMode"></strong></div>
+                                    <div>磁盘: <strong x-text="wizDisks.length"></strong> 块 — <span style="font-family:monospace;font-size:12px" x-text="wizDisks.join(', ')"></span></div>
+                                    <div>可用容量: <strong x-text="(wizardFilteredOptions.find(function(o){return o.id===wizMode})||{}).usable_size||'—'"></strong></div>
+                                    <div>安全性: <strong x-text="(wizardFilteredOptions.find(function(o){return o.id===wizMode})||{}).safety_text||'—'"></strong></div>
+                                </div>
                             </div>
-                            <div style="display:flex;justify-content:space-between"><button class="btn btn-secondary" @click="wizStep=3" style="font-size:13px">← 上一步</button><button class="btn btn-primary" @click="wizStep=5" style="font-size:13px">创建 →</button></div>
+                            <div style="display:flex;justify-content:space-between">
+                                <button class="btn btn-secondary" @click="wizStep=3" style="font-size:13px">← 上一步</button>
+                                <button class="btn btn-primary" @click="startWizardSetup()" :disabled="wizardLoading" style="font-size:13px" x-text="wizardLoading?'创建中...':'确认并创建 →'"></button>
+                            </div>
                         </div>
                         <div x-show="wizStep===5" style="text-align:center">
-                            <div style="font-size:48px;margin-bottom:12px">✅</div>
-                            <div style="font-size:18px;font-weight:700;color:#374151;margin-bottom:8px">存储池创建成功</div>
-                            <div style="font-size:13px;color:#6b7280;margin-bottom:16px">pool-main 已创建，正在初始化...</div>
-                            <div style="background:#f3f4f6;border-radius:8px;padding:12px;max-width:300px;margin:0 auto 16px"><div style="font-size:12px;color:#6b7280;margin-bottom:6px">初始化进度</div><div style="background:#e5e7eb;border-radius:4px;height:8px;overflow:hidden"><div style="width:23%;background:#3b82f6;height:100%;border-radius:4px"></div></div><div style="font-size:12px;color:#6b7280;margin-top:6px">23% · 预计剩余 45 分钟</div></div>
-                            <button class="btn btn-primary" @click="diskmgmtTab='overview';wizStep=1" style="font-size:13px">返回总览</button>
+                            <div style="font-size:48px;margin-bottom:12px" x-text="wizardLoading ? '⏳' : '✅'"></div>
+                            <div style="font-size:18px;font-weight:700;color:#374151;margin-bottom:8px" x-text="wizardLoading ? '正在创建存储池...' : '存储池创建成功'"></div>
+                            <div x-show="wizardLoading" style="background:#f3f4f6;border-radius:8px;padding:12px;max-width:400px;margin:0 auto 16px;text-align:left">
+                                <div style="font-size:12px;color:#6b7280;margin-bottom:6px">初始化进度</div>
+                                <template x-for="step in progressSteps" :key="step.name">
+                                    <div style="display:flex;align-items:center;gap:8px;font-size:12px;padding:3px 0">
+                                        <span x-text="step.status==='done'?'✅':step.status==='running'?'🔄':step.status==='error'?'❌':step.status==='complete'?'✅':'⏳'"></span>
+                                        <span :style="step.status==='error'?'color:#dc2626':'color:#374151'" x-text="step.name"></span>
+                                    </div>
+                                </template>
+                            </div>
+                            <div x-show="!wizardLoading" style="margin-bottom:16px">
+                                <button class="btn btn-primary" @click="diskmgmtTab='overview';wizStep=1;wizGoal='';wizMode='';wizDisks=[];loadStorageOverview();loadWizardStatus()" style="font-size:13px">返回总览</button>
+                            </div>
                         </div>
                     </div>
                     <div x-show="!(wizardStatus && wizardStatus.available_disks?.length)" style="text-align:center;color:#6b7280;padding:32px;font-size:14px">没有可用磁盘 — 所有磁盘已分配</div>
