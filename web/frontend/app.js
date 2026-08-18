@@ -69,6 +69,9 @@ function nasPanel() {
         wizardGoalText: '',
         wizardLoading: false,
         wizMode: '',
+        wizGoal: '',
+        wizDisks: [],
+        wizStep: 1,
         allDisks: [],
         progressSteps: [],
         progressShow: false,
@@ -917,15 +920,16 @@ function nasPanel() {
 
         selectWizardGoal(goal) {
             this.wizardGoal = goal;
+            this.wizGoal = goal;
             this.wizardMode = '';
             const labels = { safety: '数据安全', capacity: '最大容量', performance: '更高性能', balance: '平衡' };
             this.wizardGoalText = labels[goal] || goal;
         },
 
         get wizardFilteredOptions() {
-            if (!this.wizardGoal || !this.wizard.raid_options) return [];
+            if (!this.wizGoal || !this.wizard.raid_options) return [];
             const opts = this.wizard.raid_options.filter(o => {
-                if (o.goal !== this.wizardGoal) return false;
+                if (o.goal !== this.wizGoal) return false;
                 if (this.wizDisks && this.wizDisks.length > 0) {
                     if (this.wizDisks.length < o.min_disks) return false;
                     if (o.max_disks > 0 && this.wizDisks.length > o.max_disks) return false;

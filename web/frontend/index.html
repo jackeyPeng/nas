@@ -1218,7 +1218,7 @@
 
                 <!-- ═══════════════ Tab 4: 创建向导 ═══════════════ -->
                 <div x-show="diskmgmtTab==='wizard'" x-transition x-init="loadWizardStatus()">
-                    <div x-show="wizardStatus && wizardStatus.available_disks?.length" x-data="{wizStep:1,wizGoal:'',wizDisks:[]}">
+                    <div x-show="wizardStatus && wizardStatus.available_disks?.length">
                         <!-- 5 步指示器 -->
                         <div style="display:flex;justify-content:center;gap:40px;margin-bottom:24px;flex-wrap:wrap">
                             <template x-for="(label,idx) in ['选磁盘','定目标','确认方案','创建卷','完成']" :key="idx">
