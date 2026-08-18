@@ -1119,7 +1119,8 @@
                     </div>
                     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:16px">
                         <template x-for="d in (storageOverview.system_disks||[])" :key="d.device">
-                            <div @click="selectedDisk=d;showDiskDetail=true" style="border:2px solid #22c55e;border-radius:10px;padding:12px;cursor:pointer;transition:all 0.15s;background:#fff">
+                            <div @click="selectedDisk=d;selectedDiskDevice=d.device;showDiskDetail=true" tabindex="0"
+                                :style="'border:2px solid '+(selectedDiskDevice===d.device?'#3b82f6':'#22c55e')+';border-radius:10px;padding:12px;cursor:pointer;transition:all 0.15s;background:#fff'+(selectedDiskDevice===d.device?';box-shadow:0 0 0 3px rgba(59,130,246,0.3)':'')">
                                 <div style="text-align:center;font-size:28px;margin-bottom:6px">💾</div>
                                 <div style="font-size:13px;font-weight:600;text-align:center;font-family:monospace" x-text="d.device"></div>
                                 <div style="text-align:center;margin:4px 0"><span class="badge" style="background:#dcfce7;color:#166534">系统</span></div>
@@ -1129,8 +1130,9 @@
                                 <div style="font-size:11px;color:#6b7280;text-align:center" x-text="d.size"></div>
                             </div>
                         </template>
-                        <template x-for="d in (storageOverview.pools||[]).flatMap(function(p){return (p.disks||[]).map(function(dk){dk.pool=p.name;return dk})})" :key="d.device">
-                            <div @click="selectedDisk=d;showDiskDetail=true" style="border:2px solid #3b82f6;border-radius:10px;padding:12px;cursor:pointer;transition:all 0.15s;background:#fff">
+                        <template x-for="d in (storageOverview.pools||[]).reduce(function(arr,p){return arr.concat((p.disks||[]).map(function(dk){return Object.assign({_pool: p.name}, dk)}))},[])" :key="d.device">
+                            <div @click="selectedDisk=d;selectedDiskDevice=d.device;showDiskDetail=true" tabindex="0"
+                                :style="'border:2px solid '+(selectedDiskDevice===d.device?'#2563eb':'#3b82f6')+';border-radius:10px;padding:12px;cursor:pointer;transition:all 0.15s;background:#fff'+(selectedDiskDevice===d.device?';box-shadow:0 0 0 3px rgba(59,130,246,0.3)':'')">
                                 <div style="text-align:center;font-size:28px;margin-bottom:6px">💾</div>
                                 <div style="font-size:13px;font-weight:600;text-align:center;font-family:monospace" x-text="d.device"></div>
                                 <div style="text-align:center;margin:4px 0"><span class="badge" style="background:#dbeafe;color:#1e40af">数据</span></div>
@@ -1141,7 +1143,8 @@
                             </div>
                         </template>
                         <template x-for="d in (storageOverview.free_disks||[])" :key="d.device">
-                            <div @click="selectedDisk=d;showDiskDetail=true" style="border:2px dashed #e5e7eb;border-radius:10px;padding:12px;cursor:pointer;transition:all 0.15s;background:#fff;opacity:0.7">
+                            <div @click="selectedDisk=d;selectedDiskDevice=d.device;showDiskDetail=true" tabindex="0"
+                                :style="'border:2px dashed '+(selectedDiskDevice===d.device?'#3b82f6':'#e5e7eb')+';border-radius:10px;padding:12px;cursor:pointer;transition:all 0.15s;background:#fff;opacity:'+(selectedDiskDevice===d.device?'1':'0.7')+(selectedDiskDevice===d.device?';box-shadow:0 0 0 3px rgba(59,130,246,0.3)':'')">
                                 <div style="text-align:center;font-size:28px;margin-bottom:6px">➕</div>
                                 <div style="font-size:13px;font-weight:600;text-align:center;font-family:monospace" x-text="d.device"></div>
                                 <div style="text-align:center;margin:4px 0"><span class="badge" style="background:#f3f4f6;color:#374151">空闲</span></div>
