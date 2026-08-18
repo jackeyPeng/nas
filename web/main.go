@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"nas-panel/common"
 	"nas-panel/modules/backup"
@@ -14,6 +15,7 @@ import (
 	"nas-panel/modules/dashboard"
 	"nas-panel/modules/diskmgmt"
 	"nas-panel/modules/firewall"
+	"nas-panel/modules/logs"
 	"nas-panel/modules/monitor"
 	"nas-panel/modules/rclone"
 	"nas-panel/modules/services"
@@ -56,6 +58,13 @@ func main() {
 	}
 	common.InitAuth(secret)
 
+	// Init audit log
+	dataDir := "/opt/nas/data"
+	if d := os.Getenv("NAS_DATA_DIR"); d != "" {
+		dataDir = d
+	}
+	common.InitAuditLog(dataDir)
+
 	if addr := os.Getenv("LISTEN_ADDR"); addr != "" {
 		listenAddr = addr
 	}
@@ -79,6 +88,7 @@ func main() {
 	backup.RegisterRoutes(mux)
 	rclone.RegisterRoutes(mux)
 	version.RegisterRoutes(mux)
+	logs.RegisterRoutes(mux)
 
 	// Serve frontend
 	frontendRoot, _ := fs.Sub(frontendFS, "frontend")
@@ -93,8 +103,98 @@ func main() {
 func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("%s %s %s", r.Method, r.URL.Path, r.RemoteAddr)
+
+		// Extract username for audit log
+		username := ""
+		auth := r.Header.Get("Authorization")
+		if strings.HasPrefix(auth, "Bearer ") {
+			if user, err := common.VerifyToken(auth[7:]); err == nil {
+				username = user
+			}
+		}
+
+		// Get client IP
+		ip := r.RemoteAddr
+		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+			ip = strings.Split(fwd, ",")[0]
+		}
+		ip = strings.Split(ip, ":")[0]
+
 		next.ServeHTTP(w, r)
+
+		// Skip logging for static files and health checks
+		path := r.URL.Path
+		if strings.HasPrefix(path, "/api/") {
+			action := classifyAction(r.Method, path)
+			common.LogAudit(username, action, r.Method, path, "", "success", ip)
+		}
 	})
+}
+
+func classifyAction(method, path string) string {
+	parts := strings.Split(strings.TrimPrefix(path, "/api/"), "/")
+	if len(parts) == 0 {
+		return "api"
+	}
+	module := parts[0]
+
+	switch {
+	case path == "/api/login":
+		return "login"
+	case module == "users":
+		return "users"
+	case module == "services":
+		return "services"
+	case module == "disk":
+		if len(parts) > 1 && parts[1] == "wizard" {
+			if strings.Contains(path, "reset") {
+				return "storage_reset"
+			}
+			return "storage_create"
+		}
+		if len(parts) > 1 && parts[1] == "pool" {
+			if strings.Contains(path, "delete") {
+				return "storage_delete"
+			}
+			if strings.Contains(path, "extend") {
+				return "storage_extend"
+			}
+			return "storage_pool"
+		}
+		if len(parts) > 1 && parts[1] == "folders" {
+			return "storage_folder"
+		}
+		if len(parts) > 1 && parts[1] == "scrub" {
+			return "storage_scrub"
+		}
+		if len(parts) > 1 && parts[1] == "replace" {
+			return "storage_replace"
+		}
+		if len(parts) > 1 && parts[1] == "smart-scan" {
+			return "storage_smart"
+		}
+		return "storage"
+	case module == "firewall":
+		return "firewall"
+	case module == "monitor":
+		return "monitor"
+	case module == "system":
+		return "system"
+	case module == "backup":
+		return "backup"
+	case module == "rclone":
+		return "rclone"
+	case module == "config":
+		return "config"
+	case module == "logs":
+		return "logs"
+	case module == "dashboard":
+		return "dashboard"
+	case module == "version":
+		return "version"
+	default:
+		return module
+	}
 }
 
 func handleLogin(w http.ResponseWriter, r *http.Request) {
