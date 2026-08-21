@@ -239,6 +239,12 @@ body {
 .page h3 { margin: var(--sp-5) 0 var(--sp-3); font-size: var(--fs-lg); font-weight: 600; }
 .page h4 { margin: var(--sp-4) 0 var(--sp-2); font-size: var(--fs-md); font-weight: 600; }
 
+/* ═══ Skeleton loading ═══ */
+@keyframes pulse-skeleton {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
 /* ═══ Alert config ═══ */
 .alert-config { display: flex; flex-direction: column; gap: var(--sp-5); }
 .config-section {

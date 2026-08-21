@@ -6,7 +6,8 @@ set -e
 FB_BIN="/usr/local/bin/filebrowser"
 FB_VER="v2.32.0"
 ARCH="amd64"
-TAR_NAME="filebrowser_${FB_VER}_linux_${ARCH}.tar.gz"
+TAR_NAME="linux-${ARCH}-filebrowser.tar.gz"
+URL="https://get.z1.sale/filebroswer/${TAR_NAME}"
 
 if [ ! -f "$FB_BIN" ]; then
     echo "Error: $FB_BIN not found"

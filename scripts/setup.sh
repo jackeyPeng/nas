@@ -58,9 +58,31 @@ fi
 DATA_DIR="/data"
 NAS_DIR="/opt/nas"
 FILEBROWSER_VERSION="v2.63.17"
+BUNDLE_VERSION="v1.0.0"
 
 # 获取脚本所在目录的绝对路径（仓库根目录）
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# ==================== 离线包检测 ====================
+# 离线包包含 FileBrowser、nas-panel 二进制及所有配置文件
+# 放在仓库根目录或 /tmp 下即可自动检测
+OFFLINE_BUNDLE=""
+for path in \
+    "$SCRIPT_DIR/nas-bundle-${BUNDLE_VERSION}-${ARCH}.tar.gz" \
+    "$SCRIPT_DIR/nas-bundle-latest-${ARCH}.tar.gz" \
+    "/tmp/nas-bundle-${BUNDLE_VERSION}-${ARCH}.tar.gz" \
+    "/tmp/nas-bundle-latest-${ARCH}.tar.gz"; do
+    if [ -f "$path" ]; then
+        OFFLINE_BUNDLE="$path"
+        echo "📦 发现离线包: $OFFLINE_BUNDLE"
+        break
+    fi
+done
+
+if [ -n "$OFFLINE_BUNDLE" ]; then
+    echo "   将使用离线包安装 FileBrowser 和 nas-panel"
+    echo ""
+fi
 
 # ==================== 升级前自动备份 ====================
 if [ -d "$DATA_DIR" ] && [ -f "/etc/samba/smb.conf" ]; then
@@ -248,8 +270,19 @@ echo ""
 echo "[7/9] 安装 FileBrowser..."
 if command -v filebrowser &>/dev/null; then
     echo "  FileBrowser 已安装，跳过"
+elif [ -n "$OFFLINE_BUNDLE" ]; then
+    echo "  从离线包安装 FileBrowser..."
+    mkdir -p /tmp/nas-offline
+    tar xzf "$OFFLINE_BUNDLE" -C /tmp/nas-offline
+    cp /tmp/nas-offline/bin/filebrowser /usr/local/bin/
+    chmod +x /usr/local/bin/filebrowser
+    rm -rf /tmp/nas-offline
+    echo "  ✓ 离线安装完成"
 else
+    # 尝试从 GitHub releases 分支下载离线包（含 filebrowser + nas-panel + 配置）
     download_file /tmp/filebrowser.tar.gz \
+        "https://github.com/jackeyPeng/nas/raw/releases/nas-bundle-${BUNDLE_VERSION}-${ARCH}.tar.gz" \
+        "https://ghfast.top/https://github.com/jackeyPeng/nas/raw/releases/nas-bundle-${BUNDLE_VERSION}-${ARCH}.tar.gz" \
         "https://get.z1.sale/filebroswer/linux-${ARCH}-filebrowser.tar.gz" \
         "https://github.com/filebrowser/filebrowser/releases/download/${FILEBROWSER_VERSION}/linux-${ARCH}-filebrowser.tar.gz" \
         "https://ghfast.top/https://github.com/filebrowser/filebrowser/releases/download/${FILEBROWSER_VERSION}/linux-${ARCH}-filebrowser.tar.gz"
@@ -298,7 +331,9 @@ RCLONE_VERSION=$(rclone version 2>/dev/null | head -1 | grep -oP 'v\K[0-9]+\.[0-
 if [ -z "$RCLONE_VERSION" ] || [ "$(echo "$RCLONE_VERSION < 1.62" | bc 2>/dev/null || echo 1)" = "1" ]; then
     echo "  升级 rclone..."
     if download_file /tmp/rclone-latest.deb \
-        "https://get.z1.sale/minio/rclone-v1.74.4-linux-amd64.deb"; then
+        "https://get.z1.sale/minio/rclone-v1.74.4-linux-amd64.deb" \
+        "https://github.com/rclone/rclone/releases/download/v1.74.4/rclone-v1.74.4-linux-amd64.deb" \
+        "https://ghfast.top/https://github.com/rclone/rclone/releases/download/v1.74.4/rclone-v1.74.4-linux-amd64.deb"; then
         sudo dpkg -i /tmp/rclone-latest.deb 2>/dev/null || true
         echo "  ✓ rclone 已升级到 $(rclone version | head -1)"
     else
@@ -398,6 +433,14 @@ echo "[10/10] 安装 NAS Web 管理面板..."
 if [ -f "$NAS_DIR/web/nas-panel" ]; then
     cp "$NAS_DIR/web/nas-panel" /usr/local/bin/nas-panel
     chmod +x /usr/local/bin/nas-panel
+elif [ -n "$OFFLINE_BUNDLE" ] && tar tzf "$OFFLINE_BUNDLE" 2>/dev/null | grep -q "bin/nas-panel"; then
+    echo "  从离线包安装 nas-panel..."
+    mkdir -p /tmp/nas-offline
+    tar xzf "$OFFLINE_BUNDLE" -C /tmp/nas-offline
+    cp /tmp/nas-offline/bin/nas-panel /usr/local/bin/
+    chmod +x /usr/local/bin/nas-panel
+    rm -rf /tmp/nas-offline
+    echo "  ✓ 离线安装完成"
 elif download_file /usr/local/bin/nas-panel \
     "https://get.z1.sale/control/nas-panel-${ARCH}.latest" \
     "https://get.z1.sale/control/nas-panel.latest" \

@@ -2,6 +2,7 @@ package diskmgmt
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -285,14 +286,16 @@ func handleCreateFolder(w http.ResponseWriter, r *http.Request) {
 		common.SudoExec("exportfs", "-a")
 	}
 
-	// Set quota if requested
+	// Set quota if requested (non-fatal: log warning if it fails)
 	if quotaGB > 0 {
 		poolName := shareNameFromMount(pool)
 		if err := setFolderQuota(pool, folderPath, poolName, name, quotaGB); err != nil {
+			log.Printf("[WARN] 文件夹 %s 配额设置失败: %v", name, err)
 			common.JSONResponse(w, map[string]interface{}{
-				"message": fmt.Sprintf("文件夹 %s 已创建，但配额设置失败: %v", name, err),
+				"message": fmt.Sprintf("文件夹 %s 已创建（配额设置失败: %v，请检查 XFS 是否启用 prjquota）", name, err),
 				"name":    name,
 				"pool":    pool,
+				"warning": fmt.Sprintf("配额设置失败: %v", err),
 			})
 			return
 		}

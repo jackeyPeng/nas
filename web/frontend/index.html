@@ -75,11 +75,27 @@
         <!-- Content -->
         <main class="content">
             <!-- Dashboard -->
-            <div x-show="page === 'dashboard'" class="page">
+            <div x-show="page === 'dashboard'" class="page" x-transition.opacity.duration.300ms>
                 <h2>系统状态</h2>
                 <div style="display:flex;gap:48px;flex-wrap:wrap;margin-bottom:20px">
                     <!-- 左：盘位图 -->
-                    <div style="flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:8px">
+                    <!-- 加载骨架 -->
+                    <div x-show="!dashboardLoaded" style="flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:8px">
+                        <div style="height:24vw;max-height:240px;width:36vw;max-width:360px;background:linear-gradient(145deg,#e8ecf0,#d4dae0);border-radius:6px;padding:1.2vw;border:3px solid #9ca3af;display:flex;gap:1vw;align-items:stretch">
+                            <template x-for="i in 4" :key="i">
+                                <div class="disk-slot" style="background:linear-gradient(180deg,#6b7280,#4b5563);border-color:#374151;animation:pulse-skeleton 1.5s ease-in-out infinite">
+                                    <div style="height:4.5vw;max-height:45px;min-height:22px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                                        <span style="font-size:30px;font-weight:800;color:#ffffff" x-text="i"></span>
+                                    </div>
+                                    <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;min-height:0">
+                                        <span style="font-size:13px;color:rgba(255,255,255,0.5)">加载中...</span>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                    <!-- 真实盘位图 -->
+                    <div x-show="dashboardLoaded" style="flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:8px" x-transition.opacity.duration.300ms>
                         <div style="height:24vw;max-height:240px;width:36vw;max-width:360px;background:linear-gradient(145deg,#e8ecf0,#d4dae0);border-radius:6px;padding:1.2vw;border:3px solid #9ca3af;box-shadow:0 4px 12px rgba(0,0,0,0.08),inset 0 1px 2px rgba(255,255,255,0.8);display:flex;gap:1vw;align-items:stretch">
                             <template x-for="slotNum in 4" :key="slotNum">
                                 <div class="disk-slot"
@@ -245,7 +261,7 @@
             </div>
 
             <!-- Services -->
-            <div x-show="page === 'services'" class="page">
+            <div x-show="page === 'services'" class="page" x-transition.opacity.duration.300ms>
                 <h2>服务管理</h2>
                 <div style="display:flex;gap:8px;margin-bottom:12px">
                     <button class="btn btn-sm btn-primary" @click="installServices()" :disabled="installingServices" x-text="installingServices ? '安装中...' : '🔧 一键安装所有服务'"></button>
@@ -295,7 +311,7 @@
             </div>
 
             <!-- Users -->
-            <div x-show="page === 'users'" class="page">
+            <div x-show="page === 'users'" class="page" x-transition.opacity.duration.300ms>
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
                     <h2 style="margin:0">用户管理</h2>
                     <div style="display:flex;gap:8px">
@@ -312,7 +328,7 @@
                 </div>
 
                 <!-- Tab: 用户列表 -->
-                <div x-show="userTab === 'list'">
+                <div x-show="userTab === 'list'" x-transition.opacity.duration.200ms>
                     <table class="table">
                         <thead>
                             <tr>
@@ -360,7 +376,7 @@
                 </div>
 
                 <!-- Tab: 用户组 -->
-                <div x-show="userTab === 'groups'">
+                <div x-show="userTab === 'groups'" x-transition.opacity.duration.200ms>
                     <div style="margin-bottom:16px">
                         <button class="btn btn-primary" @click="openGroupModal()">创建用户组</button>
                     </div>
@@ -391,7 +407,7 @@
                 </div>
 
                 <!-- Tab: 权限矩阵 -->
-                <div x-show="userTab === 'matrix'">
+                <div x-show="userTab === 'matrix'" x-transition.opacity.duration.200ms>
                     <div style="overflow-x:auto">
                         <table class="table" style="min-width:600px">
                             <thead>
@@ -426,7 +442,7 @@
                 </div>
 
                 <!-- Tab: 登录日志 -->
-                <div x-show="userTab === 'logs'">
+                <div x-show="userTab === 'logs'" x-transition.opacity.duration.200ms>
                     <div style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">
                         <span style="font-size:13px;color:#475569">最近 50 条登录记录</span>
                         <button class="btn btn-sm btn-primary" @click="loadLoginLogs()">刷新</button>
@@ -478,7 +494,7 @@
                         </div>
 
                         <!-- 步骤1: 基本信息 -->
-                        <div x-show="userWizardStep === 1">
+                        <div x-show="userWizardStep === 1" x-transition.opacity.duration.200ms>
                             <div class="form-group">
                                 <label>用户名</label>
                                 <input type="text" x-model="userWizardForm.username" placeholder="小写字母开头，2-32位">
@@ -494,7 +510,7 @@
                         </div>
 
                         <!-- 步骤2: 服务权限 -->
-                        <div x-show="userWizardStep === 2">
+                        <div x-show="userWizardStep === 2" x-transition.opacity.duration.200ms>
                             <div class="form-group">
                                 <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
                                     <input type="checkbox" x-model="userWizardForm.svc_samba">
@@ -516,7 +532,7 @@
                         </div>
 
                         <!-- 步骤3: 存储配额 -->
-                        <div x-show="userWizardStep === 3">
+                        <div x-show="userWizardStep === 3" x-transition.opacity.duration.200ms>
                             <div class="form-group">
                                 <label>私有目录配额 (GB)</label>
                                 <input type="number" x-model="userWizardForm.quota_gb" min="0" placeholder="0 = 无限制">
@@ -525,7 +541,7 @@
                         </div>
 
                         <!-- 步骤4: 共享权限 -->
-                        <div x-show="userWizardStep === 4">
+                        <div x-show="userWizardStep === 4" x-transition.opacity.duration.200ms>
                             <p style="font-size:13px;color:#475569;margin-bottom:12px">设置该用户对各共享文件夹的访问权限</p>
                             <template x-for="folder in userWizardShares" :key="folder">
                                 <div class="form-group" style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
@@ -588,7 +604,7 @@
 
             <!-- Storage -->
             <!-- Firewall -->
-            <div x-show="page === 'firewall'" class="page">
+            <div x-show="page === 'firewall'" class="page" x-transition.opacity.duration.300ms>
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
                     <h2 style="margin:0">防火墙</h2>
                     <button class="btn btn-sm btn-primary" @click="loadFirewall()" style="font-size:12px">刷新</button>
@@ -711,7 +727,7 @@
             </div>
 
             <!-- Monitor -->
-            <div x-show="page === 'monitor'" class="page">
+            <div x-show="page === 'monitor'" class="page" x-transition.opacity.duration.300ms>
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
                     <h2 style="margin:0">监控告警</h2>
                     <div style="display:flex;gap:8px;align-items:center">
@@ -1046,7 +1062,7 @@
 
 <!-- Config Management -->
             <!-- Disk Management -->
-            <div x-show="page === 'diskmgmt'" class="page" x-init="diskmgmtTab = diskmgmtTab || 'overview'">
+            <div x-show="page === 'diskmgmt'" class="page" x-init="diskmgmtTab = diskmgmtTab || 'overview'" x-transition.opacity.duration.300ms>
                 <h2 style="margin-bottom:14px">存储管理</h2>
 
                 <!-- ════ Tab 导航 ════ -->
@@ -1059,7 +1075,7 @@
                 </nav>
 
                 <!-- ═══════════════ Tab 1: 存储总览 ═══════════════ -->
-                <div x-show="diskmgmtTab==='overview'" x-transition>
+                <div x-show="diskmgmtTab==='overview'" x-transition.opacity.duration.250ms>
                     <!-- 统计卡片 -->
                     <div x-show="storageOverview.stats"><div style="display:flex;gap:12px;margin-bottom:14px;max-width:65%"><div style="flex:1;min-width:0;background:#fff;border-radius:10px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.06);text-align:center"><div style="font-size:22px;font-weight:700;color:#22c55e" x-text="storageOverview.stats?.total_disks ?? 0"></div><div style="font-size:11px;color:#6b7280;margin-top:4px">物理磁盘</div></div><div style="flex:1;min-width:0;background:#fff;border-radius:10px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.06);text-align:center"><div style="font-size:22px;font-weight:700;color:#3b82f6" x-text="storageOverview.stats?.total_pools ?? 0"></div><div style="font-size:11px;color:#6b7280;margin-top:4px">存储池</div></div><div style="flex:1;min-width:0;background:#fff;border-radius:10px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.06);text-align:center"><div style="font-size:22px;font-weight:700;color:#8b5cf6" x-text="storageOverview.stats?.total_volumes ?? 0"></div><div style="font-size:11px;color:#6b7280;margin-top:4px">逻辑卷</div></div><div style="flex:1;min-width:0;background:#fff;border-radius:10px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.06);text-align:center"><div style="font-size:22px;font-weight:700;color:#6b7280" x-text="storageOverview.stats?.total_shares ?? 0"></div><div style="font-size:11px;color:#6b7280;margin-top:4px">共享文件夹</div></div></div></div>
                     <!-- 告警栏 -->
@@ -1079,40 +1095,67 @@
                         </div>
                         <template x-for="pool in (storageOverview.pools||[])" :key="pool.name">
                             <div style="margin-bottom:10px">
-                                <div style="display:flex;align-items:center;gap:12px;padding:10px 12px;background:#fff;border-radius:10px;border:1px solid #e5e7eb;flex-wrap:wrap">
+                                <div style="display:flex;align-items:center;gap:14px;padding:12px 14px;background:#fff;border-radius:10px;border:1px solid #e5e7eb;flex-wrap:wrap">
                                     <div style="width:40px;height:40px;background:#dbeafe;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">🗄️</div>
-                                    <strong style="font-size:14px" x-text="pool.display_name||pool.name"></strong>
+                                    <strong style="font-size:16px" x-text="pool.display_name||pool.name"></strong>
                                     <span class="badge" style="background:#dcfce7;color:#166534" x-text="pool.type.toUpperCase()"></span>
                                     <span class="badge" :style="pool.healthy?'background:#dcfce7;color:#166534':'background:#fee2e2;color:#991b1b'" x-text="pool.healthy?'健康':'异常'"></span>
-                                    <span style="font-size:12px;color:#6b7280;margin-left:auto" x-text="pool.size?(pool.used+' / '+pool.size):''"></span>
+                                    <span style="font-size:13px;color:#6b7280;margin-left:auto" x-text="pool.size?(pool.used+' / '+pool.size):''"></span>
                                     <div x-show="pool.percent" style="width:120px;background:#e5e7eb;border-radius:3px;height:6px;overflow:hidden"><div :style="'width:'+pool.percent+';background:#3b82f6'" style="height:100%;border-radius:3px"></div></div>
-                                    <span style="font-size:12px;color:#6b7280" x-text="pool.percent+'%'"></span>
+                                    <span style="font-size:13px;color:#6b7280" x-text="pool.percent+'%'"></span>
                                 </div>
                                 <template x-for="vol in (pool.volumes||[])" :key="vol.name">
-                                    <div style="display:flex;margin-left:28px"><div style="width:2px;background:#e5e7eb;margin:2px 0"></div>
-                                        <div style="flex:1;margin-left:12px;padding:2px 0">
-                                            <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid #e5e7eb;border-radius:8px;flex-wrap:wrap">
-                                                <span style="font-size:15px">📦</span><span style="font-size:13px;font-weight:600" x-text="vol.display_name||vol.name"></span>
-                                                <span style="font-size:11px;color:#6b7280" x-text="vol.size?(vol.used+'/'+vol.size):''"></span>
-                                                <span class="badge" style="background:#ede9fe;color:#6d28d9;font-size:10px" x-text="'·'+(vol.fstype||'')+'·快照:'+(vol.snapshot_count>0?'开':'关')"></span>
-                                                <span style="margin-left:auto;display:flex;gap:4px">
-                                                    <span class="badge" :style="vol.folders?.some(function(f){return f.samba_share})?'background:#dbeafe;color:#1e40af':'background:#f3f4f6;color:#374151'" style="font-size:10px" x-text="'SMB'+(vol.folders?.some(function(f){return f.samba_share})?'✓':'✗')"></span>
-                                                    <span class="badge" :style="vol.folders?.some(function(f){return f.nfs_export})?'background:#dbeafe;color:#1e40af':'background:#f3f4f6;color:#374151'" style="font-size:10px" x-text="'NFS'+(vol.folders?.some(function(f){return f.nfs_export})?'✓':'✗')"></span>
-                                                    <span class="badge" :style="vol.folders?.some(function(f){return f.ftp_access})?'background:#dbeafe;color:#1e40af':'background:#f3f4f6;color:#374151'" style="font-size:10px" x-text="'FTP'+(vol.folders?.some(function(f){return f.ftp_access})?'✓':'✗')"></span>
+                                    <div style="display:flex;margin-left:28px"><div style="width:2px;background:#e5e7eb;margin:4px 0"></div>
+                                        <div style="flex:1;margin-left:12px;padding:4px 0">
+                                            <div style="display:flex;align-items:center;gap:12px;padding:8px 14px;border:1px solid #e5e7eb;border-radius:8px;flex-wrap:wrap">
+                                                <span style="font-size:16px">📦</span><span style="font-size:15px;font-weight:600" x-text="vol.display_name||vol.name"></span>
+                                                <span style="font-size:13px;color:#6b7280" x-text="vol.size?(vol.used+'/'+vol.size):''"></span>
+                                                <span class="badge" style="background:#ede9fe;color:#6d28d9;font-size:11px" x-text="'·'+(vol.fstype||'')+'·快照:'+(vol.snapshot_count>0?'开':'关')"></span>
+                                                <span style="margin-left:auto;display:flex;gap:6px">
+                                                    <span class="badge" :style="vol.folders?.some(function(f){return f.samba_share})?'background:#dbeafe;color:#1e40af':'background:#f3f4f6;color:#374151'" style="font-size:11px;padding:3px 7px" x-text="'SMB'+(vol.folders?.some(function(f){return f.samba_share})?'✓':'✗')"></span>
+                                                    <span class="badge" :style="vol.folders?.some(function(f){return f.nfs_export})?'background:#dbeafe;color:#1e40af':'background:#f3f4f6;color:#374151'" style="font-size:11px;padding:3px 7px" x-text="'NFS'+(vol.folders?.some(function(f){return f.nfs_export})?'✓':'✗')"></span>
+                                                    <span class="badge" :style="vol.folders?.some(function(f){return f.ftp_access})?'background:#dbeafe;color:#1e40af':'background:#f3f4f6;color:#374151'" style="font-size:11px;padding:3px 7px" x-text="'FTP'+(vol.folders?.some(function(f){return f.ftp_access})?'✓':'✗')"></span>
                                                 </span>
                                             </div>
+                                            <div style="margin-left:16px">
                                             <template x-for="f in (vol.folders||[])" :key="f.name">
-                                                <div style="display:flex;margin-left:28px"><div style="width:2px;background:#e5e7eb;margin:2px 0"></div>
-                                                    <div style="flex:1;margin-left:12px;padding:2px 0;display:flex;align-items:center;gap:8px;padding:5px 10px;border:1px solid #e5e7eb;border-radius:8px;flex-wrap:wrap">
-                                                        <span style="font-size:14px">📁</span><span style="font-size:13px" x-text="f.name"></span>
-                                                        <span x-show="f.size" style="font-size:11px;color:#6b7280" x-text="f.size"></span>
-                                                        <span x-show="f.permission" style="font-size:11px;color:#6b7280" x-text="'读写:'+f.valid_users"></span>
-                                                        <span style="margin-left:auto;display:flex;gap:4px">
-                                                            <span class="badge" :style="f.samba_share?'background:#dbeafe;color:#1e40af':'background:#f3f4f6;color:#374151'" style="font-size:10px" x-text="'SMB'+(f.samba_share?'✓':'✗')"></span>
-                                                            <span class="badge" :style="f.nfs_export?'background:#dbeafe;color:#1e40af':'background:#f3f4f6;color:#374151'" style="font-size:10px" x-text="'NFS'+(f.nfs_export?'✓':'✗')"></span>
-                                                            <span class="badge" :style="f.webdav_access?'background:#dbeafe;color:#1e40af':'background:#f3f4f6;color:#374151'" style="font-size:10px" x-text="'DAV'+(f.webdav_access?'✓':'✗')"></span>
-                                                            <span class="badge" :style="f.ftp_access?'background:#dbeafe;color:#1e40af':'background:#f3f4f6;color:#374151'" style="font-size:10px" x-text="'FTP'+(f.ftp_access?'✓':'✗')"></span>
-                                                        </span>
+                                                <div style="display:flex;margin-left:16px;margin-bottom:4px">
+                                                    <div style="width:2px;background:#e5e7eb;margin:2px 0;flex-shrink:0"></div>
+                                                    <div style="flex:1;margin-left:8px;padding:6px 10px;border:1px solid #e5e7eb;border-radius:8px;background:#fff">
+                                                        <!-- 第一行 -->
+                                                        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                                                            <span style="font-size:15px">📁</span>
+                                                            <span style="font-size:15px;font-weight:500" x-text="f.name"></span>
+                                                            <span style="font-size:13px;color:#6b7280" x-text="f.size||'-'"></span>
+                                                            <span style="font-size:13px;color:#6b7280" x-text="f.permission ? '读写:'+f.valid_users : '-'"></span>
+                                                            <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
+                                                                <span class="badge" :style="f.samba_share?'background:#dbeafe;color:#1e40af':'background:#f3f4f6;color:#374151'" style="font-size:11px;padding:3px 7px" x-text="'SMB'+(f.samba_share?'✓':'✗')"></span>
+                                                                <span class="badge" :style="f.nfs_export?'background:#dbeafe;color:#1e40af':'background:#f3f4f6;color:#374151'" style="font-size:11px;padding:3px 7px" x-text="'NFS'+(f.nfs_export?'✓':'✗')"></span>
+                                                                <span class="badge" :style="f.webdav_access?'background:#dbeafe;color:#1e40af':'background:#f3f4f6;color:#374151'" style="font-size:11px;padding:3px 7px" x-text="'DAV'+(f.webdav_access?'✓':'✗')"></span>
+                                                                <span class="badge" :style="f.ftp_access?'background:#dbeafe;color:#1e40af':'background:#f3f4f6;color:#374151'" style="font-size:11px;padding:3px 7px" x-text="'FTP'+(f.ftp_access?'✓':'✗')"></span>
+                                                                <button class="btn btn-sm" @click.stop="editFolderPermission(f)" style="font-size:12px;padding:3px 6px" title="编辑">✏️</button>
+                                                                <button class="btn btn-sm btn-danger" @click.stop="deleteFolder(f)" style="font-size:12px;padding:3px 6px" title="删除">🗑️</button>
+                                                            </span>
+                                                        </div>
+                                                        <!-- 第二行：访问方式 -->
+                                                        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;padding-top:4px;border-top:1px dashed #e5e7eb">
+                                                            <div x-show="f.samba_share" style="display:flex;align-items:center;gap:6px;font-size:12px;color:#475569">
+                                                                <span style="font-weight:600;color:#1e40af">SMB</span>
+                                                                <code style="font-size:12px;color:#334155;user-select:all">\\<span x-text="dashboard.ip_addr||'IP'"></span>\<span x-text="f.name"></span></code>
+                                                            </div>
+                                                            <div x-show="f.nfs_export" style="display:flex;align-items:center;gap:6px;font-size:12px;color:#475569">
+                                                                <span style="font-weight:600;color:#16a34a">NFS</span>
+                                                                <code style="font-size:12px;color:#334155;user-select:all"><span x-text="dashboard.ip_addr||'IP'"></span>:<span x-text="f.path"></span></code>
+                                                            </div>
+                                                            <div x-show="f.webdav_access" style="display:flex;align-items:center;gap:6px;font-size:12px;color:#475569">
+                                                                <span style="font-weight:600;color:#7c3aed">WebDAV</span>
+                                                                <code style="font-size:12px;color:#334155;user-select:all">http://<span x-text="dashboard.ip_addr||'IP'"></span>:8080/<span x-text="f.name"></span></code>
+                                                            </div>
+                                                            <div x-show="f.ftp_access" style="display:flex;align-items:center;gap:6px;font-size:12px;color:#475569">
+                                                                <span style="font-weight:600;color:#d97706">FTP</span>
+                                                                <code style="font-size:12px;color:#334155">ftp://<span x-text="f.valid_users.split(',')[0]||'user'"></span>@<span x-text="dashboard.ip_addr||'IP'"></span>:21</code>
+                                                            </div>
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </template>
@@ -1151,8 +1194,28 @@
                             </select>
                         </div>
                         <div class="form-group">
-                            <label>授权用户 (逗号分隔)</label>
-                            <input type="text" x-model="folderForm.valid_users" placeholder="如: fm, jacky">
+                            <label>授权用户</label>
+                            <div style="position:relative">
+                                <div @click="showUserDropdown=!showUserDropdown" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;cursor:pointer;min-height:36px;display:flex;align-items:center;flex-wrap:wrap;gap:4px;background:#fff">
+                                    <template x-for="u in folderForm.valid_users" :key="u">
+                                        <span style="background:#eff6ff;color:#1d4ed8;padding:2px 8px;border-radius:4px;font-size:12px;display:flex;align-items:center;gap:4px">
+                                            <span x-text="u"></span>
+                                            <span @click.stop="folderForm.valid_users = folderForm.valid_users.filter(function(x){return x!==u}); showUserDropdown=true" style="cursor:pointer;font-weight:bold">&times;</span>
+                                        </span>
+                                    </template>
+                                    <span x-show="!folderForm.valid_users.length" style="color:#94a3b8">请选择用户...</span>
+                                </div>
+                                <div x-show="showUserDropdown" @click.outside="showUserDropdown=false" style="position:absolute;top:100%;left:0;right:0;z-index:50;background:#fff;border:1px solid #d1d5db;border-radius:6px;margin-top:2px;max-height:200px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,0.1)">
+                                    <template x-for="u in users" :key="u.username">
+                                        <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid #f3f4f6"
+                                            :style="folderForm.valid_users.includes(u.username) ? 'background:#eff6ff' : ''">
+                                            <input type="checkbox" :value="u.username" x-model="folderForm.valid_users" style="accent-color:#2563eb">
+                                            <span x-text="u.username"></span>
+                                        </label>
+                                    </template>
+                                    <div x-show="!users.length" style="padding:12px;text-align:center;color:#94a3b8;font-size:13px">暂无用户</div>
+                                </div>
+                            </div>
                         </div>
                         <div class="form-group">
                             <label>配额 (GB, 0=无限制)</label>
@@ -1173,8 +1236,66 @@
                     </div>
                 </div>
 
+                <!-- 编辑共享文件夹弹窗 -->
+                <div class="modal" x-show="showFolderPerm" x-cloak @click.self="showFolderPerm=false">
+                    <div class="modal-box" style="max-width:440px">
+                        <h3>编辑共享文件夹</h3>
+                        <div class="form-group">
+                            <label>文件夹</label>
+                            <input type="text" :value="folderPermForm.name" disabled style="background:#f3f4f6;color:#6b7280">
+                        </div>
+                        <div class="form-group">
+                            <label>路径</label>
+                            <input type="text" :value="folderPermForm.path" disabled style="background:#f3f4f6;color:#6b7280">
+                        </div>
+                        <div class="form-group">
+                            <label>权限</label>
+                            <select x-model="folderPermForm.permission" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+                                <option value="readwrite">读写</option>
+                                <option value="readonly">只读</option>
+                                <option value="noaccess">禁止访问</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>授权用户</label>
+                            <div style="position:relative">
+                                <div @click="showUserDropdown=!showUserDropdown" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;cursor:pointer;min-height:36px;display:flex;align-items:center;flex-wrap:wrap;gap:4px;background:#fff">
+                                    <template x-for="u in (folderPermForm.valid_users||'').split(',').filter(function(x){return x})" :key="u">
+                                        <span style="background:#eff6ff;color:#1d4ed8;padding:2px 8px;border-radius:4px;font-size:12px;display:flex;align-items:center;gap:4px">
+                                            <span x-text="u.trim()"></span>
+                                            <span @click.stop="folderPermForm.valid_users = folderPermForm.valid_users.split(',').filter(function(x){return x.trim()!==u.trim()}).join(','); showUserDropdown=true" style="cursor:pointer;font-weight:bold">&times;</span>
+                                        </span>
+                                    </template>
+                                    <span x-show="!(folderPermForm.valid_users||'').split(',').filter(function(x){return x}).length" style="color:#94a3b8">请选择用户...</span>
+                                </div>
+                                <div x-show="showUserDropdown" @click.outside="showUserDropdown=false" style="position:absolute;top:100%;left:0;right:0;z-index:50;background:#fff;border:1px solid #d1d5db;border-radius:6px;margin-top:2px;max-height:200px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,0.1)">
+                                    <template x-for="u in users" :key="u.username">
+                                        <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid #f3f4f6"
+                                            :style="(folderPermForm.valid_users||'').split(',').map(function(x){return x.trim()}).includes(u.username) ? 'background:#eff6ff' : ''">
+                                            <input type="checkbox" :checked="(folderPermForm.valid_users||'').split(',').map(function(x){return x.trim()}).includes(u.username)"
+                                                @change="if($event.target.checked){var a=(folderPermForm.valid_users||'').split(',').filter(function(x){return x});a.push(u.username);folderPermForm.valid_users=a.join(',')}else{folderPermForm.valid_users=(folderPermForm.valid_users||'').split(',').filter(function(x){return x.trim()!==u.username}).join(',')}"
+                                                style="accent-color:#2563eb">
+                                            <span x-text="u.username"></span>
+                                        </label>
+                                    </template>
+                                    <div x-show="!users.length" style="padding:12px;text-align:center;color:#94a3b8;font-size:13px">暂无用户</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                                <input type="checkbox" x-model="folderPermForm.recycle_bin"> 回收站
+                            </label>
+                        </div>
+                        <div class="modal-actions">
+                            <button class="btn" @click="showFolderPerm=false">取消</button>
+                            <button class="btn btn-primary" @click="saveFolderPermission()">保存</button>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- ═══════════════ Tab 2: 物理磁盘 ═══════════════ -->
-                <div x-show="diskmgmtTab==='disks'" x-transition>
+                <div x-show="diskmgmtTab==='disks'" x-transition.opacity.duration.250ms>
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
                         <span style="font-size:14px;font-weight:600;color:#374151">物理磁盘 (盘位图)</span>
                         <button class="btn btn-secondary btn-sm" @click="loadStorageOverview()" style="font-size:12px">🔄 重新扫描</button>
@@ -1241,7 +1362,7 @@
                 </div>
 
                 <!-- ═══════════════ Tab 3: 存储池 ═══════════════ -->
-                <div x-show="diskmgmtTab==='pools'" x-transition>
+                <div x-show="diskmgmtTab==='pools'" x-transition.opacity.duration.250ms>
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
                         <span style="font-size:14px;font-weight:600;color:#374151">存储池列表</span>
                         <button class="btn btn-primary btn-sm" @click="diskmgmtTab='wizard'" style="font-size:12px">+ 创建存储池</button>
@@ -1279,7 +1400,7 @@
                 </div>
 
                 <!-- ═══════════════ Tab 4: 创建向导 ═══════════════ -->
-                <div x-show="diskmgmtTab==='wizard'" x-transition x-init="loadWizardStatus()">
+                <div x-show="diskmgmtTab==='wizard'" x-transition.opacity.duration.250ms x-init="loadWizardStatus()">
                     <div x-show="wizardStatus && wizardStatus.available_disks?.length">
                         <!-- 5 步指示器 -->
                         <div style="display:flex;justify-content:center;gap:40px;margin-bottom:24px;flex-wrap:wrap">
@@ -1290,7 +1411,7 @@
                                 </div>
                             </template>
                         </div>
-                        <div x-show="wizStep===1">
+                        <div x-show="wizStep===1" x-transition.opacity.duration.200ms>
                             <div style="font-size:14px;font-weight:600;color:#374151;margin-bottom:12px">选择磁盘</div>
                             <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin-bottom:16px">
                                 <template x-for="d in (wizardStatus.available_disks||[])" :key="d.device">
@@ -1308,7 +1429,7 @@
                                 <button class="btn btn-primary" @click="wizStep=2" :disabled="wizDisks.length===0" style="font-size:13px">下一步 →</button>
                             </div>
                         </div>
-                        <div x-show="wizStep===2">
+                        <div x-show="wizStep===2" x-transition.opacity.duration.200ms>
                             <div style="font-size:14px;font-weight:600;color:#374151;margin-bottom:12px">你的首要目标是什么？</div>
                             <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:16px">
                                 <div @click="wizGoal='safety'" :style="wizGoal==='safety'?'border:2px solid #3b82f6;background:#eff6ff':'border:2px solid #e5e7eb'" style="border-radius:10px;padding:16px;text-align:center;cursor:pointer;transition:all 0.15s;background:#fff"><div style="font-size:28px;margin-bottom:6px">🛡️</div><div style="font-size:14px;font-weight:600">数据安全</div><div style="font-size:12px;color:#6b7280;margin-top:4px;line-height:1.5">能容忍磁盘损坏</div><div style="font-size:11px;color:#6b7280;margin-top:6px">推荐 RAID 1/5/6</div></div>
@@ -1321,7 +1442,7 @@
                                 <button class="btn btn-primary" @click="wizStep=3" :disabled="!wizGoal" style="font-size:13px">下一步 →</button>
                             </div>
                         </div>
-                        <div x-show="wizStep===3">
+                        <div x-show="wizStep===3" x-transition.opacity.duration.200ms>
                             <div style="font-size:14px;font-weight:600;color:#374151;margin-bottom:12px">选择存储方案</div>
                             <div style="display:grid;gap:12px;margin-bottom:16px">
                                 <template x-for="opt in wizardFilteredOptions" :key="opt.id">
@@ -1346,7 +1467,7 @@
                                 <button class="btn btn-primary" @click="wizStep=4" :disabled="!wizMode" style="font-size:13px">下一步 →</button>
                             </div>
                         </div>
-                        <div x-show="wizStep===4">
+                        <div x-show="wizStep===4" x-transition.opacity.duration.200ms>
                             <div style="font-size:14px;font-weight:600;color:#374151;margin-bottom:12px">确认创建</div>
                             <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:16px;margin-bottom:16px">
                                 <div style="font-size:13px;color:#374151;line-height:1.8">
@@ -1361,7 +1482,7 @@
                                 <button class="btn btn-primary" @click="startWizardSetup()" :disabled="wizardLoading" style="font-size:13px" x-text="wizardLoading?'创建中...':'确认并创建 →'"></button>
                             </div>
                         </div>
-                        <div x-show="wizStep===5" style="text-align:center">
+                        <div x-show="wizStep===5" style="text-align:center" x-transition.opacity.duration.200ms>
                             <div style="font-size:48px;margin-bottom:12px" x-text="wizardLoading ? '⏳' : '✅'"></div>
                             <div style="font-size:18px;font-weight:700;color:#374151;margin-bottom:8px" x-text="wizardLoading ? '正在创建存储池...' : '存储池创建成功'"></div>
                             <div x-show="wizardLoading" style="background:#f3f4f6;border-radius:8px;padding:12px;max-width:400px;margin:0 auto 16px;text-align:left">
@@ -1382,7 +1503,7 @@
                 </div>
 
                 <!-- ═══════════════ Tab 5: 维护 ═══════════════ -->
-                <div x-show="diskmgmtTab==='maintenance'" x-transition x-init="loadOperationsLog()">
+                <div x-show="diskmgmtTab==='maintenance'" x-transition.opacity.duration.250ms x-init="loadOperationsLog()">
                     <div style="font-size:14px;font-weight:600;color:#374151;margin-bottom:14px">维护操作</div>
                     <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:20px">
                         <div @click="openReplaceDisk(null)" style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;display:flex;align-items:flex-start;gap:12px;cursor:pointer;transition:all 0.15s"><span style="font-size:20px">🔄</span><div><div style="font-size:14px;font-weight:600;margin-bottom:4px">替换故障盘</div><div style="font-size:12px;color:#6b7280">拔出坏盘，插入新盘，自动重建</div></div></div>
@@ -1448,7 +1569,7 @@
                 </div>
             </div>
             <!-- System Settings -->
-            <div x-show="page === 'system'" class="page" x-init="if(page==='system') loadSystemOverview()">
+            <div x-show="page === 'system'" class="page" x-init="if(page==='system') loadSystemOverview()" x-transition.opacity.duration.300ms>
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
                     <h2 style="margin:0">系统设置</h2>
                     <button class="btn btn-sm btn-primary" @click="loadSystemOverview()" style="font-size:12px">刷新</button>
@@ -1603,7 +1724,7 @@
 
 
             <!-- Backup & Restore -->
-            <div x-show="page === 'backup'" class="page">
+            <div x-show="page === 'backup'" class="page" x-transition.opacity.duration.300ms>
                 <h2>备份恢复</h2>
 
                 <h3>创建备份</h3>
@@ -1661,7 +1782,7 @@
             </div>
 
             <!-- Rclone Remote Sync -->
-            <div x-show="page === 'rclone'" class="page">
+            <div x-show="page === 'rclone'" class="page" x-transition.opacity.duration.300ms>
                 <h2>远端同步</h2>
 
                 <!-- ═══ rclone 状态 ═══ -->
