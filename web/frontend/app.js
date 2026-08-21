@@ -6,6 +6,7 @@ function nasPanel() {
         loginError: '',
         loginForm: { username: '', password: '' },
         dashboard: {},
+        dashboardLoaded: false,
         services: [],
         installingServices: false,
         installMsg: '',
@@ -88,7 +89,9 @@ function nasPanel() {
         // Shared folders
         sharedFolders: [],
         showAddFolder: false,
-        folderForm: { pool: '', name: '', permission: 'readwrite', valid_users: '', recycle_bin: false, nfs: false, quota_gb: 0 },
+        showUserDropdown: false,
+        showAccessFor: '',
+        folderForm: { pool: '', name: '', permission: 'readwrite', valid_users: [], recycle_bin: false, nfs: false, quota_gb: 0 },
         showFolderPerm: false,
         folderPermForm: { name: '', path: '', pool: '', permission: 'readwrite', valid_users: '', recycle_bin: false },
         // Pool extend
@@ -222,7 +225,7 @@ function nasPanel() {
                 case 'dashboard': this.loadDashboard(); break;
                 case 'services': this.loadServices(); break;
                 case 'users': this.loadUsers(); this.loadUserGroups(); this.loadPermMatrix(); this.loadLoginLogs(); break;
-                case 'diskmgmt': this.loadStorageOverview(); this.loadWizardStatus(); this.loadSharedFolders(); break;
+                case 'diskmgmt': this.loadStorageOverview(); this.loadWizardStatus(); this.loadSharedFolders(); this.loadUsers(); break;
                 case 'firewall': this.loadFirewall(); break;
                 case 'monitor': this.initMonitorRefresh(); this.loadAlertConfig(); break;
                 case 'system': this.loadSystemOverview(); break;
@@ -232,11 +235,13 @@ function nasPanel() {
         },
 
         async loadDashboard() {
+            this.dashboardLoaded = false;
             const data = await this.api('/dashboard');
             if (data) this.dashboard = data;
             // Also load storage overview for disk bay diagram
             const sdata = await this.api('/disk/overview');
             if (sdata && sdata.overview) this.storageOverview = sdata.overview;
+            this.dashboardLoaded = true;
         },
 
         async loadServices() {
@@ -1139,7 +1144,7 @@ function nasPanel() {
                 pool: this.folderForm.pool,
                 name: this.folderForm.name,
                 permission: this.folderForm.permission,
-                valid_users: this.folderForm.valid_users,
+                valid_users: this.folderForm.valid_users.join(','),
                 recycle_bin: this.folderForm.recycle_bin ? 'yes' : '',
                 nfs: this.folderForm.nfs ? 'yes' : '',
                 quota_gb: String(this.folderForm.quota_gb || 0)
@@ -1151,9 +1156,14 @@ function nasPanel() {
             });
             if (data) {
                 this.showToast(data.message || '文件夹已创建', 'success');
+                if (data.warning) {
+                    setTimeout(() => this.showToast(data.warning, 'error'), 500);
+                }
                 this.showAddFolder = false;
-                this.folderForm = { pool: '', name: '', permission: 'readwrite', valid_users: '', recycle_bin: false, nfs: false, quota_gb: 0 };
+                this.showUserDropdown = false;
+                this.folderForm = { pool: '', name: '', permission: 'readwrite', valid_users: [], recycle_bin: false, nfs: false, quota_gb: 0 };
                 this.loadSharedFolders();
+                this.loadStorageOverview();
             }
         },
 
@@ -1199,6 +1209,7 @@ function nasPanel() {
                 this.showToast(data.message || '权限已更新', 'success');
                 this.showFolderPerm = false;
                 this.loadSharedFolders();
+                this.loadStorageOverview();
             }
         },
 

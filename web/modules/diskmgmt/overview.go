@@ -287,6 +287,18 @@ func handleStorageOverview(w http.ResponseWriter, r *http.Request) {
 					} else {
 						f.Permission = "noaccess"
 					}
+					// Check NFS export
+					if isNFSExported(folderPath) {
+						f.NFSExport = true
+					}
+					// Check WebDAV (rclone serve webdav)
+					if isWebDAVServed(entry.Name()) {
+						f.WebDAVAccess = true
+					}
+					// Check FTP (vsftpd users)
+					if isFTPAccessible(folderPath) {
+						f.FTPAccess = true
+					}
 					folderMap[mountPoint] = append(folderMap[mountPoint], f)
 				}
 			}
@@ -931,4 +943,36 @@ func handleOperationsLog(w http.ResponseWriter, r *http.Request) {
 	}
 
 	common.JSONResponse(w, map[string]interface{}{"operations": entries})
+}
+
+// isNFSExported checks if a path is exported via NFS in /etc/exports
+func isNFSExported(path string) bool {
+	out, _ := common.SudoOutput("cat", "/etc/exports")
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if strings.HasPrefix(line, path) {
+			return true
+		}
+	}
+	return false
+}
+
+// isWebDAVServed checks if a folder is served via rclone WebDAV
+func isWebDAVServed(folderName string) bool {
+	out, _ := common.SudoOutput("cat", "/etc/systemd/system/rclone-webdav.service")
+	return strings.Contains(out, folderName) || strings.Contains(out, "/data")
+}
+
+// isFTPAccessible checks if a path is accessible via FTP
+func isFTPAccessible(path string) bool {
+	out, _ := common.SudoOutput("cat", "/etc/vsftpd.userlist")
+	if out == "" {
+		out, _ = common.SudoOutput("cat", "/etc/vsftpd.user_list")
+	}
+	// FTP access is per-user, not per-folder. If FTP is running, users can access /data
+	_, err := common.SudoOutput("systemctl", "is-active", "vsftpd")
+	return err == nil
 }

@@ -138,10 +138,9 @@ func handleInstallServices(w http.ResponseWriter, r *http.Request) {
 		// FileBrowser
 		out, _ = common.SudoExec("bash", "-c", `
 			ARCH=$(uname -m | sed "s/x86_64/amd64/;s/aarch64/arm64/")
-			VER="v2.32.0"
-			curl -fsSL "https://get.z1.sale/filebrowser_${VER}_linux_${ARCH}.tar.gz" -o /tmp/fb.tar.gz 2>/dev/null || \
-			curl -fsSL "https://file.abwen.com/control/filebrowser_${VER}_linux_${ARCH}.tar.gz" -o /tmp/fb.tar.gz 2>/dev/null || \
-			curl -fsSL "https://github.com/filebrowser/filebrowser/releases/download/${VER}/linux-${ARCH}-filebrowser.tar.gz" -o /tmp/fb.tar.gz 2>/dev/null
+			curl -fsSL --connect-timeout 10 --max-time 600 "https://github.com/filebrowser/filebrowser/releases/download/v2.32.0/linux-${ARCH}-filebrowser.tar.gz" -o /tmp/fb.tar.gz 2>/dev/null || \
+			curl -fsSL --connect-timeout 10 --max-time 30 "https://get.z1.sale/filebroswer/linux-${ARCH}-filebrowser.tar.gz" -o /tmp/fb.tar.gz 2>/dev/null || \
+			curl -fsSL --connect-timeout 10 --max-time 30 "https://file.abwen.com/control/filebrowser_v2.32.0_linux_${ARCH}.tar.gz" -o /tmp/fb.tar.gz 2>/dev/null
 			if [ -f /tmp/fb.tar.gz ]; then tar xzf /tmp/fb.tar.gz -C /usr/local/bin filebrowser && chmod +x /usr/local/bin/filebrowser && echo "ok"; fi
 		`)
 		if strings.TrimSpace(out) == "ok" {
@@ -215,14 +214,13 @@ func installSingleService(name string) (string, error) {
 	case "filebrowser":
 		out, _ := common.SudoExec("bash", "-c", `
 			ARCH=$(uname -m | sed "s/x86_64/amd64/;s/aarch64/arm64/")
-			VER="v2.32.0"
 			DL_ERR=""
-			curl -fsSL --connect-timeout 10 --max-time 60 "https://get.z1.sale/filebrowser_${VER}_linux_${ARCH}.tar.gz" -o /tmp/fb.tar.gz 2>/tmp/fb.err || DL_ERR="get.z1.sale: $(cat /tmp/fb.err)"
+			curl -fsSL --connect-timeout 10 --max-time 600 "https://github.com/filebrowser/filebrowser/releases/download/v2.32.0/linux-${ARCH}-filebrowser.tar.gz" -o /tmp/fb.tar.gz 2>/tmp/fb.err || DL_ERR="github: $(cat /tmp/fb.err)"
 			if [ ! -f /tmp/fb.tar.gz ]; then
-				curl -fsSL --connect-timeout 10 --max-time 60 "https://file.abwen.com/control/filebrowser_${VER}_linux_${ARCH}.tar.gz" -o /tmp/fb.tar.gz 2>/tmp/fb.err || DL_ERR="${DL_ERR}; file.abwen.com: $(cat /tmp/fb.err)"
+				curl -fsSL --connect-timeout 10 --max-time 30 "https://get.z1.sale/filebroswer/linux-${ARCH}-filebrowser.tar.gz" -o /tmp/fb.tar.gz 2>/tmp/fb.err || DL_ERR="${DL_ERR}; get.z1.sale: $(cat /tmp/fb.err)"
 			fi
 			if [ ! -f /tmp/fb.tar.gz ]; then
-				curl -fsSL --connect-timeout 10 --max-time 60 "https://github.com/filebrowser/filebrowser/releases/download/${VER}/linux-${ARCH}-filebrowser.tar.gz" -o /tmp/fb.tar.gz 2>/tmp/fb.err || DL_ERR="${DL_ERR}; github: $(cat /tmp/fb.err)"
+				curl -fsSL --connect-timeout 10 --max-time 30 "https://file.abwen.com/control/filebrowser_v2.32.0_linux_${ARCH}.tar.gz" -o /tmp/fb.tar.gz 2>/tmp/fb.err || DL_ERR="${DL_ERR}; file.abwen.com: $(cat /tmp/fb.err)"
 			fi
 			if [ -f /tmp/fb.tar.gz ]; then tar xzf /tmp/fb.tar.gz -C /usr/local/bin filebrowser && chmod +x /usr/local/bin/filebrowser && echo "ok"; else echo "FAIL:${DL_ERR}"; fi
 		`)
