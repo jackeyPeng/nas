@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"nas-panel/common"
@@ -624,6 +625,11 @@ func handleServices(w http.ResponseWriter, r *http.Request) {
 // 恢复出厂设置
 // ═══════════════════════════════════════
 
+var (
+	resetRunning bool
+	resetMu      sync.Mutex
+)
+
 func handleReset(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
@@ -636,175 +642,180 @@ func handleReset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	steps := []string{}
-
-	// 1. 备份当前配置
-	backupDir := "/data/backups"
-	common.SudoExec("mkdir", "-p", backupDir)
-	timestamp := time.Now().Format("20060102-150405")
-	for _, f := range []string{"/etc/samba/smb.conf", "/etc/exports", "/etc/nfs.conf", "/etc/vsftpd.conf", "/etc/fstab", "/etc/mdadm/mdadm.conf"} {
-		common.SudoExec("cp", f, backupDir+"/"+filepath.Base(f)+".reset-"+timestamp)
+	resetMu.Lock()
+	if resetRunning {
+		resetMu.Unlock()
+		http.Error(w, `{"error":"重置正在进行中，请等待完成"}`, http.StatusConflict)
+		return
 	}
-	steps = append(steps, "已备份当前配置到 /data/backups/")
+	resetRunning = true
+	resetMu.Unlock()
 
-	// 2. 卸载所有数据目录
-	dataMounts := getDataMounts()
-	for _, m := range dataMounts {
-		mount := m["mount"]
-		if mount == "/data" || isDataNasMount(mount) {
-			common.SudoExec("umount", "-l", mount)
+	// 立即返回，后台执行重置
+	go func() {
+		defer func() {
+			resetMu.Lock()
+			resetRunning = false
+			resetMu.Unlock()
+		}()
+
+		// 1. 备份当前配置
+		backupDir := "/data/backups"
+		common.SudoExec("mkdir", "-p", backupDir)
+		timestamp := time.Now().Format("20060102-150405")
+		for _, f := range []string{"/etc/samba/smb.conf", "/etc/exports", "/etc/nfs.conf", "/etc/vsftpd.conf", "/etc/fstab", "/etc/mdadm/mdadm.conf"} {
+			common.SudoExec("cp", f, backupDir+"/"+filepath.Base(f)+".reset-"+timestamp)
 		}
-	}
-	steps = append(steps, "卸载数据目录")
 
-	// 3. 清理 fstab
-	fstabData, _ := common.SudoOutput("cat", "/etc/fstab")
-	if fstabData != "" {
-		lines := strings.Split(fstabData, "\n")
-		var newLines []string
-		for _, line := range lines {
-			trimmed := strings.TrimSpace(line)
-			if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-				newLines = append(newLines, line)
-				continue
+		// 2. 卸载所有数据目录
+		dataMounts := getDataMounts()
+		for _, m := range dataMounts {
+			mount := m["mount"]
+			if mount == "/data" || isDataNasMount(mount) {
+				common.SudoExec("umount", "-l", mount)
 			}
-			fields := strings.Fields(trimmed)
-			if len(fields) >= 2 {
-				mountPoint := fields[1]
-				if mountPoint == "/data" || isDataNasMount(mountPoint) {
+		}
+
+		// 3. 清理 fstab
+		fstabData, _ := common.SudoOutput("cat", "/etc/fstab")
+		if fstabData != "" {
+			lines := strings.Split(fstabData, "\n")
+			var newLines []string
+			for _, line := range lines {
+				trimmed := strings.TrimSpace(line)
+				if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+					newLines = append(newLines, line)
 					continue
 				}
+				fields := strings.Fields(trimmed)
+				if len(fields) >= 2 {
+					mountPoint := fields[1]
+					if mountPoint == "/data" || isDataNasMount(mountPoint) {
+						continue
+					}
+				}
+				newLines = append(newLines, line)
 			}
-			newLines = append(newLines, line)
+			content := strings.Join(newLines, "\n")
+			if content != fstabData {
+				common.SafeWriteFile("/etc/fstab", content)
+			}
 		}
-		content := strings.Join(newLines, "\n")
-		if content != fstabData {
-			common.SafeWriteFile("/etc/fstab", content)
-		}
-	}
-	steps = append(steps, "清理 fstab")
 
-	// 4. 删除 LVM（逻辑卷 → 卷组 → 物理卷）
-	vgsOut, _ := common.SudoOutput("/usr/sbin/vgs", "--noheadings", "-o", "vg_name")
-	vgsOut = strings.TrimSpace(vgsOut)
-	if vgsOut != "" {
-		for _, vgName := range strings.Fields(vgsOut) {
-			vgName = strings.TrimSpace(vgName)
-			if vgName == "" {
+		// 4. 删除 LVM（逻辑卷 → 卷组 → 物理卷）
+		vgsOut, _ := common.SudoOutput("/usr/sbin/vgs", "--noheadings", "-o", "vg_name")
+		vgsOut = strings.TrimSpace(vgsOut)
+		if vgsOut != "" {
+			for _, vgName := range strings.Fields(vgsOut) {
+				vgName = strings.TrimSpace(vgName)
+				if vgName == "" {
+					continue
+				}
+				lvsOut, _ := common.SudoOutput("/usr/sbin/lvs", "--noheadings", "-o", "lv_name", vgName)
+				for _, lvName := range strings.Fields(lvsOut) {
+					common.SudoExec("/usr/sbin/lvremove", "-f", "/dev/"+vgName+"/"+lvName)
+				}
+				common.SudoExec("/usr/sbin/vgremove", "-f", vgName)
+			}
+		}
+		pvsOut, _ := common.SudoOutput("/usr/sbin/pvs", "--noheadings", "-o", "pv_name")
+		for _, pvName := range strings.Fields(pvsOut) {
+			if strings.HasPrefix(pvName, "/dev/") {
+				common.SudoExec("/usr/sbin/pvremove", "-f", pvName)
+			}
+		}
+
+		// 5. 停止 RAID 并清除超级块
+		mdMatches, _ := filepath.Glob("/dev/md[0-9]*")
+		mdRe := regexp.MustCompile(`^/dev/md\d+$`)
+		for _, dev := range mdMatches {
+			if mdRe.MatchString(dev) {
+				common.SudoExec("/usr/sbin/mdadm", "--stop", dev)
+			}
+		}
+		dataDisks := getDataDiskDevices()
+		for _, dev := range dataDisks {
+			common.SudoExec("/usr/sbin/mdadm", "--zero-superblock", dev)
+		}
+		common.SafeWriteFile("/etc/mdadm/mdadm.conf", "")
+		common.SudoExec("update-initramfs", "-u")
+
+		// 6. 清除磁盘签名
+		for _, dev := range dataDisks {
+			common.SudoExec("/usr/sbin/wipefs", "-a", dev)
+		}
+
+		// 7. 删除面板数据库
+		common.SudoExec("rm", "-f", "/opt/nas/data/folders.db")
+
+		// 8. 恢复 Samba 配置
+		smbConf, _ := common.SudoOutput("cat", "/etc/samba/smb.conf")
+		lines := strings.Split(smbConf, "\n")
+		var newSmb []string
+		skip := false
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if trimmed == "# === Z1 MANAGED SHARES START ===" {
+				skip = true
 				continue
 			}
-			lvsOut, _ := common.SudoOutput("/usr/sbin/lvs", "--noheadings", "-o", "lv_name", vgName)
-			for _, lvName := range strings.Fields(lvsOut) {
-				common.SudoExec("/usr/sbin/lvremove", "-f", "/dev/"+vgName+"/"+lvName)
+			if trimmed == "# === Z1 MANAGED SHARES END ===" && skip {
+				skip = false
+				continue
 			}
-			common.SudoExec("/usr/sbin/vgremove", "-f", vgName)
+			if !skip {
+				newSmb = append(newSmb, line)
+			}
 		}
-	}
-	pvsOut, _ := common.SudoOutput("/usr/sbin/pvs", "--noheadings", "-o", "pv_name")
-	for _, pvName := range strings.Fields(pvsOut) {
-		if strings.HasPrefix(pvName, "/dev/") {
-			common.SudoExec("/usr/sbin/pvremove", "-f", pvName)
+		for len(newSmb) > 0 && strings.TrimSpace(newSmb[len(newSmb)-1]) == "" {
+			newSmb = newSmb[:len(newSmb)-1]
 		}
-	}
-	steps = append(steps, "删除 LVM 卷组和物理卷")
+		common.SafeWriteFile("/etc/samba/smb.conf", strings.Join(newSmb, "\n")+"\n")
+		common.SudoExec("systemctl", "reset-failed", "smbd", "nmbd")
+		common.SudoExec("systemctl", "restart", "smbd", "nmbd")
 
-	// 5. 停止 RAID 并清除超级块
-	mdMatches, _ := filepath.Glob("/dev/md[0-9]*")
-	mdRe := regexp.MustCompile(`^/dev/md\d+$`)
-	for _, dev := range mdMatches {
-		if mdRe.MatchString(dev) {
-			common.SudoExec("/usr/sbin/mdadm", "--stop", dev)
+		// 9. 恢复 NFS exports
+		exports, _ := common.SudoOutput("cat", "/etc/exports")
+		lines = strings.Split(exports, "\n")
+		var newExports []string
+		skip = false
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if trimmed == "# === Z1 MANAGED SHARES START ===" {
+				skip = true
+				continue
+			}
+			if trimmed == "# === Z1 MANAGED SHARES END ===" && skip {
+				skip = false
+				continue
+			}
+			if !skip {
+				newExports = append(newExports, line)
+			}
 		}
-	}
-	// 清除所有数据盘上的 RAID 超级块
-	dataDisks := getDataDiskDevices()
-	for _, dev := range dataDisks {
-		common.SudoExec("/usr/sbin/mdadm", "--zero-superblock", dev)
-	}
-	common.SafeWriteFile("/etc/mdadm/mdadm.conf", "")
-	common.SudoExec("update-initramfs", "-u")
-	steps = append(steps, "清除 RAID 配置")
+		for len(newExports) > 0 && strings.TrimSpace(newExports[len(newExports)-1]) == "" {
+			newExports = newExports[:len(newExports)-1]
+		}
+		common.SafeWriteFile("/etc/exports", strings.Join(newExports, "\n")+"\n")
+		common.SudoExec("exportfs", "-a")
+		common.SudoExec("systemctl", "reset-failed", "nfs-kernel-server")
+		common.SudoExec("systemctl", "restart", "nfs-kernel-server")
 
-	// 6. 清除磁盘签名
-	for _, dev := range dataDisks {
-		common.SudoExec("/usr/sbin/wipefs", "-a", dev)
-	}
-	steps = append(steps, "清除磁盘签名")
-
-	// 7. 删除面板数据库
-	common.SudoExec("rm", "-f", "/opt/nas/data/folders.db")
-	steps = append(steps, "删除面板数据库")
-
-	// 8. 恢复 Samba 配置（移除 Z1 托管共享，保留默认）
-	smbConf, _ := common.SudoOutput("cat", "/etc/samba/smb.conf")
-	lines := strings.Split(smbConf, "\n")
-	var newSmb []string
-	skip := false
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "# === Z1 MANAGED SHARES START ===" {
-			skip = true
-			continue
+		// 10. 重建 /data 目录
+		common.SudoExec("mkdir", "-p", "/data")
+		nasUser, _ := common.ReadEnvFile(common.GetEnvFilePath(), "NAS_USER")
+		if nasUser == "" {
+			nasUser = os.Getenv("NAS_USER")
 		}
-		if trimmed == "# === Z1 MANAGED SHARES END ===" && skip {
-			skip = false
-			continue
+		if nasUser == "" {
+			nasUser = "root"
 		}
-		if !skip {
-			newSmb = append(newSmb, line)
-		}
-	}
-	for len(newSmb) > 0 && strings.TrimSpace(newSmb[len(newSmb)-1]) == "" {
-		newSmb = newSmb[:len(newSmb)-1]
-	}
-	common.SafeWriteFile("/etc/samba/smb.conf", strings.Join(newSmb, "\n")+"\n")
-	common.SudoExec("systemctl", "reset-failed", "smbd", "nmbd")
-	common.SudoExec("systemctl", "restart", "smbd", "nmbd")
-	steps = append(steps, "Samba 已恢复默认配置")
-
-	// 9. 恢复 NFS exports（移除 Z1 托管导出）
-	exports, _ := common.SudoOutput("cat", "/etc/exports")
-	lines = strings.Split(exports, "\n")
-	var newExports []string
-	skip = false
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "# === Z1 MANAGED SHARES START ===" {
-			skip = true
-			continue
-		}
-		if trimmed == "# === Z1 MANAGED SHARES END ===" && skip {
-			skip = false
-			continue
-		}
-		if !skip {
-			newExports = append(newExports, line)
-		}
-	}
-	for len(newExports) > 0 && strings.TrimSpace(newExports[len(newExports)-1]) == "" {
-		newExports = newExports[:len(newExports)-1]
-	}
-	common.SafeWriteFile("/etc/exports", strings.Join(newExports, "\n")+"\n")
-	common.SudoExec("exportfs", "-a")
-	common.SudoExec("systemctl", "reset-failed", "nfs-kernel-server")
-	common.SudoExec("systemctl", "restart", "nfs-kernel-server")
-	steps = append(steps, "NFS 已恢复默认配置")
-
-	// 10. 重建 /data 目录
-	common.SudoExec("mkdir", "-p", "/data")
-	nasUser, _ := common.ReadEnvFile(common.GetEnvFilePath(), "NAS_USER")
-	if nasUser == "" {
-		nasUser = os.Getenv("NAS_USER")
-	}
-	if nasUser == "" {
-		nasUser = "root"
-	}
-	common.SudoExec("chown", "-R", nasUser+":"+nasUser, "/data")
-	steps = append(steps, "重建 /data 目录")
+		common.SudoExec("chown", "-R", nasUser+":"+nasUser, "/data")
+	}()
 
 	common.JSONResponse(w, map[string]interface{}{
-		"message": fmt.Sprintf("恢复出厂设置完成，共 %d 步", len(steps)),
-		"steps":   steps,
+		"status":  "running",
+		"message": "恢复出厂设置已开始，正在后台执行...",
 	})
 }
 

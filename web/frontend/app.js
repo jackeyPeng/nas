@@ -1720,7 +1720,7 @@ function nasPanel() {
         async resetSystem() {
             if (!confirm('⚠️ 确定恢复出厂设置？\n\n此操作将：\n- 销毁所有存储配置（LVM/RAID/磁盘签名）\n- 移除所有 Z1 托管共享（Samba + NFS）\n- 删除面板数据库\n- 恢复为出厂状态\n- 数据文件将丢失！\n\n当前配置会自动备份到 /data/backups/')) return;
             if (!confirm('⚠️ 最终确认：此操作不可撤销！\n\n所有存储配置和数据将被清除。\n确定继续？')) return;
-            this.resetMsg = '正在恢复...';
+            this.resetMsg = '正在重置，请稍候...';
             const data = await this.api('/system/reset', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -1730,12 +1730,36 @@ function nasPanel() {
                 if (data.error) {
                     this.showToast(data.error, 'error');
                     this.resetMsg = '失败: ' + data.error;
+                } else if (data.status === 'running') {
+                    this.showToast('重置已在后台开始，请等待...', 'success');
+                    this.resetMsg = '重置中...';
+                    // 轮询等待完成
+                    await this.waitForReset();
                 } else {
                     this.showToast(data.message || '恢复完成', 'success');
                     this.resetMsg = data.message || '恢复完成';
                     setTimeout(() => { this.loadSystemOverview(); this.resetMsg = ''; }, 3000);
                 }
             }
+        },
+
+        async waitForReset() {
+            for (let i = 0; i < 60; i++) {
+                await new Promise(r => setTimeout(r, 2000));
+                const ov = await this.api('/disk/overview');
+                if (!ov) continue;
+                const d = ov.overview || ov;
+                // 重置完成标志：无存储池，有可用磁盘
+                if (!d.pools || d.pools.length === 0) {
+                    this.showToast('恢复出厂设置完成', 'success');
+                    this.resetMsg = '恢复出厂设置完成';
+                    setTimeout(() => { location.reload(); }, 2000);
+                    return;
+                }
+                this.resetMsg = '重置中... (' + (i + 1) * 2 + 's)';
+            }
+            this.resetMsg = '重置超时，请刷新页面查看';
+            this.showToast('重置可能仍在进行中，请刷新页面查看', 'error');
         },
 
         // Backup management
