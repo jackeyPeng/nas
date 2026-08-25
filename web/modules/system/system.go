@@ -25,6 +25,7 @@ func RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/system/updates", common.AuthMiddleware(handleUpdates))
 	mux.HandleFunc("/api/system/services", common.AuthMiddleware(handleServices))
 	mux.HandleFunc("/api/system/reset", common.AuthMiddleware(handleReset))
+	mux.HandleFunc("/api/system/check", common.AuthMiddleware(handleSystemCheck))
 }
 
 // ═══════════════════════════════════════
@@ -893,4 +894,13 @@ func getDataDiskDevices() []string {
 		result = append(result, dev)
 	}
 	return result
+}
+
+// ═══════════════════════════════════════
+// 系统配置检查 API
+// ═══════════════════════════════════════
+
+func handleSystemCheck(w http.ResponseWriter, r *http.Request) {
+	report := RunSystemCheck()
+	common.JSONResponse(w, report)
 }
