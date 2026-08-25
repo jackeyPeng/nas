@@ -25,7 +25,7 @@ func RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/system/updates", common.AuthMiddleware(handleUpdates))
 	mux.HandleFunc("/api/system/services", common.AuthMiddleware(handleServices))
 	mux.HandleFunc("/api/system/reset", common.AuthMiddleware(handleReset))
-	mux.HandleFunc("/api/system/check", common.AuthMiddleware(handleSystemCheck))
+	mux.HandleFunc("/api/system/check", handleSystemCheck) // 公开接口，无需认证
 }
 
 // ═══════════════════════════════════════

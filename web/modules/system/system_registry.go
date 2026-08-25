@@ -370,7 +370,23 @@ func RefreshRegistry() RegistryReport {
 	}
 
 	// 六、面板状态文件 (4项)
-	checkFileState(30, "/opt/nas/data/folders.db", false, "已清理 (不存在)", "仍存在")
+	// 30. folders.db — 应存在但为空（面板自动重建）
+	if _, err := os.Stat("/opt/nas/data/folders.db"); err == nil {
+		var folderCount int
+		if db, err := sql.Open("sqlite", "/opt/nas/data/folders.db"); err == nil {
+			db.QueryRow("SELECT COUNT(*) FROM folders").Scan(&folderCount)
+			db.Close()
+			if folderCount == 0 {
+				updateItem(30, "pass", "已清空 (0 条记录)")
+			} else {
+				updateItem(30, "fail", fmt.Sprintf("仍有 %d 条记录", folderCount))
+			}
+		} else {
+			updateItem(30, "pass", "数据库不存在")
+		}
+	} else {
+		updateItem(30, "pass", "数据库不存在")
+	}
 	checkFileState(31, "/opt/nas/data/.last_reload", false, "已清理 (不存在)", "仍存在")
 	checkFileState(32, "/opt/nas/data/operations.db", false, "已清理 (不存在)", "仍存在")
 	checkFileState(33, "/etc/filebrowser/filebrowser.db", true, "存在", "不存在")
@@ -530,7 +546,7 @@ func ResetRegistryAfterFactoryReset() {
 		10: {"pass", "已清理 Z1 托管段"},
 		11: {"pass", "已清理 Z1 托管段"},
 		19: {"pass", "已清理 /data 挂载条目"},
-		30: {"pass", "已删除 folders.db"},
+		30: {"pass", "已清空 folders.db"},
 		31: {"pass", "已删除 .last_reload"},
 		32: {"pass", "已删除 operations.db"},
 		34: {"pass", "已删除所有 VG"},

@@ -528,16 +528,10 @@ echo "系统注册表检查 (46 项)"
 echo "========================================="
 # 等待面板启动
 sleep 3
-TOKEN=$(curl -s -X POST http://localhost:8090/api/login \
-    -d "username=$NAS_USER&password=$NAS_PASS" 2>/dev/null | \
-    python3 -c "import sys,json;print(json.load(sys.stdin).get('token',''))" 2>/dev/null)
-
-if [ -n "$TOKEN" ]; then
-    echo "正在刷新注册表..."
-    RESULT=$(curl -s -H "Authorization: Bearer $TOKEN" \
-        "http://localhost:8090/api/system/check?action=refresh" 2>/dev/null)
-    if [ -n "$RESULT" ]; then
-        echo "$RESULT" | python3 -c "
+echo "正在刷新注册表..."
+RESULT=$(curl -s "http://localhost:8090/api/system/check?action=refresh" 2>/dev/null)
+if [ -n "$RESULT" ]; then
+    echo "$RESULT" | python3 -c "
 import sys,json
 d=json.load(sys.stdin)
 total = d['total']
@@ -553,7 +547,6 @@ if failed > 0 or warn > 0:
             icon = '❌' if item['status']=='fail' else '⚠️'
             print(f'  {icon} [{item[\"id\"]:02d}] {item[\"name\"]}: {item[\"detail\"]}')
 " 2>/dev/null
-    fi
 else
     echo "  ⚠ 面板未就绪，跳过注册表检查"
 fi
