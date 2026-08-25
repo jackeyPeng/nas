@@ -813,6 +813,9 @@ func handleReset(w http.ResponseWriter, r *http.Request) {
 			nasUser = "root"
 		}
 		common.SudoExec("chown", "-R", nasUser+":"+nasUser, "/data")
+
+		// 更新注册表
+		ResetRegistryAfterFactoryReset()
 	}()
 
 	common.JSONResponse(w, map[string]interface{}{
@@ -901,6 +904,12 @@ func getDataDiskDevices() []string {
 // ═══════════════════════════════════════
 
 func handleSystemCheck(w http.ResponseWriter, r *http.Request) {
-	report := RunSystemCheck()
+	action := r.URL.Query().Get("action")
+	if action == "refresh" {
+		report := RefreshRegistry()
+		common.JSONResponse(w, report)
+		return
+	}
+	report := GetRegistry()
 	common.JSONResponse(w, report)
 }
