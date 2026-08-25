@@ -140,6 +140,7 @@ function nasPanel() {
             updates: {},
             services: []
         },
+        resetMsg: '',
         logsModal: false,
         logsService: '',
         logsContent: '',
@@ -1713,6 +1714,27 @@ function nasPanel() {
             if (data) {
                 this.showToast(data.message || `${actionText[action]}成功`, 'success');
                 this.loadSystemOverview();
+            }
+        },
+
+        async resetSystem() {
+            if (!confirm('⚠️ 确定恢复出厂设置？\n\n此操作将：\n- 销毁所有存储配置（LVM/RAID/磁盘签名）\n- 移除所有 Z1 托管共享（Samba + NFS）\n- 删除面板数据库\n- 恢复为出厂状态\n- 数据文件将丢失！\n\n当前配置会自动备份到 /data/backups/')) return;
+            if (!confirm('⚠️ 最终确认：此操作不可撤销！\n\n所有存储配置和数据将被清除。\n确定继续？')) return;
+            this.resetMsg = '正在恢复...';
+            const data = await this.api('/system/reset', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'confirm=yes'
+            });
+            if (data) {
+                if (data.error) {
+                    this.showToast(data.error, 'error');
+                    this.resetMsg = '失败: ' + data.error;
+                } else {
+                    this.showToast(data.message || '恢复完成', 'success');
+                    this.resetMsg = data.message || '恢复完成';
+                    setTimeout(() => { this.loadSystemOverview(); this.resetMsg = ''; }, 3000);
+                }
             }
         },
 

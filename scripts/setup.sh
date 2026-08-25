@@ -165,11 +165,26 @@ echo "  ✓ 目录结构创建完成（含 /data/system 系统盘共享目录）
 # ==================== [3/9] 配置 Samba ====================
 echo ""
 echo "[3/9] 配置 Samba..."
+
+# 提取旧的 Z1 托管共享（如果存在）
+Z1_SAMBA_SHARES=""
+if [ -f /etc/samba/smb.conf ]; then
+    Z1_SAMBA_SHARES=$(sed -n '/# === Z1 MANAGED SHARES START ===/,/# === Z1 MANAGED SHARES END ===/p' /etc/samba/smb.conf 2>/dev/null)
+fi
+
 if [ -f "$NAS_DIR/configs/smb.conf" ]; then
     sed "s/__NAS_USER__/$NAS_USER/g" "$NAS_DIR/configs/smb.conf" > /etc/samba/smb.conf
 else
     echo "  警告: 未找到 $NAS_DIR/configs/smb.conf，使用默认配置"
 fi
+
+# 追加 Z1 托管共享
+if [ -n "$Z1_SAMBA_SHARES" ]; then
+    echo "" >> /etc/samba/smb.conf
+    echo "$Z1_SAMBA_SHARES" >> /etc/samba/smb.conf
+    echo "  ✓ 已保留 Z1 托管共享 ($(echo "$Z1_SAMBA_SHARES" | grep -c '^\[') 个共享)"
+fi
+
 # 设置系统用户密码
 echo "$NAS_USER:$NAS_PASS" | chpasswd
 (echo "$NAS_PASS"; echo "$NAS_PASS") | smbpasswd -a "$NAS_USER" -s
@@ -184,6 +199,13 @@ echo "[4/9] 配置 NFS..."
 if [ -f "$NAS_DIR/configs/nfs.conf" ]; then
     cp "$NAS_DIR/configs/nfs.conf" /etc/nfs.conf
 fi
+
+# 提取旧的 Z1 托管 NFS 导出（如果存在）
+Z1_NFS_EXPORTS=""
+if [ -f /etc/exports ]; then
+    Z1_NFS_EXPORTS=$(sed -n '/# === Z1 MANAGED SHARES START ===/,/# === Z1 MANAGED SHARES END ===/p' /etc/exports 2>/dev/null)
+fi
+
 if [ -f "$NAS_DIR/configs/exports" ]; then
     cp "$NAS_DIR/configs/exports" /etc/exports
 else
@@ -194,6 +216,13 @@ $DATA_DIR/documents 192.168.0.0/16(rw,sync,no_subtree_check,no_root_squash)
 $DATA_DIR/photos    192.168.0.0/16(rw,sync,no_subtree_check,no_root_squash)
 $DATA_DIR/backups   192.168.0.0/16(rw,sync,no_subtree_check,no_root_squash)
 EXPEOF
+fi
+
+# 追加 Z1 托管 NFS 导出
+if [ -n "$Z1_NFS_EXPORTS" ]; then
+    echo "" >> /etc/exports
+    echo "$Z1_NFS_EXPORTS" >> /etc/exports
+    echo "  ✓ 已保留 Z1 托管 NFS 导出"
 fi
 exportfs -a
 systemctl enable nfs-kernel-server

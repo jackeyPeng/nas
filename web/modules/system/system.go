@@ -5,8 +5,11 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"nas-panel/common"
 )
@@ -20,6 +23,7 @@ func RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/system/sysctl", common.AuthMiddleware(handleSysctl))
 	mux.HandleFunc("/api/system/updates", common.AuthMiddleware(handleUpdates))
 	mux.HandleFunc("/api/system/services", common.AuthMiddleware(handleServices))
+	mux.HandleFunc("/api/system/reset", common.AuthMiddleware(handleReset))
 }
 
 // ═══════════════════════════════════════
@@ -187,21 +191,21 @@ func handleHostname(w http.ResponseWriter, r *http.Request) {
 // ═══════════════════════════════════════
 
 type SSHConfig struct {
-	Port              int  `json:"port"`
-	PermitRootLogin   bool `json:"permit_root_login"`
-	PasswordAuth      bool `json:"password_auth"`
-	PubkeyAuth        bool `json:"pubkey_auth"`
-	MaxAuthTries      int  `json:"max_auth_tries"`
+	Port               int  `json:"port"`
+	PermitRootLogin    bool `json:"permit_root_login"`
+	PasswordAuth       bool `json:"password_auth"`
+	PubkeyAuth         bool `json:"pubkey_auth"`
+	MaxAuthTries       int  `json:"max_auth_tries"`
 	AllowTcpForwarding bool `json:"allow_tcp_forwarding"`
 }
 
 func getSSHConfig() SSHConfig {
 	cfg := SSHConfig{
-		Port:              22,
-		PermitRootLogin:   true,
-		PasswordAuth:      true,
-		PubkeyAuth:        true,
-		MaxAuthTries:      6,
+		Port:               22,
+		PermitRootLogin:    true,
+		PasswordAuth:       true,
+		PubkeyAuth:         true,
+		MaxAuthTries:       6,
 		AllowTcpForwarding: true,
 	}
 
@@ -389,11 +393,11 @@ func handleSysctl(w http.ResponseWriter, r *http.Request) {
 
 		// Whitelist allowed keys
 		allowed := map[string]bool{
-			"vm.swappiness":              true,
-			"vm.dirty_ratio":             true,
-			"vm.dirty_background_ratio":  true,
-			"net.core.somaxconn":         true,
-			"fs.file-max":                true,
+			"vm.swappiness":             true,
+			"vm.dirty_ratio":            true,
+			"vm.dirty_background_ratio": true,
+			"net.core.somaxconn":        true,
+			"fs.file-max":               true,
 		}
 		if !allowed[key] {
 			http.Error(w, `{"error":"不允许修改此参数"}`, http.StatusForbidden)
@@ -614,4 +618,267 @@ func handleServices(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+}
+
+// ═══════════════════════════════════════
+// 恢复出厂设置
+// ═══════════════════════════════════════
+
+func handleReset(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	confirm := r.FormValue("confirm")
+	if confirm != "yes" {
+		http.Error(w, `{"error":"请加 confirm=yes 确认重置"}`, http.StatusBadRequest)
+		return
+	}
+
+	steps := []string{}
+
+	// 1. 备份当前配置
+	backupDir := "/data/backups"
+	common.SudoExec("mkdir", "-p", backupDir)
+	timestamp := time.Now().Format("20060102-150405")
+	for _, f := range []string{"/etc/samba/smb.conf", "/etc/exports", "/etc/nfs.conf", "/etc/vsftpd.conf", "/etc/fstab", "/etc/mdadm/mdadm.conf"} {
+		common.SudoExec("cp", f, backupDir+"/"+filepath.Base(f)+".reset-"+timestamp)
+	}
+	steps = append(steps, "已备份当前配置到 /data/backups/")
+
+	// 2. 卸载所有数据目录
+	dataMounts := getDataMounts()
+	for _, m := range dataMounts {
+		mount := m["mount"]
+		if mount == "/data" || isDataNasMount(mount) {
+			common.SudoExec("umount", "-l", mount)
+		}
+	}
+	steps = append(steps, "卸载数据目录")
+
+	// 3. 清理 fstab
+	fstabData, _ := common.SudoOutput("cat", "/etc/fstab")
+	if fstabData != "" {
+		lines := strings.Split(fstabData, "\n")
+		var newLines []string
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+				newLines = append(newLines, line)
+				continue
+			}
+			fields := strings.Fields(trimmed)
+			if len(fields) >= 2 {
+				mountPoint := fields[1]
+				if mountPoint == "/data" || isDataNasMount(mountPoint) {
+					continue
+				}
+			}
+			newLines = append(newLines, line)
+		}
+		content := strings.Join(newLines, "\n")
+		if content != fstabData {
+			common.SafeWriteFile("/etc/fstab", content)
+		}
+	}
+	steps = append(steps, "清理 fstab")
+
+	// 4. 删除 LVM（逻辑卷 → 卷组 → 物理卷）
+	vgsOut, _ := common.SudoOutput("/usr/sbin/vgs", "--noheadings", "-o", "vg_name")
+	vgsOut = strings.TrimSpace(vgsOut)
+	if vgsOut != "" {
+		for _, vgName := range strings.Fields(vgsOut) {
+			vgName = strings.TrimSpace(vgName)
+			if vgName == "" {
+				continue
+			}
+			lvsOut, _ := common.SudoOutput("/usr/sbin/lvs", "--noheadings", "-o", "lv_name", vgName)
+			for _, lvName := range strings.Fields(lvsOut) {
+				common.SudoExec("/usr/sbin/lvremove", "-f", "/dev/"+vgName+"/"+lvName)
+			}
+			common.SudoExec("/usr/sbin/vgremove", "-f", vgName)
+		}
+	}
+	pvsOut, _ := common.SudoOutput("/usr/sbin/pvs", "--noheadings", "-o", "pv_name")
+	for _, pvName := range strings.Fields(pvsOut) {
+		if strings.HasPrefix(pvName, "/dev/") {
+			common.SudoExec("/usr/sbin/pvremove", "-f", pvName)
+		}
+	}
+	steps = append(steps, "删除 LVM 卷组和物理卷")
+
+	// 5. 停止 RAID 并清除超级块
+	mdMatches, _ := filepath.Glob("/dev/md[0-9]*")
+	mdRe := regexp.MustCompile(`^/dev/md\d+$`)
+	for _, dev := range mdMatches {
+		if mdRe.MatchString(dev) {
+			common.SudoExec("/usr/sbin/mdadm", "--stop", dev)
+		}
+	}
+	// 清除所有数据盘上的 RAID 超级块
+	dataDisks := getDataDiskDevices()
+	for _, dev := range dataDisks {
+		common.SudoExec("/usr/sbin/mdadm", "--zero-superblock", dev)
+	}
+	common.SafeWriteFile("/etc/mdadm/mdadm.conf", "")
+	common.SudoExec("update-initramfs", "-u")
+	steps = append(steps, "清除 RAID 配置")
+
+	// 6. 清除磁盘签名
+	for _, dev := range dataDisks {
+		common.SudoExec("/usr/sbin/wipefs", "-a", dev)
+	}
+	steps = append(steps, "清除磁盘签名")
+
+	// 7. 删除面板数据库
+	common.SudoExec("rm", "-f", "/opt/nas/data/folders.db")
+	steps = append(steps, "删除面板数据库")
+
+	// 8. 恢复 Samba 配置（移除 Z1 托管共享，保留默认）
+	smbConf, _ := common.SudoOutput("cat", "/etc/samba/smb.conf")
+	lines := strings.Split(smbConf, "\n")
+	var newSmb []string
+	skip := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "# === Z1 MANAGED SHARES START ===" {
+			skip = true
+			continue
+		}
+		if trimmed == "# === Z1 MANAGED SHARES END ===" && skip {
+			skip = false
+			continue
+		}
+		if !skip {
+			newSmb = append(newSmb, line)
+		}
+	}
+	for len(newSmb) > 0 && strings.TrimSpace(newSmb[len(newSmb)-1]) == "" {
+		newSmb = newSmb[:len(newSmb)-1]
+	}
+	common.SafeWriteFile("/etc/samba/smb.conf", strings.Join(newSmb, "\n")+"\n")
+	common.SudoExec("systemctl", "reset-failed", "smbd", "nmbd")
+	common.SudoExec("systemctl", "restart", "smbd", "nmbd")
+	steps = append(steps, "Samba 已恢复默认配置")
+
+	// 9. 恢复 NFS exports（移除 Z1 托管导出）
+	exports, _ := common.SudoOutput("cat", "/etc/exports")
+	lines = strings.Split(exports, "\n")
+	var newExports []string
+	skip = false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "# === Z1 MANAGED SHARES START ===" {
+			skip = true
+			continue
+		}
+		if trimmed == "# === Z1 MANAGED SHARES END ===" && skip {
+			skip = false
+			continue
+		}
+		if !skip {
+			newExports = append(newExports, line)
+		}
+	}
+	for len(newExports) > 0 && strings.TrimSpace(newExports[len(newExports)-1]) == "" {
+		newExports = newExports[:len(newExports)-1]
+	}
+	common.SafeWriteFile("/etc/exports", strings.Join(newExports, "\n")+"\n")
+	common.SudoExec("exportfs", "-a")
+	common.SudoExec("systemctl", "reset-failed", "nfs-kernel-server")
+	common.SudoExec("systemctl", "restart", "nfs-kernel-server")
+	steps = append(steps, "NFS 已恢复默认配置")
+
+	// 10. 重建 /data 目录
+	common.SudoExec("mkdir", "-p", "/data")
+	nasUser, _ := common.ReadEnvFile(common.GetEnvFilePath(), "NAS_USER")
+	if nasUser == "" {
+		nasUser = os.Getenv("NAS_USER")
+	}
+	if nasUser == "" {
+		nasUser = "root"
+	}
+	common.SudoExec("chown", "-R", nasUser+":"+nasUser, "/data")
+	steps = append(steps, "重建 /data 目录")
+
+	common.JSONResponse(w, map[string]interface{}{
+		"message": fmt.Sprintf("恢复出厂设置完成，共 %d 步", len(steps)),
+		"steps":   steps,
+	})
+}
+
+// getDataMounts returns mounts under /data from df
+func getDataMounts() []map[string]string {
+	var mounts []map[string]string
+	out, _ := common.ExecOutput("df", "-h", "--output=source,size,used,avail,pcent,target")
+	for _, line := range strings.Split(out, "\n")[1:] {
+		line = strings.TrimSpace(line)
+		if line == "" || !strings.Contains(line, "/data") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) >= 6 {
+			mounts = append(mounts, map[string]string{
+				"device":  fields[0],
+				"size":    fields[1],
+				"used":    fields[2],
+				"avail":   fields[3],
+				"percent": fields[4],
+				"mount":   fields[5],
+			})
+		}
+	}
+	return mounts
+}
+
+// isDataNasMount checks if a path matches /data/nasN pattern
+func isDataNasMount(path string) bool {
+	matched, _ := regexp.MatchString(`^/data/nas\d+$`, path)
+	return matched
+}
+
+// getDataDiskDevices returns non-system block devices (excludes sr0, loop, ram, zram, and root disk)
+func getDataDiskDevices() []string {
+	var result []string
+	// Use lsblk to list all disks
+	out, _ := common.ExecOutput("lsblk", "-nd", "-o", "NAME,TYPE,MOUNTPOINT")
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		name := fields[0]
+		devType := fields[1]
+
+		// Skip non-disk devices
+		if devType != "disk" {
+			continue
+		}
+		// Skip virtual devices
+		if name == "sr0" || strings.HasPrefix(name, "loop") || strings.HasPrefix(name, "ram") || strings.HasPrefix(name, "zram") {
+			continue
+		}
+		dev := "/dev/" + name
+
+		// Skip system disk: check if any partition of this disk is mounted as / or /boot
+		partOut, _ := common.ExecOutput("lsblk", "-nlo", "MOUNTPOINT", dev)
+		isSystem := false
+		for _, mp := range strings.Split(partOut, "\n") {
+			mp = strings.TrimSpace(mp)
+			if mp == "/" || mp == "/boot" || mp == "/boot/efi" {
+				isSystem = true
+				break
+			}
+		}
+		if isSystem {
+			continue
+		}
+		result = append(result, dev)
+	}
+	return result
 }

@@ -1800,6 +1800,19 @@
                         </template>
                     </div>
                 </div>
+
+                <!-- 恢复出厂设置 -->
+                <div style="background:#fff5f5;border:2px solid #dc2626;border-radius:8px;padding:16px;margin-bottom:12px">
+                    <h3 style="margin-top:0;margin-bottom:8px;font-size:15px;color:#dc2626">⚠️ 恢复出厂设置</h3>
+                    <p style="color:#991b1b;font-size:13px;margin-bottom:12px">
+                        此操作将<strong>销毁所有存储配置</strong>（LVM卷组、RAID阵列、磁盘签名）并移除所有 Z1 托管共享（Samba + NFS），恢复为出厂状态。<br>
+                        当前配置会自动备份到 /data/backups/，<strong>数据文件将丢失</strong>，请确认已备份重要数据。
+                    </p>
+                    <button class="btn btn-danger" @click="resetSystem()" style="background:#dc2626;color:white;border:none;font-weight:600">
+                        🔄 恢复出厂设置
+                    </button>
+                    <span x-show="resetMsg" x-text="resetMsg" style="margin-left:12px;font-size:13px;color:#991b1b"></span>
+                </div>
             </div>
 
 
