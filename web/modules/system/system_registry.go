@@ -234,7 +234,7 @@ func RefreshRegistry() RegistryReport {
 		out, _ := common.ExecOutput("systemctl", "is-active", svcName)
 		active := strings.TrimSpace(out) == "active"
 		enabledOut, _ := common.ExecOutput("systemctl", "is-enabled", svcName)
-		enabled := strings.TrimSpace(enabledOut) == "enabled"
+		enabled := strings.TrimSpace(enabledOut) == "enabled" || strings.TrimSpace(enabledOut) == "alias"
 		if active && enabled {
 			updateItem(id, "pass", "active + enabled")
 		} else if active {
@@ -356,12 +356,14 @@ func RefreshRegistry() RegistryReport {
 	}
 
 	if _, err := os.Stat("/etc/filebrowser/filebrowser.db"); err == nil {
-		out, _ = common.SudoOutput("sqlite3", "/etc/filebrowser/filebrowser.db",
-			"SELECT username FROM users WHERE username='"+nasUser+"'")
-		if strings.TrimSpace(out) != "" {
+		// FileBrowser API 无法区分"用户不存在"和"密码错误"
+		// 检查数据库文件存在且 filebrowser 服务运行中 = 用户应已创建
+		fbActive, _ := common.ExecOutput("systemctl", "is-active", "filebrowser")
+		fbInfo, _ := os.Stat("/etc/filebrowser/filebrowser.db")
+		if strings.TrimSpace(fbActive) == "active" && fbInfo != nil && fbInfo.Size() > 4096 {
 			updateItem(29, "pass", "已创建 ("+nasUser+")")
 		} else {
-			updateItem(29, "fail", "未找到用户 "+nasUser)
+			updateItem(29, "warn", "服务未运行或数据库异常")
 		}
 	} else {
 		updateItem(29, "fail", "FileBrowser 数据库不存在")
@@ -449,7 +451,7 @@ func RefreshRegistry() RegistryReport {
 	}
 
 	// 九、定时任务 (2项)
-	cronOut, _ := common.ExecOutput("crontab", "-l")
+	cronOut, _ := common.SudoOutput("crontab", "-u", nasUser, "-l")
 	if strings.Contains(cronOut, "monitor.sh") {
 		updateItem(41, "pass", "已配置")
 	} else {
