@@ -114,17 +114,17 @@ func seedFromFileSystem(db *sql.DB) {
 
 // FolderMeta represents a folder's metadata stored in SQLite
 type FolderMeta struct {
-	ID          int    `json:"id"`
-	Name        string `json:"name"`
-	Path        string `json:"path"`
-	Pool        string `json:"pool"`
-	Permission  string `json:"permission"`
-	ValidUsers  string `json:"valid_users"`
-	RecycleBin  bool   `json:"recycle_bin"`
-	SambaShare  bool   `json:"samba_share"`
-	NFSExport   bool   `json:"nfs_export"`
-	QuotaGB     int    `json:"quota_gb"`
-	CreatedAt   string `json:"created_at"`
+	ID         int    `json:"id"`
+	Name       string `json:"name"`
+	Path       string `json:"path"`
+	Pool       string `json:"pool"`
+	Permission string `json:"permission"`
+	ValidUsers string `json:"valid_users"`
+	RecycleBin bool   `json:"recycle_bin"`
+	SambaShare bool   `json:"samba_share"`
+	NFSExport  bool   `json:"nfs_export"`
+	QuotaGB    int    `json:"quota_gb"`
+	CreatedAt  string `json:"created_at"`
 }
 
 // SyncFolderMeta ensures the metadata table matches the file system
@@ -442,17 +442,28 @@ func CheckConfigConsistency() ConfigIssues {
 	// 3. Check: smb.conf managed section matches metadata
 	smbConf, _ := common.SudoOutput("cat", "/etc/samba/smb.conf")
 	expectedSamba := generateManagedBlock(metas, "samba")
-	if !strings.Contains(smbConf, managedStart) {
+	hasSambaBlock := strings.Contains(smbConf, managedStart)
+	if len(metas) > 0 && !hasSambaBlock {
 		issues.HasIssues = true
 		issues.Issues = append(issues.Issues, "Samba 配置缺少 Z1 托管段标记")
+	}
+	// If no managed folders but block still exists, flag as stale
+	if len(metas) == 0 && hasSambaBlock {
+		issues.HasIssues = true
+		issues.Issues = append(issues.Issues, "Samba 配置存在残留的 Z1 托管段标记（无托管文件夹）")
 	}
 
 	// 4. Check: exports managed section matches metadata
 	exports, _ := common.SudoOutput("cat", "/etc/exports")
 	expectedNFS := generateManagedBlock(metas, "nfs")
-	if !strings.Contains(exports, managedStart) {
+	hasNFSBlock := strings.Contains(exports, managedStart)
+	if len(metas) > 0 && !hasNFSBlock {
 		issues.HasIssues = true
 		issues.Issues = append(issues.Issues, "NFS 配置缺少 Z1 托管段标记")
+	}
+	if len(metas) == 0 && hasNFSBlock {
+		issues.HasIssues = true
+		issues.Issues = append(issues.Issues, "NFS 配置存在残留的 Z1 托管段标记（无托管文件夹）")
 	}
 
 	// 5. Check: services have loaded the latest config

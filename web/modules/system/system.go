@@ -745,8 +745,9 @@ func handleReset(w http.ResponseWriter, r *http.Request) {
 			common.SudoExec("/usr/sbin/wipefs", "-a", dev)
 		}
 
-		// 7. 删除面板数据库
+		// 7. 删除面板数据库和配置同步状态
 		common.SudoExec("rm", "-f", "/opt/nas/data/folders.db")
+		common.SudoExec("rm", "-f", "/opt/nas/data/.last_reload")
 
 		// 8. 恢复 Samba 配置
 		smbConf, _ := common.SudoOutput("cat", "/etc/samba/smb.conf")
