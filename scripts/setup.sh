@@ -175,7 +175,7 @@ echo "$NAS_USER:$NAS_PASS" | chpasswd
 (echo "$NAS_PASS"; echo "$NAS_PASS") | smbpasswd -a "$NAS_USER" -s
 smbpasswd -e "$NAS_USER"
 systemctl enable smbd nmbd
-systemctl restart smbd nmbd
+systemctl reset-failed smbd nmbd 2>/dev/null; systemctl restart smbd nmbd
 echo "  ✓ Samba 配置完成"
 
 # ==================== [4/9] 配置 NFS ====================
@@ -197,7 +197,7 @@ EXPEOF
 fi
 exportfs -a
 systemctl enable nfs-kernel-server
-systemctl restart nfs-kernel-server
+systemctl reset-failed nfs-kernel-server 2>/dev/null; systemctl restart nfs-kernel-server
 echo "  ✓ NFS 配置完成"
 
 # ==================== [5/9] 配置 FTP ====================
@@ -233,7 +233,7 @@ echo "$NAS_USER" > /etc/vsftpd.userlist
 touch /var/log/vsftpd.log
 chmod 640 /var/log/vsftpd.log
 systemctl enable vsftpd
-systemctl restart vsftpd
+systemctl reset-failed vsftpd 2>/dev/null; systemctl restart vsftpd
 echo "  ✓ FTP 配置完成"
 
 # ==================== [6/9] 配置 WebDAV ====================
@@ -262,7 +262,7 @@ WantedBy=multi-user.target
 WDEOF
 systemctl daemon-reload
 systemctl enable rclone-webdav
-systemctl restart rclone-webdav
+systemctl reset-failed rclone-webdav 2>/dev/null; systemctl restart rclone-webdav
 echo "  ✓ WebDAV 配置完成"
 
 # ==================== [7/9] 安装 FileBrowser ====================
@@ -320,7 +320,7 @@ WantedBy=multi-user.target
 FBEOF
 systemctl daemon-reload
 systemctl enable filebrowser
-systemctl restart filebrowser
+systemctl reset-failed filebrowser 2>/dev/null; systemctl restart filebrowser
 echo "  ✓ FileBrowser 配置完成"
 
 # ==================== [8/10] 配置 S3 对象存储 (rclone serve s3) ====================
@@ -369,7 +369,7 @@ S3SVC
 
 systemctl daemon-reload
 systemctl enable rclone-s3
-systemctl restart rclone-s3
+systemctl reset-failed rclone-s3 2>/dev/null; systemctl restart rclone-s3
 echo "  ✓ S3 对象存储配置完成 (rclone serve s3, 端口 9000)"
 echo "    bucket 列表: $DATA_DIR 下每个目录自动成为一个 bucket"
 echo "    访问方式: s3cmd --no-ssl --host=NAS_IP:9000 ls s3://shared/"
@@ -402,7 +402,7 @@ maxretry = 5
 JEOF
 fi
 systemctl enable fail2ban
-systemctl restart fail2ban
+systemctl reset-failed fail2ban 2>/dev/null; systemctl restart fail2ban
 
 ufw --force reset
 ufw default deny incoming
@@ -458,11 +458,11 @@ if [ -f "$NAS_DIR/configs/nas-panel.service" ]; then
 fi
 systemctl daemon-reload
 systemctl enable nas-panel
-systemctl restart nas-panel
+systemctl reset-failed nas-panel 2>/dev/null; systemctl restart nas-panel
 
 # 配置 sudo 免密权限（nas-panel 需要执行系统管理命令）
 SUDOERS_FILE="/etc/sudoers.d/nas-panel"
-echo "${NAS_USER} ALL=(ALL) NOPASSWD: /usr/bin/pdbedit, /opt/nas/scripts/add-user.sh, /opt/nas/scripts/remove-user.sh, /usr/sbin/smartctl, /usr/bin/chpasswd, /usr/bin/smbpasswd, /usr/bin/htpasswd, /bin/systemctl start *, /bin/systemctl stop *, /bin/systemctl restart *, /bin/systemctl enable *, /bin/systemctl disable *, /usr/sbin/ufw status, /usr/sbin/ufw allow *, /usr/sbin/ufw deny *, /usr/sbin/exportfs, /usr/sbin/smartctl -H *, /usr/sbin/smartctl -a *, /usr/bin/tee /opt/nas/.env, /usr/bin/tee -a /etc/samba/smb.conf, /usr/bin/tee /etc/samba/smb.conf, /usr/bin/tee /etc/vsftpd.userlist, /usr/bin/tee -a /etc/vsftpd.userlist, /usr/bin/tee /etc/exports, /usr/bin/tee /etc/nfs.conf, /usr/bin/tee /etc/fail2ban/jail.local, /usr/bin/tee /etc/rclone-htpasswd, /usr/bin/journalctl -p err -n * --no-pager --since *, /usr/sbin/pvs --noheadings *, /usr/sbin/vgs --noheadings *, /usr/sbin/lvs --noheadings *, /usr/sbin/fdisk -l, /usr/sbin/mkfs.ext4 -F *, /usr/sbin/mkfs.xfs -f *, /usr/sbin/mkfs.btrfs *, /bin/mount *, /bin/umount *, /bin/mkdir -p /data/*, /bin/mkdir -p /data, /bin/cat /etc/samba/smb.conf, /bin/cat /etc/vsftpd.userlist, /bin/cat /etc/exports, /bin/cat /etc/nfs.conf, /bin/cat /etc/fail2ban/jail.local, /bin/cat /etc/rclone-htpasswd, /opt/nas/scripts/backup-config.sh, /opt/nas/scripts/restore-config.sh, /bin/rm -f /data/backups/*, /usr/bin/blkid -s UUID -o value *, /usr/bin/findmnt -n -o TARGET *, /usr/bin/tee /etc/fstab, /usr/bin/tee -a /etc/samba/smb.conf, /bin/chown -R *, /sbin/pvcreate -f *, /sbin/vgcreate -f *, /sbin/lvcreate *, /sbin/vgextend *, /sbin/lvextend *, /sbin/resize2fs *, /sbin/xfs_growfs *, /sbin/pvs --noheadings *, /sbin/vgs --noheadings *, /sbin/lvs --noheadings *, /sbin/pvremove -f *, /sbin/vgremove -f *, /sbin/lvremove -f *, /usr/sbin/wipefs *, /usr/sbin/mdadm *, /usr/sbin/parted *, /bin/ls *" > "$SUDOERS_FILE"
+echo "${NAS_USER} ALL=(ALL) NOPASSWD: /usr/bin/pdbedit, /opt/nas/scripts/add-user.sh, /opt/nas/scripts/remove-user.sh, /usr/sbin/smartctl, /usr/bin/chpasswd, /usr/bin/smbpasswd, /usr/bin/htpasswd, /bin/systemctl start *, /bin/systemctl stop *, /bin/systemctl restart *, /bin/systemctl reset-failed *, /bin/systemctl enable *, /bin/systemctl disable *, /usr/sbin/ufw status, /usr/sbin/ufw allow *, /usr/sbin/ufw deny *, /usr/sbin/exportfs, /usr/sbin/smartctl -H *, /usr/sbin/smartctl -a *, /usr/bin/tee /opt/nas/.env, /usr/bin/tee -a /etc/samba/smb.conf, /usr/bin/tee /etc/samba/smb.conf, /usr/bin/tee /etc/vsftpd.userlist, /usr/bin/tee -a /etc/vsftpd.userlist, /usr/bin/tee /etc/exports, /usr/bin/tee /etc/nfs.conf, /usr/bin/tee /etc/fail2ban/jail.local, /usr/bin/tee /etc/rclone-htpasswd, /usr/bin/journalctl -p err -n * --no-pager --since *, /usr/sbin/pvs --noheadings *, /usr/sbin/vgs --noheadings *, /usr/sbin/lvs --noheadings *, /usr/sbin/fdisk -l, /usr/sbin/mkfs.ext4 -F *, /usr/sbin/mkfs.xfs -f *, /usr/sbin/mkfs.btrfs *, /bin/mount *, /bin/umount *, /bin/mkdir -p /data/*, /bin/mkdir -p /data, /bin/cat /etc/samba/smb.conf, /bin/cat /etc/vsftpd.userlist, /bin/cat /etc/exports, /bin/cat /etc/nfs.conf, /bin/cat /etc/fail2ban/jail.local, /bin/cat /etc/rclone-htpasswd, /opt/nas/scripts/backup-config.sh, /opt/nas/scripts/restore-config.sh, /bin/rm -f /data/backups/*, /usr/bin/blkid -s UUID -o value *, /usr/bin/findmnt -n -o TARGET *, /usr/bin/tee /etc/fstab, /usr/bin/tee -a /etc/samba/smb.conf, /bin/chown -R *, /sbin/pvcreate -f *, /sbin/vgcreate -f *, /sbin/lvcreate *, /sbin/vgextend *, /sbin/lvextend *, /sbin/resize2fs *, /sbin/xfs_growfs *, /sbin/pvs --noheadings *, /sbin/vgs --noheadings *, /sbin/lvs --noheadings *, /sbin/pvremove -f *, /sbin/vgremove -f *, /sbin/lvremove -f *, /usr/sbin/wipefs *, /usr/sbin/mdadm *, /usr/sbin/parted *, /bin/ls *" > "$SUDOERS_FILE"
 chmod 440 "$SUDOERS_FILE"
 visudo -cf "$SUDOERS_FILE" 2>/dev/null || { echo "  错误: sudoers 语法检查失败"; rm -f "$SUDOERS_FILE"; }
 echo "  ✓ NAS Web 管理面板配置完成"

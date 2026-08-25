@@ -54,6 +54,16 @@ func RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/disk/folders/create", common.AuthMiddleware(handleCreateFolder))
 	mux.HandleFunc("/api/disk/folders/delete", common.AuthMiddleware(handleDeleteFolder))
 	mux.HandleFunc("/api/disk/folders/permission", common.AuthMiddleware(handleFolderPermission))
+	// Config sync
+	mux.HandleFunc("/api/disk/config/check", common.AuthMiddleware(handleConfigCheck))
+	mux.HandleFunc("/api/disk/config/sync", common.AuthMiddleware(handleConfigSync))
+	// Pending operations
+	mux.HandleFunc("/api/disk/pending", common.AuthMiddleware(handlePendingList))
+	mux.HandleFunc("/api/disk/pending/apply", common.AuthMiddleware(handlePendingApply))
+	mux.HandleFunc("/api/disk/pending/discard", common.AuthMiddleware(handlePendingDiscard))
+	// Operation logs
+	mux.HandleFunc("/api/disk/oplogs", common.AuthMiddleware(handleOperationLogs))
+	mux.HandleFunc("/api/disk/oplogs/clear", common.AuthMiddleware(handleOperationLogsClear))
 	// Wizard (simple storage setup)
 	mux.HandleFunc("/api/disk/wizard/status", common.AuthMiddleware(handleWizardStatus))
 	// Wizard setup (non-stream) deprecated — use setup-stream instead

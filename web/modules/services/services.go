@@ -114,7 +114,7 @@ func handleInstallServices(w http.ResponseWriter, r *http.Request) {
 		}
 
 		out, err = common.SudoExec("apt-get", "install", "-y", "-qq",
-			"samba", "nfs-kernel-server", "vsftpd", "rclone", "fail2ban")
+			"samba", "nfs-kernel-server", "vsftpd", "rclone", "fail2ban", "apache2-utils")
 		if err != nil {
 			http.Error(w, fmt.Sprintf(`{"error":"安装失败: %s"}`, out+": "+err.Error()), http.StatusInternalServerError)
 			return
@@ -123,30 +123,53 @@ func handleInstallServices(w http.ResponseWriter, r *http.Request) {
 
 		for _, svc := range []string{"smbd", "nmbd", "nfs-kernel-server", "vsftpd", "fail2ban"} {
 			common.SudoExec("systemctl", "enable", svc)
+			common.SudoExec("systemctl", "reset-failed", svc)
 			common.SudoExec("systemctl", "start", svc)
 			steps = append(steps, svc+" 已启动")
 		}
 
-		// WebDAV + S3
-		common.SudoExec("sh", "-c", "cat > /etc/systemd/system/rclone-webdav.service << 'UNIT'\n[Unit]\nDescription=Rclone WebDAV Server\nAfter=network.target\n[Service]\nType=simple\nExecStart=/usr/bin/rclone serve webdav /data --addr :8080\nRestart=on-failure\n[Install]\nWantedBy=multi-user.target\nUNIT")
-		common.SudoExec("sh", "-c", "cat > /etc/systemd/system/rclone-s3.service << 'UNIT'\n[Unit]\nDescription=Rclone S3 Server\nAfter=network.target\n[Service]\nType=simple\nExecStart=/usr/bin/rclone serve s3 /data --addr :9000\nRestart=on-failure\n[Install]\nWantedBy=multi-user.target\nUNIT")
-		common.SudoExec("systemctl", "daemon-reload")
-		common.SudoExec("systemctl", "enable", "rclone-webdav", "rclone-s3")
-		common.SudoExec("systemctl", "start", "rclone-webdav", "rclone-s3")
-		steps = append(steps, "WebDAV+S3 已启动")
+		// Read NAS user/pass from .env for WebDAV/S3 auth
+		nasUser, _ := common.ReadEnvFile(common.GetEnvFilePath(), "NAS_USER")
+		nasPass, _ := common.ReadEnvFile(common.GetEnvFilePath(), "NAS_PASS")
 
-		// FileBrowser
+		// WebDAV with htpasswd auth
+		common.SudoExec("bash", "-c", fmt.Sprintf("htpasswd -cb /etc/rclone-htpasswd %s %s", nasUser, nasPass))
+		common.SudoExec("sh", "-c", "cat > /etc/systemd/system/rclone-webdav.service << 'UNIT'\n[Unit]\nDescription=Rclone WebDAV Server\nAfter=network.target\n[Service]\nType=simple\nExecStart=/usr/bin/rclone serve webdav /data --addr :8080 --htpasswd /etc/rclone-htpasswd\nRestart=on-failure\n[Install]\nWantedBy=multi-user.target\nUNIT")
+		common.SudoExec("systemctl", "daemon-reload")
+		common.SudoExec("systemctl", "enable", "rclone-webdav")
+		common.SudoExec("systemctl", "reset-failed", "rclone-webdav")
+		common.SudoExec("systemctl", "start", "rclone-webdav")
+		steps = append(steps, "WebDAV 已启动")
+
+		// S3 with auth-key
+		common.SudoExec("sh", "-c", fmt.Sprintf("cat > /etc/systemd/system/rclone-s3.service << 'UNIT'\n[Unit]\nDescription=Rclone S3 Server\nAfter=network.target\n[Service]\nType=simple\nExecStart=/usr/bin/rclone serve s3 /data --addr :9000 --auth-key %s,%s\nRestart=on-failure\n[Install]\nWantedBy=multi-user.target\nUNIT", nasUser, nasPass))
+		common.SudoExec("systemctl", "enable", "rclone-s3")
+		common.SudoExec("systemctl", "reset-failed", "rclone-s3")
+		common.SudoExec("systemctl", "start", "rclone-s3")
+		steps = append(steps, "S3 已启动")
+
+		// FileBrowser (v2.63.17 with full init)
 		out, _ = common.SudoExec("bash", "-c", `
 			ARCH=$(uname -m | sed "s/x86_64/amd64/;s/aarch64/arm64/")
-			curl -fsSL --connect-timeout 10 --max-time 600 "https://github.com/filebrowser/filebrowser/releases/download/v2.32.0/linux-${ARCH}-filebrowser.tar.gz" -o /tmp/fb.tar.gz 2>/dev/null || \
-			curl -fsSL --connect-timeout 10 --max-time 30 "https://get.z1.sale/filebroswer/linux-${ARCH}-filebrowser.tar.gz" -o /tmp/fb.tar.gz 2>/dev/null || \
-			curl -fsSL --connect-timeout 10 --max-time 30 "https://file.abwen.com/control/filebrowser_v2.32.0_linux_${ARCH}.tar.gz" -o /tmp/fb.tar.gz 2>/dev/null
-			if [ -f /tmp/fb.tar.gz ]; then tar xzf /tmp/fb.tar.gz -C /usr/local/bin filebrowser && chmod +x /usr/local/bin/filebrowser && echo "ok"; fi
+			DL_ERR=""
+			curl -fsSL --connect-timeout 10 --max-time 600 "https://github.com/filebrowser/filebrowser/releases/download/v2.63.17/linux-${ARCH}-filebrowser.tar.gz" -o /tmp/fb.tar.gz 2>/tmp/fb.err || DL_ERR="github: $(cat /tmp/fb.err)"
+			if [ ! -f /tmp/fb.tar.gz ]; then
+				curl -fsSL --connect-timeout 10 --max-time 30 "https://get.z1.sale/filebroswer/linux-${ARCH}-filebrowser.tar.gz" -o /tmp/fb.tar.gz 2>/tmp/fb.err || DL_ERR="${DL_ERR}; get.z1.sale: $(cat /tmp/fb.err)"
+			fi
+			if [ ! -f /tmp/fb.tar.gz ]; then
+				curl -fsSL --connect-timeout 10 --max-time 30 "https://file.abwen.com/control/filebrowser_v2.63.17_linux_${ARCH}.tar.gz" -o /tmp/fb.tar.gz 2>/tmp/fb.err || DL_ERR="${DL_ERR}; file.abwen.com: $(cat /tmp/fb.err)"
+			fi
+			if [ -f /tmp/fb.tar.gz ]; then tar xzf /tmp/fb.tar.gz -C /usr/local/bin filebrowser && chmod +x /usr/local/bin/filebrowser && echo "ok"; else echo "FAIL:${DL_ERR}"; fi
 		`)
 		if strings.TrimSpace(out) == "ok" {
-			common.SudoExec("sh", "-c", "cat > /etc/systemd/system/filebrowser.service << 'UNIT'\n[Unit]\nDescription=FileBrowser\nAfter=network.target\n[Service]\nType=simple\nExecStart=/usr/local/bin/filebrowser -a :8081 -r /data\nRestart=on-failure\n[Install]\nWantedBy=multi-user.target\nUNIT")
+			common.SudoExec("mkdir", "-p", "/etc/filebrowser")
+			common.SudoExec("/usr/local/bin/filebrowser", "config", "init", "--database", "/etc/filebrowser/filebrowser.db")
+			common.SudoExec("/usr/local/bin/filebrowser", "config", "set", "--database", "/etc/filebrowser/filebrowser.db", "--address", "0.0.0.0", "--port", "8081", "--root", "/data", "--log", "/var/log/filebrowser.log")
+			common.SudoExec("/usr/local/bin/filebrowser", "users", "add", nasUser, nasPass, "--database", "/etc/filebrowser/filebrowser.db", "--perm.admin")
+			common.SudoExec("sh", "-c", "cat > /etc/systemd/system/filebrowser.service << 'UNIT'\n[Unit]\nDescription=FileBrowser\nAfter=network.target\n[Service]\nType=simple\nExecStart=/usr/local/bin/filebrowser --database /etc/filebrowser/filebrowser.db\nRestart=on-failure\n[Install]\nWantedBy=multi-user.target\nUNIT")
 			common.SudoExec("systemctl", "daemon-reload")
 			common.SudoExec("systemctl", "enable", "filebrowser")
+			common.SudoExec("systemctl", "reset-failed", "filebrowser")
 			common.SudoExec("systemctl", "start", "filebrowser")
 			steps = append(steps, "FileBrowser 已启动")
 		} else {
@@ -168,6 +191,7 @@ func installSingleService(name string) (string, error) {
 			return "", fmt.Errorf("samba install failed: %s", out)
 		}
 		common.SudoExec("systemctl", "enable", "smbd", "nmbd")
+		common.SudoExec("systemctl", "reset-failed", "smbd", "nmbd")
 		common.SudoExec("systemctl", "start", "smbd", "nmbd")
 		return "Samba 已安装并启动", nil
 
@@ -177,6 +201,7 @@ func installSingleService(name string) (string, error) {
 			return "", fmt.Errorf("nfs install failed: %s", out)
 		}
 		common.SudoExec("systemctl", "enable", "nfs-kernel-server")
+		common.SudoExec("systemctl", "reset-failed", "nfs-kernel-server")
 		common.SudoExec("systemctl", "start", "nfs-kernel-server")
 		return "NFS 已安装并启动", nil
 
@@ -186,17 +211,23 @@ func installSingleService(name string) (string, error) {
 			return "", fmt.Errorf("ftp install failed: %s", out)
 		}
 		common.SudoExec("systemctl", "enable", "vsftpd")
+		common.SudoExec("systemctl", "reset-failed", "vsftpd")
 		common.SudoExec("systemctl", "start", "vsftpd")
 		return "FTP 已安装并启动", nil
 
 	case "rclone-webdav":
-		out, err := common.SudoExec("apt-get", "install", "-y", "-qq", "rclone")
+		out, err := common.SudoExec("apt-get", "install", "-y", "-qq", "rclone", "apache2-utils")
 		if err != nil {
 			return "", fmt.Errorf("rclone install failed: %s", out)
 		}
-		common.SudoExec("sh", "-c", "cat > /etc/systemd/system/rclone-webdav.service << 'UNIT'\n[Unit]\nDescription=Rclone WebDAV Server\nAfter=network.target\n[Service]\nType=simple\nExecStart=/usr/bin/rclone serve webdav /data --addr :8080\nRestart=on-failure\n[Install]\nWantedBy=multi-user.target\nUNIT")
+		// Read NAS user/pass from .env
+		nasUser, _ := common.ReadEnvFile(common.GetEnvFilePath(), "NAS_USER")
+		nasPass, _ := common.ReadEnvFile(common.GetEnvFilePath(), "NAS_PASS")
+		common.SudoExec("bash", "-c", fmt.Sprintf("htpasswd -cb /etc/rclone-htpasswd %s %s", nasUser, nasPass))
+		common.SudoExec("sh", "-c", "cat > /etc/systemd/system/rclone-webdav.service << 'UNIT'\n[Unit]\nDescription=Rclone WebDAV Server\nAfter=network.target\n[Service]\nType=simple\nExecStart=/usr/bin/rclone serve webdav /data --addr :8080 --htpasswd /etc/rclone-htpasswd\nRestart=on-failure\n[Install]\nWantedBy=multi-user.target\nUNIT")
 		common.SudoExec("systemctl", "daemon-reload")
 		common.SudoExec("systemctl", "enable", "rclone-webdav")
+		common.SudoExec("systemctl", "reset-failed", "rclone-webdav")
 		common.SudoExec("systemctl", "start", "rclone-webdav")
 		return "WebDAV 已安装并启动", nil
 
@@ -205,36 +236,46 @@ func installSingleService(name string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("rclone install failed: %s", out)
 		}
-		common.SudoExec("sh", "-c", "cat > /etc/systemd/system/rclone-s3.service << 'UNIT'\n[Unit]\nDescription=Rclone S3 Server\nAfter=network.target\n[Service]\nType=simple\nExecStart=/usr/bin/rclone serve s3 /data --addr :9000\nRestart=on-failure\n[Install]\nWantedBy=multi-user.target\nUNIT")
+		nasUser, _ := common.ReadEnvFile(common.GetEnvFilePath(), "NAS_USER")
+		nasPass, _ := common.ReadEnvFile(common.GetEnvFilePath(), "NAS_PASS")
+		common.SudoExec("sh", "-c", fmt.Sprintf("cat > /etc/systemd/system/rclone-s3.service << 'UNIT'\n[Unit]\nDescription=Rclone S3 Server\nAfter=network.target\n[Service]\nType=simple\nExecStart=/usr/bin/rclone serve s3 /data --addr :9000 --auth-key %s,%s\nRestart=on-failure\n[Install]\nWantedBy=multi-user.target\nUNIT", nasUser, nasPass))
 		common.SudoExec("systemctl", "daemon-reload")
 		common.SudoExec("systemctl", "enable", "rclone-s3")
+		common.SudoExec("systemctl", "reset-failed", "rclone-s3")
 		common.SudoExec("systemctl", "start", "rclone-s3")
 		return "S3 已安装并启动", nil
 
 	case "filebrowser":
+		nasUser, _ := common.ReadEnvFile(common.GetEnvFilePath(), "NAS_USER")
+		nasPass, _ := common.ReadEnvFile(common.GetEnvFilePath(), "NAS_PASS")
 		out, _ := common.SudoExec("bash", "-c", `
 			ARCH=$(uname -m | sed "s/x86_64/amd64/;s/aarch64/arm64/")
 			DL_ERR=""
-			curl -fsSL --connect-timeout 10 --max-time 600 "https://github.com/filebrowser/filebrowser/releases/download/v2.32.0/linux-${ARCH}-filebrowser.tar.gz" -o /tmp/fb.tar.gz 2>/tmp/fb.err || DL_ERR="github: $(cat /tmp/fb.err)"
+			curl -fsSL --connect-timeout 10 --max-time 600 "https://github.com/filebrowser/filebrowser/releases/download/v2.63.17/linux-${ARCH}-filebrowser.tar.gz" -o /tmp/fb.tar.gz 2>/tmp/fb.err || DL_ERR="github: $(cat /tmp/fb.err)"
 			if [ ! -f /tmp/fb.tar.gz ]; then
 				curl -fsSL --connect-timeout 10 --max-time 30 "https://get.z1.sale/filebroswer/linux-${ARCH}-filebrowser.tar.gz" -o /tmp/fb.tar.gz 2>/tmp/fb.err || DL_ERR="${DL_ERR}; get.z1.sale: $(cat /tmp/fb.err)"
 			fi
 			if [ ! -f /tmp/fb.tar.gz ]; then
-				curl -fsSL --connect-timeout 10 --max-time 30 "https://file.abwen.com/control/filebrowser_v2.32.0_linux_${ARCH}.tar.gz" -o /tmp/fb.tar.gz 2>/tmp/fb.err || DL_ERR="${DL_ERR}; file.abwen.com: $(cat /tmp/fb.err)"
+				curl -fsSL --connect-timeout 10 --max-time 30 "https://file.abwen.com/control/filebrowser_v2.63.17_linux_${ARCH}.tar.gz" -o /tmp/fb.tar.gz 2>/tmp/fb.err || DL_ERR="${DL_ERR}; file.abwen.com: $(cat /tmp/fb.err)"
 			fi
 			if [ -f /tmp/fb.tar.gz ]; then tar xzf /tmp/fb.tar.gz -C /usr/local/bin filebrowser && chmod +x /usr/local/bin/filebrowser && echo "ok"; else echo "FAIL:${DL_ERR}"; fi
 		`)
 		if strings.TrimSpace(out) != "ok" {
-			// Include download error details
 			errMsg := "FileBrowser download failed"
 			if strings.HasPrefix(strings.TrimSpace(out), "FAIL:") {
 				errMsg = strings.TrimPrefix(strings.TrimSpace(out), "FAIL:")
 			}
 			return "", fmt.Errorf("%s", errMsg)
 		}
-		common.SudoExec("sh", "-c", "cat > /etc/systemd/system/filebrowser.service << 'UNIT'\n[Unit]\nDescription=FileBrowser\nAfter=network.target\n[Service]\nType=simple\nExecStart=/usr/local/bin/filebrowser -a :8081 -r /data\nRestart=on-failure\n[Install]\nWantedBy=multi-user.target\nUNIT")
+		// Initialize FileBrowser
+		common.SudoExec("mkdir", "-p", "/etc/filebrowser")
+		common.SudoExec("/usr/local/bin/filebrowser", "config", "init", "--database", "/etc/filebrowser/filebrowser.db")
+		common.SudoExec("/usr/local/bin/filebrowser", "config", "set", "--database", "/etc/filebrowser/filebrowser.db", "--address", "0.0.0.0", "--port", "8081", "--root", "/data", "--log", "/var/log/filebrowser.log")
+		common.SudoExec("/usr/local/bin/filebrowser", "users", "add", nasUser, nasPass, "--database", "/etc/filebrowser/filebrowser.db", "--perm.admin")
+		common.SudoExec("sh", "-c", "cat > /etc/systemd/system/filebrowser.service << 'UNIT'\n[Unit]\nDescription=FileBrowser\nAfter=network.target\n[Service]\nType=simple\nExecStart=/usr/local/bin/filebrowser --database /etc/filebrowser/filebrowser.db\nRestart=on-failure\n[Install]\nWantedBy=multi-user.target\nUNIT")
 		common.SudoExec("systemctl", "daemon-reload")
 		common.SudoExec("systemctl", "enable", "filebrowser")
+		common.SudoExec("systemctl", "reset-failed", "filebrowser")
 		common.SudoExec("systemctl", "start", "filebrowser")
 		return "FileBrowser 已安装并启动", nil
 
@@ -244,6 +285,7 @@ func installSingleService(name string) (string, error) {
 			return "", fmt.Errorf("fail2ban install failed: %s", out)
 		}
 		common.SudoExec("systemctl", "enable", "fail2ban")
+		common.SudoExec("systemctl", "reset-failed", "fail2ban")
 		common.SudoExec("systemctl", "start", "fail2ban")
 		return "Fail2ban 已安装并启动", nil
 

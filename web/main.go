@@ -126,7 +126,8 @@ func loggingMiddleware(next http.Handler) http.Handler {
 		path := r.URL.Path
 		if strings.HasPrefix(path, "/api/") {
 			action := classifyAction(r.Method, path)
-			common.LogAudit(username, action, r.Method, path, "", "success", ip)
+			detail := buildLogDetail(r)
+			common.LogAudit(username, action, r.Method, path, detail, "success", ip)
 		}
 	})
 }
@@ -195,6 +196,21 @@ func classifyAction(method, path string) string {
 	default:
 		return module
 	}
+}
+
+// buildLogDetail extracts human-readable detail from the request
+func buildLogDetail(r *http.Request) string {
+	if r.Method == "GET" {
+		return ""
+	}
+	r.ParseForm()
+	// Try common field names
+	for _, key := range []string{"name", "username", "path", "folder_name", "service", "pool"} {
+		if v := r.FormValue(key); v != "" {
+			return key + "=" + v
+		}
+	}
+	return ""
 }
 
 func handleLogin(w http.ResponseWriter, r *http.Request) {

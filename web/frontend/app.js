@@ -2,6 +2,7 @@ function nasPanel() {
     return {
         token: localStorage.getItem('nas_token') || '',
         page: 'dashboard',
+        navGroup: 'overview',
         loading: false,
         loginError: '',
         loginForm: { username: '', password: '' },
@@ -91,6 +92,13 @@ function nasPanel() {
         showAddFolder: false,
         showUserDropdown: false,
         showAccessFor: '',
+        configIssues: { has_issues: false, issues: [] },
+        pendingCount: 0,
+        operationLogs: [],
+        auditLogs: [],
+        auditLogTotal: 0,
+        auditLogPage: 0,
+        auditLogFilter: { action: '', days: 7 },
         folderForm: { pool: '', name: '', permission: 'readwrite', valid_users: [], recycle_bin: false, nfs: false, quota_gb: 0 },
         showFolderPerm: false,
         folderPermForm: { name: '', path: '', pool: '', permission: 'readwrite', valid_users: '', recycle_bin: false },
@@ -183,6 +191,7 @@ function nasPanel() {
                 const data = await res.json();
                 if (!res.ok && data.error) {
                     this.showToast(data.error, 'error');
+                    return null;
                 }
                 return data;
             }
@@ -231,6 +240,7 @@ function nasPanel() {
                 case 'system': this.loadSystemOverview(); break;
                 case 'backup': this.loadBackups(); break;
                 case 'rclone': this.loadRcloneStatus(); this.loadRcloneRemotes(); this.loadRcloneTasks(); this.loadRcloneLogs(); this.loadSharedDirs(); break;
+                case 'logs': this.loadAuditLogs(); break;
             }
         },
 
@@ -241,6 +251,9 @@ function nasPanel() {
             // Also load storage overview for disk bay diagram
             const sdata = await this.api('/disk/overview');
             if (sdata && sdata.overview) this.storageOverview = sdata.overview;
+            // Check config consistency
+            const cdata = await this.api('/disk/config/check');
+            if (cdata) this.configIssues = cdata;
             this.dashboardLoaded = true;
         },
 
@@ -1464,6 +1477,85 @@ function nasPanel() {
         },
 
         // Trigger scrub on a pool or all pools
+        async syncConfigs() {
+            if (!confirm('将根据当前文件夹状态重新生成所有服务配置，确定继续？')) return;
+            const data = await this.api('/disk/config/sync', { method: 'POST' });
+            if (data) {
+                this.showToast(data.message || '配置同步完成', 'success');
+                const cdata = await this.api('/disk/config/check');
+                if (cdata) this.configIssues = cdata;
+            }
+        },
+
+        async loadPendingOps() {
+            const data = await this.api('/disk/pending');
+            if (data) this.pendingCount = data.count || 0;
+        },
+
+        async applyPending() {
+            if (!confirm('确定要应用所有待处理的变更？\n\n这将执行创建/修改/删除操作并更新所有服务配置。')) return;
+            const data = await this.api('/disk/pending/apply', { method: 'POST' });
+            if (data) {
+                if (data.results) {
+                    this.showToast(data.results.join('\n'), 'success');
+                }
+                this.pendingCount = 0;
+                this.loadStorageOverview();
+                this.loadSharedFolders();
+            }
+        },
+
+        async discardPending() {
+            if (!confirm('确定要放弃所有待处理的变更？')) return;
+            const data = await this.api('/disk/pending/discard', { method: 'POST' });
+            if (data) {
+                this.showToast(data.message || '已清空', 'success');
+                this.pendingCount = 0;
+            }
+        },
+
+        async loadOperationLogs() {
+            const data = await this.api('/disk/oplogs?limit=100');
+            if (data) this.operationLogs = data.logs || [];
+        },
+
+        async clearOperationLogs() {
+            if (!confirm('确定要清空操作日志？')) return;
+            const data = await this.api('/disk/oplogs/clear', { method: 'POST' });
+            if (data) {
+                this.showToast(data.message || '日志已清空', 'success');
+                this.operationLogs = [];
+            }
+        },
+
+        async loadAuditLogs() {
+            const params = new URLSearchParams({
+                limit: '50',
+                offset: String(this.auditLogPage * 50),
+                days: String(this.auditLogFilter.days || 7)
+            });
+            if (this.auditLogFilter.action) params.set('action', this.auditLogFilter.action);
+            const data = await this.api('/logs?' + params.toString());
+            if (data) {
+                this.auditLogs = data.logs || [];
+                this.auditLogTotal = data.total || 0;
+            }
+        },
+
+        async clearAuditLogs() {
+            if (!confirm('确定要清空所有系统操作日志？')) return;
+            const data = await this.api('/logs/clear', { 
+                method: 'POST', 
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'confirm=yes' 
+            });
+            if (data) {
+                this.showToast(data.message || '日志已清空', 'success');
+                this.auditLogs = [];
+                this.auditLogTotal = 0;
+            }
+        },
+
         async scrubPool(pool) {
             const target = pool ? pool.device + ' (' + pool.display_name + ')' : '所有 RAID 阵列';
             if (!confirm(`确定对 ${target} 执行数据清理？\n\n清理过程会扫描所有数据块，期间性能可能略有下降。`)) return;

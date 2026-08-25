@@ -115,6 +115,13 @@ body {
     background: var(--primary-light); color: var(--primary);
     font-weight: 600; border-right: 3px solid var(--primary);
 }
+.nav-group {
+    padding: 10px var(--sp-5); cursor: pointer; transition: var(--transition);
+    font-size: var(--fs-sm); display: flex; align-items: center; gap: 8px;
+    color: var(--text-secondary); font-weight: 600; border-bottom: 1px solid var(--border-light);
+    user-select: none;
+}
+.nav-group:hover { background: var(--primary-bg); color: var(--primary); }
 .sidebar-footer { padding: var(--sp-4); border-top: 1px solid var(--border); }
 .content { flex: 1; margin-left: 220px; padding: var(--sp-6) var(--sp-8); }
 

@@ -39,33 +39,85 @@
                 <h2>🗄️ NAS</h2>
             </div>
             <ul class="nav">
-                <li :class="{active: page === 'dashboard'}" @click="navigate('dashboard')">
-                    <span>📊</span> 仪表盘
+                <!-- 总览 -->
+                <li class="nav-group" @click="navGroup = (navGroup === 'overview' ? '' : 'overview')">
+                    <span style="flex:1">📊 总览</span>
+                    <span style="font-size:10px;color:#94a3b8" x-text="navGroup==='overview' ? '▼' : '▶'"></span>
                 </li>
-                <li :class="{active: page === 'services'}" @click="navigate('services')">
-                    <span>⚙️</span> 服务管理
+                <template x-if="navGroup === 'overview'">
+                    <div>
+                        <li :class="{active: page === 'dashboard'}" @click="navigate('dashboard')">
+                            <span style="margin-left:20px">📈</span> 仪表盘
+                        </li>
+                        <li :class="{active: page === 'monitor'}" @click="navigate('monitor')">
+                            <span style="margin-left:20px">📡</span> 监控告警
+                        </li>
+                    </div>
+                </template>
+
+                <!-- 存储 -->
+                <li class="nav-group" @click="navGroup = (navGroup === 'storage' ? '' : 'storage')">
+                    <span style="flex:1">💾 存储</span>
+                    <span style="font-size:10px;color:#94a3b8" x-text="navGroup==='storage' ? '▼' : '▶'"></span>
                 </li>
-                <li :class="{active: page === 'users'}" @click="navigate('users')">
-                    <span>👥</span> 用户管理
+                <template x-if="navGroup === 'storage'">
+                    <div>
+                        <li :class="{active: page === 'diskmgmt'}" @click="navigate('diskmgmt')">
+                            <span style="margin-left:20px">💽</span> 存储管理
+                        </li>
+                        <li :class="{active: page === 'rclone'}" @click="navigate('rclone')">
+                            <span style="margin-left:20px">☁️</span> 远端同步
+                        </li>
+                    </div>
+                </template>
+
+                <!-- 访问控制 -->
+                <li class="nav-group" @click="navGroup = (navGroup === 'access' ? '' : 'access')">
+                    <span style="flex:1">🔐 访问控制</span>
+                    <span style="font-size:10px;color:#94a3b8" x-text="navGroup==='access' ? '▼' : '▶'"></span>
                 </li>
-                <li :class="{active: page === 'diskmgmt'}" @click="navigate('diskmgmt')">
-                    <span>💽</span> 存储管理
+                <template x-if="navGroup === 'access'">
+                    <div>
+                        <li :class="{active: page === 'users'}" @click="navigate('users')">
+                            <span style="margin-left:20px">👥</span> 用户管理
+                        </li>
+                        <li :class="{active: page === 'firewall'}" @click="navigate('firewall')">
+                            <span style="margin-left:20px">🛡️</span> 防火墙
+                        </li>
+                    </div>
+                </template>
+
+                <!-- 系统 -->
+                <li class="nav-group" @click="navGroup = (navGroup === 'system' ? '' : 'system')">
+                    <span style="flex:1">⚙️ 系统</span>
+                    <span style="font-size:10px;color:#94a3b8" x-text="navGroup==='system' ? '▼' : '▶'"></span>
                 </li>
-                <li :class="{active: page === 'firewall'}" @click="navigate('firewall')">
-                    <span>🛡️</span> 防火墙
+                <template x-if="navGroup === 'system'">
+                    <div>
+                        <li :class="{active: page === 'services'}" @click="navigate('services')">
+                            <span style="margin-left:20px">🔧</span> 服务管理
+                        </li>
+                        <li :class="{active: page === 'system'}" @click="navigate('system')">
+                            <span style="margin-left:20px">🖥️</span> 系统设置
+                        </li>
+                    </div>
+                </template>
+
+                <!-- 维护 -->
+                <li class="nav-group" @click="navGroup = (navGroup === 'maintain' ? '' : 'maintain')">
+                    <span style="flex:1">🔧 维护</span>
+                    <span style="font-size:10px;color:#94a3b8" x-text="navGroup==='maintain' ? '▼' : '▶'"></span>
                 </li>
-                <li :class="{active: page === 'monitor'}" @click="navigate('monitor')">
-                    <span>📡</span> 监控告警
-                </li>
-                <li :class="{active: page === 'system'}" @click="navigate('system')">
-                    <span>🖥️</span> 系统设置
-                </li>
-                <li :class="{active: page === 'backup'}" @click="navigate('backup')">
-                    <span>💾</span> 备份恢复
-                </li>
-                <li :class="{active: page === 'rclone'}" @click="navigate('rclone')">
-                    <span>☁️</span> 远端同步
-                </li>
+                <template x-if="navGroup === 'maintain'">
+                    <div>
+                        <li :class="{active: page === 'backup'}" @click="navigate('backup')">
+                            <span style="margin-left:20px">📦</span> 备份恢复
+                        </li>
+                        <li :class="{active: page === 'logs'}" @click="navigate('logs')">
+                            <span style="margin-left:20px">📋</span> 操作日志
+                        </li>
+                    </div>
+                </template>
             </ul>
             <div class="sidebar-footer">
                 <button class="btn btn-sm" @click="logout()">退出登录</button>
@@ -77,6 +129,18 @@
             <!-- Dashboard -->
             <div x-show="page === 'dashboard'" class="page" x-transition.opacity.duration.300ms>
                 <h2>系统状态</h2>
+                <!-- 配置一致性告警 -->
+                <div x-show="configIssues.has_issues" style="background:#fef3c7;border:1px solid #f59e0b;border-radius:10px;padding:12px 16px;margin-bottom:16px">
+                    <div style="display:flex;justify-content:space-between;align-items:center">
+                        <span style="font-weight:600;color:#92400e">⚠️ 检测到配置不一致 (<span x-text="configIssues.issues.length"></span> 项)</span>
+                        <button class="btn btn-sm btn-warn" @click="syncConfigs()">修复配置</button>
+                    </div>
+                    <div style="margin-top:6px;font-size:12px;color:#a16207">
+                        <template x-for="issue in configIssues.issues" :key="issue">
+                            <div x-text="issue"></div>
+                        </template>
+                    </div>
+                </div>
                 <div style="display:flex;gap:48px;flex-wrap:wrap;margin-bottom:20px">
                     <!-- 左：盘位图 -->
                     <!-- 加载骨架 -->
@@ -1062,8 +1126,17 @@
 
 <!-- Config Management -->
             <!-- Disk Management -->
-            <div x-show="page === 'diskmgmt'" class="page" x-init="diskmgmtTab = diskmgmtTab || 'overview'" x-transition.opacity.duration.300ms>
+            <div x-show="page === 'diskmgmt'" class="page" x-init="diskmgmtTab = diskmgmtTab || 'overview'; loadPendingOps()" x-transition.opacity.duration.300ms>
                 <h2 style="margin-bottom:14px">存储管理</h2>
+
+                <!-- 待应用横幅 -->
+                <div x-show="pendingCount > 0" style="background:#fef3c7;border:1px solid #f59e0b;border-radius:10px;padding:10px 16px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center">
+                    <span style="font-weight:600;color:#92400e">⏳ 有 <span x-text="pendingCount" style="color:#c2410c"></span> 项待应用的变更</span>
+                    <div style="display:flex;gap:8px">
+                        <button class="btn btn-sm btn-primary" @click="applyPending()">✅ 应用配置</button>
+                        <button class="btn btn-sm" @click="discardPending()">🗑️ 放弃</button>
+                    </div>
+                </div>
 
                 <!-- ════ Tab 导航 ════ -->
                 <nav style="display:flex;gap:4px;border-bottom:1px solid #e5e7eb;margin-bottom:18px;padding-bottom:0">
@@ -1115,6 +1188,7 @@
                                                     <span class="badge" :style="vol.folders?.some(function(f){return f.samba_share})?'background:#dbeafe;color:#1e40af':'background:#f3f4f6;color:#374151'" style="font-size:11px;padding:3px 7px" x-text="'SMB'+(vol.folders?.some(function(f){return f.samba_share})?'✓':'✗')"></span>
                                                     <span class="badge" :style="vol.folders?.some(function(f){return f.nfs_export})?'background:#dbeafe;color:#1e40af':'background:#f3f4f6;color:#374151'" style="font-size:11px;padding:3px 7px" x-text="'NFS'+(vol.folders?.some(function(f){return f.nfs_export})?'✓':'✗')"></span>
                                                     <span class="badge" :style="vol.folders?.some(function(f){return f.ftp_access})?'background:#dbeafe;color:#1e40af':'background:#f3f4f6;color:#374151'" style="font-size:11px;padding:3px 7px" x-text="'FTP'+(vol.folders?.some(function(f){return f.ftp_access})?'✓':'✗')"></span>
+                                                    <span class="badge" :style="vol.folders?.some(function(f){return f.s3_access})?'background:#dbeafe;color:#1e40af':'background:#f3f4f6;color:#374151'" style="font-size:11px;padding:3px 7px" x-text="'S3'+(vol.folders?.some(function(f){return f.s3_access})?'✓':'✗')"></span>
                                                 </span>
                                             </div>
                                             <div style="margin-left:16px">
@@ -1133,6 +1207,7 @@
                                                                 <span class="badge" :style="f.nfs_export?'background:#dbeafe;color:#1e40af':'background:#f3f4f6;color:#374151'" style="font-size:11px;padding:3px 7px" x-text="'NFS'+(f.nfs_export?'✓':'✗')"></span>
                                                                 <span class="badge" :style="f.webdav_access?'background:#dbeafe;color:#1e40af':'background:#f3f4f6;color:#374151'" style="font-size:11px;padding:3px 7px" x-text="'DAV'+(f.webdav_access?'✓':'✗')"></span>
                                                                 <span class="badge" :style="f.ftp_access?'background:#dbeafe;color:#1e40af':'background:#f3f4f6;color:#374151'" style="font-size:11px;padding:3px 7px" x-text="'FTP'+(f.ftp_access?'✓':'✗')"></span>
+                                                                <span class="badge" :style="f.s3_access?'background:#dbeafe;color:#1e40af':'background:#f3f4f6;color:#374151'" style="font-size:11px;padding:3px 7px" x-text="'S3'+(f.s3_access?'✓':'✗')"></span>
                                                                 <button class="btn btn-sm" @click.stop="editFolderPermission(f)" style="font-size:12px;padding:3px 6px" title="编辑">✏️</button>
                                                                 <button class="btn btn-sm btn-danger" @click.stop="deleteFolder(f)" style="font-size:12px;padding:3px 6px" title="删除">🗑️</button>
                                                             </span>
@@ -1154,6 +1229,10 @@
                                                             <div x-show="f.ftp_access" style="display:flex;align-items:center;gap:6px;font-size:12px;color:#475569">
                                                                 <span style="font-weight:600;color:#d97706">FTP</span>
                                                                 <code style="font-size:12px;color:#334155">ftp://<span x-text="f.valid_users.split(',')[0]||'user'"></span>@<span x-text="dashboard.ip_addr||'IP'"></span>:21</code>
+                                                            </div>
+                                                            <div x-show="f.s3_access" style="display:flex;align-items:center;gap:6px;font-size:12px;color:#475569">
+                                                                <span style="font-weight:600;color:#e67e22">S3</span>
+                                                                <code style="font-size:12px;color:#334155;user-select:all">http://<span x-text="dashboard.ip_addr||'IP'"></span>:9000/<span x-text="f.path.split('/')[2]||'nas1'"></span>/<span x-text="f.name"></span></code>
                                                             </div>
                                                         </div>
                                                     </div>
@@ -1304,7 +1383,7 @@
                         <template x-for="d in (storageOverview.system_disks||[])" :key="d.device">
                             <div @click="selectedDisk=d;selectedDiskDevice=d.device;showDiskDetail=true" tabindex="0"
                                 :style="'border:2px solid '+(selectedDiskDevice===d.device?'#3b82f6':'#22c55e')+';border-radius:10px;padding:12px;cursor:pointer;transition:all 0.15s;background:#fff'+(selectedDiskDevice===d.device?';box-shadow:0 0 0 3px rgba(59,130,246,0.3)':'')">
-                                <div style="text-align:center;font-size:28px;margin-bottom:6px">💾</div>
+                                <div style="text-align:center;font-size:28px;margin-bottom:6px">💽</div>
                                 <div style="font-size:13px;font-weight:600;text-align:center;font-family:monospace" x-text="d.device"></div>
                                 <div style="text-align:center;margin:4px 0"><span class="badge" style="background:#dcfce7;color:#166534">系统</span></div>
                                 <div style="font-size:11px;color:#6b7280;text-align:center" x-text="d.model||'—'"></div>
@@ -1316,7 +1395,7 @@
                         <template x-for="d in (storageOverview.pools||[]).reduce(function(arr,p){return arr.concat((p.disks||[]).map(function(dk){return Object.assign({_pool: p.name}, dk)}))},[])" :key="d.device">
                             <div @click="selectedDisk=d;selectedDiskDevice=d.device;showDiskDetail=true" tabindex="0"
                                 :style="'border:2px solid '+(selectedDiskDevice===d.device?'#2563eb':'#3b82f6')+';border-radius:10px;padding:12px;cursor:pointer;transition:all 0.15s;background:#fff'+(selectedDiskDevice===d.device?';box-shadow:0 0 0 3px rgba(59,130,246,0.3)':'')">
-                                <div style="text-align:center;font-size:28px;margin-bottom:6px">💾</div>
+                                <div style="text-align:center;font-size:28px;margin-bottom:6px">💽</div>
                                 <div style="font-size:13px;font-weight:600;text-align:center;font-family:monospace" x-text="d.device"></div>
                                 <div style="text-align:center;margin:4px 0"><span class="badge" style="background:#dbeafe;color:#1e40af">数据</span></div>
                                 <div style="font-size:11px;color:#6b7280;text-align:center" x-text="d.model||'—'"></div>
@@ -1416,7 +1495,7 @@
                             <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin-bottom:16px">
                                 <template x-for="d in (wizardStatus.available_disks||[])" :key="d.device">
                                     <div @click="wizDisks.includes(d.device) ? wizDisks=wizDisks.filter(function(x){return x!==d.device}) : wizDisks.push(d.device)" :style="wizDisks.includes(d.device)?'border:2px solid #3b82f6;background:#eff6ff':'border:2px solid #e5e7eb'" style="border-radius:10px;padding:16px;text-align:center;cursor:pointer;transition:all 0.15s;background:#fff">
-                                        <div style="font-size:24px;margin-bottom:4px">💾</div>
+                                        <div style="font-size:24px;margin-bottom:4px">💽</div>
                                         <div style="font-size:13px;font-weight:600;font-family:monospace" x-text="d.device"></div>
                                         <div style="font-size:11px;color:#6b7280" x-text="d.model||'—'"></div>
                                         <div style="font-size:11px;color:#6b7280" x-text="'空闲'"></div>
@@ -1510,6 +1589,7 @@
                         <div @click="diskmgmtTab='pools'" style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;display:flex;align-items:flex-start;gap:12px;cursor:pointer;transition:all 0.15s"><span style="font-size:20px">➕</span><div><div style="font-size:14px;font-weight:600;margin-bottom:4px">扩容存储池</div><div style="font-size:12px;color:#6b7280">添加新磁盘到现有池</div></div></div>
                         <div @click="scrubPool(null)" style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;display:flex;align-items:flex-start;gap:12px;cursor:pointer;transition:all 0.15s"><span style="font-size:20px">🧹</span><div><div style="font-size:14px;font-weight:600;margin-bottom:4px">数据清理</div><div style="font-size:12px;color:#6b7280">扫描静默数据损坏</div></div></div>
                         <div @click="startSMARTScan()" style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;display:flex;align-items:flex-start;gap:12px;cursor:pointer;transition:all 0.15s"><span style="font-size:20px">📊</span><div><div style="font-size:14px;font-weight:600;margin-bottom:4px">SMART 检测</div><div style="font-size:12px;color:#6b7280">批量扫描所有磁盘</div></div></div>
+                        <div @click="syncConfigs()" style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;display:flex;align-items:flex-start;gap:12px;cursor:pointer;transition:all 0.15s"><span style="font-size:20px">🔧</span><div><div style="font-size:14px;font-weight:600;margin-bottom:4px">修复配置</div><div style="font-size:12px;color:#6b7280">根据当前文件夹重新生成服务配置</div></div></div>
                     </div>
                     <div style="font-size:14px;font-weight:600;color:#374151;margin-bottom:10px">操作日志</div>
                     <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:12px;max-height:400px;overflow-y:auto">
@@ -2180,6 +2260,71 @@
                             </button>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <!-- 操作日志 -->
+            <div x-show="page === 'logs'" class="page" x-transition.opacity.duration.300ms>
+                <h2>操作日志</h2>
+                <p style="font-size:13px;color:#6b7280;margin-bottom:14px">记录所有用户在系统上的操作，包括存储管理、用户管理、服务管理等</p>
+
+                <div style="display:flex;gap:12px;margin-bottom:14px;align-items:center;flex-wrap:wrap">
+                    <select x-model="auditLogFilter.action" @change="auditLogPage=0;loadAuditLogs()" style="padding:6px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+                        <option value="">全部操作</option>
+                        <option value="login">登录</option>
+                        <option value="users">用户管理</option>
+                        <option value="storage">存储管理</option>
+                        <option value="services">服务管理</option>
+                        <option value="firewall">防火墙</option>
+                        <option value="system">系统设置</option>
+                        <option value="backup">备份恢复</option>
+                        <option value="rclone">远端同步</option>
+                    </select>
+                    <select x-model="auditLogFilter.days" @change="auditLogPage=0;loadAuditLogs()" style="padding:6px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+                        <option value="1">今天</option>
+                        <option value="7">最近 7 天</option>
+                        <option value="30">最近 30 天</option>
+                        <option value="90">最近 90 天</option>
+                    </select>
+                    <button class="btn btn-sm" @click="auditLogPage=0;loadAuditLogs()">刷新</button>
+                    <button class="btn btn-sm btn-danger" @click="clearAuditLogs()">清空日志</button>
+                    <span style="font-size:12px;color:#6b7280;margin-left:auto" x-text="'共 ' + auditLogTotal + ' 条记录'"></span>
+                </div>
+
+                <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden">
+                    <table class="table" style="margin-bottom:0">
+                        <thead>
+                            <tr>
+                                <th style="width:140px">时间</th>
+                                <th style="width:80px">用户</th>
+                                <th style="width:100px">操作</th>
+                                <th>详情</th>
+                                <th style="width:80px;min-width:80px">结果</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template x-for="log in auditLogs" :key="log.id">
+                                <tr>
+                                    <td style="font-size:12px;color:#6b7280" x-text="log.time?.substring(0,16)"></td>
+                                    <td style="font-size:13px;font-weight:600" x-text="log.username"></td>
+                                    <td><span class="badge" style="background:#eff6ff;color:#1d4ed8;font-size:11px" x-text="log.action"></span></td>
+                                    <td style="font-size:12px">
+                                        <span style="color:#374151" x-text="log.detail"></span>
+                                        <span style="color:#94a3b8;margin-left:8px;font-size:11px" x-text="log.method + ' ' + log.path"></span>
+                                    </td>
+                                    <td><span class="badge" :style="log.result==='error'?'background:#fee2e2;color:#991b1b':'background:#dcfce7;color:#166534'" style="font-size:10px;white-space:nowrap" x-text="log.result==='error'?'失败':'成功'"></span></td>
+                                </tr>
+                            </template>
+                            <tr x-show="!auditLogs.length">
+                                <td colspan="5" style="text-align:center;color:#94a3b8;padding:20px">暂无操作记录</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div x-show="auditLogTotal > 50" style="display:flex;justify-content:center;gap:8px;margin-top:12px">
+                    <button class="btn btn-sm" @click="auditLogPage=Math.max(0,auditLogPage-1);loadAuditLogs()" :disabled="auditLogPage===0">上一页</button>
+                    <span style="font-size:12px;color:#6b7280;padding:4px 8px" x-text="'第 '+(auditLogPage+1)+' 页'"></span>
+                    <button class="btn btn-sm" @click="auditLogPage++;loadAuditLogs()" :disabled="(auditLogPage+1)*50 >= auditLogTotal">下一页</button>
                 </div>
             </div>
 

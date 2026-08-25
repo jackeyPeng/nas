@@ -299,6 +299,10 @@ func handleStorageOverview(w http.ResponseWriter, r *http.Request) {
 					if isFTPAccessible(folderPath) {
 						f.FTPAccess = true
 					}
+					// Check S3 (rclone serve s3)
+					if isS3Served(folderPath) {
+						f.S3Access = true
+					}
 					folderMap[mountPoint] = append(folderMap[mountPoint], f)
 				}
 			}
@@ -962,8 +966,11 @@ func isNFSExported(path string) bool {
 
 // isWebDAVServed checks if a folder is served via rclone WebDAV
 func isWebDAVServed(folderName string) bool {
-	out, _ := common.SudoOutput("cat", "/etc/systemd/system/rclone-webdav.service")
-	return strings.Contains(out, folderName) || strings.Contains(out, "/data")
+	out, err := common.SudoOutput("systemctl", "is-active", "rclone-webdav")
+	if err != nil || strings.TrimSpace(out) != "active" {
+		return false
+	}
+	return true
 }
 
 // isFTPAccessible checks if a path is accessible via FTP
@@ -975,4 +982,13 @@ func isFTPAccessible(path string) bool {
 	// FTP access is per-user, not per-folder. If FTP is running, users can access /data
 	_, err := common.SudoOutput("systemctl", "is-active", "vsftpd")
 	return err == nil
+}
+
+// isS3Served checks if rclone S3 server is running
+func isS3Served(path string) bool {
+	out, err := common.SudoOutput("systemctl", "is-active", "rclone-s3")
+	if err != nil || strings.TrimSpace(out) != "active" {
+		return false
+	}
+	return strings.HasPrefix(path, "/data")
 }
