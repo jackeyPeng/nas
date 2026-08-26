@@ -87,8 +87,8 @@ fi
 ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/;s/armv7l/armhf/')
 OS_NAME=$(grep "^PRETTY_NAME=" /etc/os-release 2>/dev/null | cut -d'"' -f2 || echo "Unknown")
 DISK_TOTAL=$(df -h / | awk 'NR==2 {print $2}')
-MEM_TOTAL=$(free -h | awk '/Mem:/ {print $2}')
-PRIMARY_IP=$(ip -4 addr show scope global | grep -v 'docker\|virbr\|lo' | head -1 | awk '{print $4}' | sed 's/\/.*//')
+MEM_TOTAL=$(free -h 2>/dev/null | awk 'NR==2 {print $2}' || free -h 2>/dev/null | awk '/Mem|内存/ {print $2}')
+PRIMARY_IP=$(ip -4 addr show scope global | grep -oP 'inet \K[0-9.]+' | head -1)
 if [ -z "$PRIMARY_IP" ]; then
     PRIMARY_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
 fi
@@ -170,11 +170,15 @@ step_ok
 # ── 4. 安装系统依赖 ────────────────────────────────────────
 step_begin "安装系统软件包"
 
-# 检查是否需要更新 apt 源
+# 检查是否需要更新 apt 源（速度测试：下载 < 100KB/s 则切换）
 APT_SOURCES="/etc/apt/sources.list"
 if [ -f "$APT_SOURCES" ] && grep -q "deb.debian.org" "$APT_SOURCES"; then
-    # 测试 deb.debian.org 速度
-    if ! curl -s --connect-timeout 5 -o /dev/null "http://deb.debian.org/debian/" 2>/dev/null; then
+    echo -n "(测速) "
+    SPEED=$(curl -s --connect-timeout 5 --max-time 10 \
+        -o /dev/null -w "%{speed_download}" \
+        "http://deb.debian.org/debian/dists/trixie/main/binary-amd64/Packages.gz" 2>/dev/null || echo "0")
+    SPEED_INT=$(echo "$SPEED" | cut -d. -f1)
+    if [ -z "$SPEED_INT" ] || [ "$SPEED_INT" -lt 100000 ]; then
         echo -n "(切换清华镜像) "
         sed -i 's|http://deb\.debian\.org/debian|http://mirrors.tuna.tsinghua.edu.cn/debian|g' "$APT_SOURCES"
         sed -i 's|http://security\.debian\.org/debian-security|http://mirrors.tuna.tsinghua.edu.cn/debian-security|g' "$APT_SOURCES"
