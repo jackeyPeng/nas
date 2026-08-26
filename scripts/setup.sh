@@ -200,6 +200,20 @@ if [ -f "$NAS_DIR/configs/nfs.conf" ]; then
     cp "$NAS_DIR/configs/nfs.conf" /etc/nfs.conf
 fi
 
+# 自动检测本机内网段
+DETECT_SUBNET=""
+PRIMARY_IP=$(ip -4 -o addr show scope global | grep -v 'docker\|virbr\|lo' | head -1 | awk '{print $4}')
+if [ -n "$PRIMARY_IP" ]; then
+    # 提取 /24 子网: [REDACTED]/24 → [REDACTED]/24
+    DETECT_SUBNET=$(echo "$PRIMARY_IP" | sed -E 's/\.[0-9]+\/[0-9]+$/.0\/24/' 2>/dev/null)
+    if [ -z "$DETECT_SUBNET" ] || [ "$DETECT_SUBNET" = "$PRIMARY_IP" ]; then
+        DETECT_SUBNET="192.168.0.0/24"  # fallback
+    fi
+else
+    DETECT_SUBNET="192.168.0.0/24"  # fallback
+fi
+echo "  检测到内网段: ${DETECT_SUBNET}"
+
 # 提取旧的 Z1 托管 NFS 导出（如果存在）
 Z1_NFS_EXPORTS=""
 if [ -f /etc/exports ]; then
@@ -207,14 +221,14 @@ if [ -f /etc/exports ]; then
 fi
 
 if [ -f "$NAS_DIR/configs/exports" ]; then
-    cp "$NAS_DIR/configs/exports" /etc/exports
+    sed "s|__SUBNET__|${DETECT_SUBNET}|g" "$NAS_DIR/configs/exports" > /etc/exports
 else
     cat > /etc/exports << EXPEOF
-$DATA_DIR/shared    192.168.0.0/16(rw,sync,no_subtree_check,no_root_squash)
-$DATA_DIR/media     192.168.0.0/16(ro,sync,no_subtree_check)
-$DATA_DIR/documents 192.168.0.0/16(rw,sync,no_subtree_check,no_root_squash)
-$DATA_DIR/photos    192.168.0.0/16(rw,sync,no_subtree_check,no_root_squash)
-$DATA_DIR/backups   192.168.0.0/16(rw,sync,no_subtree_check,no_root_squash)
+$DATA_DIR/shared    ${DETECT_SUBNET}(rw,sync,no_subtree_check,no_root_squash)
+$DATA_DIR/media     ${DETECT_SUBNET}(ro,sync,no_subtree_check)
+$DATA_DIR/documents ${DETECT_SUBNET}(rw,sync,no_subtree_check,no_root_squash)
+$DATA_DIR/photos    ${DETECT_SUBNET}(rw,sync,no_subtree_check,no_root_squash)
+$DATA_DIR/backups   ${DETECT_SUBNET}(rw,sync,no_subtree_check,no_root_squash)
 EXPEOF
 fi
 
@@ -505,10 +519,16 @@ mkdir -p /var/lib/nas-monitor
 chown "$NAS_USER:$NAS_USER" /var/lib/nas-monitor
 echo "  ✓ 监控告警 cron 已配置（每5分钟检查）"
 
-# 配置每周备份 cron（每周日凌晨3点）
-BACKUP_CRON_LINE="0 3 * * 0 $NAS_DIR/scripts/backup-config.sh 2>/dev/null"
-( crontab -l 2>/dev/null | grep -v "backup-config.sh"; echo "$BACKUP_CRON_LINE" ) | crontab - 2>/dev/null || true
-echo "  ✓ 配置备份 cron 已配置（每周日凌晨3点）"
+# 配置每周备份 cron（每周日凌晨3点，保留最近 3 份）
+BACKUP_CRON_LINE="0 3 * * 0 sudo $NAS_DIR/scripts/backup-config.sh 2>/dev/null"
+( crontab -u "$NAS_USER" -l 2>/dev/null | grep -v "backup-config.sh"; echo "$BACKUP_CRON_LINE" ) | crontab -u "$NAS_USER" - 2>/dev/null || true
+echo "  ✓ 配置备份 cron 已配置（每周日凌晨3点，保留3份）"
+
+# 部署完成后立即做一次初始备份
+echo "  → 执行初始备份..."
+if [ -f "$NAS_DIR/scripts/backup-config.sh" ]; then
+    sudo bash "$NAS_DIR/scripts/backup-config.sh" 2>/dev/null || echo "  ⚠ 初始备份失败，可稍后手动执行"
+fi
 
 # ==================== 部署完成 ====================
 echo ""

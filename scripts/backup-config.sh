@@ -2,7 +2,7 @@
 # NAS 配置备份脚本
 # 用法: sudo bash backup-config.sh
 # 备份所有 NAS 配置到 /data/backups/config-YYYYMMDD-HHMMSS.tar.gz
-# 保留最近 5 个备份，自动清理旧的
+# 保留最近 3 个备份，自动清理旧的
 
 set -e
 
@@ -199,12 +199,12 @@ rm -rf "${BACKUP_NAME}"
 BACKUP_SIZE=$(ls -lh "${TARBALL}" | awk '{print $5}')
 echo "  ✓ 备份已打包: ${TARBALL} (${BACKUP_SIZE})"
 
-# 清理旧备份，保留最近 5 个
+# 清理旧备份，保留最近 3 个
 BACKUP_COUNT=$(ls -1 "${BACKUP_DIR}"/config-*.tar.gz 2>/dev/null | wc -l)
-if [ "$BACKUP_COUNT" -gt 5 ]; then
+if [ "$BACKUP_COUNT" -gt 3 ]; then
     echo ""
-    echo "  清理旧备份 (保留最近 5 个)..."
-    ls -1t "${BACKUP_DIR}"/config-*.tar.gz | tail -n +6 | while read old_file; do
+    echo "  清理旧备份 (保留最近 3 个)..."
+    ls -1t "${BACKUP_DIR}"/config-*.tar.gz | tail -n +4 | while read old_file; do
         rm -f "$old_file"
         echo "  删除: $(basename $old_file)"
     done
