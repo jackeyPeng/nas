@@ -1,159 +1,333 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════════
-# Z1 NAS — One-line Installer (Panel Only)
+# Z1 NAS — 一键安装脚本
 #
-# Installs the Z1 web management panel. All NAS services
-# (Samba, NFS, FTP, WebDAV, etc.) are installed from the web UI.
+# 用法:
+#   curl -fsSL https://get.z1.sale/install.sh | sudo bash
+#   NAS_PASS=myPass123456 curl -fsSL https://get.z1.sale/install.sh | sudo bash
 #
-# Usage:
-#   curl -fsSL https://get.z1.sale/install.sh | bash
-#   NAS_PASS=myPass123 curl -fsSL https://get.z1.sale/install.sh | bash
+# 或本地运行:
+#   sudo bash install.sh
 # ═══════════════════════════════════════════════════════════════
 set -euo pipefail
 
-# ── Config ──────────────────────────────────────────────────
+# ── 配置 ────────────────────────────────────────────────────
+REPO_URL="https://gitee.com/gitdogcat/nas.git"
 INSTALL_DIR="/opt/nas"
-PANEL_BIN="/usr/local/bin/nas-panel"
-RELEASE_URL="https://get.z1.sale/nas-panel-latest-linux-amd64"
+REPO_DIR="$HOME/soft/nas"
 MIN_PASS_LEN=12
+PANEL_BIN="/usr/local/bin/nas-panel"
+PANEL_PORT=8090
 
-# ── Colors ──────────────────────────────────────────────────
+# ── 颜色 ────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[0;33m'
-BLUE='\033[0;34m'; BOLD='\033[1m'; NC='\033[0m'
-info()  { echo -e "${BLUE}[INFO]${NC} $*"; }
-ok()    { echo -e "${GREEN}[OK]${NC} $*"; }
-warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
-error() { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
+BLUE='\033[0;34m'; CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
+CHECKMARK="\033[0;32m✓\033[0m"
+CROSSMARK="\033[0;31m✗\033[0m"
+WARNMARK="\033[0;33m⚠\033[0m"
+
+# ── 进度条 ──────────────────────────────────────────────────
+STEP=0
+TOTAL=10
+STEP_START=0
+
+step_begin() {
+    STEP=$((STEP + 1))
+    STEP_START=$(date +%s)
+    printf "\n${BOLD}${CYAN}[%2d/%2d]${NC} %s ... " "$STEP" "$TOTAL" "$1"
+}
+
+step_ok() {
+    local elapsed=$(($(date +%s) - STEP_START))
+    printf "${GREEN}✓${NC} (%ds)\n" "$elapsed"
+}
+
+step_warn() {
+    local elapsed=$(($(date +%s) - STEP_START))
+    printf "${YELLOW}⚠ %s${NC} (%ds)\n" "$1" "$elapsed"
+}
+
+step_fail() {
+    local elapsed=$(($(date +%s) - STEP_START))
+    printf "${RED}✗ %s${NC} (%ds)\n" "$1" "$elapsed"
+}
 
 # ── Banner ──────────────────────────────────────────────────
 echo ""
-echo -e "${BOLD}╔══════════════════════════════════════════╗${NC}"
-echo -e "${BOLD}║          Z1 NAS — Panel Installer        ║${NC}"
-echo -e "${BOLD}║          Web Panel + On-demand Services  ║${NC}"
-echo -e "${BOLD}╚══════════════════════════════════════════╝${NC}"
+echo -e "${BOLD}${BLUE}╔══════════════════════════════════════════════╗${NC}"
+echo -e "${BOLD}${BLUE}║                                              ║${NC}"
+echo -e "${BOLD}${BLUE}║   🏠  Z1 NAS — 家用存储系统 一键安装         ║${NC}"
+echo -e "${BOLD}${BLUE}║                                              ║${NC}"
+echo -e "${BOLD}${BLUE}╚══════════════════════════════════════════════╝${NC}"
+echo ""
+echo -e "  ${CYAN}Samba · NFS · FTP · WebDAV · FileBrowser · S3 · 面板${NC}"
+echo -e "  ${CYAN}防火墙 · 入侵防护 · 监控告警 · 自动备份${NC}"
 echo ""
 
-# ── Root check ──────────────────────────────────────────────
+# ── 1. 环境检测 ────────────────────────────────────────────
+step_begin "检测系统环境"
+
 if [ "$EUID" -ne 0 ]; then
-    error "Please run with sudo: curl ... | sudo bash"
+    echo ""
+    echo -e "${RED}错误: 请使用 sudo 运行${NC}"
+    echo ""
+    echo "  curl -fsSL https://get.z1.sale/install.sh | sudo bash"
+    echo ""
+    exit 1
 fi
 
-# ── Detect user ─────────────────────────────────────────────
 NAS_USER="${SUDO_USER:-$USER}"
 if [ -z "$NAS_USER" ] || [ "$NAS_USER" = "root" ]; then
-    error "Cannot detect user. Please run with sudo (not as root directly)"
+    echo ""
+    echo -e "${RED}错误: 无法检测用户名，请使用 sudo 运行（不要直接以 root 登录）${NC}"
+    exit 1
 fi
-info "User: $NAS_USER"
 
-# ── Password ────────────────────────────────────────────────
+# 检测 CPU 架构
+ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/;s/armv7l/armhf/')
+OS_NAME=$(grep "^PRETTY_NAME=" /etc/os-release 2>/dev/null | cut -d'"' -f2 || echo "Unknown")
+DISK_TOTAL=$(df -h / | awk 'NR==2 {print $2}')
+MEM_TOTAL=$(free -h | awk '/Mem:/ {print $2}')
+PRIMARY_IP=$(ip -4 addr show scope global | grep -v 'docker\|virbr\|lo' | head -1 | awk '{print $4}' | sed 's/\/.*//')
+if [ -z "$PRIMARY_IP" ]; then
+    PRIMARY_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+fi
+
+step_ok
+echo -e "  用户:     ${GREEN}${NAS_USER}${NC}"
+echo -e "  系统:     ${OS_NAME}"
+echo -e "  架构:     ${ARCH}"
+echo -e "  磁盘:     ${DISK_TOTAL}"
+echo -e "  内存:     ${MEM_TOTAL}"
+echo -e "  地址:     ${PRIMARY_IP:-未知}"
+
+# ── 密码 ────────────────────────────────────────────────────
 if [ -n "${NAS_PASS:-}" ]; then
     if [ ${#NAS_PASS} -lt $MIN_PASS_LEN ]; then
-        error "NAS_PASS must be at least $MIN_PASS_LEN characters"
+        echo -e "\n${RED}错误: NAS_PASS 至少需要 ${MIN_PASS_LEN} 位${NC}"
+        exit 1
     fi
-    info "Using password from NAS_PASS environment variable"
 else
     echo ""
-    echo -e "${BOLD}Set your NAS admin password (min $MIN_PASS_LEN chars)${NC}"
+    echo -e "${BOLD}设置管理密码（至少 ${MIN_PASS_LEN} 位，用于所有服务）${NC}"
     while true; do
-        read -s -p "Password: " NAS_PASS
+        printf "密码: "
+        stty -echo
+        read NAS_PASS
+        stty echo
         echo ""
         if [ ${#NAS_PASS} -lt $MIN_PASS_LEN ]; then
-            warn "Password too short (min $MIN_PASS_LEN)"
+            echo -e "${YELLOW}密码太短，至少需要 ${MIN_PASS_LEN} 位${NC}"
             continue
         fi
-        read -s -p "Confirm: " CONFIRM
+        printf "确认: "
+        stty -echo
+        read CONFIRM
+        stty echo
         echo ""
         if [ "$NAS_PASS" != "$CONFIRM" ]; then
-            warn "Passwords do not match"
+            echo -e "${YELLOW}两次输入不一致，请重试${NC}"
             continue
         fi
         break
     done
 fi
 
-# ── Step 1: Install dependencies ────────────────────────────
-info "[1/5] Installing dependencies..."
-apt-get update -qq 2>/dev/null
-apt-get install -y -qq xfsprogs parted lvm2 mdadm smartmontools curl 2>&1 | tail -1
-ok "Dependencies installed"
+# ── 2. 克隆仓库 ────────────────────────────────────────────
+step_begin "获取安装脚本"
 
-# ── Step 2: Download panel binary ───────────────────────────
-info "[2/5] Downloading Z1 panel..."
-ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
-BINARY_URL="https://get.z1.sale/nas-panel-latest-linux-${ARCH}"
-
-if curl -fsSL --connect-timeout 10 --max-time 120 -o "$PANEL_BIN" "$BINARY_URL" 2>/dev/null; then
-    chmod +x "$PANEL_BIN"
-    ok "Panel binary installed ($(stat -c%s "$PANEL_BIN" | numfmt --to=iec))"
+if [ -d "$REPO_DIR/.git" ]; then
+    echo -n "(更新) "
+    cd "$REPO_DIR" && git pull --ff-only origin master 2>/dev/null || true
 else
-    warn "Cannot download from get.z1.sale, trying fallback..."
-    # Fallback: try to find nas-panel in the repo if cloned
-    if [ -f "$HOME/soft/nas/web/nas-panel" ]; then
-        cp "$HOME/soft/nas/web/nas-panel" "$PANEL_BIN"
-        chmod +x "$PANEL_BIN"
-        ok "Panel binary installed from local repo"
-    else
-        error "Cannot download panel binary. Check network or install manually."
+    mkdir -p "$(dirname "$REPO_DIR")"
+    if ! git clone --depth 1 "$REPO_URL" "$REPO_DIR" 2>/dev/null; then
+        step_fail "无法克隆仓库"
+        echo -e "  ${YELLOW}请检查网络连接，或手动克隆:${NC}"
+        echo "  git clone $REPO_URL $REPO_DIR"
+        exit 1
     fi
 fi
 
-# ── Step 3: Create config ───────────────────────────────────
-info "[3/5] Creating configuration..."
-mkdir -p "$INSTALL_DIR/data"
-TOKEN=$(openssl rand -hex 32 2>/dev/null || python3 -c "import secrets;print(secrets.token_hex(32))")
-cat > "$INSTALL_DIR/.env" << EOF
-NAS_USER=$NAS_USER
-NAS_PASS=$NAS_PASS
-NAS_TOKEN=$TOKEN
-NAS_DATA_DIR=$INSTALL_DIR/data
-EOF
-chmod 600 "$INSTALL_DIR/.env"
-ok "Configuration created ($INSTALL_DIR/.env)"
+# 创建 /opt/nas 软链接
+ln -sfn "$REPO_DIR" "$INSTALL_DIR" 2>/dev/null || true
 
-# ── Step 4: Setup systemd service ───────────────────────────
-info "[4/5] Setting up systemd service..."
-cat > /etc/systemd/system/nas-panel.service << EOF
-[Unit]
-Description=Z1 NAS Web Management Panel
-After=network.target
+step_ok
 
-[Service]
-Type=simple
-EnvironmentFile=$INSTALL_DIR/.env
-Environment=NAS_USER=$NAS_USER
-ExecStart=$PANEL_BIN
-Restart=on-failure
-RestartSec=10
+# ── 3. 创建配置 ────────────────────────────────────────────
+step_begin "创建配置文件"
 
-[Install]
-WantedBy=multi-user.target
-EOF
-systemctl daemon-reload
-systemctl enable nas-panel
-ok "Systemd service created"
+if [ ! -f "$REPO_DIR/.env" ]; then
+    cp "$REPO_DIR/.env.example" "$REPO_DIR/.env"
+fi
+sed -i "s/^NAS_PASS=.*/NAS_PASS=${NAS_PASS}/" "$REPO_DIR/.env"
 
-# ── Step 5: Start panel ─────────────────────────────────────
-info "[5/5] Starting Z1 panel..."
-systemctl restart nas-panel
-sleep 2
-if systemctl is-active --quiet nas-panel; then
-    ok "Panel is running"
-else
-    warn "Panel may not have started. Check: journalctl -u nas-panel"
+# 确保 .env 可被 sudo 读取
+chmod 600 "$REPO_DIR/.env"
+
+step_ok
+
+# ── 4. 安装系统依赖 ────────────────────────────────────────
+step_begin "安装系统软件包"
+
+# 检查是否需要更新 apt 源
+APT_SOURCES="/etc/apt/sources.list"
+if [ -f "$APT_SOURCES" ] && grep -q "deb.debian.org" "$APT_SOURCES"; then
+    # 测试 deb.debian.org 速度
+    if ! curl -s --connect-timeout 5 -o /dev/null "http://deb.debian.org/debian/" 2>/dev/null; then
+        echo -n "(切换清华镜像) "
+        sed -i 's|http://deb\.debian\.org/debian|http://mirrors.tuna.tsinghua.edu.cn/debian|g' "$APT_SOURCES"
+        sed -i 's|http://security\.debian\.org/debian-security|http://mirrors.tuna.tsinghua.edu.cn/debian-security|g' "$APT_SOURCES"
+    fi
 fi
 
-# ── Done ────────────────────────────────────────────────────
-IP=$(ip route get 1 2>/dev/null | awk '{print $7;exit}' || echo "YOUR_IP")
+apt-get update -qq 2>/dev/null
+DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+    curl samba nfs-kernel-server vsftpd rclone fail2ban ufw \
+    smartmontools unattended-upgrades smbclient nfs-common \
+    xfsprogs mdadm lvm2 apache2-utils \
+    2>&1 | tail -3
+
+step_ok
+
+# ── 5-10. 运行 setup.sh ────────────────────────────────────
 echo ""
-echo -e "${BOLD}╔══════════════════════════════════════════╗${NC}"
-echo -e "${BOLD}║          Z1 NAS Panel Ready!             ║${NC}"
-echo -e "${BOLD}╚══════════════════════════════════════════╝${NC}"
+echo -e "${BOLD}${BLUE}═══ 开始配置 NAS 服务 ═══${NC}"
+
+# 用子 shell 跑 setup.sh，捕获输出但不影响主流程
+SETUP_LOG=$(mktemp)
+if bash "$INSTALL_DIR/scripts/setup.sh" > "$SETUP_LOG" 2>&1; then
+    SETUP_OK=true
+else
+    SETUP_OK=false
+fi
+
+# 显示 setup.sh 的关键输出行
+grep -E '^\[|✓|✗|⚠|服务状态|部署完成|通过|失败|警告' "$SETUP_LOG" 2>/dev/null | while read line; do
+    echo "  $line"
+done
+rm -f "$SETUP_LOG"
+
+# ── 检查 nas-panel 是否安装成功 ────────────────────────────
+if [ ! -f "$PANEL_BIN" ]; then
+    echo ""
+    echo -e "${YELLOW}⚠ nas-panel 二进制下载失败，尝试本地编译...${NC}"
+    
+    # 检查是否有 Go
+    if ! command -v go &>/dev/null; then
+        echo -e "  ${YELLOW}未安装 Go，尝试安装...${NC}"
+        apt-get install -y -qq golang-go 2>/dev/null || true
+    fi
+    
+    if command -v go &>/dev/null && [ -d "$REPO_DIR/web" ]; then
+        echo -n "  编译中... "
+        cd "$REPO_DIR/web"
+        if go build -o "$PANEL_BIN" . 2>/dev/null; then
+            chmod +x "$PANEL_BIN"
+            strip "$PANEL_BIN" 2>/dev/null || true
+            echo -e "${GREEN}✓${NC}"
+        else
+            echo -e "${RED}✗${NC}"
+            echo -e "  ${YELLOW}请手动编译: cd $REPO_DIR/web && go build -o $PANEL_BIN .${NC}"
+        fi
+    else
+        echo -e "  ${RED}无法编译（缺少 Go 或源码），面板将不可用${NC}"
+        echo -e "  ${YELLOW}请手动安装 Go 后运行: cd $REPO_DIR/web && go build -o nas-panel .${NC}"
+    fi
+fi
+
+# 确保面板服务正常运行
+if [ -f "$PANEL_BIN" ]; then
+    systemctl reset-failed nas-panel 2>/dev/null || true
+    systemctl restart nas-panel 2>/dev/null || true
+fi
+
+# ── 11. 验证安装 ────────────────────────────────────────────
 echo ""
-echo -e "  Panel URL:  ${GREEN}http://${IP}:8090${NC}"
-echo -e "  Username:   ${GREEN}${NAS_USER}${NC}"
-echo -e "  Password:   ${GREEN}(as entered)${NC}"
+echo -e "${BOLD}${BLUE}═══ 验证安装结果 ═══${NC}"
 echo ""
-echo -e "  ${YELLOW}Next: Open the panel, go to \"服务管理\","
-echo -e "  and click \"一键安装所有服务\" to install"
-echo -e "  Samba, NFS, FTP, WebDAV, and more.${NC}"
+
+VERIFY_OK=true
+VERIFY_PASS=0
+VERIFY_FAIL=0
+VERIFY_WARN=0
+
+# 等待面板启动
+sleep 2
+
+# 检查所有服务
+echo -e "${BOLD}服务状态:${NC}"
+for svc in smbd nmbd nfs-kernel-server vsftpd rclone-webdav filebrowser rclone-s3 fail2ban nas-panel; do
+    STATUS=$(systemctl is-active "$svc" 2>/dev/null || echo "inactive")
+    case "$STATUS" in
+        active)
+            printf "  ${CHECKMARK} %-22s ${GREEN}%s${NC}\n" "$svc" "$STATUS"
+            ;;
+        *)
+            printf "  ${CROSSMARK} %-22s ${RED}%s${NC}\n" "$svc" "$STATUS"
+            VERIFY_OK=false
+            ;;
+    esac
+done
+
+# 系统注册表
+echo ""
+echo -e "${BOLD}系统注册表检查:${NC}"
+if curl -s --max-time 10 "http://localhost:${PANEL_PORT}/api/system/check?action=refresh" > /tmp/nas-verify.json 2>/dev/null; then
+    VERIFY_PASS=$(python3 -c "import json;d=json.load(open('/tmp/nas-verify.json'));print(d['passed'])" 2>/dev/null || echo "?")
+    VERIFY_FAIL=$(python3 -c "import json;d=json.load(open('/tmp/nas-verify.json'));print(d['failed'])" 2>/dev/null || echo "?")
+    VERIFY_WARN=$(python3 -c "import json;d=json.load(open('/tmp/nas-verify.json'));print(d['warn'])" 2>/dev/null || echo "?")
+    
+    if [ "$VERIFY_FAIL" = "0" ]; then
+        echo -e "  ${CHECKMARK} 通过: ${GREEN}${VERIFY_PASS}${NC} / 失败: 0 / 警告: ${VERIFY_WARN}"
+    else
+        echo -e "  ${CROSSMARK} 通过: ${VERIFY_PASS} / 失败: ${RED}${VERIFY_FAIL}${NC} / 警告: ${VERIFY_WARN}"
+        VERIFY_OK=false
+    fi
+    
+    # 显示失败项
+    python3 -c "
+import json
+d=json.load(open('/tmp/nas-verify.json'))
+for i in d['items']:
+    if i['status'] != 'pass':
+        print(f\"    [{i['status']}] {i['name']}: {i['detail']}\")
+" 2>/dev/null
+else
+    echo -e "  ${WARNMARK} 面板未响应，跳过注册表检查"
+fi
+rm -f /tmp/nas-verify.json
+
+# ── 完成 ────────────────────────────────────────────────────
+echo ""
+echo -e "${BOLD}${GREEN}╔══════════════════════════════════════════════╗${NC}"
+echo -e "${BOLD}${GREEN}║         🎉  Z1 NAS 安装完成！                ║${NC}"
+echo -e "${BOLD}${GREEN}╚══════════════════════════════════════════════╝${NC}"
+echo ""
+echo -e "  ${BOLD}Web 管理面板${NC}"
+echo -e "  ┌─────────────────────────────────────────┐"
+echo -e "  │ 地址:   ${GREEN}http://${PRIMARY_IP}:${PANEL_PORT}${NC}"
+echo -e "  │ 用户名: ${GREEN}${NAS_USER}${NC}"
+echo -e "  │ 密码:   ${GREEN}(你设置的密码)${NC}"
+echo -e "  └─────────────────────────────────────────┘"
+echo ""
+echo -e "  ${BOLD}其他访问方式${NC}"
+echo -e "  FileBrowser:  ${CYAN}http://${PRIMARY_IP}:8081${NC}"
+echo -e "  WebDAV:       ${CYAN}http://${PRIMARY_IP}:8080${NC}"
+echo -e "  Samba:        ${CYAN}\\\\${PRIMARY_IP}\\shared${NC}"
+echo -e "  FTP:          ${CYAN}ftp://${PRIMARY_IP}${NC}"
+echo -e "  S3:           ${CYAN}http://${PRIMARY_IP}:9000${NC}"
+echo ""
+
+if [ "$VERIFY_OK" = true ]; then
+    echo -e "  ${GREEN}所有服务正常运行，可以开始使用了！${NC}"
+else
+    echo -e "  ${YELLOW}部分服务可能未正常启动，请检查上方输出。${NC}"
+    echo -e "  ${YELLOW}查看日志: journalctl -u <服务名>${NC}"
+fi
+
+echo ""
+echo -e "  ${CYAN}数据目录: /data${NC}"
+echo -e "  ${CYAN}配置目录: ${INSTALL_DIR}${NC}"
+echo -e "  ${CYAN}备份目录: /data/backups${NC}"
 echo ""
