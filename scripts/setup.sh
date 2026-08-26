@@ -329,7 +329,19 @@ else
         "https://get.z1.sale/filebroswer/linux-${ARCH}-filebrowser.tar.gz" \
         "https://github.com/filebrowser/filebrowser/releases/download/${FILEBROWSER_VERSION}/linux-${ARCH}-filebrowser.tar.gz" \
         "https://ghfast.top/https://github.com/filebrowser/filebrowser/releases/download/${FILEBROWSER_VERSION}/linux-${ARCH}-filebrowser.tar.gz"
-    cd /tmp && tar xzf filebrowser.tar.gz && mv filebrowser /usr/local/bin/ && cd -
+    cd /tmp && tar xzf filebrowser.tar.gz
+    # 不同来源的 tar.gz 结构不同：可能直接是 filebrowser 或 linux-amd64-filebrowser/filebrowser
+    if [ -f "filebrowser" ]; then
+        mv filebrowser /usr/local/bin/
+    elif [ -f "linux-amd64-filebrowser/filebrowser" ]; then
+        mv linux-amd64-filebrowser/filebrowser /usr/local/bin/
+    elif FB_BIN=$(find . -maxdepth 2 -name filebrowser -type f | head -1) && [ -n "$FB_BIN" ]; then
+        mv "$FB_BIN" /usr/local/bin/
+    else
+        echo "  警告: 无法找到 filebrowser 二进制文件"
+    fi
+    rm -rf filebrowser.tar.gz linux-amd64-filebrowser filebrowser 2>/dev/null
+    cd - > /dev/null
     chmod +x /usr/local/bin/filebrowser
 fi
 

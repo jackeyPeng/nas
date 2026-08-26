@@ -224,9 +224,12 @@ if [ ! -f "$PANEL_BIN" ]; then
     fi
     
     if command -v go &>/dev/null && [ -d "$REPO_DIR/web" ]; then
+        # 修复文件权限（git clone 以 root 运行）
+        chown -R "$NAS_USER:$NAS_USER" "$REPO_DIR" 2>/dev/null || true
+        
         echo -n "  编译中... "
         cd "$REPO_DIR/web"
-        if go build -o "$PANEL_BIN" . 2>/dev/null; then
+        if GOPROXY=https://goproxy.cn,direct GOTOOLCHAIN=local go build -o "$PANEL_BIN" . 2>/dev/null; then
             chmod +x "$PANEL_BIN"
             strip "$PANEL_BIN" 2>/dev/null || true
             echo -e "${GREEN}✓${NC}"
