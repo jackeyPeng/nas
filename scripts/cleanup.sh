@@ -179,6 +179,26 @@ rm -rf /var/lib/vsftpd 2>/dev/null || true
 
 echo "  ✓ 其他文件已清理"
 
+# ==================== [额外] 清理磁盘签名 ====================
+echo ""
+echo "[额外] 清理数据盘 RAID/LVM 签名..."
+DATA_DISKS=$(lsblk -nd -o NAME,TYPE | grep disk | awk '{print $1}' | grep -v "^$(lsblk -nd -o NAME / | head -1)")
+for disk in $DATA_DISKS; do
+    # 停止该磁盘相关的 RAID 阵列
+    mdadm --stop "/dev/${disk}" 2>/dev/null || true
+    # 擦除签名
+    if wipefs -a "/dev/${disk}" 2>/dev/null | grep -q "erased"; then
+        echo "  ✓ /dev/${disk} 签名已擦除"
+    fi
+done
+# 停止所有 RAID 阵列
+for md in /dev/md*; do
+    [ -e "$md" ] && mdadm --stop "$md" 2>/dev/null && echo "  ✓ $md 已停止" || true
+done
+# 清理 mdadm.conf
+sed -i '/^ARRAY/d' /etc/mdadm/mdadm.conf 2>/dev/null || true
+echo "  ✓ 磁盘签名清理完成"
+
 # ==================== 完成 ====================
 echo ""
 echo "========================================="

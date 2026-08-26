@@ -161,6 +161,10 @@ if [ ! -f "$REPO_DIR/.env" ]; then
     cp "$REPO_DIR/.env.example" "$REPO_DIR/.env"
 fi
 sed -i "s/^NAS_PASS=.*/NAS_PASS=${NAS_PASS}/" "$REPO_DIR/.env"
+# 确保 NAS_USER 在 .env 中（面板登录需要）
+if ! grep -q "^NAS_USER=" "$REPO_DIR/.env"; then
+    echo "NAS_USER=${NAS_USER}" >> "$REPO_DIR/.env"
+fi
 
 # 确保 .env 可被 sudo 读取
 chmod 600 "$REPO_DIR/.env"
