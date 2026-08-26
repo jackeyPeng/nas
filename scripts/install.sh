@@ -3,8 +3,8 @@
 # Z1 NAS — 一键安装脚本
 #
 # 用法:
-#   curl -fsSL https://get.z1.sale/install.sh | sudo bash
-#   NAS_PASS=myPass123456 curl -fsSL https://get.z1.sale/install.sh | sudo bash
+#   wget -qO- https://gitee.com/gitdogcat/nas/raw/master/scripts/install.sh | sudo bash
+#   NAS_PASS=myPass123456 wget -qO- https://gitee.com/gitdogcat/nas/raw/master/scripts/install.sh | sudo bash
 #
 # 或本地运行:
 #   sudo bash install.sh
@@ -71,7 +71,7 @@ if [ "$EUID" -ne 0 ]; then
     echo ""
     echo -e "${RED}错误: 请使用 sudo 运行${NC}"
     echo ""
-    echo "  curl -fsSL https://get.z1.sale/install.sh | sudo bash"
+    echo "  wget -qO- https://gitee.com/gitdogcat/nas/raw/master/scripts/install.sh | sudo bash"
     echo ""
     exit 1
 fi
@@ -184,8 +184,8 @@ if [ -f "$APT_SOURCES" ] && grep -q "deb.debian.org" "$APT_SOURCES"; then
     SPEED_INT=$(echo "$SPEED" | cut -d. -f1)
     if [ -z "$SPEED_INT" ] || [ "$SPEED_INT" -lt 100000 ]; then
         echo -n "(切换清华镜像) "
-        sed -i 's|http://deb\.debian\.org/debian|http://mirrors.tuna.tsinghua.edu.cn/debian|g' "$APT_SOURCES"
-        sed -i 's|http://security\.debian\.org/debian-security|http://mirrors.tuna.tsinghua.edu.cn/debian-security|g' "$APT_SOURCES"
+        sed -i 's|http://deb\.debian\.org|http://mirrors.tuna.tsinghua.edu.cn|g' "$APT_SOURCES"
+        sed -i 's|http://security\.debian\.org|http://mirrors.tuna.tsinghua.edu.cn|g' "$APT_SOURCES"
     fi
 fi
 
@@ -233,7 +233,7 @@ if [ ! -f "$PANEL_BIN" ]; then
         
         echo -n "  编译中... "
         cd "$REPO_DIR/web"
-        if GOPROXY=https://goproxy.cn,direct GOTOOLCHAIN=local go build -o "$PANEL_BIN" . 2>/dev/null; then
+        if GOPROXY=https://goproxy.cn,direct GOTOOLCHAIN=local go build -buildvcs=false -o "$PANEL_BIN" . 2>/dev/null; then
             chmod +x "$PANEL_BIN"
             strip "$PANEL_BIN" 2>/dev/null || true
             echo -e "${GREEN}✓${NC}"

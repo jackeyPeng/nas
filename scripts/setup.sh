@@ -508,7 +508,7 @@ elif download_file /usr/local/bin/nas-panel \
     chmod +x /usr/local/bin/nas-panel
 else
     echo "  警告: 无法获取 nas-panel 二进制文件，跳过 Web 面板安装"
-    echo "  请手动编译: cd $NAS_DIR/web && GOARCH=$GOARCH go build -o nas-panel ."
+    echo "  请手动编译: cd $NAS_DIR/web && GOPROXY=https://goproxy.cn,direct go build -buildvcs=false -o nas-panel ."
     echo "  然后重新运行: sudo bash scripts/setup.sh"
 fi
 
