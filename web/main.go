@@ -1,7 +1,10 @@
 package main
 
 import (
+	"crypto/rand"
+	"crypto/subtle"
 	"embed"
+	"encoding/hex"
 	"fmt"
 	"io/fs"
 	"log"
@@ -51,10 +54,35 @@ func main() {
 		log.Fatal("NAS_PASS not set. Set it via env or /opt/nas/.env")
 	}
 
-	// Init JWT
+	// Init JWT — use env var, or generate random secret and persist to .env
 	secret := os.Getenv("JWT_SECRET")
 	if secret == "" {
-		secret = "nas-panel-secret-" + nasPass
+		// Try reading from .env
+		if s, err := common.ReadEnvFile("/opt/nas/.env", "JWT_SECRET"); err == nil && s != "" {
+			secret = s
+		}
+	}
+	if secret == "" {
+		// Generate cryptographically random secret (32 bytes = 64 hex chars)
+		b := make([]byte, 32)
+		if _, err := rand.Read(b); err == nil {
+			secret = hex.EncodeToString(b)
+			// Persist to .env so it survives restarts
+			envFile := "/opt/nas/.env"
+			if data, err := os.ReadFile(envFile); err == nil {
+				content := string(data)
+				if !strings.Contains(content, "JWT_SECRET=") {
+					f, err := os.OpenFile(envFile, os.O_APPEND|os.O_WRONLY, 0600)
+					if err == nil {
+						fmt.Fprintf(f, "\nJWT_SECRET=%s\n", secret)
+						f.Close()
+					}
+				}
+			}
+		} else {
+			// Fallback: use NAS_PASS as seed (better than hardcoded string)
+			secret = "nas-panel-secret-" + nasPass
+		}
 	}
 	common.InitAuth(secret)
 
@@ -222,7 +250,10 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	username := r.FormValue("username")
 	password := r.FormValue("password")
 
-	if username != nasUser || password != nasPass {
+	// Constant-time comparison to prevent timing side-channel attacks
+	userMatch := subtle.ConstantTimeCompare([]byte(username), []byte(nasUser))
+	passMatch := subtle.ConstantTimeCompare([]byte(password), []byte(nasPass))
+	if userMatch != 1 || passMatch != 1 {
 		http.Error(w, `{"error": "invalid credentials"}`, http.StatusUnauthorized)
 		return
 	}

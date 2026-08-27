@@ -14,6 +14,11 @@ import (
 )
 
 var auditDB *sql.DB
+var auditChan chan auditRecord
+
+type auditRecord struct {
+	username, action, method, path, detail, result, ip string
+}
 
 // InitAuditLog opens the SQLite audit log database and creates tables
 func InitAuditLog(dataDir string) {
@@ -50,21 +55,39 @@ func InitAuditLog(dataDir string) {
 	// Auto-cleanup old logs
 	go cleanupOldLogs()
 
+	// Start async audit writer (buffered channel, non-blocking for callers)
+	auditChan = make(chan auditRecord, 256)
+	go auditWriter()
+
 	log.Printf("Audit log initialized: %s", dbPath)
 }
 
-// LogAudit records an operation to the audit log
+// auditWriter drains the audit channel and writes to SQLite in background
+func auditWriter() {
+	for rec := range auditChan {
+		if auditDB == nil {
+			continue
+		}
+		_, err := auditDB.Exec(
+			`INSERT INTO audit_log (timestamp, username, action, method, path, detail, result, ip) 
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			time.Now().Format(time.RFC3339), rec.username, rec.action, rec.method, rec.path, rec.detail, rec.result, rec.ip,
+		)
+		if err != nil {
+			log.Printf("WARNING: audit log insert failed: %v", err)
+		}
+	}
+}
+
+// LogAudit records an operation to the audit log (non-blocking)
 func LogAudit(username, action, method, path, detail, result, ip string) {
-	if auditDB == nil {
+	if auditChan == nil {
 		return
 	}
-	_, err := auditDB.Exec(
-		`INSERT INTO audit_log (timestamp, username, action, method, path, detail, result, ip) 
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		time.Now().Format(time.RFC3339), username, action, method, path, detail, result, ip,
-	)
-	if err != nil {
-		log.Printf("WARNING: audit log insert failed: %v", err)
+	select {
+	case auditChan <- auditRecord{username, action, method, path, detail, result, ip}:
+	default:
+		// Channel full, drop to avoid blocking the request
 	}
 }
 
