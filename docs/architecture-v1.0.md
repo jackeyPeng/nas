@@ -1,6 +1,6 @@
 # Abwen NAS — Architecture v1.0
 
-> 2026-07-31 · 依据外部讨论稿《Abwen NAS 存储架构与系统架构建议 V1.0》（docs/external/）逐条评审后形成。
+> 2026-07-31 · 2026-08-26 修订 · 依据外部讨论稿《Abwen NAS 存储架构与系统架构建议 V1.0》（docs/external/）逐条评审后形成。
 > 本文档是项目架构宪法：后续功能开发、代码评审、方案取舍以本文为准。修改本文需要明确记录理由。
 
 ---
@@ -13,6 +13,7 @@
 4. **systemd First** — 所有常驻服务以 systemd unit 管理，面板通过 D-Bus/systemctl 操作，不发明自己的进程守护。
 5. **Storage First** — 存储是产品核心，UI/API 设计以"用户管理数据"为中心，不以"管理协议/RAID"为中心。
 6. **Web First** — 唯一官方客户端是 Web UI（含移动端浏览器/PWA），不开发原生 App。
+7. **One-Line Install** — 新用户一条命令完成全部部署，零人工干预，十分钟内完成（2026-08-26 新增）。
 
 ---
 
@@ -132,8 +133,22 @@ V1 只有 Local。字段先在内部模型加上（默认 local），USB 挂载�
 ### 2.2 OTA 更新与配置迁移
 - 面板更新 = 替换二进制 + systemctl restart（deploy-nas-panel.sh 已实现：备份→替换→重启→验证）。
 - 二进制内嵌版本号，启动时执行配置迁移钩子（如 rclone tasks.json 加 direction 字段这类 schema 演进，启动时补默认值）。
-- 配置备份恢复走 backup-config.sh / restore-config.sh（已有，cron 每周）。
-- 版本更新检查与一键升级：TODO #14，联网检查 Gitee Release，预留但不阻塞当前迭代。
+- 配置备份恢复走 backup-config.sh / restore-config.sh（已有，cron 每周，保留 3 份）。
+- 版本更新检查与一键升级：TODO #19，联网检查 Gitee Release，预留但不阻塞当前迭代。
+
+### 2.3 一键安装（2026-08-26 新增）
+
+**原则：一条命令，零人工干预，十分钟内完成。**
+
+- 安装入口：`wget -qO- https://gitee.com/gitdogcat/nas/raw/master/scripts/install.sh | sudo bash`
+- 使用 `wget` 而非 `curl`（Debian 最小安装默认自带 wget，不依赖额外包）
+- 安装流程：克隆仓库 → 创建 .env → 安装系统包 → 调用 setup.sh 部署 10 步 → 编译/部署面板 → 验证 46 项注册表
+- 步骤进度条可视化，每步显示耗时，失败即时报错退出
+- apt 源自动测速：deb.debian.org 下载低于 100KB/s 自动切换清华镜像
+- NFS 子网自动检测：从本机主网卡提取 /24 子网，不再硬编码
+- 禁止自动安装 Go 编译：二进制下载失败直接报错，不偷偷装编译工具链
+- 安装后自动执行初始配置备份（保留 3 份）
+- cleanup.sh 包含磁盘签名擦除：停止 RAID 阵列 + wipefs 清理，确保下次安装不受残留签名干扰
 
 ---
 
@@ -147,7 +162,8 @@ V1 只有 Local。字段先在内部模型加上（默认 local），USB 挂载�
 | TODO #12 移动设备补第三方 App 清单 | 第十四条 | 文档更新 |
 | README 开头补产品理念（数据是核心，协议是能力） | 第十八条 | 文档更新 |
 | docs/external/ 归档讨论稿 docx+pdf | 第二十条 | 已完成 |
+| 一键安装流程重写 + 部署可靠性改进 | 本次修订 | 小型，2026-08-26 完成 |
 
 ---
 
-*评审人：彭胜文 / Hermes · 2026-07-31*
+*评审人：彭胜文 / Hermes · 2026-07-31 · 修订 2026-08-26*
