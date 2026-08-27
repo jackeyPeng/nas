@@ -1,5 +1,65 @@
 # NAS 项目变更日志
 
+## [2026-08-26] - 一键安装流程重写 + 多项修复
+
+### 版本 v1.3.0 → 待发布
+
+---
+
+### 1. install.sh 重写为完整一键安装
+
+- 合并 setup.sh 全部 10 步部署功能，一条命令完成所有 9 个服务安装
+- 安装命令改用 `wget`（Debian 默认自带），不再依赖 curl
+- 步骤进度条 `[1/10]` 格式，每步显示耗时，绿色 ✓ / 红色 ✗
+- 安装后自动验证：9 个服务状态 + 系统注册表 46 项检查
+- 安装完成摘要显示所有访问方式（面板/FileBrowser/WebDAV/Samba/FTP/S3）
+- 禁止自动安装 Go 编译：二进制下载失败直接报错退出，给出明确手动编译命令
+
+### 2. NFS 子网自动检测
+
+- `configs/exports` 硬编码子网改为 `__SUBNET__` 占位符
+- `setup.sh` 自动检测本机主网卡所在 `/24` 子网，部署时替换
+- sed 分隔符用 `|` 避免子网中 `/` 冲突
+
+### 3. 备份 cron 修复
+
+- 备份 cron 从 `crontab -`（root）改为 `crontab -u "$NAS_USER"`（正确用户）
+- 部署完成后自动执行初始备份，保留份数从 5 改为 3
+- `backup-config.sh` 同步更新
+
+### 4. install.sh 写入 NAS_USER 到 .env
+
+- 面板登录需要 `NAS_USER` 环境变量，之前 .env 只写入了 `NAS_PASS`
+- 修复后自动追加 `NAS_USER=xxx` 到 .env
+
+### 5. cleanup.sh 清理磁盘 RAID/LVM 签名
+
+- 新增步骤：停止所有 RAID 阵列、擦除数据盘上残留的 RAID/LVM 签名
+- 防止上次安装的 RAID 阵列导致新安装后磁盘无法识别
+
+### 6. FileBrowser 解压兼容多种 tar.gz 结构
+
+- 不同来源的 tar.gz 结构不同：flat `filebrowser` / `linux-amd64-filebrowser/filebrowser` / 任意目录
+- 修复为三种结构的自动检测，下载失败不再中断整个脚本（`set +e`/`set -e` 包裹）
+
+### 7. apt 镜像速度自动检测
+
+- 测试 `deb.debian.org` 下载速度，低于 100KB/s 自动切换清华镜像
+- 修复 sed 替换规则，避免产生重复路径（`/debian/debian/`）
+
+### 8. 系统信息显示修复
+
+- IP 检测改用 `grep -oP` 避免 `ip -o` 输出换行符导致解析错误
+- 内存显示兼容中文 locale（`内存：` 而非 `Mem:`）
+- `go.mod` 版本要求从 1.25 降为 1.24（兼容 apt 安装的 Go）
+
+### 9. 验证结果
+
+- 在 [REDACTED]（全新 Debian 13）上完整跑通：9/9 服务 active，46/46 注册表通过
+- 4 块数据盘正常识别，登录/存储页面正常
+
+---
+
 ## [2026-08-14] - 存储管理 5 Tab 重构 + 操作日志 API
 
 ### 版本 v1.3.0 → 待发布

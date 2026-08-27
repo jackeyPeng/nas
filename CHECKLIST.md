@@ -1,7 +1,9 @@
 # NAS 系统配置清单
 
-> 最后更新: 2026-08-25
+> 最后更新: 2026-08-26
 > 总计 46 项，覆盖 11 大类
+>
+> **一键安装**: `NAS_PASS=*** wget -qO- https://gitee.com/gitdogcat/nas/raw/master/scripts/install.sh | sudo bash`
 
 ## 使用方式
 
