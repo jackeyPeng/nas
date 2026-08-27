@@ -219,32 +219,15 @@ rm -f "$SETUP_LOG"
 # ── 检查 nas-panel 是否安装成功 ────────────────────────────
 if [ ! -f "$PANEL_BIN" ]; then
     echo ""
-    echo -e "${YELLOW}⚠ nas-panel 二进制下载失败，尝试本地编译...${NC}"
-    
-    # 检查是否有 Go
-    if ! command -v go &>/dev/null; then
-        echo -e "  ${YELLOW}未安装 Go，尝试安装...${NC}"
-        apt-get install -y -qq golang-go 2>/dev/null || true
-    fi
-    
-    if command -v go &>/dev/null && [ -d "$REPO_DIR/web" ]; then
-        # 修复文件权限（git clone 以 root 运行）
-        chown -R "$NAS_USER:$NAS_USER" "$REPO_DIR" 2>/dev/null || true
-        
-        echo -n "  编译中... "
-        cd "$REPO_DIR/web"
-        if GOPROXY=https://goproxy.cn,direct GOTOOLCHAIN=local go build -buildvcs=false -o "$PANEL_BIN" . 2>/dev/null; then
-            chmod +x "$PANEL_BIN"
-            strip "$PANEL_BIN" 2>/dev/null || true
-            echo -e "${GREEN}✓${NC}"
-        else
-            echo -e "${RED}✗${NC}"
-            echo -e "  ${YELLOW}请手动编译: cd $REPO_DIR/web && go build -o $PANEL_BIN .${NC}"
-        fi
-    else
-        echo -e "  ${RED}无法编译（缺少 Go 或源码），面板将不可用${NC}"
-        echo -e "  ${YELLOW}请手动安装 Go 后运行: cd $REPO_DIR/web && go build -o nas-panel .${NC}"
-    fi
+    echo -e "${RED}✗ nas-panel 二进制下载失败${NC}"
+    echo -e "  ${YELLOW}请手动编译后重新安装:${NC}"
+    echo ""
+    echo -e "  apt-get install -y golang-go"
+    echo -e "  cd $REPO_DIR/web"
+    echo -e "  GOPROXY=https://goproxy.cn,direct go build -buildvcs=false -o $PANEL_BIN ."
+    echo -e "  sudo bash $REPO_DIR/scripts/setup.sh"
+    echo ""
+    exit 1
 fi
 
 # 确保面板服务正常运行
