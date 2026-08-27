@@ -16,6 +16,9 @@ func handleWizardReset(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
 		return
 	}
+
+	diskOpMutex.Lock()
+	defer diskOpMutex.Unlock()
 	confirm := r.FormValue("confirm")
 	if confirm != "yes" {
 		http.Error(w, `{"error":"请确认操作"}`, http.StatusBadRequest)

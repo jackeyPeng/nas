@@ -142,6 +142,9 @@ func handleWizardSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	diskOpMutex.Lock()
+	defer diskOpMutex.Unlock()
+
 	mode := r.FormValue("mode")
 	confirm := r.FormValue("confirm")
 	nasUser, _ := common.ReadEnvFile(common.GetEnvFilePath(), "NAS_USER")
@@ -258,20 +261,38 @@ func handleWizardSetup(w http.ResponseWriter, r *http.Request) {
 }
 
 // setupSingleDisk: format + mount + fstab + chown
+// NOTE: This is the deprecated non-streaming path. Prefer the SSE streaming version in stream.go.
+// TODO: Migrate remaining callers to streaming and remove this function.
 func setupSingleDisk(dev, mountPoint, nasUser string) []string {
 	var steps []string
 	// Wipe existing partition table
-	common.SudoExec("/usr/sbin/wipefs", "-a", dev)
+	if out, err := common.SudoOutput("/usr/sbin/wipefs", "-a", dev); err != nil {
+		steps = append(steps, "失败: wipefs "+dev+" - "+err.Error()+" "+out)
+		return steps
+	}
 	// Create partition
-	common.SudoExec("/usr/sbin/parted", "-s", dev, "mklabel", "gpt", "mkpart", "primary", "ext4", "0%", "100%")
+	if out, err := common.SudoOutput("/usr/sbin/parted", "-s", dev, "mklabel", "gpt", "mkpart", "primary", "ext4", "0%", "100%"); err != nil {
+		steps = append(steps, "失败: parted "+dev+" - "+err.Error()+" "+out)
+		return steps
+	}
+	// NVMe partitions use "p1" suffix: nvme0n1 → nvme0n1p1, sda → sda1
 	partDev := dev + "1"
+	if strings.HasPrefix(dev, "/dev/nvme") {
+		partDev = dev + "p1"
+	}
 	steps = append(steps, "分区 "+dev)
 	// Format
-	common.SudoExec("mkfs.xfs", "-f", partDev)
+	if out, err := common.SudoOutput("mkfs.xfs", "-f", partDev); err != nil {
+		steps = append(steps, "失败: mkfs.xfs "+partDev+" - "+err.Error()+" "+out)
+		return steps
+	}
 	steps = append(steps, "格式化 xfs")
 	// Mount
 	common.SudoExec("mkdir", "-p", mountPoint)
-	common.SudoExec("mount", partDev, mountPoint)
+	if out, err := common.SudoOutput("mount", partDev, mountPoint); err != nil {
+		steps = append(steps, "失败: mount "+partDev+" - "+err.Error()+" "+out)
+		return steps
+	}
 	steps = append(steps, "挂载 → "+mountPoint)
 	// fstab
 	uuidOut, _ := common.ExecOutput("blkid", "-s", "UUID", "-o", "value", partDev)
@@ -413,8 +434,11 @@ func setupRaidN(devs []string, mountPoint, nasUser string, level int) []string {
 	uuid := strings.TrimSpace(uuidOut)
 	writeFstab(uuid, mountPoint, "xfs")
 	steps = append(steps, "写入 fstab 持久化")
-	// Save mdadm config
-	common.SudoExec(mdadmPath, "--detail", "--scan", ">>", "/etc/mdadm/mdadm.conf")
+	// Save mdadm config (read output, then write to file — exec.Command doesn't use shell)
+	mdadmConf, err := common.SudoOutput(mdadmPath, "--detail", "--scan")
+	if err == nil && mdadmConf != "" {
+		common.SudoExec("/bin/sh", "-c", fmt.Sprintf("echo '%s' >> /etc/mdadm/mdadm.conf", strings.TrimSpace(mdadmConf)))
+	}
 	common.SudoExec("update-initramfs", "-u")
 	steps = append(steps, "保存 RAID 配置")
 	// chown

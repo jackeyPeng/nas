@@ -248,6 +248,9 @@ func handlePoolExtend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	diskOpMutex.Lock()
+	defer diskOpMutex.Unlock()
+
 	vgName := r.FormValue("vg_name")
 	if vgName == "" { vgName = "vg_nas" }
 	device := r.FormValue("device")
@@ -331,6 +334,9 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	diskOpMutex.Lock()
+	defer diskOpMutex.Unlock()
+
 	poolType := r.FormValue("pool_type")
 	poolDevice := r.FormValue("pool_device")
 	confirm := r.FormValue("confirm")
@@ -368,8 +374,8 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 		// 2. Remove VG
 		common.SudoExec("/usr/sbin/vgremove", "-f", vgName)
 		steps = append(steps, "删除 VG "+vgName)
-		// 3. Remove PVs
-		pvsOut, _ := common.SudoOutput("/usr/sbin/pvs", "--noheadings", "-o", "pv_name")
+		// 3. Remove PVs — only for this VG, not all PVs on the system
+		pvsOut, _ := common.SudoOutput("/usr/sbin/pvs", "--noheadings", "-o", "pv_name", "-S", "vg_name="+vgName)
 		for _, pvName := range strings.Fields(pvsOut) {
 			if strings.HasPrefix(pvName, "/dev/") {
 				common.SudoExec("/usr/sbin/pvremove", "-f", pvName)
@@ -386,21 +392,17 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 			common.SudoExec("umount", "-l", mountPoint)
 			steps = append(steps, "卸载 "+mountPoint)
 		}
-		// 2. Stop RAID
+		// 2. Get member disks BEFORE stopping the array
+		detailOut, _ := common.SudoOutput("/usr/sbin/mdadm", "--detail", poolDevice)
+		memberDisks := parseMdMemberDisks(detailOut)
+		// 3. Stop RAID
 		common.SudoExec("/usr/sbin/mdadm", "--stop", poolDevice)
 		steps = append(steps, "停止 "+poolDevice)
-		// 3. Zero superblocks on member disks
-		disks := getDiskStatus()
-		for _, d := range disks {
-			if d.Name == "sr0" || strings.HasPrefix(d.Name, "loop") {
-				continue
-			}
-			if isSystemDisk(d.Device) {
-				continue
-			}
-			common.SudoExec("/usr/sbin/mdadm", "--zero-superblock", d.Device)
-			common.SudoExec("/usr/sbin/wipefs", "-a", d.Device)
-			steps = append(steps, "释放 "+d.Device)
+		// 4. Zero superblocks only on THIS array's member disks
+		for _, disk := range memberDisks {
+			common.SudoExec("/usr/sbin/mdadm", "--zero-superblock", disk)
+			common.SudoExec("/usr/sbin/wipefs", "-a", disk)
+			steps = append(steps, "释放 "+disk)
 		}
 
 	case "single":
@@ -462,3 +464,23 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 
 // ensure json import is used
 var _ = json.Marshal
+
+// parseMdMemberDisks extracts member disk paths from "mdadm --detail" output.
+// Example input line: "   0       8       16        0      active sync   /dev/sdb"
+// Returns: ["/dev/sdb", "/dev/sdc", ...]
+func parseMdMemberDisks(output string) []string {
+	var disks []string
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.Contains(line, "active") && !strings.Contains(line, "spare") {
+			continue
+		}
+		// Find /dev/ path in the line
+		for _, field := range strings.Fields(line) {
+			if strings.HasPrefix(field, "/dev/") {
+				disks = append(disks, field)
+			}
+		}
+	}
+	return disks
+}

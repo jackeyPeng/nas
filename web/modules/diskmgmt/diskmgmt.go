@@ -5,9 +5,13 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 
 	"nas-panel/common"
 )
+
+// diskOpMutex prevents concurrent destructive disk operations (wipefs, mdadm create, etc.)
+var diskOpMutex sync.Mutex
 
 // RegisterRoutes registers disk management routes
 func RegisterRoutes(mux *http.ServeMux) {
