@@ -132,7 +132,6 @@ function nasPanel() {
         // System settings (new unified)
         // 组件版本（系统详情页）
         components: { items: [], panel: null },
-        showNotice: false,
         noticeText: '',
         componentCategories: ['文件共享', '网页文件管理', '对象存储', '网页管理', '系统防护', '存储管理', '运行环境'],
 
@@ -244,7 +243,9 @@ function nasPanel() {
                 case 'diskmgmt': this.loadStorageOverview(); this.loadWizardStatus(); this.loadSharedFolders(); this.loadPendingOps(); this.loadUsers(); break;
                 case 'firewall': this.loadFirewall(); break;
                 case 'monitor': this.initMonitorRefresh(); this.loadAlertConfig(); break;
-                case 'system': this.loadSystemOverview(); this.loadComponents(); break;
+                case 'system': this.loadSystemOverview(); break;
+                case 'about': this.loadComponents(); break;
+                case 'notice': this.loadNotice(); break;
                 case 'backup': this.loadBackups(); break;
                 case 'rclone': this.loadRcloneStatus(); this.loadRcloneRemotes(); this.loadRcloneTasks(); this.loadRcloneLogs(); this.loadSharedDirs(); break;
                 case 'logs': this.loadAuditLogs(); break;

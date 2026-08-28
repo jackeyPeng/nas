@@ -100,6 +100,12 @@
                         <li :class="{active: page === 'system'}" @click="navigate('system')">
                             <span style="margin-left:20px">🖥️</span> 系统设置
                         </li>
+                        <li :class="{active: page === 'about'}" @click="navigate('about')">
+                            <span style="margin-left:20px">📦</span> 系统详情
+                        </li>
+                        <li :class="{active: page === 'notice'}" @click="navigate('notice')">
+                            <span style="margin-left:20px">ℹ️</span> 关于与隐私
+                        </li>
                     </div>
                 </template>
 
@@ -1652,34 +1658,7 @@
             <div x-show="page === 'system'" class="page" x-init="if(page==='system') loadSystemOverview()" x-transition.opacity.duration.300ms>
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
                     <h2 style="margin:0">系统设置</h2>
-                    <button class="btn btn-sm btn-primary" @click="loadSystemOverview(); loadComponents()" style="font-size:12px">刷新</button>
-                </div>
-
-                <!-- 系统详情：软件组件版本 -->
-                <div style="background:white;border:1px solid #e0e4e8;border-radius:8px;padding:16px;margin-bottom:12px">
-                    <h3 style="margin-top:0;margin-bottom:4px;font-size:15px">📦 系统详情</h3>
-                    <p style="margin:0 0 12px;color:#64748b;font-size:13px">
-                        面板
-                        <strong x-text="components.panel?.version || '-'"></strong>
-                        · 构建 <span x-text="components.panel?.build_time || '-'"></span>
-                        · <span x-text="components.panel?.go_version || ''"></span>
-                    </p>
-                    <template x-for="cat in componentCategories" :key="cat">
-                        <div style="margin-bottom:12px">
-                            <div style="font-size:13px;font-weight:600;color:#475569;margin-bottom:6px" x-text="cat"></div>
-                            <table style="width:100%;border-collapse:collapse;font-size:13px">
-                                <tbody>
-                                    <template x-for="c in components.items.filter(x => x.category === cat)" :key="c.name">
-                                        <tr style="border-bottom:1px solid #f1f5f9">
-                                            <td style="padding:5px 8px;color:#334155;white-space:nowrap" x-text="c.name"></td>
-                                            <td style="padding:5px 8px;font-family:monospace;color:#0369a1" x-text="c.version || '-'"></td>
-                                            <td style="padding:5px 8px;color:#94a3b8;font-size:12px" x-text="c.detail"></td>
-                                        </tr>
-                                    </template>
-                                </tbody>
-                            </table>
-                        </div>
-                    </template>
+                    <button class="btn btn-sm btn-primary" @click="loadSystemOverview()" style="font-size:12px">刷新</button>
                 </div>
 
                 <!-- 主机名 -->
@@ -1840,17 +1819,49 @@
                     </button>
                     <span x-show="resetMsg" x-text="resetMsg" style="margin-left:12px;font-size:13px;color:#991b1b"></span>
                 </div>
+            </div>
 
-                <!-- 关于与隐私声明 -->
-                <div style="background:white;border:1px solid #e0e4e8;border-radius:8px;padding:16px;margin-top:12px">
-                    <h3 style="margin-top:0;margin-bottom:8px;font-size:15px;cursor:pointer" @click="showNotice = !showNotice">
-                        <span x-text="showNotice ? '▼' : '▶'"></span> ℹ️ 关于与隐私声明
-                    </h3>
-                    <div x-show="showNotice" style="font-size:13px;color:#475569">
-                        <p style="margin:0 0 8px">Z1 NAS 是私有部署的存储系统，所有数据仅存储在本机，不含遥测与崩溃上报。点击查看完整声明：</p>
-                        <button class="btn btn-sm" @click="loadNotice()" style="margin-bottom:8px">查看完整隐私声明与第三方软件清单</button>
-                        <pre x-show="noticeText" x-text="noticeText" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:12px;white-space:pre-wrap;font-size:12px;max-height:400px;overflow:auto;margin:0"></pre>
-                    </div>
+            <!-- 系统详情（独立页） -->
+            <div x-show="page === 'about'" class="page" x-init="if(page==='about') loadComponents()" x-transition.opacity.duration.300ms>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+                    <h2 style="margin:0">📦 系统详情</h2>
+                    <button class="btn btn-sm btn-primary" @click="loadComponents()" style="font-size:12px">刷新</button>
+                </div>
+                <div style="background:white;border:1px solid #e0e4e8;border-radius:8px;padding:16px">
+                    <p style="margin:0 0 12px;color:#64748b;font-size:13px">
+                        面板
+                        <strong x-text="components.panel?.version || '-'"></strong>
+                        · 构建 <span x-text="components.panel?.build_time || '-'"></span>
+                        · <span x-text="components.panel?.go_version || ''"></span>
+                        · 提交 <span x-text="components.panel?.git_commit || '-'"></span>
+                    </p>
+                    <template x-for="cat in componentCategories" :key="cat">
+                        <div style="margin-bottom:12px">
+                            <div style="font-size:13px;font-weight:600;color:#475569;margin-bottom:6px" x-text="cat"></div>
+                            <table style="width:100%;border-collapse:collapse;font-size:13px">
+                                <tbody>
+                                    <template x-for="c in components.items.filter(x => x.category === cat)" :key="c.name">
+                                        <tr style="border-bottom:1px solid #f1f5f9">
+                                            <td style="padding:5px 8px;color:#334155;white-space:nowrap" x-text="c.name"></td>
+                                            <td style="padding:5px 8px;font-family:monospace;color:#0369a1" x-text="c.version || '-'"></td>
+                                            <td style="padding:5px 8px;color:#94a3b8;font-size:12px" x-text="c.detail"></td>
+                                        </tr>
+                                    </template>
+                                </tbody>
+                            </table>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <!-- 关于与隐私（独立页） -->
+            <div x-show="page === 'notice'" class="page" x-init="if(page==='notice') loadNotice()" x-transition.opacity.duration.300ms>
+                <h2 style="margin-bottom:16px">ℹ️ 关于与隐私声明</h2>
+                <div style="background:white;border:1px solid #e0e4e8;border-radius:8px;padding:16px">
+                    <p style="margin:0 0 12px;color:#475569;font-size:14px">
+                        Z1 NAS 是私有部署的存储系统，所有数据仅存储在本机，不含遥测与崩溃上报。
+                    </p>
+                    <pre x-text="noticeText || '加载中...'" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:12px;white-space:pre-wrap;font-size:12px;max-height:600px;overflow:auto;margin:0"></pre>
                 </div>
             </div>
 
