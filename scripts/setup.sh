@@ -354,15 +354,24 @@ mkdir -p /etc/filebrowser
 if [ ! -f /etc/filebrowser/filebrowser.db ]; then
     filebrowser config init --database /etc/filebrowser/filebrowser.db 2>/dev/null || true
 fi
-filebrowser config set \
+# 固定监听地址和端口：0.0.0.0:8081（默认 127.0.0.1:8080 会与 WebDAV 冲突且无法外部访问）
+# 注意：必须在服务停止状态下执行 config set，运行中的服务会锁数据库导致 timeout（已知坑）
+systemctl stop filebrowser 2>/dev/null || true
+if filebrowser config set \
     --database /etc/filebrowser/filebrowser.db \
     --address 0.0.0.0 \
     --port 8081 \
     --root "$DATA_DIR" \
-    --log /var/log/filebrowser.log 2>/dev/null || true
+    --log /var/log/filebrowser.log >/dev/null 2>&1; then
+    echo "  ✓ FileBrowser 监听 0.0.0.0:8081"
+else
+    echo "  ✗ FileBrowser config set 失败"
+    exit 1
+fi
 filebrowser users add "$NAS_USER" "$NAS_PASS" \
     --database /etc/filebrowser/filebrowser.db \
-    --perm.admin 2>/dev/null || true
+    --perm.admin 2>/dev/null || filebrowser users update "$NAS_USER" --password "$NAS_PASS" \
+    --database /etc/filebrowser/filebrowser.db 2>/dev/null || true
 
 cat > /etc/systemd/system/filebrowser.service << 'FBEOF'
 [Unit]
@@ -381,7 +390,18 @@ FBEOF
 systemctl daemon-reload
 systemctl enable filebrowser
 systemctl reset-failed filebrowser 2>/dev/null; systemctl restart filebrowser
-echo "  ✓ FileBrowser 配置完成"
+
+# 验证 FileBrowser 端口确已生效（防 config set 静默失败）
+sleep 3
+FB_PORT_CHECK=$(ss -tln 2>/dev/null | grep -c ":8081 " || true)
+if [ "$FB_PORT_CHECK" -ge 1 ]; then
+    echo "  ✓ FileBrowser 配置完成（端口 8081 已监听）"
+else
+    echo "  ✗ FileBrowser 未监听 8081，检查: journalctl -u filebrowser"
+    echo "    常见原因: 数据库中残留旧端口配置，执行:"
+    echo "    filebrowser config set --database /etc/filebrowser/filebrowser.db --address 0.0.0.0 --port 8081"
+    exit 1
+fi
 
 # ==================== [8/10] 配置 S3 对象存储 (rclone serve s3) ====================
 echo ""
