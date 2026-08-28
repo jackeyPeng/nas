@@ -1,6 +1,7 @@
 package version
 
 import (
+	_ "embed"
 	"net/http"
 	"regexp"
 	"runtime"
@@ -41,6 +42,7 @@ type Component struct {
 func RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/version", handleVersion)
 	mux.HandleFunc("/api/system/components", common.AuthMiddleware(handleComponents))
+	mux.HandleFunc("/api/system/notice", common.AuthMiddleware(handleNotice))
 }
 
 // handleVersion returns build version info
@@ -160,4 +162,14 @@ func dpkgVersion(pkg string) string {
 		return ""
 	}
 	return v
+}
+
+//go:embed NOTICE.md
+var noticeFS []byte
+
+// handleNotice returns the compliance/privacy statement (NOTICE.md)
+func handleNotice(w http.ResponseWriter, r *http.Request) {
+	common.JSONResponse(w, map[string]interface{}{
+		"notice": string(noticeFS),
+	})
 }

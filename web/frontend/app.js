@@ -132,6 +132,8 @@ function nasPanel() {
         // System settings (new unified)
         // 组件版本（系统详情页）
         components: { items: [], panel: null },
+        showNotice: false,
+        noticeText: '',
         componentCategories: ['文件共享', '网页文件管理', '对象存储', '网页管理', '系统防护', '存储管理', '运行环境'],
 
         sysSettings: {
@@ -1632,6 +1634,13 @@ function nasPanel() {
         },
 
         // System settings — new unified page
+        // 加载隐私声明与第三方软件清单
+        async loadNotice() {
+            if (this.noticeText) return;
+            const data = await this.api('/system/notice');
+            if (data && data.notice) this.noticeText = data.notice;
+        },
+
         // 加载系统组件版本（系统详情页）
         async loadComponents() {
             const data = await this.api('/system/components');

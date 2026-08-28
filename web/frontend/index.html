@@ -1840,6 +1840,18 @@
                     </button>
                     <span x-show="resetMsg" x-text="resetMsg" style="margin-left:12px;font-size:13px;color:#991b1b"></span>
                 </div>
+
+                <!-- 关于与隐私声明 -->
+                <div style="background:white;border:1px solid #e0e4e8;border-radius:8px;padding:16px;margin-top:12px">
+                    <h3 style="margin-top:0;margin-bottom:8px;font-size:15px;cursor:pointer" @click="showNotice = !showNotice">
+                        <span x-text="showNotice ? '▼' : '▶'"></span> ℹ️ 关于与隐私声明
+                    </h3>
+                    <div x-show="showNotice" style="font-size:13px;color:#475569">
+                        <p style="margin:0 0 8px">Z1 NAS 是私有部署的存储系统，所有数据仅存储在本机，不含遥测与崩溃上报。点击查看完整声明：</p>
+                        <button class="btn btn-sm" @click="loadNotice()" style="margin-bottom:8px">查看完整隐私声明与第三方软件清单</button>
+                        <pre x-show="noticeText" x-text="noticeText" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:12px;white-space:pre-wrap;font-size:12px;max-height:400px;overflow:auto;margin:0"></pre>
+                    </div>
+                </div>
             </div>
 
 
