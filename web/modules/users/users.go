@@ -333,6 +333,19 @@ func changePassword(username, password string) error {
 	}
 
 	common.SudoExec("htpasswd", "-b", "/etc/rclone-htpasswd", username, password)
+
+	// Update .env NAS_PASS (read by panel on startup)
+	common.SudoExec("sed", "-i", fmt.Sprintf("s/^NAS_PASS=.*/NAS_PASS=%s/", password),
+		common.GetEnvFilePath())
+
+	// Update FileBrowser password
+	common.SudoExec("filebrowser", "users", "update", username,
+		"--password", password,
+		"--database", "/etc/filebrowser/filebrowser.db")
+
+	// Update in-memory panel password (takes effect immediately, no restart)
+	common.UpdateNasPass(password)
+
 	return nil
 }
 
