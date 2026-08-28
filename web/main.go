@@ -150,9 +150,9 @@ func loggingMiddleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 
-		// Skip logging for static files and health checks
+		// Only audit write operations (POST/PUT/DELETE) — GET polling would flood the log
 		path := r.URL.Path
-		if strings.HasPrefix(path, "/api/") {
+		if strings.HasPrefix(path, "/api/") && r.Method != http.MethodGet {
 			action := classifyAction(r.Method, path)
 			detail := buildLogDetail(r)
 			common.LogAudit(username, action, r.Method, path, detail, "success", ip)
@@ -237,6 +237,20 @@ func buildLogDetail(r *http.Request) string {
 		if v := r.FormValue(key); v != "" {
 			return key + "=" + v
 		}
+	}
+	// Storage-specific detail: mode/disks for wizard, pool_type for delete
+	if v := r.FormValue("mode"); v != "" {
+		detail := "mode=" + v
+		if disks := r.FormValue("disks"); disks != "" {
+			detail += " disks=" + disks
+		}
+		return detail
+	}
+	if v := r.FormValue("pool_type"); v != "" {
+		return "pool_type=" + v + " device=" + r.FormValue("pool_device")
+	}
+	if v := r.FormValue("vg_name"); v != "" {
+		return "vg=" + v + " disk=" + r.FormValue("disk")
 	}
 	return ""
 }

@@ -172,6 +172,14 @@ func ApplyPendingOps() ([]string, error) {
 			logOp(op.Action, op.FolderName, detail, "success", "")
 			results = append(results, fmt.Sprintf("✓ %s %s", op.Action, op.FolderName))
 		}
+		// Audit log entry for the actual filesystem change
+		result := "success"
+		auditDetail := fmt.Sprintf("%s 共享文件夹 %s (pool=%s, perm=%s)", map[string]string{"create": "创建", "update": "更新", "delete": "删除"}[op.Action], op.FolderName, op.Pool, op.Permission)
+		if err != nil {
+			result = "error"
+			auditDetail += " 失败: " + err.Error()
+		}
+		common.LogAudit("system", "存储变更", "APPLY", "/api/disk/pending/apply", auditDetail, result, "")
 	}
 
 	// Clear pending queue

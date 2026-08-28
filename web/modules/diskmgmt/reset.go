@@ -20,6 +20,7 @@ func handleWizardReset(w http.ResponseWriter, r *http.Request) {
 	diskOpMutex.Lock()
 	defer diskOpMutex.Unlock()
 	confirm := r.FormValue("confirm")
+	common.LogAudit("system", "存储重置", "STORAGE", "/api/disk/wizard/reset", "清空所有存储池配置", "pending", "")
 	if confirm != "yes" {
 		http.Error(w, `{"error":"请确认操作"}`, http.StatusBadRequest)
 		return

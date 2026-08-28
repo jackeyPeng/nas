@@ -203,6 +203,7 @@ func handleCreateFolder(w http.ResponseWriter, r *http.Request) {
 	})
 
 	AddPendingOp("create", name, folderPath, pool, permission, validUsers, permission != "noaccess", nfs, recycle, quotaGB)
+	common.LogAudit("system", "创建共享文件夹", "STORAGE", "/api/disk/folders/create", fmt.Sprintf("%s -> %s (perm=%s)", name, folderPath, permission), "pending", "")
 }
 
 // handleDeleteFolder deletes a shared folder (deferred to pending queue)
@@ -234,6 +235,7 @@ func handleDeleteFolder(w http.ResponseWriter, r *http.Request) {
 	})
 
 	AddPendingOp("delete", filepath.Base(path), path, filepath.Dir(path), "", "", true, false, false, 0)
+	common.LogAudit("system", "删除共享文件夹", "STORAGE", "/api/disk/folders/delete", fmt.Sprintf("%s -> %s", filepath.Base(path), path), "pending", "")
 }
 
 // handleFolderPermission updates folder permissions (deferred to pending queue)
@@ -264,6 +266,7 @@ func handleFolderPermission(w http.ResponseWriter, r *http.Request) {
 	})
 
 	AddPendingOp("update", shareName, path, filepath.Dir(path), permission, validUsers, permission != "noaccess", false, recycleBin == "yes", 0)
+	common.LogAudit("system", "更新共享文件夹", "STORAGE", "/api/disk/folders/update", fmt.Sprintf("%s -> %s (perm=%s)", shareName, path, permission), "pending", "")
 }
 
 // parseSambaShares returns map[sharePath]config map

@@ -50,6 +50,7 @@ func handleWizardSetupStream(w http.ResponseWriter, r *http.Request) {
 		sendProgress(w, ProgressEvent{Step: "需要确认", Status: "error", Detail: "请加 confirm=yes"})
 		return
 	}
+	common.LogAudit("system", "存储向导配置(流式)", "STORAGE", "/api/disk/wizard/setup-stream", "mode="+mode, "pending", "")
 
 	nasUser, _ := common.ReadEnvFile(common.GetEnvFilePath(), "NAS_USER")
 	if nasUser == "" {

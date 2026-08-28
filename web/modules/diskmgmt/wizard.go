@@ -151,6 +151,7 @@ func handleWizardSetup(w http.ResponseWriter, r *http.Request) {
 	if nasUser == "" {
 		nasUser = "root"
 	}
+	common.LogAudit("system", "存储向导配置", "STORAGE", "/api/disk/wizard/setup", "mode="+mode, "pending", "")
 
 	if confirm != "yes" {
 		http.Error(w, `{"error":"请确认操作"}`, http.StatusBadRequest)
