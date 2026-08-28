@@ -15,6 +15,9 @@ import (
 //   -X nas-panel/modules/version.BuildTime=2026-08-13T15:00:00Z
 //   -X nas-panel/modules/version.GitCommit=abc1234
 var (
+	// DisplayVersion 是对外展示的系统大版本号（如 v1.3.0），取最近的 git tag
+	DisplayVersion = "dev"
+	// Version 是完整构建版本号（含提交数/commit/dirty 等信息）
 	Version   = "dev"
 	BuildTime = "unknown"
 	GitCommit = "unknown"
@@ -22,12 +25,13 @@ var (
 
 // VersionInfo represents the version response
 type VersionInfo struct {
-	Version   string `json:"version"`
-	BuildTime string `json:"build_time"`
-	GitCommit string `json:"git_commit"`
-	GoVersion string `json:"go_version"`
-	OS        string `json:"os"`
-	Arch      string `json:"arch"`
+	DisplayVersion string `json:"display_version"`
+	Version        string `json:"version"`
+	BuildTime      string `json:"build_time"`
+	GitCommit      string `json:"git_commit"`
+	GoVersion      string `json:"go_version"`
+	OS             string `json:"os"`
+	Arch           string `json:"arch"`
 }
 
 // Component represents one software component's version info
@@ -48,7 +52,8 @@ func RegisterRoutes(mux *http.ServeMux) {
 // handleVersion returns build version info
 func handleVersion(w http.ResponseWriter, r *http.Request) {
 	info := VersionInfo{
-		Version:   Version,
+		DisplayVersion: DisplayVersion,
+		Version:        Version,
 		BuildTime: BuildTime,
 		GitCommit: GitCommit,
 		GoVersion: runtime.Version(),
@@ -105,7 +110,7 @@ func handleComponents(w http.ResponseWriter, r *http.Request) {
 	comps = append(comps, Component{"FileBrowser", "网页文件管理", fbVer, "Web 文件管理器 · 端口 8081"})
 
 	// ── 网页管理 ──────────────────────────────────────
-	comps = append(comps, Component{"nas-panel", "网页管理", Version,
+	comps = append(comps, Component{"nas-panel", "网页管理", DisplayVersion,
 		"管理面板 · 端口 8090 · 构建 " + BuildTime + " · " + GitCommit})
 
 	// ── 系统防护 ──────────────────────────────────────
@@ -145,12 +150,13 @@ func handleComponents(w http.ResponseWriter, r *http.Request) {
 	common.JSONResponse(w, map[string]interface{}{
 		"components": comps,
 		"panel": VersionInfo{
-			Version:   Version,
-			BuildTime: BuildTime,
-			GitCommit: GitCommit,
-			GoVersion: runtime.Version(),
-			OS:        runtime.GOOS,
-			Arch:      runtime.GOARCH,
+			DisplayVersion: DisplayVersion,
+			Version:        Version,
+			BuildTime:      BuildTime,
+			GitCommit:      GitCommit,
+			GoVersion:      runtime.Version(),
+			OS:             runtime.GOOS,
+			Arch:           runtime.GOARCH,
 		},
 	})
 }

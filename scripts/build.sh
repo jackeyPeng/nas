@@ -45,15 +45,18 @@ fi
 
 GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)
 BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+# 大版本号: 最近的 git tag（如 v1.3.0），作为系统对外展示的版本
+DISPLAY_VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "${VERSION%%-*}")
 LDFLAGS="-s -w \
+  -X nas-panel/modules/version.DisplayVersion=${DISPLAY_VERSION} \
   -X nas-panel/modules/version.Version=${VERSION} \
   -X nas-panel/modules/version.BuildTime=${BUILD_TIME} \
   -X nas-panel/modules/version.GitCommit=${GIT_COMMIT}"
-
 # ── 打包前确认信息 ────────────────────────────────────────
 echo "──────────────────────────────────────"
 echo "  nas-panel 构建"
 echo "  版本:   ${VERSION}"
+echo "  显示:   ${DISPLAY_VERSION}"
 echo "  提交:   ${GIT_COMMIT}"
 echo "  时间:   ${BUILD_TIME}"
 
@@ -65,6 +68,7 @@ if [ -n "$(git status --porcelain 2>/dev/null)" ] && [[ "$VERSION" != *dev* ]]; 
         VERSION="${VERSION}-dirty"
         echo "     版本号已自动追加 -dirty: ${VERSION}"
         LDFLAGS="-s -w \
+  -X nas-panel/modules/version.DisplayVersion=${DISPLAY_VERSION} \
   -X nas-panel/modules/version.Version=${VERSION} \
   -X nas-panel/modules/version.BuildTime=${BUILD_TIME} \
   -X nas-panel/modules/version.GitCommit=${GIT_COMMIT}"

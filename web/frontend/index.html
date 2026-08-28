@@ -1828,13 +1828,17 @@
                     <button class="btn btn-sm btn-primary" @click="loadComponents()" style="font-size:12px">刷新</button>
                 </div>
                 <div style="background:white;border:1px solid #e0e4e8;border-radius:8px;padding:16px">
-                    <p style="margin:0 0 12px;color:#64748b;font-size:13px">
-                        面板
-                        <strong x-text="components.panel?.version || '-'"></strong>
-                        · 构建 <span x-text="components.panel?.build_time || '-'"></span>
-                        · <span x-text="components.panel?.go_version || ''"></span>
-                        · 提交 <span x-text="components.panel?.git_commit || '-'"></span>
-                    </p>
+                    <div style="margin:0 0 14px;padding-bottom:12px;border-bottom:1px solid #e5e7eb">
+                        <div style="font-size:20px;font-weight:700;color:#1e293b">
+                            Z1 NAS <span x-text="components.panel?.display_version || '-'"></span>
+                        </div>
+                        <div style="font-size:12px;color:#94a3b8;margin-top:4px">
+                            构建 <span x-text="components.panel?.build_time || '-'"></span>
+                            · <span x-text="components.panel?.go_version || ''"></span>
+                            · 提交 <span x-text="components.panel?.git_commit || '-'"></span>
+                            · <span x-text="components.panel?.version || ''" :title="'完整构建号'"></span>
+                        </div>
+                    </div>
                     <template x-for="cat in componentCategories" :key="cat">
                         <div style="margin-bottom:16px">
                             <div style="font-size:13px;font-weight:600;color:#475569;margin-bottom:6px;padding:0 8px" x-text="cat"></div>
