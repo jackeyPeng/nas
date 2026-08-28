@@ -10,10 +10,26 @@ import (
 )
 
 var jwtSecret []byte
+var nasPass string
 
 // InitAuth initializes the JWT secret
 func InitAuth(secret string) {
 	jwtSecret = []byte(secret)
+}
+
+// SetNasPass stores the NAS password for runtime updates
+func SetNasPass(pass string) {
+	nasPass = pass
+}
+
+// GetNasPass returns the current NAS password
+func GetNasPass() string {
+	return nasPass
+}
+
+// UpdateNasPass updates the password at runtime (called after password change)
+func UpdateNasPass(pass string) {
+	nasPass = pass
 }
 
 // CreateToken creates a JWT token for a user

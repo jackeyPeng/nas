@@ -33,7 +33,6 @@ var frontendFS embed.FS
 
 var (
 	nasUser    string
-	nasPass    string
 	listenAddr = ":8090"
 )
 
@@ -44,7 +43,7 @@ func main() {
 		nasUser = "admin"
 	}
 
-	nasPass = os.Getenv("NAS_PASS")
+	nasPass := os.Getenv("NAS_PASS")
 	if nasPass == "" {
 		if pass, err := common.ReadEnvFile("/opt/nas/.env", "NAS_PASS"); err == nil && pass != "" {
 			nasPass = pass
@@ -53,6 +52,7 @@ func main() {
 	if nasPass == "" {
 		log.Fatal("NAS_PASS not set. Set it via env or /opt/nas/.env")
 	}
+	common.SetNasPass(nasPass)
 
 	// Init JWT — use env var, or generate random secret and persist to .env
 	secret := os.Getenv("JWT_SECRET")
@@ -252,7 +252,7 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	// Constant-time comparison to prevent timing side-channel attacks
 	userMatch := subtle.ConstantTimeCompare([]byte(username), []byte(nasUser))
-	passMatch := subtle.ConstantTimeCompare([]byte(password), []byte(nasPass))
+	passMatch := subtle.ConstantTimeCompare([]byte(password), []byte(common.GetNasPass()))
 	if userMatch != 1 || passMatch != 1 {
 		http.Error(w, `{"error": "invalid credentials"}`, http.StatusUnauthorized)
 		return
