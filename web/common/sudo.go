@@ -58,3 +58,16 @@ func SafeAppendFile(destPath, content string) error {
 	// Write combined content
 	return SafeWriteFile(destPath, existing+content)
 }
+
+// ExecFirstLine runs a command and returns its first line of output, trimmed
+func ExecFirstLine(name string, args ...string) string {
+	out, err := ExecOutput(name, args...)
+	if err != nil {
+		return ""
+	}
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) > 0 {
+		return strings.TrimSpace(lines[0])
+	}
+	return ""
+}

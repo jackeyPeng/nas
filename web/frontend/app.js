@@ -130,6 +130,10 @@ function nasPanel() {
         taskCreating: false,
         // System settings
         // System settings (new unified)
+        // 组件版本（系统详情页）
+        components: { items: [], panel: null },
+        componentCategories: ['文件共享', '网页文件管理', '对象存储', '网页管理', '系统防护', '存储管理', '运行环境'],
+
         sysSettings: {
             hostname: '',
             network: {},
@@ -238,7 +242,7 @@ function nasPanel() {
                 case 'diskmgmt': this.loadStorageOverview(); this.loadWizardStatus(); this.loadSharedFolders(); this.loadPendingOps(); this.loadUsers(); break;
                 case 'firewall': this.loadFirewall(); break;
                 case 'monitor': this.initMonitorRefresh(); this.loadAlertConfig(); break;
-                case 'system': this.loadSystemOverview(); break;
+                case 'system': this.loadSystemOverview(); this.loadComponents(); break;
                 case 'backup': this.loadBackups(); break;
                 case 'rclone': this.loadRcloneStatus(); this.loadRcloneRemotes(); this.loadRcloneTasks(); this.loadRcloneLogs(); this.loadSharedDirs(); break;
                 case 'logs': this.loadAuditLogs(); break;
@@ -1628,6 +1632,14 @@ function nasPanel() {
         },
 
         // System settings — new unified page
+        // 加载系统组件版本（系统详情页）
+        async loadComponents() {
+            const data = await this.api('/system/components');
+            if (data && data.components) {
+                this.components = { items: data.components, panel: data.panel };
+            }
+        },
+
         async loadSystemOverview() {
             const data = await this.api('/system/overview');
             if (data) {

@@ -1652,7 +1652,34 @@
             <div x-show="page === 'system'" class="page" x-init="if(page==='system') loadSystemOverview()" x-transition.opacity.duration.300ms>
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
                     <h2 style="margin:0">系统设置</h2>
-                    <button class="btn btn-sm btn-primary" @click="loadSystemOverview()" style="font-size:12px">刷新</button>
+                    <button class="btn btn-sm btn-primary" @click="loadSystemOverview(); loadComponents()" style="font-size:12px">刷新</button>
+                </div>
+
+                <!-- 系统详情：软件组件版本 -->
+                <div style="background:white;border:1px solid #e0e4e8;border-radius:8px;padding:16px;margin-bottom:12px">
+                    <h3 style="margin-top:0;margin-bottom:4px;font-size:15px">📦 系统详情</h3>
+                    <p style="margin:0 0 12px;color:#64748b;font-size:13px">
+                        面板
+                        <strong x-text="components.panel?.version || '-'"></strong>
+                        · 构建 <span x-text="components.panel?.build_time || '-'"></span>
+                        · <span x-text="components.panel?.go_version || ''"></span>
+                    </p>
+                    <template x-for="cat in componentCategories" :key="cat">
+                        <div style="margin-bottom:12px">
+                            <div style="font-size:13px;font-weight:600;color:#475569;margin-bottom:6px" x-text="cat"></div>
+                            <table style="width:100%;border-collapse:collapse;font-size:13px">
+                                <tbody>
+                                    <template x-for="c in components.items.filter(x => x.category === cat)" :key="c.name">
+                                        <tr style="border-bottom:1px solid #f1f5f9">
+                                            <td style="padding:5px 8px;color:#334155;white-space:nowrap" x-text="c.name"></td>
+                                            <td style="padding:5px 8px;font-family:monospace;color:#0369a1" x-text="c.version || '-'"></td>
+                                            <td style="padding:5px 8px;color:#94a3b8;font-size:12px" x-text="c.detail"></td>
+                                        </tr>
+                                    </template>
+                                </tbody>
+                            </table>
+                        </div>
+                    </template>
                 </div>
 
                 <!-- 主机名 -->
