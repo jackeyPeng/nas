@@ -167,9 +167,64 @@ func dpkgVersion(pkg string) string {
 //go:embed NOTICE.md
 var noticeFS []byte
 
-// handleNotice returns the compliance/privacy statement (NOTICE.md)
+// NoticeSection is one section of the legal/privacy statement
+type NoticeSection struct {
+	ID       string        `json:"id"`
+	Title    string        `json:"title"`    // 中英双语标题
+	SubTitle string        `json:"subtitle"` // English subtitle
+	Items    []NoticeItem  `json:"items"`
+}
+
+// NoticeItem is one bullet or key-value item within a section
+type NoticeItem struct {
+	Label string `json:"label"` // 条目标题（中英）
+	Text  string `json:"text"`  // 正文（中英）
+}
+
+// handleNotice returns the structured compliance/privacy statement
 func handleNotice(w http.ResponseWriter, r *http.Request) {
 	common.JSONResponse(w, map[string]interface{}{
-		"notice": string(noticeFS),
+		"sections": buildNoticeSections(),
+		"raw":      string(noticeFS), // 兜底纯文本
 	})
+}
+
+func buildNoticeSections() []NoticeSection {
+	return []NoticeSection{
+		{
+			ID: "privacy", Title: "隐私声明", SubTitle: "Privacy Statement",
+			Items: []NoticeItem{
+				{Label: "数据归属 / Data Ownership",
+					Text: "你的全部数据（文件、账号、配置）仅存储在你自己的机器上，不会上传到任何外部服务器。All your data stays on your own machine and is never uploaded anywhere."},
+				{Label: "数据不出网 / No Data Leaves Your Machine",
+					Text: "面板与全部文件服务均为本地服务，仅监听局域网；系统不含任何遥测、行为统计或崩溃上报代码。All services run locally on your LAN; no telemetry, analytics, or crash reporting is included."},
+				{Label: "凭据存储 / Credential Storage",
+					Text: "管理密码以 0600 权限存储于本机，WebDAV 凭据使用 bcrypt 哈希，不外传。Passwords stay local with 0600 permissions; WebDAV credentials are bcrypt-hashed."},
+				{Label: "可选外联 / Optional Outbound",
+					Text: "远程同步与告警通知默认关闭，仅在你配置后按你的设定工作。Remote sync and alerts are off by default and work only as you configure."},
+			},
+		},
+		{
+			ID: "disclaimer", Title: "免责声明", SubTitle: "Disclaimer",
+			Items: []NoticeItem{
+				{Label: "用户数据 / User Data",
+					Text: "Z1 NAS 仅提供系统软件，用户数据的存储、备份与安全由用户自行负责；对任何原因导致的数据丢失或损坏不承担责任，建议对重要数据建立独立备份。Z1 NAS provides system software only. You are responsible for your data's storage, backup, and security; we assume no liability for data loss or corruption. Independent backups are strongly recommended."},
+				{Label: "不上传、不修改、不传播 / No Upload, No Modification, No Distribution",
+					Text: "我们不上传、不修改、不主动传播任何用户数据。We do not upload, modify, or actively distribute any user data."},
+				{Label: "开源组件 / Open-Source Components",
+					Text: "本软件基于开源组件构建，遵循各组件许可协议；开源组件按「现状」提供。Built on open-source components under their respective licenses; components are provided as-is."},
+				{Label: "责任限制 / Limitation of Liability",
+					Text: "在适用法律允许的最大范围内，本软件不提供任何明示或默示的保证，对任何直接、间接、附带或后果性损失不承担责任。Provided as-is without warranty of any kind; no liability for direct, indirect, incidental, or consequential damages."},
+			},
+		},
+		{
+			ID: "copyright", Title: "版权", SubTitle: "Copyright",
+			Items: []NoticeItem{
+				{Label: "软件版权 / Software Copyright",
+					Text: "Z1 NAS 系统软件版权归本项目所有，以 AGPL-3.0 许可证发布。The Z1 NAS system software is copyrighted by this project and licensed under AGPL-3.0."},
+				{Label: "商标 / Trademarks",
+					Text: "Debian 是 SPI Inc. 的注册商标；其他产品名称归各自所有者，仅表明兼容性，不代表关联。Debian is a registered trademark of SPI Inc.; other names belong to their owners, used for compatibility indication only."},
+			},
+		},
+	}
 }

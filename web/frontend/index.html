@@ -1856,12 +1856,33 @@
 
             <!-- 关于与隐私（独立页） -->
             <div x-show="page === 'notice'" class="page" x-init="if(page==='notice') loadNotice()" x-transition.opacity.duration.300ms>
-                <h2 style="margin-bottom:16px">ℹ️ 关于与隐私声明</h2>
-                <div style="background:white;border:1px solid #e0e4e8;border-radius:8px;padding:16px">
-                    <p style="margin:0 0 12px;color:#475569;font-size:14px">
-                        Z1 NAS 是私有部署的存储系统，所有数据仅存储在本机，不含遥测与崩溃上报。
-                    </p>
-                    <pre x-text="noticeText || '加载中...'" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:12px;white-space:pre-wrap;font-size:12px;max-height:600px;overflow:auto;margin:0"></pre>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+                    <h2 style="margin:0">ℹ️ 关于与隐私声明</h2>
+                    <span style="font-size:12px;color:#94a3b8">Z1 NAS · 中英双语 / Bilingual</span>
+                </div>
+
+                <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:14px 16px;margin-bottom:14px;font-size:14px;color:#0c4a6e">
+                    Z1 NAS 是私有部署的存储系统，所有数据仅存储在本机，不含遥测与崩溃上报。
+                    Z1 NAS is a privately-deployed storage system — all data stays on your machine, with no telemetry or crash reporting.
+                </div>
+
+                <template x-for="sec in noticeSections" :key="sec.id">
+                    <div style="background:white;border:1px solid #e0e4e8;border-radius:8px;padding:18px 20px;margin-bottom:14px">
+                        <div style="display:flex;align-items:baseline;gap:10px;border-bottom:1px solid #e5e7eb;padding-bottom:10px;margin-bottom:14px">
+                            <h3 style="margin:0;font-size:16px;color:#1e293b" x-text="sec.title"></h3>
+                            <span style="font-size:13px;color:#94a3b8" x-text="sec.subtitle"></span>
+                        </div>
+                        <template x-for="(item, idx) in sec.items" :key="idx">
+                            <div style="margin-bottom:14px">
+                                <div style="font-weight:600;font-size:13.5px;color:#334155;margin-bottom:4px" x-text="item.label"></div>
+                                <div style="font-size:13px;color:#64748b;line-height:1.7" x-text="item.text"></div>
+                            </div>
+                        </template>
+                    </div>
+                </template>
+
+                <div style="text-align:center;color:#94a3b8;font-size:12px;padding:8px 0 20px">
+                    Z1 NAS · https://www.z1.sale · 完整文本文档见仓库 NOTICE.md / Full text: NOTICE.md in the repository
                 </div>
             </div>
 
