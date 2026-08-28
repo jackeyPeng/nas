@@ -1836,15 +1836,20 @@
                         · 提交 <span x-text="components.panel?.git_commit || '-'"></span>
                     </p>
                     <template x-for="cat in componentCategories" :key="cat">
-                        <div style="margin-bottom:12px">
-                            <div style="font-size:13px;font-weight:600;color:#475569;margin-bottom:6px" x-text="cat"></div>
-                            <table style="width:100%;border-collapse:collapse;font-size:13px">
+                        <div style="margin-bottom:16px">
+                            <div style="font-size:13px;font-weight:600;color:#475569;margin-bottom:6px;padding:0 8px" x-text="cat"></div>
+                            <table style="width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed">
+                                <colgroup>
+                                    <col style="width:30%">
+                                    <col style="width:32%">
+                                    <col style="width:38%">
+                                </colgroup>
                                 <tbody>
                                     <template x-for="c in components.items.filter(x => x.category === cat)" :key="c.name">
                                         <tr style="border-bottom:1px solid #f1f5f9">
-                                            <td style="padding:5px 8px;color:#334155;white-space:nowrap" x-text="c.name"></td>
-                                            <td style="padding:5px 8px;font-family:monospace;color:#0369a1" x-text="c.version || '-'"></td>
-                                            <td style="padding:5px 8px;color:#94a3b8;font-size:12px" x-text="c.detail"></td>
+                                            <td style="padding:6px 8px;color:#334155;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" x-text="c.name" :title="c.name"></td>
+                                            <td style="padding:6px 8px;font-family:monospace;color:#0369a1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" x-text="c.version || '-'" :title="c.version"></td>
+                                            <td style="padding:6px 8px;color:#94a3b8;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" x-text="c.detail" :title="c.detail"></td>
                                         </tr>
                                     </template>
                                 </tbody>
