@@ -221,9 +221,10 @@ func getMemInfo() (total, used, pct string) {
 }
 
 func getDiskInfo() (total, used, pct string) {
-	out, err := common.ExecOutput("df", "-h", "/data")
+	// 系统盘 = 根分区（数据池容量由“存储总容量”单独展示）
+	out, err := common.ExecOutput("df", "-h", "/")
 	if err != nil {
-		out, _ = common.ExecOutput("df", "-h", "/")
+		return
 	}
 	lines := strings.Split(out, "\n")
 	if len(lines) < 2 {
