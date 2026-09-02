@@ -21,10 +21,10 @@ function nasPanel() {
             { label: 'Samba (445)', port: '445', proto: 'tcp' },
             { label: 'Samba (139)', port: '139', proto: 'tcp' },
             { label: 'FTP (21)', port: '21', proto: 'tcp' },
-            { label: this.t('msg.ftp_passive'), port: '30000:31000', proto: 'tcp' },
+            { labelKey: 'msg.ftp_passive', port: '30000:31000', proto: 'tcp' },
             { label: 'NFS (2049)', port: '2049', proto: 'any' },
             { label: 'WebDAV (8080)', port: '8080', proto: 'tcp' },
-            { label: this.t('msg.panel_port'), port: '8090', proto: 'tcp' },
+            { labelKey: 'msg.panel_port', port: '8090', proto: 'tcp' },
         ],
         firewallForm: { port: '', proto: 'tcp', action: 'allow', from: '', comment: '' },
         firewallSaving: false,
@@ -289,6 +289,72 @@ function nasPanel() {
             };
             return map[name] ? window.t(map[name]) : fallback;
         },
+        // RAID 方案字段翻译（按 id / safety 映射后端中文）
+        raidName(id, fallback) {
+            const k = 'storage.raid_name_' + id;
+            return window.t(k) !== k ? window.t(k) : (fallback || id);
+        },
+        raidDesc(id, fallback) {
+            const k = 'storage.raid_desc_' + id;
+            return window.t(k) !== k ? window.t(k) : (fallback || '');
+        },
+        raidWarn(id, fallback) {
+            const k = 'storage.raid_warn_' + id;
+            return window.t(k) !== k ? window.t(k) : (fallback || '');
+        },
+        safetyLabel(level, fallback) {
+            const k = 'storage.safety_' + level;
+            return window.t(k) !== k ? window.t(k) : (fallback || '');
+        },
+        // 组件详情翻译（version.go detail 字段，按 name 映射）
+        compDetail(name, fallback) {
+            const map = {
+                'Samba (smbd)': 'component.detail_smbd',
+                'NFS (nfs-kernel-server)': 'component.detail_nfs',
+                'vsftpd': 'component.detail_ftp',
+                'rclone': 'component.detail_rclone',
+                'FileBrowser': 'component.detail_filebrowser',
+                'Fail2ban': 'component.detail_fail2ban',
+                'UFW': 'component.detail_ufw',
+                'LVM': 'component.detail_lvm',
+                'mdadm': 'component.detail_mdadm',
+                'xfsprogs': 'component.detail_xfs',
+                'smartmontools': 'component.detail_smart',
+                'Linux 内核': 'component.detail_kernel',
+                '操作系统': 'component.detail_os',
+            };
+            if (map[name]) return window.t(map[name]);
+            if (name === 'nas-panel') {
+                const p = this.components && this.components.panel ? this.components.panel : {};
+                return window.t('component.detail_panel', [p.build_time || '', p.git_commit || '']);
+            }
+            return fallback || '';
+        },
+        // sysctl 描述翻译（system.go，按 key 映射）
+        sysctlDesc(key, fallback) {
+            const map = {
+                'vm.swappiness': 'system.sysctl_swappiness',
+                'vm.dirty_ratio': 'system.sysctl_dirty_ratio',
+                'vm.dirty_background_ratio': 'system.sysctl_dirty_bg',
+                'net.core.somaxconn': 'system.sysctl_somaxconn',
+                'net.ipv4.tcp_congestion_control': 'system.sysctl_congestion',
+                'fs.file-max': 'system.sysctl_filemax',
+            };
+            return map[key] ? window.t(map[key]) : (fallback || '');
+        },
+        // 诊断项 name/desc/duration 翻译（按 id 映射）
+        diagName(id, fallback) {
+            const map = { 'smart_short': 'diagnostics.diag_smart_short', 'smart_long': 'diagnostics.diag_smart_long', 'raid_scrub': 'diagnostics.diag_raid_scrub' };
+            return map[id] ? window.t(map[id]) : (fallback || id);
+        },
+        diagDesc(id, fallback) {
+            const map = { 'smart_short': 'diagnostics.diag_smart_short_desc', 'smart_long': 'diagnostics.diag_smart_long_desc', 'raid_scrub': 'diagnostics.diag_raid_scrub_desc' };
+            return map[id] ? window.t(map[id]) : (fallback || '');
+        },
+        diagDuration(id, fallback) {
+            const map = { 'smart_short': 'diagnostics.diag_smart_short_dur', 'smart_long': 'diagnostics.diag_smart_long_dur', 'raid_scrub': 'diagnostics.diag_raid_scrub_dur' };
+            return map[id] ? window.t(map[id]) : (fallback || '');
+        },
 
         async api(path, options = {}) {
             const opts = {
@@ -392,8 +458,8 @@ function nasPanel() {
                     this.showToast(this.t('msg.install_failed') + ': ' + data.error, 'error');
                     this.installMsg = this.t('msg.install_failed') + ': ' + data.error;
                 } else {
-                    this.installMsg = data.message || this.t('msg.install_done');
-                    this.showToast(data.message || this.t('msg.install_done'), 'success');
+                    this.installMsg = this.t('msg.install_done');
+                    this.showToast(this.t('msg.install_done'), 'success');
                     setTimeout(() => this.loadServices(), 2000);
                 }
             } else {
@@ -415,9 +481,8 @@ function nasPanel() {
                     this.showToast(this.t('msg.install_failed') + ': ' + data.error, 'error');
                     this.installMsg = this.t('msg.install_x_failed', [name]) + ': ' + data.error;
                 } else {
-                    const steps = (data.steps || []).join(' → ');
-                    this.showToast(data.message || this.t('msg.x_install_done', [name]), 'success');
-                    this.installMsg = `${name}: ${steps || data.message}`;
+                    this.showToast(this.t('msg.x_install_done', [name]), 'success');
+                    this.installMsg = this.t('msg.x_install_done', [name]);
                     setTimeout(() => this.loadServices(), 2000);
                 }
             } else {
@@ -453,7 +518,7 @@ function nasPanel() {
         async svcAction(name, action) {
             const data = await this.api(`/services/${name}/${action}`, { method: 'POST' });
             if (data) {
-                this.showToast(data.message || this.t('msg.op_success'), 'success');
+                this.showToast(this.t('msg.op_success'), 'success');
                 this.loadServices();
             }
         },
@@ -486,7 +551,7 @@ function nasPanel() {
                 body: `username=${encodeURIComponent(this.addUserForm.username)}&password=${encodeURIComponent(this.addUserForm.password)}`
             });
             if (data) {
-                this.showToast(data.message || this.t('msg.add_success'), 'success');
+                this.showToast(this.t('msg.add_success'), 'success');
                 this.addUserModal = false;
                 this.loadUsers();
             }
@@ -509,7 +574,7 @@ function nasPanel() {
                 body: `password=${encodeURIComponent(this.pwdForm.password)}`
             });
             if (data) {
-                this.showToast(data.message || this.t('msg.modify_success'), 'success');
+                this.showToast(this.t('msg.modify_success'), 'success');
                 this.pwdModal = false;
             }
         },
@@ -518,7 +583,7 @@ function nasPanel() {
             if (!confirm(this.t('msg.del_user_confirm', [username]))) return;
             const data = await this.api(`/users/${username}?delete_data=false`, { method: 'DELETE' });
             if (data) {
-                this.showToast(data.message || this.t('msg.del_success'), 'success');
+                this.showToast(this.t('msg.del_success'), 'success');
                 this.loadUsers();
             }
         },
@@ -592,7 +657,7 @@ function nasPanel() {
                 body: body
             });
             if (data) {
-                this.showToast(data.message || this.t('msg.create_success'), 'success');
+                this.showToast(this.t('msg.create_success'), 'success');
                 this.addUserModal = false;
                 this.loadUsers();
                 this.loadPermMatrix();
@@ -608,7 +673,7 @@ function nasPanel() {
                 body: body
             });
             if (data) {
-                this.showToast(data.message || this.t('msg.perm_updated'), 'success');
+                this.showToast(this.t('msg.perm_updated'), 'success');
                 this.loadUsers();
             }
         },
@@ -621,7 +686,7 @@ function nasPanel() {
                 body: `quota_gb=${quotaGB}`
             });
             if (data) {
-                this.showToast(data.message || this.t('msg.quota_updated'), 'success');
+                this.showToast(this.t('msg.quota_updated'), 'success');
                 this.loadUsers();
             }
         },
@@ -642,7 +707,7 @@ function nasPanel() {
                 body: `name=${encodeURIComponent(this.groupForm.name)}&comment=${encodeURIComponent(this.groupForm.comment)}`
             });
             if (data) {
-                this.showToast(data.message || this.t('msg.create_success'), 'success');
+                this.showToast(this.t('msg.create_success'), 'success');
                 this.showGroupModal = false;
                 this.loadUserGroups();
             }
@@ -652,7 +717,7 @@ function nasPanel() {
             if (!confirm(this.t('msg.del_group_confirm', [name]))) return;
             const data = await this.api(`/user-groups/${name}`, { method: 'DELETE' });
             if (data) {
-                this.showToast(data.message || this.t('msg.del_success'), 'success');
+                this.showToast(this.t('msg.del_success'), 'success');
                 this.loadUserGroups();
             }
         },
@@ -664,7 +729,7 @@ function nasPanel() {
                 body: `members=${encodeURIComponent(members)}`
             });
             if (data) {
-                this.showToast(data.message || this.t('msg.members_updated'), 'success');
+                this.showToast(this.t('msg.members_updated'), 'success');
                 this.loadUserGroups();
             }
         },
@@ -677,7 +742,7 @@ function nasPanel() {
                 body: `username=${encodeURIComponent(username)}&folder=${encodeURIComponent(folder)}&permission=${perm}`
             });
             if (data) {
-                this.showToast(data.message || this.t('msg.perm_matrix_updated'), 'success');
+                this.showToast(this.t('msg.perm_matrix_updated'), 'success');
                 this.loadPermMatrix();
             }
         },
@@ -704,7 +769,7 @@ function nasPanel() {
             });
             this.firewallSaving = false;
             if (data && !data.error) {
-                this.showToast(data.message || this.t('msg.rule_added'), 'success');
+                this.showToast(this.t('msg.rule_added'), 'success');
                 this.firewallForm = { port: '', proto: 'tcp', action: 'allow', from: '', comment: '' };
                 this.loadFirewall();
             } else if (data && data.error) {
@@ -717,7 +782,7 @@ function nasPanel() {
             if (!confirm(this.t('msg.del_rule_confirm', [rule.num, desc]))) return;
             const data = await this.api('/firewall/rules/' + rule.num, { method: 'DELETE' });
             if (data && !data.error) {
-                this.showToast(data.message || this.t('msg.rule_deleted'), 'success');
+                this.showToast(this.t('msg.rule_deleted'), 'success');
                 this.loadFirewall();
             } else if (data && data.error) {
                 this.showToast(this.t('msg.del_failed') + ': ' + data.error, 'error');
@@ -730,7 +795,7 @@ function nasPanel() {
             if (!enabling && !confirm(this.t('msg.disable_fw_confirm'))) return;
             const data = await this.api('/firewall/' + (enabling ? 'enable' : 'disable'), { method: 'POST' });
             if (data && !data.error) {
-                this.showToast(data.message || this.t('msg.op_success'), 'success');
+                this.showToast(this.t('msg.op_success'), 'success');
                 this.loadFirewall();
             } else if (data && data.error) {
                 this.showToast(this.t('msg.op_failed') + ': ' + data.error, 'error');
@@ -787,7 +852,7 @@ function nasPanel() {
                 body: params.toString()
             });
             if (data) {
-                this.showToast(data.message || this.t('msg.save_success'), 'success');
+                this.showToast(this.t('msg.save_success'), 'success');
                 this.loadMonitor();
             }
         },
@@ -813,7 +878,7 @@ function nasPanel() {
                 body: new URLSearchParams(this.shareForm).toString()
             });
             if (data) {
-                this.showToast(data.message || this.t('msg.add_success'), 'success');
+                this.showToast(this.t('msg.add_success'), 'success');
                 this.showAddShare = false;
                 this.shareForm = { name: '', path: '', comment: '', valid_users: '', read_only: false };
                 this.loadSambaShares();
@@ -824,7 +889,7 @@ function nasPanel() {
             if (!confirm(this.t('msg.del_share_confirm', [name]))) return;
             const data = await this.api(`/config/samba/share?name=${name}`, { method: 'DELETE' });
             if (data) {
-                this.showToast(data.message || this.t('msg.del_success'), 'success');
+                this.showToast(this.t('msg.del_success'), 'success');
                 this.loadSambaShares();
             }
         },
@@ -842,7 +907,7 @@ function nasPanel() {
                 body: `username=${encodeURIComponent(this.ftpUserForm.username)}`
             });
             if (data) {
-                this.showToast(data.message || this.t('msg.add_success'), 'success');
+                this.showToast(this.t('msg.add_success'), 'success');
                 this.ftpUserForm.username = '';
                 this.loadVsftpdUsers();
             }
@@ -852,7 +917,7 @@ function nasPanel() {
             if (!confirm(this.t('msg.ftp_remove_confirm', [username]))) return;
             const data = await this.api(`/config/vsftpd-users?username=${username}`, { method: 'DELETE' });
             if (data) {
-                this.showToast(data.message || this.t('msg.remove_success'), 'success');
+                this.showToast(this.t('msg.remove_success'), 'success');
                 this.loadVsftpdUsers();
             }
         },
@@ -870,7 +935,7 @@ function nasPanel() {
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: `name=${this.configFileForm.name}&content=${encodeURIComponent(this.configFileForm.content)}`
             });
-            if (data) this.showToast(data.message || this.t('msg.save_success'), 'success');
+            if (data) this.showToast(this.t('msg.save_success'), 'success');
         },
 
         async loadEnabledServices() {
@@ -887,7 +952,7 @@ function nasPanel() {
                 body: `service=${this.svcToggleForm.service}&action=${action}`
             });
             if (data) {
-                this.showToast(data.message || this.t('msg.op_success'), 'success');
+                this.showToast(this.t('msg.op_success'), 'success');
                 this.svcToggleForm.service = '';
             }
         },
@@ -937,7 +1002,7 @@ function nasPanel() {
                 body: `path=${encodeURIComponent(this.diskMkdirForm.path)}`
             });
             if (data) {
-                this.showToast(data.message || this.t('msg.create_success'), 'success');
+                this.showToast(this.t('msg.create_success'), 'success');
                 this.diskMkdirForm.path = '';
             }
         },
@@ -950,7 +1015,7 @@ function nasPanel() {
                 body: new URLSearchParams(this.mountForm).toString()
             });
             if (data) {
-                this.showToast(data.message || this.t('msg.mount_success'), 'success');
+                this.showToast(this.t('msg.mount_success'), 'success');
                 this.loadDiskMounts();
             }
         },
@@ -963,7 +1028,7 @@ function nasPanel() {
                 body: `target=${encodeURIComponent(this.unmountForm.target)}`
             });
             if (data) {
-                this.showToast(data.message || this.t('msg.unmount_success'), 'success');
+                this.showToast(this.t('msg.unmount_success'), 'success');
                 this.unmountForm.target = '';
                 this.loadDiskMounts();
             }
@@ -978,7 +1043,7 @@ function nasPanel() {
                 body: `device=${encodeURIComponent(this.formatForm.device)}&fstype=${this.formatForm.fstype}&confirm=yes`
             });
             if (data) {
-                this.showToast(data.message || this.t('msg.format_success'), 'success');
+                this.showToast(this.t('msg.format_success'), 'success');
                 this.formatForm.device = '';
                 this.loadDiskStatus();
             }
@@ -1288,7 +1353,7 @@ function nasPanel() {
                 body: params.toString()
             });
             if (data) {
-                this.showToast(data.message || this.t('msg.folder_created'), 'success');
+                this.showToast(this.t('msg.folder_created'), 'success');
                 if (data.warning) {
                     setTimeout(() => this.showToast(data.warning, 'error'), 500);
                 }
@@ -1308,7 +1373,7 @@ function nasPanel() {
                 body: `path=${encodeURIComponent(f.path)}&confirm=yes`
             });
             if (data) {
-                this.showToast(data.message || this.t('msg.folder_deleted'), 'success');
+                this.showToast(this.t('msg.folder_deleted'), 'success');
                 this.loadSharedFolders();
                 this.loadStorageOverview();
             }
@@ -1339,7 +1404,7 @@ function nasPanel() {
                 body: params.toString()
             });
             if (data) {
-                this.showToast(data.message || this.t('msg.perm_matrix_updated'), 'success');
+                this.showToast(this.t('msg.perm_matrix_updated'), 'success');
                 this.showFolderPerm = false;
                 this.loadSharedFolders();
                 this.loadStorageOverview();
@@ -1580,7 +1645,7 @@ function nasPanel() {
                 body: params.toString()
             });
             if (data) {
-                this.showToast(data.message || this.t('msg.replace_done'), 'success');
+                this.showToast(this.t('msg.replace_done'), 'success');
                 if (data.rebuild && data.rebuild.active) {
                     this.showToast(this.t('msg.rebuilding') + ': ' + (data.rebuild.progress || '') + '%', 'info');
                 }
@@ -1594,7 +1659,7 @@ function nasPanel() {
             if (!confirm(this.t('msg.regen_confirm'))) return;
             const data = await this.api('/disk/config/sync', { method: 'POST' });
             if (data) {
-                this.showToast(data.message || this.t('msg.config_sync_done'), 'success');
+                this.showToast(this.t('msg.config_sync_done'), 'success');
                 const cdata = await this.api('/disk/config/check');
                 if (cdata) this.configIssues = cdata;
             }
@@ -1622,7 +1687,7 @@ function nasPanel() {
             if (!confirm(this.t('msg.discard_pending_confirm'))) return;
             const data = await this.api('/disk/pending/discard', { method: 'POST' });
             if (data) {
-                this.showToast(data.message || this.t('msg.cleared'), 'success');
+                this.showToast(this.t('msg.cleared'), 'success');
                 this.pendingCount = 0;
             }
         },
@@ -1636,7 +1701,7 @@ function nasPanel() {
             if (!confirm(this.t('msg.clear_logs_confirm'))) return;
             const data = await this.api('/disk/oplogs/clear', { method: 'POST' });
             if (data) {
-                this.showToast(data.message || this.t('msg.logs_cleared'), 'success');
+                this.showToast(this.t('msg.logs_cleared'), 'success');
                 this.operationLogs = [];
             }
         },
@@ -1663,7 +1728,7 @@ function nasPanel() {
                 body: 'confirm=yes' 
             });
             if (data) {
-                this.showToast(data.message || this.t('msg.logs_cleared'), 'success');
+                this.showToast(this.t('msg.logs_cleared'), 'success');
                 this.auditLogs = [];
                 this.auditLogTotal = 0;
             }
@@ -1683,7 +1748,7 @@ function nasPanel() {
                 body: params.toString()
             });
             if (data) {
-                this.showToast(data.message || this.t('msg.scrub_started'), 'success');
+                this.showToast(this.t('msg.scrub_started'), 'success');
                 this.loadOperationsLog();
             }
         },
@@ -1699,7 +1764,7 @@ function nasPanel() {
                 body: params.toString()
             });
             if (data) {
-                this.showToast(data.message || this.t('msg.smart_started'), 'success');
+                this.showToast(this.t('msg.smart_started'), 'success');
                 this.loadOperationsLog();
             }
         },
@@ -1728,7 +1793,7 @@ function nasPanel() {
                 body: params.toString()
             });
             if (data) {
-                this.showToast(data.message || this.t('msg.pool_deleted'), 'success');
+                this.showToast(this.t('msg.pool_deleted'), 'success');
                 this.loadStorageOverview();
                 this.loadWizardStatus();
                 this.loadSharedFolders();
@@ -1777,7 +1842,7 @@ function nasPanel() {
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: `hostname=${encodeURIComponent(this.sysSettings.hostname)}`
             });
-            if (data) this.showToast(data.message || this.t('msg.modify_success'), 'success');
+            if (data) this.showToast(this.t('msg.modify_success'), 'success');
         },
 
         async saveTimezone() {
@@ -1786,7 +1851,7 @@ function nasPanel() {
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: `timezone=${encodeURIComponent(this.sysSettings.timezone)}`
             });
-            if (data) this.showToast(data.message || this.t('msg.timezone_updated'), 'success');
+            if (data) this.showToast(this.t('msg.timezone_updated'), 'success');
         },
 
         async saveSSHConfig() {
@@ -1803,7 +1868,7 @@ function nasPanel() {
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: params.toString()
             });
-            if (data) this.showToast(data.message || this.t('msg.ssh_updated'), 'success');
+            if (data) this.showToast(this.t('msg.ssh_updated'), 'success');
         },
 
         async saveSysctl(param) {
@@ -1812,7 +1877,7 @@ function nasPanel() {
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: `key=${encodeURIComponent(param.key)}&value=${encodeURIComponent(param.value)}`
             });
-            if (data) this.showToast(data.message || this.t('msg.saved'), 'success');
+            if (data) this.showToast(this.t('msg.saved'), 'success');
         },
 
         async runUpdate(action) {
@@ -1824,7 +1889,7 @@ function nasPanel() {
                 body: `action=${action}`
             });
             if (data) {
-                this.showToast(data.message || this.t('msg.done'), 'success');
+                this.showToast(this.t('msg.done'), 'success');
                 this.loadSystemOverview();
             }
         },
@@ -1837,7 +1902,7 @@ function nasPanel() {
                 body: `name=${encodeURIComponent(name)}&action=${action}`
             });
             if (data) {
-                this.showToast(data.message || this.t('msg.x_success', [actionText[action]]), 'success');
+                this.showToast(this.t('msg.x_success', [actionText[action]]), 'success');
                 this.loadSystemOverview();
             }
         },
@@ -1861,8 +1926,8 @@ function nasPanel() {
                     // 轮询等待完成
                     await this.waitForReset();
                 } else {
-                    this.showToast(data.message || this.t('msg.restore_done'), 'success');
-                    this.resetMsg = data.message || this.t('msg.restore_done');
+                    this.showToast(this.t('msg.restore_done'), 'success');
+                    this.resetMsg = this.t('msg.restore_done');
                     setTimeout(() => { this.loadSystemOverview(); this.resetMsg = ''; }, 3000);
                 }
             }
@@ -1901,7 +1966,7 @@ function nasPanel() {
                 body: domain ? `domain=${encodeURIComponent(domain)}` : ''
             });
             if (data) {
-                this.showToast(data.message || this.t('msg.cert_generated'), 'success');
+                this.showToast(this.t('msg.cert_generated'), 'success');
                 this.httpsStatus = data.status;
             }
         },
@@ -1918,7 +1983,7 @@ function nasPanel() {
                 body: body
             });
             if (data) {
-                this.showToast(data.message || this.t('msg.cert_uploaded'), 'success');
+                this.showToast(this.t('msg.cert_uploaded'), 'success');
                 this.httpsStatus = data.status;
                 this.httpsCustomDomain = '';
                 this.httpsCustomCert = '';
@@ -1934,7 +1999,7 @@ function nasPanel() {
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
             });
             if (data) {
-                this.showToast(data.message || this.t('msg.cert_applied'), 'success');
+                this.showToast(this.t('msg.cert_applied'), 'success');
                 this.httpsStatus = data.status;
             }
         },
@@ -1945,7 +2010,7 @@ function nasPanel() {
                 method: 'DELETE'
             });
             if (data) {
-                this.showToast(data.message || this.t('msg.cert_removed'), 'success');
+                this.showToast(this.t('msg.cert_removed'), 'success');
                 this.httpsStatus = data.status;
             }
         },
@@ -2075,7 +2140,7 @@ function nasPanel() {
             });
             this.remoteCreating = false;
             if (data && !data.error) {
-                this.showToast(data.message || this.t('msg.remote_created'), 'success');
+                this.showToast(this.t('msg.remote_created'), 'success');
                 this.showAddRemote = false;
                 this.remoteForm = this.blankRemoteForm();
                 this.loadRcloneRemotes();
@@ -2120,7 +2185,7 @@ function nasPanel() {
             });
             this.remoteCreating = false;
             if (data && !data.error) {
-                this.showToast(data.message || this.t('msg.remote_updated'), 'success');
+                this.showToast(this.t('msg.remote_updated'), 'success');
                 this.showAddRemote = false;
                 this.editingRemote = '';
                 this.loadRcloneRemotes();
@@ -2133,7 +2198,7 @@ function nasPanel() {
             if (!confirm(this.t('msg.del_remote_confirm', [name]))) return;
             const data = await this.api('/rclone/remotes/' + encodeURIComponent(name), { method: 'DELETE' });
             if (data && !data.error) {
-                this.showToast(data.message || this.t('msg.remote_deleted'), 'success');
+                this.showToast(this.t('msg.remote_deleted'), 'success');
                 this.loadRcloneRemotes();
             } else if (data && data.error) {
                 this.showToast(this.t('msg.del_failed') + ': ' + data.error, 'error');
@@ -2236,7 +2301,7 @@ function nasPanel() {
             });
             this.taskCreating = false;
             if (data && !data.error) {
-                this.showToast(data.message || this.t('msg.task_created'), 'success');
+                this.showToast(this.t('msg.task_created'), 'success');
                 this.showAddTask = false;
                 this.taskForm = this.blankTaskForm();
                 this.loadRcloneTasks();
@@ -2261,7 +2326,7 @@ function nasPanel() {
             });
             this.taskCreating = false;
             if (data && !data.error) {
-                this.showToast(data.message || this.t('msg.task_updated'), 'success');
+                this.showToast(this.t('msg.task_updated'), 'success');
                 this.showAddTask = false;
                 this.editingTask = null;
                 this.loadRcloneTasks();
@@ -2274,7 +2339,7 @@ function nasPanel() {
             if (!confirm(this.t('msg.del_task_confirm'))) return;
             const data = await this.api('/rclone/tasks/' + encodeURIComponent(id), { method: 'DELETE' });
             if (data && !data.error) {
-                this.showToast(data.message || this.t('msg.task_deleted'), 'success');
+                this.showToast(this.t('msg.task_deleted'), 'success');
                 this.loadRcloneTasks();
             } else if (data && data.error) {
                 this.showToast(this.t('msg.del_failed') + ': ' + data.error, 'error');
@@ -2284,7 +2349,7 @@ function nasPanel() {
         async runTask(id) {
             const data = await this.api('/rclone/tasks/' + encodeURIComponent(id) + '/run', { method: 'POST' });
             if (data && !data.error) {
-                this.showToast(data.message || this.t('msg.task_started'), 'success');
+                this.showToast(this.t('msg.task_started'), 'success');
                 this.loadRcloneTasks();
                 // 3秒后刷新日志
                 setTimeout(() => { this.loadRcloneTasks(); this.loadRcloneLogs(); }, 3000);
@@ -2296,7 +2361,7 @@ function nasPanel() {
         async toggleTask(id) {
             const data = await this.api('/rclone/tasks/' + encodeURIComponent(id) + '/toggle', { method: 'POST' });
             if (data && !data.error) {
-                this.showToast(data.message || this.t('msg.status_toggled'), 'success');
+                this.showToast(this.t('msg.status_toggled'), 'success');
                 this.loadRcloneTasks();
             } else if (data && data.error) {
                 this.showToast(this.t('msg.op_failed') + ': ' + data.error, 'error');
@@ -2342,7 +2407,7 @@ function nasPanel() {
                 body: `item_id=${encodeURIComponent(itemId)}`
             });
             if (data) {
-                this.showToast(data.message || this.t('msg.started'), 'success');
+                this.showToast(this.t('msg.started'), 'success');
                 setTimeout(() => this.loadDiagnostics(), 3000);
             }
         },

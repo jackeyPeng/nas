@@ -328,7 +328,7 @@
                                 <template x-for="ra in (storageOverview.raid_health||[])" :key="ra.device">
                                     <tr style="border-bottom:1px solid #e5e7eb">
                                         <td style="padding:5px 0;color:#475569">RAID <span x-text="ra.device.replace('/dev/','')"></span></td>
-                                        <td style="padding:5px 0;font-weight:600" :style="ra.state==='active'||ra.state==='clean' ? 'color:#16a34a' : 'color:#dc2626'" x-text="ra.sync_percent ? ('同步中 ' + ra.sync_percent) : (ra.state==='active'||ra.state==='clean' ? '正常' : ra.state)"></td>
+                                        <td style="padding:5px 0;font-weight:600" :style="ra.state==='active'||ra.state==='clean' ? 'color:#16a34a' : 'color:#dc2626'" x-text="ra.sync_percent ? $t('storage.sync_in', [ra.sync_percent]) : (ra.state==='active'||ra.state==='clean' ? $t('storage.normal') : ra.state)"></td>
                                     </tr>
                                 </template>
                             </template>
@@ -383,7 +383,7 @@
             <div x-show="page === 'services'" class="page" x-transition.opacity.duration.300ms>
                 <h2 x-text="$t('services.title')"></h2>
                 <div style="display:flex;gap:8px;margin-bottom:12px">
-                    <button class="btn btn-sm btn-primary" @click="installServices()" :disabled="installingServices" x-text="installingServices ? '安装中...' : '🔧 一键安装所有服务'"></button>
+                    <button class="btn btn-sm btn-primary" @click="installServices()" :disabled="installingServices" x-text="installingServices ? $t('services.installing') : '🔧 ' + $t('services.install_all')"></button>
                     <span x-show="installMsg" style="font-size:12px;color:#6b7280" x-text="installMsg"></span>
                 </div>
                 <table class="table">
@@ -654,7 +654,7 @@
                         <div x-show="userWizardStep === 3" x-transition.opacity.duration.200ms>
                             <div class="form-group">
                                 <label><span x-text="$t('users.private_quota_gb')"></span></label>
-                                <input type="number" x-model="userWizardForm.quota_gb" min="0" placeholder="0 = 无限制">
+                                <input type="number" x-model="userWizardForm.quota_gb" min="0" :placeholder="$t('common.ph_quota_no_limit')">
                                 <small style="color:#64748b;font-size:12px"><span x-text="$t('users.quota_limit_hint')"></span><span x-text="$t('common.username')"></span> <span x-text="$t('users.quota_limit_hint2')"></span></small>
                             </div>
                         </div>
@@ -693,11 +693,11 @@
                         <h3 x-text="$t('users.create_group')"></h3>
                         <div class="form-group">
                             <label x-text="$t('users.group_name')"></label>
-                            <input type="text" x-model="groupForm.name" placeholder="如: family, guests">
+                            <input type="text" x-model="groupForm.name" :placeholder="$t('common.ph_group_example')">
                         </div>
                         <div class="form-group">
                             <label x-text="$t('common.description')"></label>
-                            <input type="text" x-model="groupForm.comment" placeholder="可选">
+                            <input type="text" x-model="groupForm.comment" :placeholder="$t('common.ph_optional')">
                         </div>
                         <div class="modal-actions">
                             <button class="btn" @click="showGroupModal = false" x-text="$t('common.cancel')"></button>
@@ -770,13 +770,13 @@
                     <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
                         <span style="font-size:12px;color:#64748b;align-self:center"><span x-text="$t('firewall.common_shortcut')"></span></span>
                         <template x-for="p in firewallPresets" :key="p.port">
-                            <button class="btn btn-sm" style="font-size:11px;padding:3px 10px" @click="applyPreset(p)" x-text="p.label"></button>
+                            <button class="btn btn-sm" style="font-size:11px;padding:3px 10px" @click="applyPreset(p)" x-text="p.labelKey ? $t(p.labelKey) : p.label"></button>
                         </template>
                     </div>
                     <div style="display:grid;grid-template-columns:1.2fr 0.8fr 0.8fr 1.4fr 1.4fr auto;gap:10px;align-items:end">
                         <div class="form-group" style="margin:0">
                             <label x-text="$t('common.port')"></label>
-                            <input type="text" x-model="firewallForm.port" placeholder="22 或 30000:31000">
+                            <input type="text" x-model="firewallForm.port" :placeholder="$t('common.ph_port_range')">
                         </div>
                         <div class="form-group" style="margin:0">
                             <label x-text="$t('firewall.proto')"></label>
@@ -795,11 +795,11 @@
                         </div>
                         <div class="form-group" style="margin:0">
                             <label><span x-text="$t('firewall.source_ip')"></span></label>
-                            <input type="text" x-model="firewallForm.from" placeholder="如: 192.168.1.0/24">
+                            <input type="text" x-model="firewallForm.from" :placeholder="$t('common.ph_cidr')">
                         </div>
                         <div class="form-group" style="margin:0">
                             <label><span x-text="$t('firewall.comment_optional')"></span></label>
-                            <input type="text" x-model="firewallForm.comment" placeholder="如: Samba 文件共享">
+                            <input type="text" x-model="firewallForm.comment" :placeholder="$t('common.ph_share_name')">
                         </div>
                         <button class="btn btn-primary" @click="addFirewallRule()" :disabled="firewallSaving" x-text="firewallSaving ? $t('common.adding') : $t('common.add')"></button>
                     </div>
@@ -1060,7 +1060,7 @@
 
                         <!-- 系统错误日志 -->
                         <h4 style="margin:0 0 8px;font-size:14px;color:#475569"><span x-text="$t('monitor.system_errors')"></span></h4>
-                        <pre class="config-output" style="max-height:200px;overflow-y:auto" x-text="monitor.system_errors || '无错误日志'"></pre>
+                        <pre class="config-output" style="max-height:200px;overflow-y:auto" x-text="monitor.system_errors || $t('monitor.no_error_log')"></pre>
 
                         <!-- 高级信息 -->
                         <h4 style="margin:16px 0 8px;font-size:14px;color:#475569;cursor:pointer" @click="monitorShowAdvanced = !monitorShowAdvanced">
@@ -1068,15 +1068,15 @@
                         </h4>
                         <div x-show="monitorShowAdvanced">
                             <h5 style="margin:8px 0 4px;font-size:13px;color:#64748b"><span x-text="$t('storage.disks')"></span></h5>
-                            <pre class="config-output" style="max-height:150px;overflow-y:auto;font-size:12px" x-text="monitor.disk_info || '无数据'"></pre>
+                            <pre class="config-output" style="max-height:150px;overflow-y:auto;font-size:12px" x-text="monitor.disk_info || $t('common.no_data')"></pre>
                             <h5 style="margin:8px 0 4px;font-size:13px;color:#64748b"><span x-text="$t('monitor.inode_usage')"></span></h5>
-                            <pre class="config-output" style="max-height:100px;overflow-y:auto;font-size:12px" x-text="monitor.inode_info || '无数据'"></pre>
+                            <pre class="config-output" style="max-height:100px;overflow-y:auto;font-size:12px" x-text="monitor.inode_info || $t('common.no_data')"></pre>
                             <h5 style="margin:8px 0 4px;font-size:13px;color:#64748b"><span x-text="$t('monitor.lvm_info')"></span></h5>
-                            <pre class="config-output" style="max-height:150px;overflow-y:auto;font-size:12px" x-text="monitor.lvm_info || '无数据'"></pre>
+                            <pre class="config-output" style="max-height:150px;overflow-y:auto;font-size:12px" x-text="monitor.lvm_info || $t('common.no_data')"></pre>
                             <h5 style="margin:8px 0 4px;font-size:13px;color:#64748b"><span x-text="$t('monitor.memory_detail')"></span></h5>
-                            <pre class="config-output" style="max-height:100px;overflow-y:auto;font-size:12px" x-text="monitor.mem_detail || '无数据'"></pre>
+                            <pre class="config-output" style="max-height:100px;overflow-y:auto;font-size:12px" x-text="monitor.mem_detail || $t('common.no_data')"></pre>
                             <h5 style="margin:8px 0 4px;font-size:13px;color:#64748b"><span x-text="$t('monitor.cpu_detail')"></span></h5>
-                            <pre class="config-output" style="max-height:100px;overflow-y:auto;font-size:12px" x-text="monitor.cpu_info || '无数据'"></pre>
+                            <pre class="config-output" style="max-height:100px;overflow-y:auto;font-size:12px" x-text="monitor.cpu_info || $t('common.no_data')"></pre>
                         </div>
                     </div>
                 </div>
@@ -1148,7 +1148,7 @@
                             </div>
                             <div class="form-group">
                                 <label><span x-text="$t('monitor.password_auth')"></span></label>
-                                <input type="password" x-model="alertConfig.ALERT_SMTP_PASS" placeholder="授权码">
+                                <input type="password" x-model="alertConfig.ALERT_SMTP_PASS" :placeholder="$t('common.ph_auth_code')">
                             </div>
                             <div class="form-group">
                                 <label><span x-text="$t('monitor.recipient')"></span></label>
@@ -1238,7 +1238,7 @@
                                             <div style="display:flex;align-items:center;gap:12px;padding:8px 14px;border:1px solid #e5e7eb;border-radius:8px;flex-wrap:wrap">
                                                 <span style="font-size:16px">📦</span><span style="font-size:15px;font-weight:600" x-text="poolLabel(vol.display_name||vol.name)"></span>
                                                 <span style="font-size:13px;color:#6b7280" x-text="vol.size?(vol.used+'/'+vol.size):''"></span>
-                                                <span class="badge" style="background:#ede9fe;color:#6d28d9;font-size:11px" x-text="'·'+(vol.fstype||'')+'·快照:'+(vol.snapshot_count>0?'开':'关')"></span>
+                                                <span class="badge" style="background:#ede9fe;color:#6d28d9;font-size:11px" x-text="'·'+(vol.fstype||'')+'·'+$t('storage.snapshot')+':'+(vol.snapshot_count>0?$t('common.on'):$t('common.off'))"></span>
                                                 <span style="margin-left:auto;display:flex;gap:6px">
                                                     <span class="badge" :style="vol.folders?.some(function(f){return f.samba_share})?'background:#dbeafe;color:#1e40af':'background:#f3f4f6;color:#374151'" style="font-size:11px;padding:3px 7px" x-text="'SMB'+(vol.folders?.some(function(f){return f.samba_share})?'✓':'✗')"></span>
                                                     <span class="badge" :style="vol.folders?.some(function(f){return f.nfs_export})?'background:#dbeafe;color:#1e40af':'background:#f3f4f6;color:#374151'" style="font-size:11px;padding:3px 7px" x-text="'NFS'+(vol.folders?.some(function(f){return f.nfs_export})?'✓':'✗')"></span>
@@ -1318,7 +1318,7 @@
                         </div>
                         <div class="form-group">
                             <label x-text="$t('storage.folder_name')"></label>
-                            <input type="text" x-model="folderForm.name" placeholder="如: documents, photos, media">
+                            <input type="text" x-model="folderForm.name" :placeholder="$t('common.ph_folder_list')">
                         </div>
                         <div class="form-group">
                             <label x-text="$t('storage.permission')"></label>
@@ -1486,7 +1486,7 @@
                                     <div><span style="color:#6b7280"><span x-text="$t('storage.interface')"></span></span> <span x-text="selectedDisk.interface"></span></div>
                                     <div><span style="color:#6b7280"><span x-text="$t('storage.temperature')"></span></span> <span :style="(parseInt(selectedDisk.temp)||0)>=50?'color:#ef4444':(parseInt(selectedDisk.temp)||0)>=45?'color:#f59e0b':'color:#22c55e'" x-text="(selectedDisk.temp&&selectedDisk.temp!=='-')?selectedDisk.temp+'°C':'—'"></span></div>
                                     <div><span style="color:#6b7280"><span x-text="$t('storage.power_on')"></span></span> <span x-text="$t('common.hours')"></span></div>
-                                    <div><span style="color:#6b7280">SMART:</span> <span :style="selectedDisk.smart==='PASSED'?'color:#22c55e':'color:#ef4444'" x-text="selectedDisk.smart==='PASSED'?'通过 ✓':(selectedDisk.smart||'—')"></span></div>
+                                    <div><span style="color:#6b7280">SMART:</span> <span :style="selectedDisk.smart==='PASSED'?'color:#22c55e':'color:#ef4444'" x-text="selectedDisk.smart==='PASSED' ? ($t('common.pass') + ' ✓') : (selectedDisk.smart||'—')"></span></div>
                                     <div><span style="color:#6b7280"><span x-text="$t('storage.bad_sector')"></span></span> <span x-text="selectedDisk.bad_blocks||'0'"></span></div>
                                 </div>
                                 <div style="display:flex;gap:8px"><button class="btn btn-secondary btn-sm" style="font-size:11px"><span x-text="$t('storage.view_smart')"></span></button><button class="btn btn-secondary btn-sm" style="font-size:11px"><span x-text="$t('storage.run_selftest')"></span></button><button class="btn btn-danger btn-sm" style="font-size:11px;margin-left:auto"><span x-text="$t('storage.safe_unmount')"></span></button></div>
@@ -1583,16 +1583,16 @@
                                     <div @click="wizMode=opt.id" :style="wizMode===opt.id?'border:2px solid #3b82f6;background:#eff6ff':'border:2px solid #e5e7eb'" style="border-radius:10px;padding:16px;cursor:pointer;transition:all 0.15s;background:#fff">
                                         <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
                                             <span style="font-size:22px" x-text="opt.icon"></span>
-                                            <span style="font-size:15px;font-weight:700" x-text="opt.name"></span>
+                                            <span style="font-size:15px;font-weight:700" x-text="raidName(opt.id, opt.name)"></span>
                                             <span x-show="opt.recommended" class="badge" style="background:#dcfce7;color:#166534;font-size:11px"><span x-text="$t('storage.recommended')"></span></span>
                                         </div>
-                                        <div style="font-size:13px;color:#374151;margin-bottom:6px" x-text="opt.description"></div>
+                                        <div style="font-size:13px;color:#374151;margin-bottom:6px" x-text="raidDesc(opt.id, opt.description)"></div>
                                         <div style="display:flex;gap:16px;font-size:12px;color:#6b7280">
                                             <span><span x-text="$t('storage.usable_capacity')"></span> <strong style="color:#374151" x-text="opt.usable_size"></strong></span>
-                                            <span><span x-text="$t('storage.safety')"></span> <strong style="color:#374151" x-text="opt.safety_text"></strong></span>
+                                            <span><span x-text="$t('storage.safety')"></span> <strong style="color:#374151" x-text="safetyLabel(opt.safety, opt.safety_text)"></strong></span>
                                             <span><span x-text="$t('storage.min_disks')"></span> <strong style="color:#374151" x-text="opt.min_disks"></strong> <span x-text="$t('storage.disks_short')"></span></span>
                                         </div>
-                                        <div x-show="opt.warning" style="margin-top:6px;font-size:11px;color:#92400e;background:#fef3c7;border-radius:4px;padding:4px 8px" x-text="opt.warning"></div>
+                                        <div x-show="opt.warning" style="margin-top:6px;font-size:11px;color:#92400e;background:#fef3c7;border-radius:4px;padding:4px 8px" x-text="raidWarn(opt.id, opt.warning)"></div>
                                     </div>
                                 </template>
                             </div>
@@ -1605,20 +1605,20 @@
                             <div style="font-size:14px;font-weight:600;color:#374151;margin-bottom:12px" x-text="$t('storage.confirm_create')"></div>
                             <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:16px;margin-bottom:16px">
                                 <div style="font-size:13px;color:#374151;line-height:1.8">
-                                    <div><span x-text="$t('storage.plan')"></span> <strong x-text="(wizardFilteredOptions.find(function(o){return o.id===wizMode})||{}).name||wizMode"></strong></div>
+                                    <div><span x-text="$t('storage.plan')"></span> <strong x-text="raidName(wizMode, (wizardFilteredOptions.find(function(o){return o.id===wizMode})||{}).name)"></strong></div>
                                     <div><span x-text="$t('storage.disks_colon')"></span> <strong x-text="wizDisks.length"></strong> <span x-text="$t('storage.disks_dash')"></span> <span style="font-family:monospace;font-size:12px" x-text="wizDisks.join(', ')"></span></div>
                                     <div><span x-text="$t('storage.usable_capacity')"></span>: <strong x-text="(wizardFilteredOptions.find(function(o){return o.id===wizMode})||{}).usable_size||'—'"></strong></div>
-                                    <div><span x-text="$t('storage.safety')"></span>: <strong x-text="(wizardFilteredOptions.find(function(o){return o.id===wizMode})||{}).safety_text||'—'"></strong></div>
+                                    <div><span x-text="$t('storage.safety')"></span>: <strong x-text="safetyLabel((wizardFilteredOptions.find(function(o){return o.id===wizMode})||{}).safety, '—')"></strong></div>
                                 </div>
                             </div>
                             <div style="display:flex;justify-content:space-between">
                                 <button class="btn btn-secondary" @click="wizStep=3" style="font-size:13px"><span x-text="$t('storage.prev_step')"></span></button>
-                                <button class="btn btn-primary" @click="startWizardSetup()" :disabled="wizardLoading" style="font-size:13px" x-text="wizardLoading?'创建中...':'确认并创建 →'"></button>
+                                <button class="btn btn-primary" @click="startWizardSetup()" :disabled="wizardLoading" style="font-size:13px" x-text="wizardLoading ? $t('storage.creating') : $t('storage.confirm_create_btn')"></button>
                             </div>
                         </div>
                         <div x-show="wizStep===5" style="text-align:center" x-transition.opacity.duration.200ms>
                             <div style="font-size:48px;margin-bottom:12px" x-text="wizardLoading ? '⏳' : '✅'"></div>
-                            <div style="font-size:18px;font-weight:700;color:#374151;margin-bottom:8px" x-text="wizardLoading ? '正在创建存储池...' : '存储池创建成功'"></div>
+                            <div style="font-size:18px;font-weight:700;color:#374151;margin-bottom:8px" x-text="wizardLoading ? $t('storage.creating_pool') : $t('storage.pool_created')"></div>
                             <div x-show="wizardLoading" style="background:#f3f4f6;border-radius:8px;padding:12px;max-width:400px;margin:0 auto 16px;text-align:left">
                                 <div style="font-size:12px;color:#6b7280;margin-bottom:6px"><span x-text="$t('storage.init_progress')"></span></div>
                                 <template x-for="step in progressSteps" :key="step.name">
@@ -1804,7 +1804,7 @@
                             <div style="display:flex;align-items:center;gap:12px;padding:6px 0;border-bottom:1px solid #f0f0f0">
                                 <span style="color:#475569;min-width:200px;font-family:monospace;font-size:13px" x-text="param.key"></span>
                                 <input type="text" x-model="param.value" class="port-input" style="width:120px;font-family:monospace">
-                                <span style="color:#888;font-size:12px;flex:1" x-text="param.description"></span>
+                                <span style="color:#888;font-size:12px;flex:1" x-text="sysctlDesc(param.key, param.description)"></span>
                                 <button class="btn btn-sm btn-primary" @click="saveSysctl(param)" style="font-size:11px;padding:2px 8px" x-text="$t('common.save')"></button>
                             </div>
                         </template>
@@ -1871,7 +1871,7 @@
                             <div><span style="color:#64748b" x-text="$t('system.https_domain')"></span>: <strong x-text="httpsStatus.domain || '-'"></strong></div>
                             <div><span style="color:#64748b" x-text="$t('system.https_issued_to')"></span>: <strong x-text="httpsStatus.issued_to || '-'"></strong></div>
                             <div><span style="color:#64748b" x-text="$t('system.https_expires')"></span>: <strong x-text="httpsStatus.expires || '-'"></strong></div>
-                            <div><span style="color:#64748b" x-text="$t('system.https_days_left')"></span>: <strong :style="httpsStatus.days_left < 30 ? 'color:#dc2626' : 'color:#16a34a'" x-text="httpsStatus.days_left + ' 天'"></strong></div>
+                            <div><span style="color:#64748b" x-text="$t('system.https_days_left')"></span>: <strong :style="httpsStatus.days_left < 30 ? 'color:#dc2626' : 'color:#16a34a'" x-text="httpsStatus.days_left + ' ' + $t('common.days')"></strong></div>
                         </div>
                         <div style="margin-top:8px">
                             <template x-for="svc in httpsStatus.services" :key="svc.name">
@@ -1959,7 +1959,7 @@
                                         <tr style="border-bottom:1px solid #f1f5f9">
                                             <td style="padding:6px 8px;color:#334155;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" x-text="c.name" :title="c.name"></td>
                                             <td style="padding:6px 8px;font-family:monospace;color:#0369a1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" x-text="c.version || '-'" :title="c.version"></td>
-                                            <td style="padding:6px 8px;color:#94a3b8;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" x-text="c.detail" :title="c.detail"></td>
+                                            <td style="padding:6px 8px;color:#94a3b8;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" x-text="compDetail(c.name, c.detail)" :title="compDetail(c.name, c.detail)"></td>
                                         </tr>
                                     </template>
                                 </tbody>
@@ -2073,14 +2073,14 @@
                         <div style="display:flex;justify-content:space-between;align-items:start">
                             <div style="flex:1">
                                 <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-                                    <strong style="font-size:15px" x-text="item.name"></strong>
+                                    <strong style="font-size:15px" x-text="diagName(item.id, item.name)"></strong>
                                     <span style="font-size:12px;padding:2px 8px;border-radius:10px"
                                         :style="item.last_result === 'pass' ? 'background:#dcfce7;color:#16a34a' : item.last_result === 'fail' ? 'background:#fee2e2;color:#dc2626' : item.last_result === 'warn' ? 'background:#fef3c7;color:#d97706' : item.last_result === 'running' ? 'background:#dbeafe;color:#1d4ed8' : 'background:#f3f4f6;color:#9ca3af'"
-                                        x-text="item.last_result === 'pass' ? '✅ 通过' : item.last_result === 'fail' ? '❌ 失败' : item.last_result === 'warn' ? '⚠️ 警告' : item.last_result === 'running' ? '⏳ 运行中' : '--'"></span>
+                                        x-text="item.last_result === 'pass' ? '✅ ' + $t('diagnostics.result_pass') : item.last_result === 'fail' ? '❌ ' + $t('diagnostics.result_fail') : item.last_result === 'warn' ? '⚠️ ' + $t('diagnostics.result_warn') : item.last_result === 'running' ? '⏳ 运行中' : '--'"></span>
                                 </div>
-                                <div style="font-size:12px;color:#64748b;margin-bottom:6px" x-text="item.description"></div>
+                                <div style="font-size:12px;color:#64748b;margin-bottom:6px" x-text="diagDesc(item.id, item.description)"></div>
                                 <div style="font-size:12px;color:#94a3b8">
-                                    <span x-text="$t('diagnostics.duration')"></span> <span x-text="item.duration"></span>
+                                    <span x-text="$t('diagnostics.duration')"></span> <span x-text="diagDuration(item.id, item.duration)"></span>
                                     <span x-show="item.last_run" style="margin-left:12px"><span x-text="$t('diagnostics.last')"></span> <span x-text="item.last_run"></span></span>
                                     <span x-show="item.last_detail" style="margin-left:12px;color:#64748b" x-text="item.last_detail"></span>
                                 </div>
@@ -2097,7 +2097,7 @@
                                 <div style="display:flex;align-items:center;gap:6px">
                                     <label style="font-size:12px;color:#64748b;display:flex;align-items:center;gap:4px;cursor:pointer">
                                         <input type="checkbox" :checked="item.enabled" @change="toggleDiagItem(item.id, $event.target.checked)">
-                                        <span x-text="item.enabled ? '已启用' : '已禁用'"></span>
+                                        <span x-text="item.enabled ? $t('common.enabled') : $t('common.disabled')"></span>
                                     </label>
                                     <select :value="item.schedule" @change="setDiagSchedule(item.id, $event.target.value)" style="font-size:11px;padding:2px 6px;border:1px solid #d1d5db;border-radius:4px">
                                         <option value="manual"><span x-text="$t('common.manual')"></span></option>
@@ -2153,12 +2153,12 @@
                         <tbody>
                             <template x-for="h in diagHistory" :key="h.id">
                                 <tr>
-                                    <td x-text="h.item_name"></td>
+                                    <td x-text="diagName(h.item_id, h.item_name)"></td>
                                     <td style="font-size:12px" x-text="h.start_time"></td>
                                     <td>
                                         <span style="padding:2px 8px;border-radius:10px;font-size:11px"
                                             :style="h.result === 'pass' ? 'background:#dcfce7;color:#16a34a' : h.result === 'fail' ? 'background:#fee2e2;color:#dc2626' : 'background:#fef3c7;color:#d97706'"
-                                            x-text="h.result === 'pass' ? '通过' : h.result === 'fail' ? '失败' : '警告'"></span>
+                                            x-text="h.result === 'pass' ? $t('diagnostics.result_pass') : h.result === 'fail' ? $t('diagnostics.result_fail') : $t('diagnostics.result_warn')"></span>
                                     </td>
                                     <td style="font-size:12px;color:#64748b;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" x-text="h.detail"></td>
                                 </tr>
@@ -2339,10 +2339,10 @@
                 <!-- ═══ 添加/编辑远端弹窗 ═══ -->
                 <div class="modal" x-show="showAddRemote" x-cloak>
                     <div class="modal-box" style="max-width:520px;width:520px">
-                        <h3 x-text="editingRemote ? '编辑远端存储' : '添加远端存储'"></h3>
+                        <h3 x-text="editingRemote ? $t('rclone.edit_remote') : $t('rclone.add_remote_storage')"></h3>
                         <div class="form-group">
                             <label x-text="$t('common.name')"></label>
-                            <input type="text" x-model="remoteForm.name" placeholder="如: my-s3, backup-oss" :disabled="!!editingRemote">
+                            <input type="text" x-model="remoteForm.name" :placeholder="$t('common.ph_remote_name')" :disabled="!!editingRemote">
                             <small style="color:#64748b" x-show="!editingRemote"><span x-text="$t('rclone.name_rule')"></span></small>
                             <small style="color:#64748b" x-show="editingRemote"><span x-text="$t('rclone.name_locked')"></span></small>
                         </div>
@@ -2374,7 +2374,7 @@
                                 </div>
                                 <div class="form-group">
                                     <label>Endpoint</label>
-                                    <input type="text" x-model="remoteForm.endpoint" placeholder="如: s3.amazonaws.com 或 oss-cn-hangzhou.aliyuncs.com">
+                                    <input type="text" x-model="remoteForm.endpoint" :placeholder="$t('common.ph_s3_endpoint')">
                                 </div>
                                 <div class="form-group">
                                     <label>Access Key ID</label>
@@ -2386,7 +2386,7 @@
                                 </div>
                                 <div class="form-group">
                                     <label><span x-text="$t('rclone.region')"></span></label>
-                                    <input type="text" x-model="remoteForm.region" placeholder="如: us-east-1 或 cn-hangzhou">
+                                    <input type="text" x-model="remoteForm.region" :placeholder="$t('common.ph_s3_region')">
                                 </div>
                             </div>
                         </template>
@@ -2396,19 +2396,19 @@
                             <div>
                                 <div class="form-group">
                                     <label><span x-text="$t('rclone.host_addr')"></span></label>
-                                    <input type="text" x-model="remoteForm.host" placeholder="如: 192.168.1.100 或 example.com">
+                                    <input type="text" x-model="remoteForm.host" :placeholder="$t('common.ph_host')">
                                 </div>
                                 <div class="form-group">
                                     <label x-text="$t('common.port')"></label>
-                                    <input type="text" x-model="remoteForm.port" placeholder="默认 22" value="22">
+                                    <input type="text" x-model="remoteForm.port" :placeholder="$t('common.ph_default_22')" value="22">
                                 </div>
                                 <div class="form-group">
                                     <label x-text="$t('common.username')"></label>
-                                    <input type="text" x-model="remoteForm.user" placeholder="SSH 用户名">
+                                    <input type="text" x-model="remoteForm.user" :placeholder="$t('common.ph_ssh_user')">
                                 </div>
                                 <div class="form-group">
                                     <label x-text="$t('common.password')"></label>
-                                    <input type="password" x-model="remoteForm.pass" placeholder="SSH 密码">
+                                    <input type="password" x-model="remoteForm.pass" :placeholder="$t('common.ph_ssh_pass')">
                                 </div>
                             </div>
                         </template>
@@ -2418,7 +2418,7 @@
                             <div>
                                 <div class="form-group">
                                     <label>URL</label>
-                                    <input type="text" x-model="remoteForm.url" placeholder="如: https://dav.example.com/remote.php/dav/files/user/">
+                                    <input type="text" x-model="remoteForm.url" :placeholder="$t('common.ph_webdav_url')">
                                 </div>
                                 <div class="form-group">
                                     <label><span x-text="$t('rclone.vendor')"></span></label>
@@ -2431,11 +2431,11 @@
                                 </div>
                                 <div class="form-group">
                                     <label x-text="$t('common.username')"></label>
-                                    <input type="text" x-model="remoteForm.user" placeholder="WebDAV 用户名">
+                                    <input type="text" x-model="remoteForm.user" :placeholder="$t('common.ph_webdav_user')">
                                 </div>
                                 <div class="form-group">
                                     <label x-text="$t('common.password')"></label>
-                                    <input type="password" x-model="remoteForm.pass" placeholder="WebDAV 密码">
+                                    <input type="password" x-model="remoteForm.pass" :placeholder="$t('common.ph_webdav_pass')">
                                 </div>
                             </div>
                         </template>
@@ -2445,19 +2445,19 @@
                             <div>
                                 <div class="form-group">
                                     <label><span x-text="$t('rclone.host_addr')"></span></label>
-                                    <input type="text" x-model="remoteForm.host" placeholder="如: ftp.example.com">
+                                    <input type="text" x-model="remoteForm.host" :placeholder="$t('common.ph_ftp_host')">
                                 </div>
                                 <div class="form-group">
                                     <label x-text="$t('common.port')"></label>
-                                    <input type="text" x-model="remoteForm.port" placeholder="默认 21" value="21">
+                                    <input type="text" x-model="remoteForm.port" :placeholder="$t('common.ph_default_21')" value="21">
                                 </div>
                                 <div class="form-group">
                                     <label x-text="$t('common.username')"></label>
-                                    <input type="text" x-model="remoteForm.user" placeholder="FTP 用户名">
+                                    <input type="text" x-model="remoteForm.user" :placeholder="$t('common.ph_ftp_user')">
                                 </div>
                                 <div class="form-group">
                                     <label x-text="$t('common.password')"></label>
-                                    <input type="password" x-model="remoteForm.pass" placeholder="FTP 密码">
+                                    <input type="password" x-model="remoteForm.pass" :placeholder="$t('common.ph_ftp_pass')">
                                 </div>
                             </div>
                         </template>
@@ -2467,7 +2467,7 @@
                             <div>
                                 <div class="form-group">
                                     <label><span x-text="$t('rclone.local_path')"></span></label>
-                                    <input type="text" x-model="remoteForm.local_path" placeholder="如: /mnt/backup 或 /data/external">
+                                    <input type="text" x-model="remoteForm.local_path" :placeholder="$t('common.ph_backup_path')">
                                     <small style="color:#64748b"><span x-text="$t('rclone.local_path_hint')"></span></small>
                                 </div>
                             </div>
@@ -2477,7 +2477,7 @@
                             <button class="btn" @click="showAddRemote = false" x-text="$t('common.cancel')"></button>
                             <button class="btn btn-primary" @click="saveRemote()" :disabled="remoteCreating">
                                 <span x-show="!remoteCreating" x-text="$t('common.save')"></span>
-                                <span x-show="remoteCreating" x-text="editingRemote ? '保存中...' : '创建中...'"></span>
+                                <span x-show="remoteCreating" x-text="editingRemote ? $t('rclone.saving') : $t('rclone.creating')"></span>
                             </button>
                         </div>
                     </div>
@@ -2486,11 +2486,11 @@
                 <!-- ═══ 新建/编辑任务弹窗 ═══ -->
                 <div class="modal" x-show="showAddTask" x-cloak>
                     <div class="modal-box" style="max-width:520px;width:520px">
-                        <h3 x-text="editingTask ? '编辑同步任务' : '新建同步任务'"></h3>
+                        <h3 x-text="editingTask ? $t('rclone.edit_task') : $t('rclone.new_sync_task')"></h3>
                         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
                             <div class="form-group">
                                 <label x-text="$t('rclone.task_name')"></label>
-                                <input type="text" x-model="taskForm.name" placeholder="如: 文档备份到S3">
+                                <input type="text" x-model="taskForm.name" :placeholder="$t('common.ph_backup_name')">
                             </div>
                             <div class="form-group">
                                 <label><span x-text="$t('rclone.direction')"></span></label>
@@ -2501,7 +2501,7 @@
                             </div>
                         </div>
                         <div class="form-group">
-                            <label x-text="taskForm.direction === 'download' ? '本地路径（保存到）' : '源路径（本地）'"></label>
+                            <label x-text="taskForm.direction === 'download' ? $t('rclone.local_path_save') : $t('rclone.source_path_local')"></label>
                             <div style="display:flex;gap:8px">
                                 <select x-model="taskForm.source" style="flex:1">
                                     <option value=""><span x-text="$t('rclone.select_share')"></span></option>
@@ -2511,7 +2511,7 @@
                                 </select>
                             </div>
                             <div style="display:flex;gap:8px;margin-top:8px">
-                                <input type="text" x-model="taskForm.sub_path" placeholder="子目录（可选），如: backup/2026" style="flex:1">
+                                <input type="text" x-model="taskForm.sub_path" :placeholder="$t('common.ph_subdir')" style="flex:1">
                                 <button class="btn btn-sm" @click="createSubDir()" :disabled="!taskForm.source || !taskForm.sub_path" style="white-space:nowrap"><span x-text="$t('rclone.create_dir')"></span></button>
                             </div>
                             <small style="color:#64748b"><span x-text="$t('rclone.select_share_hint')"></span></small>
@@ -2527,8 +2527,8 @@
                                 </select>
                             </div>
                             <div class="form-group">
-                                <label x-text="taskForm.direction === 'download' ? '远端路径（来源）' : '目标路径（远端）'"></label>
-                                <input type="text" x-model="taskForm.dest_path" placeholder="如: backup/documents">
+                                <label x-text="taskForm.direction === 'download' ? $t('rclone.remote_path_src') : $t('rclone.target_path_remote')"></label>
+                                <input type="text" x-model="taskForm.dest_path" :placeholder="$t('common.ph_backup_dir')">
                             </div>
                         </div>
                         <div class="form-group">
@@ -2548,16 +2548,16 @@
                             <div x-show="showTaskAdvanced" style="padding:0 14px 14px">
                                 <div class="form-group">
                                     <label><span x-text="$t('rclone.cron_hint')"></span></label>
-                                    <input type="text" x-model="taskForm.schedule" placeholder="如: 0 2 * * * = 每天 02:00">
+                                    <input type="text" x-model="taskForm.schedule" :placeholder="$t('common.ph_cron')">
                                 </div>
                                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
                                     <div class="form-group" style="margin-bottom:0">
                                         <label><span x-text="$t('rclone.bandwidth')"></span></label>
-                                        <input type="number" x-model="taskForm.bandwidth" placeholder="0 = 不限">
+                                        <input type="number" x-model="taskForm.bandwidth" :placeholder="$t('common.ph_no_limit')">
                                     </div>
                                     <div class="form-group" style="margin-bottom:0">
                                         <label><span x-text="$t('rclone.concurrency')"></span></label>
-                                        <input type="number" x-model="taskForm.transfers" placeholder="默认 4" value="4">
+                                        <input type="number" x-model="taskForm.transfers" :placeholder="$t('common.ph_default_4')" value="4">
                                     </div>
                                 </div>
                             </div>
@@ -2566,7 +2566,7 @@
                             <button class="btn" @click="showAddTask = false" x-text="$t('common.cancel')"></button>
                             <button class="btn btn-primary" @click="saveTask()" :disabled="taskCreating">
                                 <span x-show="!taskCreating" x-text="$t('common.save')"></span>
-                                <span x-show="taskCreating" x-text="editingTask ? '保存中...' : '创建中...'"></span>
+                                <span x-show="taskCreating" x-text="editingTask ? $t('rclone.saving') : $t('rclone.creating')"></span>
                             </button>
                         </div>
                     </div>
@@ -2633,7 +2633,7 @@
                 </div>
                 <div x-show="auditLogTotal > 50" style="display:flex;justify-content:center;gap:8px;margin-top:12px">
                     <button class="btn btn-sm" @click="auditLogPage=Math.max(0,auditLogPage-1);loadAuditLogs()" :disabled="auditLogPage===0" x-text="$t('logs.prev_page')"></button>
-                    <span style="font-size:12px;color:#6b7280;padding:4px 8px" x-text="'第 '+(auditLogPage+1)+' 页'"></span>
+                    <span style="font-size:12px;color:#6b7280;padding:4px 8px" x-text="$t('common.page_num', [(auditLogPage+1)])"></span>
                     <button class="btn btn-sm" @click="auditLogPage++;loadAuditLogs()" :disabled="(auditLogPage+1)*50 >= auditLogTotal"><span x-text="$t('logs.next_page')"></span></button>
                 </div>
             </div>
