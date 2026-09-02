@@ -145,6 +145,18 @@ function nasPanel() {
             updates: {},
             services: []
         },
+        // HTTPS certificate
+        httpsStatus: { type: 'none', services: [] },
+        httpsDomain: '',
+        httpsCustomDomain: '',
+        httpsCustomCert: '',
+        httpsCustomKey: '',
+        lang: window.currentLang || 'zh-CN',
+        // Diagnostics
+        diagItems: [],
+        diagHistory: [],
+        diagConfig: { time_window_start: '02:00', time_window_end: '06:00', temp_limit: 55, io_limit: 70, scrub_speed_max: 100000 },
+        mobileMenu: false,
         resetMsg: '',
         logsModal: false,
         logsService: '',
@@ -176,6 +188,17 @@ function nasPanel() {
         init() {
             if (this.token) {
                 this.navigate('dashboard');
+            }
+            // Listen for i18n changes
+            window.addEventListener('i18n:changed', (e) => {
+                this.lang = e.detail.lang;
+            });
+        },
+
+        async switchLang(lang) {
+            const ok = await window.switchLang(lang);
+            if (ok) {
+                this.lang = lang;
             }
         },
 
@@ -249,6 +272,7 @@ function nasPanel() {
                 case 'backup': this.loadBackups(); break;
                 case 'rclone': this.loadRcloneStatus(); this.loadRcloneRemotes(); this.loadRcloneTasks(); this.loadRcloneLogs(); this.loadSharedDirs(); break;
                 case 'logs': this.loadAuditLogs(); break;
+                case 'diagnostics': this.loadDiagnostics(); break;
             }
         },
 
@@ -1662,6 +1686,8 @@ function nasPanel() {
                 this.sysSettings.updates = data.updates || {};
                 this.sysSettings.services = data.services || [];
             }
+            // Also load HTTPS status
+            this.loadHTTPSStatus();
         },
 
         async saveHostname() {
@@ -1782,6 +1808,69 @@ function nasPanel() {
             }
             this.resetMsg = '重置超时，请刷新页面查看';
             this.showToast('重置可能仍在进行中，请刷新页面查看', 'error');
+        },
+
+        // ═══ HTTPS 证书管理 ═══
+        async loadHTTPSStatus() {
+            const data = await this.api('/system/https');
+            if (data) this.httpsStatus = data;
+        },
+
+        async generateCert() {
+            const domain = this.httpsDomain || '';
+            const data = await this.api('/system/https/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: domain ? `domain=${encodeURIComponent(domain)}` : ''
+            });
+            if (data) {
+                this.showToast(data.message || '证书已生成', 'success');
+                this.httpsStatus = data.status;
+            }
+        },
+
+        async uploadCert() {
+            if (!this.httpsCustomDomain || !this.httpsCustomCert || !this.httpsCustomKey) {
+                this.showToast('请填写域名、证书和私钥', 'error');
+                return;
+            }
+            const body = `domain=${encodeURIComponent(this.httpsCustomDomain)}&cert=${encodeURIComponent(this.httpsCustomCert)}&key=${encodeURIComponent(this.httpsCustomKey)}`;
+            const data = await this.api('/system/https/upload', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: body
+            });
+            if (data) {
+                this.showToast(data.message || '证书已上传', 'success');
+                this.httpsStatus = data.status;
+                this.httpsCustomDomain = '';
+                this.httpsCustomCert = '';
+                this.httpsCustomKey = '';
+            }
+        },
+
+        async applyCert() {
+            if (!confirm('将 HTTPS 证书应用到所有 Web 服务（面板/FileBrowser/WebDAV/S3），服务会重启，确定继续？')) return;
+            this.showToast('正在应用证书...', 'info');
+            const data = await this.api('/system/https/apply', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+            });
+            if (data) {
+                this.showToast(data.message || '证书已应用', 'success');
+                this.httpsStatus = data.status;
+            }
+        },
+
+        async removeCert() {
+            if (!confirm('移除 HTTPS 证书后，所有服务将恢复为 HTTP。确定继续？')) return;
+            const data = await this.api('/system/https/remove', {
+                method: 'DELETE'
+            });
+            if (data) {
+                this.showToast(data.message || '证书已移除', 'success');
+                this.httpsStatus = data.status;
+            }
         },
 
         // Backup management
@@ -2144,6 +2233,70 @@ function nasPanel() {
                 this.showToast('日志已清空', 'success');
                 this.loadRcloneLogs();
             }
+        },
+
+        // ═══ Diagnostics ═══
+        async loadDiagnostics() {
+            const data = await this.api('/diagnostics/status');
+            if (data) this.diagItems = data.items || [];
+            const hdata = await this.api('/diagnostics/history');
+            if (hdata) this.diagHistory = hdata.history || [];
+            const cdata = await this.api('/diagnostics/config');
+            if (cdata) {
+                if (cdata.config) this.diagConfig = cdata.config;
+                if (cdata.items) {
+                    for (const it of cdata.items) {
+                        const existing = this.diagItems.find(i => i.id === it.id);
+                        if (existing) {
+                            existing.enabled = it.enabled;
+                            existing.schedule = it.schedule;
+                        }
+                    }
+                }
+            }
+        },
+
+        async runDiagnostic(itemId) {
+            if (!confirm('确定立即运行此项诊断？')) return;
+            this.showToast('诊断任务已启动', 'success');
+            const data = await this.api('/diagnostics/run', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `item_id=${encodeURIComponent(itemId)}`
+            });
+            if (data) {
+                this.showToast(data.message || '已开始', 'success');
+                setTimeout(() => this.loadDiagnostics(), 3000);
+            }
+        },
+
+        async toggleDiagItem(itemId, enabled) {
+            await this.api('/diagnostics/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `item_id=${encodeURIComponent(itemId)}&enabled=${enabled}`
+            });
+            this.loadDiagnostics();
+        },
+
+        async setDiagSchedule(itemId, schedule) {
+            await this.api('/diagnostics/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `item_id=${encodeURIComponent(itemId)}&schedule=${encodeURIComponent(schedule)}`
+            });
+            this.showToast('已保存', 'success');
+        },
+
+        async saveDiagConfig() {
+            const c = this.diagConfig;
+            const body = `time_window_start=${encodeURIComponent(c.time_window_start)}&time_window_end=${encodeURIComponent(c.time_window_end)}&temp_limit=${c.temp_limit}&io_limit=${c.io_limit}&scrub_speed_max=${c.scrub_speed_max}`;
+            await this.api('/diagnostics/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: body
+            });
+            this.showToast('诊断配置已保存', 'success');
         }
     };
 }

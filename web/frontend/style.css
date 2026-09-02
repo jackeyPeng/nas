@@ -281,3 +281,143 @@ body {
 .mt-4 { margin-top: var(--sp-4); }
 .mb-2 { margin-bottom: var(--sp-2); }
 .mb-4 { margin-bottom: var(--sp-4); }
+
+/* ═══════════════════════════════════════
+   Mobile Responsive — 移动端适配
+   ═══════════════════════════════════════ */
+
+/* Mobile Top Bar */
+.mobile-bar {
+    display: none;
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+    background: #1e40af;
+    color: white;
+    padding: 8px 12px;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+.mobile-bar .hamburger {
+    background: none;
+    border: none;
+    color: white;
+    font-size: 22px;
+    cursor: pointer;
+    padding: 4px 8px;
+}
+.mobile-bar .mobile-title {
+    font-weight: 700;
+    font-size: 16px;
+}
+
+/* Mobile Menu Overlay */
+.mobile-menu {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    background: rgba(0,0,0,0.4);
+}
+.mobile-menu-inner {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 280px;
+    max-width: 85vw;
+    background: white;
+    overflow-y: auto;
+    box-shadow: 4px 0 16px rgba(0,0,0,0.2);
+}
+
+@media (max-width: 768px) {
+    /* Hide desktop sidebar */
+    .sidebar { display: none !important; }
+
+    /* Show mobile bar */
+    .mobile-bar { display: flex !important; }
+    .mobile-menu { display: block; }
+
+    /* Full-width content */
+    .content { margin-left: 0 !important; padding: 12px !important; }
+
+    /* Login page */
+    .login-box { width: 90vw !important; max-width: 400px; padding: 24px 20px !important; }
+
+    /* Tables → cards */
+    .table, .table thead, .table tbody, .table th, .table td, .table tr {
+        display: block;
+    }
+    .table thead { display: none; }
+    .table tr {
+        margin-bottom: 12px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 10px;
+        background: var(--card-bg);
+    }
+    .table td {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 6px 0;
+        border: none;
+        font-size: 14px;
+    }
+    .table td::before {
+        content: attr(data-label);
+        font-weight: 600;
+        color: var(--text-secondary);
+        font-size: 12px;
+        min-width: 80px;
+    }
+    .table td.actions {
+        justify-content: flex-start;
+        gap: 6px;
+        flex-wrap: wrap;
+    }
+
+    /* Dashboard — stack vertically */
+    .page > div[style*="display:flex"] {
+        flex-direction: column !important;
+        gap: 16px !important;
+    }
+
+    /* Disk bay — smaller */
+    .disk-slot { min-width: 50px; }
+
+    /* Modals — fullscreen */
+    .modal-box {
+        max-width: 100vw !important;
+        width: 100vw !important;
+        max-height: 100vh !important;
+        border-radius: 0 !important;
+        margin: 0 !important;
+    }
+
+    /* Buttons — larger tap targets */
+    .btn, .btn-sm, .btn-primary, .btn-danger, .btn-success, .btn-warn {
+        min-height: 40px;
+        font-size: 14px !important;
+        padding: 8px 14px !important;
+    }
+
+    /* Form inputs */
+    input, select, textarea {
+        font-size: 16px !important; /* Prevent iOS zoom */
+    }
+
+    /* Grid layouts → single column */
+    [style*="grid-template-columns"] {
+        grid-template-columns: 1fr !important;
+    }
+
+    /* Page headings */
+    h2 { font-size: 18px !important; }
+    h3 { font-size: 15px !important; }
+
+    /* Hide complex elements on mobile */
+    .disk-slot-template { display: none; }
+}

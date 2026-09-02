@@ -2,25 +2,65 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NAS 管理面板</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#1e40af">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="manifest" href="manifest.json">
+    <title>Z1 NAS</title>
     <link rel="stylesheet" href="style.css">
+    <script src="i18n.js"></script>
     <script src="alpinejs.min.js" defer></script>
 </head>
 <body>
 <div x-data="nasPanel()" x-init="init()">
+    <!-- Mobile Top Bar -->
+    <div class="mobile-bar" x-show="token" x-cloak>
+        <button class="hamburger" @click="mobileMenu = !mobileMenu">☰</button>
+        <span class="mobile-title">Z1 NAS</span>
+        <button class="btn btn-sm" @click="navigate('dashboard')" style="font-size:12px">📊</button>
+    </div>
+
+    <!-- Mobile Menu Overlay -->
+    <div class="mobile-menu" x-show="mobileMenu" @click.self="mobileMenu = false" x-cloak>
+        <div class="mobile-menu-inner">
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid #e5e7eb">
+                <strong>Z1 NAS</strong>
+                <button @click="mobileMenu = false" style="background:none;border:none;font-size:20px;cursor:pointer">✕</button>
+            </div>
+            <a href="#" @click.prevent="navigate('dashboard'); mobileMenu=false" style="display:block;padding:12px 16px;border-bottom:1px solid #f0f0f0;text-decoration:none;color:#334155">📈 仪表盘</a>
+            <a href="#" @click.prevent="navigate('services'); mobileMenu=false" style="display:block;padding:12px 16px;border-bottom:1px solid #f0f0f0;text-decoration:none;color:#334155">🔧 服务管理</a>
+            <a href="#" @click.prevent="navigate('diskmgmt'); mobileMenu=false" style="display:block;padding:12px 16px;border-bottom:1px solid #f0f0f0;text-decoration:none;color:#334155">💽 存储管理</a>
+            <a href="#" @click.prevent="navigate('users'); mobileMenu=false" style="display:block;padding:12px 16px;border-bottom:1px solid #f0f0f0;text-decoration:none;color:#334155">👥 用户管理</a>
+            <a href="#" @click.prevent="navigate('system'); mobileMenu=false" style="display:block;padding:12px 16px;border-bottom:1px solid #f0f0f0;text-decoration:none;color:#334155">🖥️ 系统设置</a>
+            <a href="#" @click.prevent="navigate('diagnostics'); mobileMenu=false" style="display:block;padding:12px 16px;border-bottom:1px solid #f0f0f0;text-decoration:none;color:#334155">🔬 系统诊断</a>
+            <a href="#" @click.prevent="navigate('backup'); mobileMenu=false" style="display:block;padding:12px 16px;border-bottom:1px solid #f0f0f0;text-decoration:none;color:#334155">📦 备份恢复</a>
+            <a href="#" @click.prevent="navigate('rclone'); mobileMenu=false" style="display:block;padding:12px 16px;border-bottom:1px solid #f0f0f0;text-decoration:none;color:#334155">☁️ 远端同步</a>
+            <div style="padding:12px 16px">
+                <a :href="'http://'+location.hostname+':8081'" target="_blank" style="display:block;padding:10px;background:#1e40af;color:white;text-align:center;border-radius:6px;text-decoration:none;font-weight:600">📁 打开文件管理</a>
+            </div>
+            <div style="padding:12px 16px">
+                <select @change="switchLang($event.target.value)" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px;font-size:14px">
+                    <option value="zh-CN" :selected="lang==='zh-CN'">🇨🇳 中文</option>
+                    <option value="en-US" :selected="lang==='en-US'">🇺🇸 English</option>
+                </select>
+            </div>
+            <button @click="logout(); mobileMenu=false" style="margin:12px 16px;width:calc(100% - 32px);padding:10px;background:#fee2e2;color:#dc2626;border:1px solid #fecaca;border-radius:6px;cursor:pointer;font-weight:600">🚪 退出登录</button>
+        </div>
+    </div>
+
     <!-- Login -->
     <div class="login-page" x-show="!token" x-cloak>
         <div class="login-box">
             <h1>🗄️ NAS 管理面板</h1>
             <form @submit.prevent="login()">
                 <div class="form-group">
-                    <label>用户名</label>
-                    <input type="text" x-model="loginForm.username" placeholder="用户名" autocomplete="username">
+                    <label x-text="$t('common.username')"></label>
+                    <input type="text" x-model="loginForm.username" :placeholder="$t('common.username')" autocomplete="username">
                 </div>
                 <div class="form-group">
-                    <label>密码</label>
-                    <input type="password" x-model="loginForm.password" placeholder="密码" autocomplete="current-password">
+                    <label x-text="$t('common.password')"></label>
+                    <input type="password" x-model="loginForm.password" :placeholder="$t('common.password')" autocomplete="current-password">
                 </div>
                 <button type="submit" class="btn btn-primary btn-block" :disabled="loading">
                     <span x-show="!loading">登录</span>
@@ -119,6 +159,9 @@
                         <li :class="{active: page === 'backup'}" @click="navigate('backup')">
                             <span style="margin-left:20px">📦</span> 备份恢复
                         </li>
+                        <li :class="{active: page === 'diagnostics'}" @click="navigate('diagnostics')">
+                            <span style="margin-left:20px">🔬</span> 系统诊断
+                        </li>
                         <li :class="{active: page === 'logs'}" @click="navigate('logs')">
                             <span style="margin-left:20px">📋</span> 操作日志
                         </li>
@@ -126,7 +169,13 @@
                 </template>
             </ul>
             <div class="sidebar-footer">
-                <button class="btn btn-sm" @click="logout()">退出登录</button>
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                    <select @change="switchLang($event.target.value)" style="font-size:12px;padding:4px 8px;border:1px solid #cbd5e1;border-radius:4px;background:#fff;width:100%">
+                        <option value="zh-CN" :selected="currentLang === 'zh-CN'">🇨🇳 中文</option>
+                        <option value="en-US" :selected="currentLang === 'en-US'">🇺🇸 English</option>
+                    </select>
+                </div>
+                <button class="btn btn-sm" @click="logout()" x-text="$t('nav.logout')"></button>
             </div>
         </nav>
 
@@ -134,12 +183,12 @@
         <main class="content">
             <!-- Dashboard -->
             <div x-show="page === 'dashboard'" class="page" x-transition.opacity.duration.300ms>
-                <h2>系统状态</h2>
+                <h2 x-text="$t('dashboard.title')"></h2>
                 <!-- 配置一致性告警 -->
                 <div x-show="configIssues.has_issues" style="background:#fef3c7;border:1px solid #f59e0b;border-radius:10px;padding:12px 16px;margin-bottom:16px">
                     <div style="display:flex;justify-content:space-between;align-items:center">
                         <span style="font-weight:600;color:#92400e">⚠️ 检测到配置不一致 (<span x-text="configIssues.issues.length"></span> 项)</span>
-                        <button class="btn btn-sm btn-warn" @click="syncConfigs()">修复配置</button>
+                        <button class="btn btn-sm btn-warn" @click="syncConfigs()" x-text="$t('dashboard.fix_config')"></button>
                     </div>
                     <div style="margin-top:6px;font-size:12px;color:#a16207">
                         <template x-for="issue in configIssues.issues" :key="issue">
@@ -196,7 +245,7 @@
                                             <span style="font-size:13px;font-weight:600;color:#92400e;font-family:monospace" x-text="storageOverview.free_disks[slotNum - (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length - 1].device"></span>
                                         </template>
                                         <template x-if="slotNum > (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length && slotNum - (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length <= (storageOverview.free_disks || []).length">
-                                            <span style="font-size:12px;color:#b45309" x-text="storageOverview.free_disks[slotNum - (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length - 1].size + ' 待配置'"></span>
+                                            <span style="font-size:12px;color:#b45309" x-text="$t('dashboard.pending')"></span>
                                         </template>
                                         <template x-if="slotNum > (storageOverview.pools||[]).flatMap(function(p){return p.disks||[];}).length + (storageOverview.free_disks || []).length">
                                             <span style="font-size:13px;color:rgba(255,255,255,0.5)">空</span>
@@ -216,7 +265,7 @@
                     <div style="flex:1;min-width:300px">
                         <table style="width:100%;font-size:13px;border-collapse:collapse">
                             <tr style="border-bottom:1px solid #e5e7eb">
-                                <td style="padding:5px 0;color:#475569;width:90px">主机名</td>
+                                <td style="padding:5px 0;color:#475569;width:90px" x-text="$t('system.hostname')"></td>
                                 <td style="padding:5px 0;font-weight:600" x-text="dashboard.hostname"></td>
                             </tr>
                             <tr style="border-bottom:1px solid #e5e7eb">
@@ -224,15 +273,15 @@
                                 <td style="padding:5px 0;font-weight:600;font-family:monospace" x-text="dashboard.ip_addr || '—'"></td>
                             </tr>
                             <tr style="border-bottom:1px solid #e5e7eb">
-                                <td style="padding:5px 0;color:#475569">系统</td>
+                                <td style="padding:5px 0;color:#475569" x-text="$t('dashboard.os')"></td>
                                 <td style="padding:5px 0;font-weight:600" x-text="dashboard.os"></td>
                             </tr>
                             <tr style="border-bottom:1px solid #e5e7eb">
-                                <td style="padding:5px 0;color:#475569">内核</td>
+                                <td style="padding:5px 0;color:#475569" x-text="$t('dashboard.kernel')"></td>
                                 <td style="padding:5px 0;font-weight:600;font-family:monospace;font-size:12px" x-text="dashboard.kernel"></td>
                             </tr>
                             <tr style="border-bottom:1px solid #e5e7eb">
-                                <td style="padding:5px 0;color:#475569">运行时间</td>
+                                <td style="padding:5px 0;color:#475569" x-text="$t('dashboard.uptime')"></td>
                                 <td style="padding:5px 0;font-weight:600" x-text="dashboard.uptime"></td>
                             </tr>
                             <tr style="border-bottom:1px solid #e5e7eb">
@@ -240,11 +289,11 @@
                                 <td style="padding:5px 0;font-weight:600" x-text="dashboard.cpu_cores + '核 ' + dashboard.cpu_usage"></td>
                             </tr>
                             <tr style="border-bottom:1px solid #e5e7eb">
-                                <td style="padding:5px 0;color:#475569">系统负载</td>
+                                <td style="padding:5px 0;color:#475569" x-text="$t('dashboard.load')"></td>
                                 <td style="padding:5px 0;font-weight:600;font-family:monospace" x-text="dashboard.load_avg || '—'"></td>
                             </tr>
                             <tr style="border-bottom:1px solid #e5e7eb">
-                                <td style="padding:5px 0;color:#475569">内存</td>
+                                <td style="padding:5px 0;color:#475569" x-text="$t('monitor.memory')"></td>
                                 <td style="padding:5px 0">
                                     <span style="font-weight:600" x-text="dashboard.mem_used + ' / ' + dashboard.mem_total + '  '"></span>
                                     <span style="display:inline-block;width:80px;height:6px;background:#e5e7eb;border-radius:3px;vertical-align:middle;margin:0 4px">
@@ -254,7 +303,7 @@
                                 </td>
                             </tr>
                             <tr style="border-bottom:1px solid #e5e7eb">
-                                <td style="padding:5px 0;color:#475569">系统盘</td>
+                                <td style="padding:5px 0;color:#475569" x-text="$t('dashboard.system_disk')"></td>
                                 <td style="padding:5px 0">
                                     <span style="font-weight:600" x-text="dashboard.disk_used + ' / ' + dashboard.disk_total + '  '"></span>
                                     <span style="display:inline-block;width:80px;height:6px;background:#e5e7eb;border-radius:3px;vertical-align:middle;margin:0 4px">
@@ -268,11 +317,11 @@
                                 <td style="padding:5px 0;font-weight:600;color:#1e40af" x-text="storageOverview.total_capacity"></td>
                             </tr>
                             <tr x-show="storageOverview.total_capacity && storageOverview.total_capacity !== '0M'" style="border-bottom:1px solid #e5e7eb">
-                                <td style="padding:5px 0;color:#16a34a">已用</td>
+                                <td style="padding:5px 0;color:#16a34a" x-text="$t('dashboard.used')"></td>
                                 <td style="padding:5px 0;font-weight:600;color:#16a34a" x-text="storageOverview.total_used"></td>
                             </tr>
                             <tr x-show="storageOverview.total_capacity && storageOverview.total_capacity !== '0M'" style="border-bottom:1px solid #e5e7eb">
-                                <td style="padding:5px 0;color:#92400e">可用</td>
+                                <td style="padding:5px 0;color:#92400e" x-text="$t('dashboard.available')"></td>
                                 <td style="padding:5px 0;font-weight:600;color:#92400e" x-text="storageOverview.total_avail"></td>
                             </tr>
                             <template x-if="storageOverview.raid_health?.length > 0">
@@ -296,9 +345,9 @@
                                 <span style="font-size:14px;font-weight:700" x-text="pool.display_name"></span>
                                 <span style="font-size:11px;padding:1px 6px;border-radius:3px"
                                     :style="pool.healthy ? 'background:#dcfce7;color:#16a34a' : 'background:#fee2e2;color:#dc2626'"
-                                    x-text="pool.healthy ? '● 正常' : '● 异常'"></span>
+                                    x-text="$t('common.normal')"></span>
                             </div>
-                            <div style="font-size:11px;color:#6b7280;margin-bottom:4px" x-text="pool.raid_level ? ('RAID'+pool.raid_level) : (pool.type==='lvm'?'LVM':pool.type==='single'?'单盘':'独立')"></div>
+                            <div style="font-size:11px;color:#6b7280;margin-bottom:4px" x-text="$t('storage.single')"></div>
                             <div style="display:flex;align-items:center;gap:6px">
                                 <span style="font-size:13px;font-weight:600" x-text="pool.used + ' / ' + pool.size"></span>
                             </div>
@@ -309,10 +358,10 @@
                     </template>
                 </div>
 
-                <h3>服务状态</h3>
+                <h3 x-text="$t('dashboard.service_status')"></h3>
                 <table class="table">
                     <thead>
-                        <tr><th>服务</th><th>端口</th><th>说明</th><th>状态</th></tr>
+                        <tr><th x-text="$t('dashboard.service')"></th><th x-text="$t('common.port')"></th><th x-text="$t('dashboard.desc')"></th><th x-text="$t('common.status')"></th></tr>
                     </thead>
                     <tbody>
                         <template x-for="svc in (dashboard.services || [])" :key="svc.name">
@@ -322,7 +371,7 @@
                                 <td x-text="svc.description"></td>
                                 <td>
                                     <span class="badge" :class="svc.active === 'active' ? 'badge-ok' : 'badge-err'"
-                                          x-text="svc.active === 'active' ? '● 运行中' : '○ 已停止'"></span>
+                                          x-text="$t('rclone.running')"></span>
                                 </td>
                             </tr>
                         </template>
@@ -332,14 +381,14 @@
 
             <!-- Services -->
             <div x-show="page === 'services'" class="page" x-transition.opacity.duration.300ms>
-                <h2>服务管理</h2>
+                <h2 x-text="$t('services.title')"></h2>
                 <div style="display:flex;gap:8px;margin-bottom:12px">
                     <button class="btn btn-sm btn-primary" @click="installServices()" :disabled="installingServices" x-text="installingServices ? '安装中...' : '🔧 一键安装所有服务'"></button>
                     <span x-show="installMsg" style="font-size:12px;color:#6b7280" x-text="installMsg"></span>
                 </div>
                 <table class="table">
                     <thead>
-                        <tr><th>服务</th><th>端口</th><th>说明</th><th>状态</th><th>操作</th></tr>
+                        <tr><th x-text="$t('dashboard.service')"></th><th x-text="$t('common.port')"></th><th x-text="$t('dashboard.desc')"></th><th x-text="$t('common.status')"></th><th x-text="$t('logs.log_action')"></th></tr>
                     </thead>
                     <tbody>
                         <template x-for="svc in services" :key="svc.name">
@@ -349,18 +398,18 @@
                                 <td x-text="svc.description"></td>
                                 <td>
                                     <span class="badge" :class="svc.active === 'active' ? 'badge-ok' : 'badge-err'"
-                                          x-text="svc.active === 'active' ? '● 运行中' : '○ 已停止'"></span>
+                                          x-text="$t('rclone.running')"></span>
                                 </td>
                                 <td class="actions">
                                     <template x-if="svc.active === 'not-installed' || svc.active === 'unknown'">
-                                        <button class="btn btn-sm btn-primary" @click="installService(svc.name)" x-text="'安装 '+svc.display_name"></button>
+                                        <button class="btn btn-sm btn-primary" @click="installService(svc.name)" x-text="$t('services.install_service')"></button>
                                     </template>
                                     <template x-if="svc.active !== 'not-installed' && svc.active !== 'unknown'">
                                         <span>
-                                            <button class="btn btn-sm btn-success" @click="svcAction(svc.name, 'start')">启动</button>
-                                            <button class="btn btn-sm btn-warn" @click="svcAction(svc.name, 'stop')">停止</button>
-                                            <button class="btn btn-sm btn-primary" @click="svcAction(svc.name, 'restart')">重启</button>
-                                            <button class="btn btn-sm" @click="showLogs(svc.name)">日志</button>
+                                            <button class="btn btn-sm btn-success" @click="svcAction(svc.name, 'start')" x-text="$t('common.start')"></button>
+                                            <button class="btn btn-sm btn-warn" @click="svcAction(svc.name, 'stop')" x-text="$t('common.stop')"></button>
+                                            <button class="btn btn-sm btn-primary" @click="svcAction(svc.name, 'restart')" x-text="$t('common.restart')"></button>
+                                            <button class="btn btn-sm" @click="showLogs(svc.name)" x-text="$t('services.log')"></button>
                                         </span>
                                     </template>
                                 </td>
@@ -372,8 +421,8 @@
                 <div class="logs-modal" x-show="logsModal" x-cloak>
                     <div class="logs-box">
                         <div class="logs-header">
-                            <h3 x-text="'日志: ' + logsService"></h3>
-                            <button class="btn btn-sm" @click="logsModal = false">关闭</button>
+                            <h3 x-text="$t('services.log')"></h3>
+                            <button class="btn btn-sm" @click="logsModal = false" x-text="$t('common.close')"></button>
                         </div>
                         <pre class="logs-content" x-text="logsContent"></pre>
                     </div>
@@ -383,18 +432,18 @@
             <!-- Users -->
             <div x-show="page === 'users'" class="page" x-transition.opacity.duration.300ms>
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-                    <h2 style="margin:0">用户管理</h2>
+                    <h2 style="margin:0" x-text="$t('users.title')"></h2>
                     <div style="display:flex;gap:8px">
-                        <button class="btn btn-primary" @click="openUserWizard()">添加用户</button>
+                        <button class="btn btn-primary" @click="openUserWizard()" x-text="$t('users.add_user')"></button>
                     </div>
                 </div>
 
                 <!-- Tab 导航 -->
                 <div class="tab-nav" style="display:flex;gap:0;border-bottom:2px solid #e2e8f0;margin-bottom:20px">
-                    <button :class="{'tab-active': userTab === 'list'}" class="tab-btn" @click="userTab = 'list'">用户列表</button>
-                    <button :class="{'tab-active': userTab === 'groups'}" class="tab-btn" @click="userTab = 'groups'">用户组</button>
-                    <button :class="{'tab-active': userTab === 'matrix'}" class="tab-btn" @click="userTab = 'matrix'">权限矩阵</button>
-                    <button :class="{'tab-active': userTab === 'logs'}" class="tab-btn" @click="userTab = 'logs'">登录日志</button>
+                    <button :class="{'tab-active': userTab === 'list'}" class="tab-btn" @click="userTab = 'list'" x-text="$t('users.list')"></button>
+                    <button :class="{'tab-active': userTab === 'groups'}" class="tab-btn" @click="userTab = 'groups'" x-text="$t('users.groups')"></button>
+                    <button :class="{'tab-active': userTab === 'matrix'}" class="tab-btn" @click="userTab = 'matrix'" x-text="$t('users.matrix')"></button>
+                    <button :class="{'tab-active': userTab === 'logs'}" class="tab-btn" @click="userTab = 'logs'" x-text="$t('users.login_logs')"></button>
                 </div>
 
                 <!-- Tab: 用户列表 -->
@@ -402,13 +451,13 @@
                     <table class="table">
                         <thead>
                             <tr>
-                                <th>用户名</th>
-                                <th>服务权限</th>
-                                <th>私有目录</th>
-                                <th>配额</th>
+                                <th x-text="$t('common.username')"></th>
+                                <th x-text="$t('users.step_services')"></th>
+                                <th x-text="$t('users.private_dir')"></th>
+                                <th x-text="$t('storage.quota')"></th>
                                 <th>共享</th>
-                                <th>创建时间</th>
-                                <th>操作</th>
+                                <th x-text="$t('users.created_time')"></th>
+                                <th x-text="$t('logs.log_action')"></th>
                             </tr>
                         </thead>
                         <tbody>
@@ -430,14 +479,14 @@
                                             </span>
                                         </template>
                                         <template x-if="!user.quota_gb">
-                                            <span style="color:#94a3b8">无限制</span>
+                                            <span style="color:#94a3b8" x-text="$t('users.unlimited')"></span>
                                         </template>
                                     </td>
                                     <td x-text="user.share_count + ' 个'"></td>
                                     <td style="font-size:12px;color:#475569" x-text="user.created_at || '-'"></td>
                                     <td class="actions">
-                                        <button class="btn btn-sm btn-warn" @click="showChangePassword(user.username)">改密</button>
-                                        <button class="btn btn-sm btn-danger" @click="deleteUser(user.username)">删除</button>
+                                        <button class="btn btn-sm btn-warn" @click="showChangePassword(user.username)" x-text="$t('users.change_password')"></button>
+                                        <button class="btn btn-sm btn-danger" @click="deleteUser(user.username)" x-text="$t('backup.delete_backup')"></button>
                                     </td>
                                 </tr>
                             </template>
@@ -448,16 +497,16 @@
                 <!-- Tab: 用户组 -->
                 <div x-show="userTab === 'groups'" x-transition.opacity.duration.200ms>
                     <div style="margin-bottom:16px">
-                        <button class="btn btn-primary" @click="openGroupModal()">创建用户组</button>
+                        <button class="btn btn-primary" @click="openGroupModal()" x-text="$t('users.create_group')"></button>
                     </div>
                     <table class="table">
                         <thead>
                             <tr>
-                                <th>组名</th>
+                                <th x-text="$t('users.group_name')"></th>
                                 <th>GID</th>
-                                <th>成员</th>
-                                <th>成员数</th>
-                                <th>操作</th>
+                                <th x-text="$t('users.members')"></th>
+                                <th x-text="$t('users.member_count')"></th>
+                                <th x-text="$t('logs.log_action')"></th>
                             </tr>
                         </thead>
                         <tbody>
@@ -468,7 +517,7 @@
                                     <td style="font-size:12px" x-text="g.members.join(', ') || '-'"></td>
                                     <td x-text="g.members.length"></td>
                                     <td class="actions">
-                                        <button class="btn btn-sm btn-danger" @click="deleteGroup(g.name)">删除</button>
+                                        <button class="btn btn-sm btn-danger" @click="deleteGroup(g.name)" x-text="$t('backup.delete_backup')"></button>
                                     </td>
                                 </tr>
                             </template>
@@ -498,9 +547,9 @@
                                                     @change="setMatrixPerm(username, folder, $event.target.value)"
                                                     style="font-size:12px;padding:2px 4px;border:1px solid #cbd5e1;border-radius:4px"
                                                     :style="permMatrix.matrix[username]?.[folder] === 'readwrite' ? 'color:#0369a1;font-weight:600' : (permMatrix.matrix[username]?.[folder] === 'readonly' ? 'color:#c2410c' : 'color:#94a3b8')">
-                                                    <option value="readwrite">读写</option>
-                                                    <option value="readonly">只读</option>
-                                                    <option value="noaccess">禁止</option>
+                                                    <option value="readwrite" x-text="$t('common.readwrite')"></option>
+                                                    <option value="readonly" x-text="$t('common.readonly')"></option>
+                                                    <option value="noaccess" x-text="$t('common.deny')"></option>
                                                 </select>
                                             </td>
                                         </template>
@@ -515,18 +564,18 @@
                 <div x-show="userTab === 'logs'" x-transition.opacity.duration.200ms>
                     <div style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">
                         <span style="font-size:13px;color:#475569">最近 50 条登录记录</span>
-                        <button class="btn btn-sm btn-primary" @click="loadLoginLogs()">刷新</button>
+                        <button class="btn btn-sm btn-primary" @click="loadLoginLogs()" x-text="$t('common.refresh')"></button>
                     </div>
                     <div x-show="loginLogsLoading" style="text-align:center;padding:20px;color:#94a3b8">加载中...</div>
                     <table class="table" x-show="!loginLogsLoading">
                         <thead>
                             <tr>
-                                <th>时间</th>
-                                <th>用户</th>
-                                <th>来源</th>
-                                <th>服务</th>
-                                <th>结果</th>
-                                <th>详情</th>
+                                <th x-text="$t('logs.log_time')"></th>
+                                <th x-text="$t('logs.log_user')"></th>
+                                <th x-text="$t('firewall.from')"></th>
+                                <th x-text="$t('dashboard.service')"></th>
+                                <th x-text="$t('users.login_result')"></th>
+                                <th x-text="$t('logs.log_detail')"></th>
                             </tr>
                         </thead>
                         <tbody>
@@ -538,13 +587,13 @@
                                     <td x-text="log.service"></td>
                                     <td>
                                         <span :style="log.result === 'success' ? 'color:#16a34a;font-weight:600' : 'color:#dc2626;font-weight:600'"
-                                            x-text="log.result === 'success' ? '成功' : '失败'"></span>
+                                            x-text="$t('common.success')"></span>
                                     </td>
                                     <td style="font-size:12px;color:#475569" x-text="log.message"></td>
                                 </tr>
                             </template>
                             <tr x-show="!loginLogs.length">
-                                <td colspan="6" style="text-align:center;color:#94a3b8">暂无登录记录</td>
+                                <td colspan="6" style="text-align:center;color:#94a3b8" x-text="$t('users.no_login_logs')"></td>
                             </tr>
                         </tbody>
                     </table>
@@ -566,15 +615,15 @@
                         <!-- 步骤1: 基本信息 -->
                         <div x-show="userWizardStep === 1" x-transition.opacity.duration.200ms>
                             <div class="form-group">
-                                <label>用户名</label>
-                                <input type="text" x-model="userWizardForm.username" placeholder="小写字母开头，2-32位">
+                                <label x-text="$t('common.username')"></label>
+                                <input type="text" x-model="userWizardForm.username" :placeholder="$t('users.username_rule')">
                             </div>
                             <div class="form-group">
                                 <label>密码（至少12位）</label>
                                 <input type="password" x-model="userWizardForm.password">
                             </div>
                             <div class="form-group">
-                                <label>确认密码</label>
+                                <label x-text="$t('users.confirm_password')"></label>
                                 <input type="password" x-model="userWizardForm.password2">
                             </div>
                         </div>
@@ -606,20 +655,20 @@
                             <div class="form-group">
                                 <label>私有目录配额 (GB)</label>
                                 <input type="number" x-model="userWizardForm.quota_gb" min="0" placeholder="0 = 无限制">
-                                <small style="color:#64748b;font-size:12px">限制用户私有目录 /data/private/<span x-text="userWizardForm.username || '用户名'"></span> 的最大使用空间</small>
+                                <small style="color:#64748b;font-size:12px">限制用户私有目录 /data/private/<span x-text="$t('common.username')"></span> 的最大使用空间</small>
                             </div>
                         </div>
 
                         <!-- 步骤4: 共享权限 -->
                         <div x-show="userWizardStep === 4" x-transition.opacity.duration.200ms>
-                            <p style="font-size:13px;color:#475569;margin-bottom:12px">设置该用户对各共享文件夹的访问权限</p>
+                            <p style="font-size:13px;color:#475569;margin-bottom:12px" x-text="$t('users.share_perm_desc')"></p>
                             <template x-for="folder in userWizardShares" :key="folder">
                                 <div class="form-group" style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
                                     <span style="min-width:100px;font-size:13px" x-text="folder"></span>
                                     <select x-model="userWizardForm.sharePerms[folder]" style="flex:1;font-size:13px;padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px">
-                                        <option value="readwrite">读写</option>
-                                        <option value="readonly">只读</option>
-                                        <option value="noaccess">禁止</option>
+                                        <option value="readwrite" x-text="$t('common.readwrite')"></option>
+                                        <option value="readonly" x-text="$t('common.readonly')"></option>
+                                        <option value="noaccess" x-text="$t('common.deny')"></option>
                                     </select>
                                 </div>
                             </template>
@@ -628,7 +677,7 @@
 
                         <!-- 按钮 -->
                         <div class="modal-actions" style="display:flex;justify-content:space-between;margin-top:24px">
-                            <button class="btn" @click="addUserModal = false">取消</button>
+                            <button class="btn" @click="addUserModal = false" x-text="$t('common.cancel')"></button>
                             <div style="display:flex;gap:8px">
                                 <button class="btn" x-show="userWizardStep > 1" @click="wizardPrev()">上一步</button>
                                 <button class="btn btn-primary" x-show="userWizardStep < 4" @click="wizardNext()">下一步</button>
@@ -641,18 +690,18 @@
                 <!-- 创建用户组弹窗 -->
                 <div class="modal" x-show="showGroupModal" x-cloak>
                     <div class="modal-box">
-                        <h3>创建用户组</h3>
+                        <h3 x-text="$t('users.create_group')"></h3>
                         <div class="form-group">
-                            <label>组名</label>
+                            <label x-text="$t('users.group_name')"></label>
                             <input type="text" x-model="groupForm.name" placeholder="如: family, guests">
                         </div>
                         <div class="form-group">
-                            <label>描述</label>
+                            <label x-text="$t('common.description')"></label>
                             <input type="text" x-model="groupForm.comment" placeholder="可选">
                         </div>
                         <div class="modal-actions">
-                            <button class="btn" @click="showGroupModal = false">取消</button>
-                            <button class="btn btn-primary" @click="createGroup()">创建</button>
+                            <button class="btn" @click="showGroupModal = false" x-text="$t('common.cancel')"></button>
+                            <button class="btn btn-primary" @click="createGroup()" x-text="$t('common.create')"></button>
                         </div>
                     </div>
                 </div>
@@ -665,8 +714,8 @@
                             <input type="password" x-model="pwdForm.password">
                         </div>
                         <div class="modal-actions">
-                            <button class="btn" @click="pwdModal = false">取消</button>
-                            <button class="btn btn-primary" @click="changePassword()">确认</button>
+                            <button class="btn" @click="pwdModal = false" x-text="$t('common.cancel')"></button>
+                            <button class="btn btn-primary" @click="changePassword()" x-text="$t('common.confirm')"></button>
                         </div>
                     </div>
                 </div>
@@ -676,8 +725,8 @@
             <!-- Firewall -->
             <div x-show="page === 'firewall'" class="page" x-transition.opacity.duration.300ms>
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
-                    <h2 style="margin:0">防火墙</h2>
-                    <button class="btn btn-sm btn-primary" @click="loadFirewall()" style="font-size:12px">刷新</button>
+                    <h2 style="margin:0" x-text="$t('firewall.title')"></h2>
+                    <button class="btn btn-sm btn-primary" @click="loadFirewall()" style="font-size:12px" x-text="$t('common.refresh')"></button>
                 </div>
 
                 <!-- 未安装 -->
@@ -691,23 +740,23 @@
                 <div style="background:white;border:1px solid #e0e4e8;border-radius:12px;padding:20px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center">
                     <div style="display:flex;gap:32px;align-items:center">
                         <div>
-                            <div style="font-size:12px;color:#64748b;margin-bottom:4px">运行状态</div>
+                            <div style="font-size:12px;color:#64748b;margin-bottom:4px" x-text="$t('firewall.status')"></div>
                             <div style="display:flex;align-items:center;gap:6px">
                                 <span :style="'width:10px;height:10px;border-radius:50%;display:inline-block;background:' + (firewall.active ? '#16a34a' : '#cbd5e1')"></span>
-                                <span style="font-weight:700;font-size:15px" :style="'color:' + (firewall.active ? '#15803d' : '#475569')" x-text="firewall.active ? '已启用' : '未启用'"></span>
+                                <span style="font-weight:700;font-size:15px" :style="'color:' + (firewall.active ? '#15803d' : '#475569')" x-text="$t('common.enabled')"></span>
                             </div>
                         </div>
                         <div>
-                            <div style="font-size:12px;color:#64748b;margin-bottom:4px">默认传入策略</div>
-                            <div style="font-weight:700;font-size:15px;color:#1e293b" x-text="firewall.active ? ({deny:'拒绝',allow:'允许',reject:'驳回'}[firewall.default_incoming] || firewall.default_incoming) : '-'"></div>
+                            <div style="font-size:12px;color:#64748b;margin-bottom:4px" x-text="$t('firewall.default_policy')"></div>
+                            <div style="font-weight:700;font-size:15px;color:#1e293b" x-text="$t('firewall.deny')"></div>
                         </div>
                         <div>
-                            <div style="font-size:12px;color:#64748b;margin-bottom:4px">规则数量</div>
+                            <div style="font-size:12px;color:#64748b;margin-bottom:4px" x-text="$t('firewall.rule_count')"></div>
                             <div style="font-weight:700;font-size:15px;color:#1e293b" x-text="firewall.rules.length"></div>
                         </div>
                     </div>
                     <button class="btn btn-sm" :class="firewall.active ? 'btn-danger' : 'btn-success'" @click="toggleFirewall()"
-                        x-text="firewall.active ? '禁用防火墙' : '启用防火墙'"></button>
+                        x-text="$t('firewall.disable_fw')"></button>
                 </div>
 
                 <!-- 未启用提示 -->
@@ -717,7 +766,7 @@
 
                 <!-- 添加规则 -->
                 <div style="background:white;border:1px solid #e0e4e8;border-radius:12px;padding:20px;margin-bottom:20px">
-                    <h3 style="margin:0 0 14px;font-size:15px">添加规则</h3>
+                    <h3 style="margin:0 0 14px;font-size:15px" x-text="$t('firewall.add_rule')"></h3>
                     <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
                         <span style="font-size:12px;color:#64748b;align-self:center">常用:</span>
                         <template x-for="p in firewallPresets" :key="p.port">
@@ -726,11 +775,11 @@
                     </div>
                     <div style="display:grid;grid-template-columns:1.2fr 0.8fr 0.8fr 1.4fr 1.4fr auto;gap:10px;align-items:end">
                         <div class="form-group" style="margin:0">
-                            <label>端口</label>
+                            <label x-text="$t('common.port')"></label>
                             <input type="text" x-model="firewallForm.port" placeholder="22 或 30000:31000">
                         </div>
                         <div class="form-group" style="margin:0">
-                            <label>协议</label>
+                            <label x-text="$t('firewall.proto')"></label>
                             <select x-model="firewallForm.proto">
                                 <option value="tcp">TCP</option>
                                 <option value="udp">UDP</option>
@@ -740,8 +789,8 @@
                         <div class="form-group" style="margin:0">
                             <label>动作</label>
                             <select x-model="firewallForm.action">
-                                <option value="allow">允许</option>
-                                <option value="deny">拒绝</option>
+                                <option value="allow" x-text="$t('common.allow')"></option>
+                                <option value="deny" x-text="$t('firewall.deny')"></option>
                             </select>
                         </div>
                         <div class="form-group" style="margin:0">
@@ -766,8 +815,8 @@
                                 <th style="width:50px">#</th>
                                 <th>端口/协议</th>
                                 <th>动作</th>
-                                <th>来源</th>
-                                <th style="width:70px">操作</th>
+                                <th x-text="$t('firewall.from')"></th>
+                                <th style="width:70px" x-text="$t('logs.log_action')"></th>
                             </tr>
                         </thead>
                         <tbody>
@@ -781,11 +830,11 @@
                                     <td>
                                         <span style="padding:2px 10px;border-radius:10px;font-size:12px;font-weight:600"
                                             :style="rule.action === 'allow' ? 'background:#dcfce7;color:#16a34a' : 'background:#fee2e2;color:#dc2626'"
-                                            x-text="rule.action === 'allow' ? '允许' : '拒绝'"></span>
+                                            x-text="$t('common.allow')"></span>
                                     </td>
                                     <td style="font-family:monospace;font-size:12px" x-text="rule.from === 'Anywhere' ? '任意' : rule.from"></td>
                                     <td>
-                                        <button class="btn btn-sm btn-danger" @click="deleteFirewallRule(rule)" style="font-size:11px;padding:2px 8px">删除</button>
+                                        <button class="btn btn-sm btn-danger" @click="deleteFirewallRule(rule)" style="font-size:11px;padding:2px 8px" x-text="$t('backup.delete_backup')"></button>
                                     </td>
                                 </tr>
                             </template>
@@ -799,10 +848,10 @@
             <!-- Monitor -->
             <div x-show="page === 'monitor'" class="page" x-transition.opacity.duration.300ms>
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
-                    <h2 style="margin:0">监控告警</h2>
+                    <h2 style="margin:0" x-text="$t('monitor.title')"></h2>
                     <div style="display:flex;gap:8px;align-items:center">
                         <span style="font-size:12px;color:#94a3b8" x-text="'主机: ' + (monitor.hostname||'-') + ' | 运行: ' + (monitor.uptime||'-')"></span>
-                        <button class="btn btn-sm btn-primary" @click="loadMonitor()" style="font-size:12px">刷新</button>
+                        <button class="btn btn-sm btn-primary" @click="loadMonitor()" style="font-size:12px" x-text="$t('common.refresh')"></button>
                     </div>
                 </div>
 
@@ -844,7 +893,7 @@
                                 <div style="font-size:28px;font-weight:700" :style="'color:'+gaugeColor(parseFloat(monitor.mem_usage||0))" x-text="(monitor.mem_usage||'0')+'%'"></div>
                             </div>
                         </div>
-                        <div style="font-size:14px;font-weight:600;color:#334155">内存使用率</div>
+                        <div style="font-size:14px;font-weight:600;color:#334155" x-text="$t('dashboard.mem_usage')"></div>
                         <div style="font-size:18px;font-weight:600;margin-top:4px" x-text="(monitor.mem_used||'-') + ' / ' + (monitor.mem_total||'-')"></div>
                         <div style="font-size:12px;color:#94a3b8;margin-top:4px" x-show="monitor.swap_total && monitor.swap_total !== '0'">
                             Swap: <span x-text="(monitor.swap_used||'-') + ' / ' + (monitor.swap_total||'-')"></span>
@@ -864,7 +913,7 @@
                                 <div style="font-size:28px;font-weight:700" :style="'color:'+gaugeColor(parseFloat(monitor.disk_usage||0))" x-text="(monitor.disk_usage||'0')+'%'"></div>
                             </div>
                         </div>
-                        <div style="font-size:14px;font-weight:600;color:#334155">磁盘使用率</div>
+                        <div style="font-size:14px;font-weight:600;color:#334155" x-text="$t('dashboard.disk_usage')"></div>
                         <div style="font-size:18px;font-weight:600;margin-top:4px" x-text="(monitor.disk_used||'-') + ' / ' + (monitor.disk_total||'-')"></div>
                         <div style="font-size:12px;color:#94a3b8;margin-top:4px">/data</div>
                     </div>
@@ -891,7 +940,7 @@
                 <!-- ═══ 服务状态 ═══ -->
                 <div style="background:white;border:1px solid #e0e4e8;border-radius:12px;padding:20px;margin-bottom:24px">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-                        <h3 style="margin:0;font-size:16px">服务状态</h3>
+                        <h3 style="margin:0;font-size:16px" x-text="$t('dashboard.service_status')"></h3>
                         <span style="font-size:13px;padding:4px 12px;border-radius:12px"
                             :style="(monitor.services_down||0) === 0 ? 'background:#dcfce7;color:#16a34a' : 'background:#fee2e2;color:#dc2626'"
                             x-text="(monitor.services_down||0) === 0 ? '全部正常 (' + (monitor.services_total||0) + ')' : (monitor.services_down||0) + ' 个异常'"></span>
@@ -947,7 +996,7 @@
                         <!-- Top 进程 -->
                         <h4 style="margin:0 0 8px;font-size:14px;color:#475569">内存占用 Top 10</h4>
                         <table class="table" style="margin-bottom:20px">
-                            <thead><tr><th>用户</th><th>PID</th><th>CPU%</th><th>MEM%</th><th>RSS</th><th>命令</th></tr></thead>
+                            <thead><tr><th x-text="$t('logs.log_user')"></th><th>PID</th><th>CPU%</th><th>MEM%</th><th>RSS</th><th>命令</th></tr></thead>
                             <tbody>
                                 <template x-for="p in (monitor.top_procs||[])" :key="p.pid">
                                     <tr>
@@ -963,9 +1012,9 @@
                         </table>
 
                         <!-- 登录用户 -->
-                        <h4 style="margin:0 0 8px;font-size:14px;color:#475569">登录用户</h4>
+                        <h4 style="margin:0 0 8px;font-size:14px;color:#475569" x-text="$t('dashboard.logged_users')"></h4>
                         <table class="table" style="margin-bottom:20px">
-                            <thead><tr><th>用户</th><th>终端</th><th>来源</th><th>登录时间</th></tr></thead>
+                            <thead><tr><th x-text="$t('logs.log_user')"></th><th>终端</th><th x-text="$t('firewall.from')"></th><th>登录时间</th></tr></thead>
                             <tbody>
                                 <template x-for="u in (monitor.logged_in_users||[])" :key="u.user+u.tty">
                                     <tr><td x-text="u.user"></td><td x-text="u.tty"></td><td x-text="u.from||'-'"></td><td x-text="u.date"></td></tr>
@@ -982,8 +1031,8 @@
                                     <th style="padding:6px 8px;color:#64748b">设备</th>
                                     <th style="padding:6px 8px;color:#64748b">挂载点</th>
                                     <th style="padding:6px 8px;color:#64748b">总大小</th>
-                                    <th style="padding:6px 8px;color:#64748b">已用</th>
-                                    <th style="padding:6px 8px;color:#64748b">可用</th>
+                                    <th style="padding:6px 8px;color:#64748b" x-text="$t('dashboard.used')"></th>
+                                    <th style="padding:6px 8px;color:#64748b" x-text="$t('dashboard.available')"></th>
                                     <th style="padding:6px 8px;color:#64748b">使用率</th>
                                 </tr>
                             </thead>
@@ -1034,7 +1083,7 @@
 
                 <!-- ═══ 告警配置 ═══ -->
                 <div style="background:white;border:1px solid #e0e4e8;border-radius:12px;padding:20px">
-                    <h3 style="margin:0 0 4px;font-size:16px">告警配置</h3>
+                    <h3 style="margin:0 0 4px;font-size:16px" x-text="$t('monitor.alert_config')"></h3>
                     <p style="color:#94a3b8;font-size:13px;margin-bottom:16px">配置通知渠道，填入信息后点击保存。配哪个启用哪个，留空表示不启用。</p>
 
                     <!-- 通知渠道状态 -->
@@ -1094,7 +1143,7 @@
                                 <input type="text" x-model="alertConfig.ALERT_SMTP_PORT" placeholder="465">
                             </div>
                             <div class="form-group">
-                                <label>用户名</label>
+                                <label x-text="$t('common.username')"></label>
                                 <input type="text" x-model="alertConfig.ALERT_SMTP_USER" placeholder="you@qq.com">
                             </div>
                             <div class="form-group">
@@ -1133,7 +1182,7 @@
 <!-- Config Management -->
             <!-- Disk Management -->
             <div x-show="page === 'diskmgmt'" class="page" x-init="diskmgmtTab = diskmgmtTab || 'overview'; loadPendingOps()" x-transition.opacity.duration.300ms>
-                <h2 style="margin-bottom:14px">存储管理</h2>
+                <h2 style="margin-bottom:14px" x-text="$t('storage.title')"></h2>
 
                 <!-- 待应用横幅 -->
                 <div x-show="pendingCount > 0" style="background:#fef3c7;border:1px solid #f59e0b;border-radius:10px;padding:10px 16px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center">
@@ -1156,7 +1205,7 @@
                 <!-- ═══════════════ Tab 1: 存储总览 ═══════════════ -->
                 <div x-show="diskmgmtTab==='overview'" x-transition.opacity.duration.250ms>
                     <!-- 统计卡片 -->
-                    <div x-show="storageOverview.stats"><div style="display:flex;gap:12px;margin-bottom:14px;max-width:65%"><div style="flex:1;min-width:0;background:#fff;border-radius:10px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.06);text-align:center"><div style="font-size:22px;font-weight:700;color:#22c55e" x-text="storageOverview.stats?.total_disks ?? 0"></div><div style="font-size:11px;color:#6b7280;margin-top:4px">物理磁盘</div></div><div style="flex:1;min-width:0;background:#fff;border-radius:10px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.06);text-align:center"><div style="font-size:22px;font-weight:700;color:#3b82f6" x-text="storageOverview.stats?.total_pools ?? 0"></div><div style="font-size:11px;color:#6b7280;margin-top:4px">存储池</div></div><div style="flex:1;min-width:0;background:#fff;border-radius:10px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.06);text-align:center"><div style="font-size:22px;font-weight:700;color:#8b5cf6" x-text="storageOverview.stats?.total_volumes ?? 0"></div><div style="font-size:11px;color:#6b7280;margin-top:4px">逻辑卷</div></div><div style="flex:1;min-width:0;background:#fff;border-radius:10px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.06);text-align:center"><div style="font-size:22px;font-weight:700;color:#6b7280" x-text="storageOverview.stats?.total_shares ?? 0"></div><div style="font-size:11px;color:#6b7280;margin-top:4px">共享文件夹</div></div></div></div>
+                    <div x-show="storageOverview.stats"><div style="display:flex;gap:12px;margin-bottom:14px;max-width:65%"><div style="flex:1;min-width:0;background:#fff;border-radius:10px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.06);text-align:center"><div style="font-size:22px;font-weight:700;color:#22c55e" x-text="storageOverview.stats?.total_disks ?? 0"></div><div style="font-size:11px;color:#6b7280;margin-top:4px" x-text="$t('storage.disks')"></div></div><div style="flex:1;min-width:0;background:#fff;border-radius:10px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.06);text-align:center"><div style="font-size:22px;font-weight:700;color:#3b82f6" x-text="storageOverview.stats?.total_pools ?? 0"></div><div style="font-size:11px;color:#6b7280;margin-top:4px" x-text="$t('storage.pools')"></div></div><div style="flex:1;min-width:0;background:#fff;border-radius:10px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.06);text-align:center"><div style="font-size:22px;font-weight:700;color:#8b5cf6" x-text="storageOverview.stats?.total_volumes ?? 0"></div><div style="font-size:11px;color:#6b7280;margin-top:4px">逻辑卷</div></div><div style="flex:1;min-width:0;background:#fff;border-radius:10px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.06);text-align:center"><div style="font-size:22px;font-weight:700;color:#6b7280" x-text="storageOverview.stats?.total_shares ?? 0"></div><div style="font-size:11px;color:#6b7280;margin-top:4px">共享文件夹</div></div></div></div>
                     <!-- 告警栏 -->
                     <template x-for="alert in (storageOverview.alerts||[])">
                         <div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:12px;color:#92400e;display:flex;align-items:center;gap:8px">
@@ -1178,7 +1227,7 @@
                                     <div style="width:40px;height:40px;background:#dbeafe;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">🗄️</div>
                                     <strong style="font-size:16px" x-text="pool.display_name||pool.name"></strong>
                                     <span class="badge" style="background:#dcfce7;color:#166534" x-text="pool.type.toUpperCase()"></span>
-                                    <span class="badge" :style="pool.healthy?'background:#dcfce7;color:#166534':'background:#fee2e2;color:#991b1b'" x-text="pool.healthy?'健康':'异常'"></span>
+                                    <span class="badge" :style="pool.healthy?'background:#dcfce7;color:#166534':'background:#fee2e2;color:#991b1b'" x-text="$t('common.healthy')"></span>
                                     <span style="font-size:13px;color:#6b7280;margin-left:auto" x-text="pool.size?(pool.used+' / '+pool.size):''"></span>
                                     <div x-show="pool.percent" style="width:120px;background:#e5e7eb;border-radius:3px;height:6px;overflow:hidden"><div :style="'width:'+pool.percent+';background:#3b82f6'" style="height:100%;border-radius:3px"></div></div>
                                     <span style="font-size:13px;color:#6b7280" x-text="pool.percent+'%'"></span>
@@ -1207,7 +1256,7 @@
                                                             <span style="font-size:15px">📁</span>
                                                             <span style="font-size:15px;font-weight:500" x-text="f.name"></span>
                                                             <span style="font-size:13px;color:#6b7280" x-text="f.size||'-'"></span>
-                                                            <span style="font-size:13px;color:#6b7280" x-text="f.permission ? '读写:'+f.valid_users : '-'"></span>
+                                                            <span style="font-size:13px;color:#6b7280" x-text="$t('common.readwrite')"></span>
                                                             <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
                                                                 <span class="badge" :style="f.samba_share?'background:#dbeafe;color:#1e40af':'background:#f3f4f6;color:#374151'" style="font-size:11px;padding:3px 7px" x-text="'SMB'+(f.samba_share?'✓':'✗')"></span>
                                                                 <span class="badge" :style="f.nfs_export?'background:#dbeafe;color:#1e40af':'background:#f3f4f6;color:#374151'" style="font-size:11px;padding:3px 7px" x-text="'NFS'+(f.nfs_export?'✓':'✗')"></span>
@@ -1268,18 +1317,18 @@
                             </select>
                         </div>
                         <div class="form-group">
-                            <label>文件夹名称</label>
+                            <label x-text="$t('storage.folder_name')"></label>
                             <input type="text" x-model="folderForm.name" placeholder="如: documents, photos, media">
                         </div>
                         <div class="form-group">
-                            <label>权限</label>
+                            <label x-text="$t('storage.permission')"></label>
                             <select x-model="folderForm.permission" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
-                                <option value="readwrite">读写</option>
-                                <option value="readonly">只读</option>
+                                <option value="readwrite" x-text="$t('common.readwrite')"></option>
+                                <option value="readonly" x-text="$t('common.readonly')"></option>
                             </select>
                         </div>
                         <div class="form-group">
-                            <label>授权用户</label>
+                            <label x-text="$t('storage.authorized_users')"></label>
                             <div style="position:relative">
                                 <div @click="showUserDropdown=!showUserDropdown" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;cursor:pointer;min-height:36px;display:flex;align-items:center;flex-wrap:wrap;gap:4px;background:#fff">
                                     <template x-for="u in folderForm.valid_users" :key="u">
@@ -1315,8 +1364,8 @@
                             </label>
                         </div>
                         <div class="modal-actions">
-                            <button class="btn" @click="showAddFolder=false">取消</button>
-                            <button class="btn btn-primary" @click="createFolder()">创建</button>
+                            <button class="btn" @click="showAddFolder=false" x-text="$t('common.cancel')"></button>
+                            <button class="btn btn-primary" @click="createFolder()" x-text="$t('common.create')"></button>
                         </div>
                     </div>
                 </div>
@@ -1326,23 +1375,23 @@
                     <div class="modal-box" style="max-width:440px">
                         <h3>编辑共享文件夹</h3>
                         <div class="form-group">
-                            <label>文件夹</label>
+                            <label x-text="$t('common.folder')"></label>
                             <input type="text" :value="folderPermForm.name" disabled style="background:#f3f4f6;color:#6b7280">
                         </div>
                         <div class="form-group">
-                            <label>路径</label>
+                            <label x-text="$t('logs.log_path')"></label>
                             <input type="text" :value="folderPermForm.path" disabled style="background:#f3f4f6;color:#6b7280">
                         </div>
                         <div class="form-group">
-                            <label>权限</label>
+                            <label x-text="$t('storage.permission')"></label>
                             <select x-model="folderPermForm.permission" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
-                                <option value="readwrite">读写</option>
-                                <option value="readonly">只读</option>
-                                <option value="noaccess">禁止访问</option>
+                                <option value="readwrite" x-text="$t('common.readwrite')"></option>
+                                <option value="readonly" x-text="$t('common.readonly')"></option>
+                                <option value="noaccess" x-text="$t('common.noaccess')"></option>
                             </select>
                         </div>
                         <div class="form-group">
-                            <label>授权用户</label>
+                            <label x-text="$t('storage.authorized_users')"></label>
                             <div style="position:relative">
                                 <div @click="showUserDropdown=!showUserDropdown" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;cursor:pointer;min-height:36px;display:flex;align-items:center;flex-wrap:wrap;gap:4px;background:#fff">
                                     <template x-for="u in (folderPermForm.valid_users||'').split(',').filter(function(x){return x})" :key="u">
@@ -1373,8 +1422,8 @@
                             </label>
                         </div>
                         <div class="modal-actions">
-                            <button class="btn" @click="showFolderPerm=false">取消</button>
-                            <button class="btn btn-primary" @click="saveFolderPermission()">保存</button>
+                            <button class="btn" @click="showFolderPerm=false" x-text="$t('common.cancel')"></button>
+                            <button class="btn btn-primary" @click="saveFolderPermission()" x-text="$t('common.save')"></button>
                         </div>
                     </div>
                 </div>
@@ -1391,7 +1440,7 @@
                                 :style="'border:2px solid '+(selectedDiskDevice===d.device?'#3b82f6':'#22c55e')+';border-radius:10px;padding:12px;cursor:pointer;transition:all 0.15s;background:#fff'+(selectedDiskDevice===d.device?';box-shadow:0 0 0 3px rgba(59,130,246,0.3)':'')">
                                 <div style="text-align:center;font-size:28px;margin-bottom:6px">💽</div>
                                 <div style="font-size:13px;font-weight:600;text-align:center;font-family:monospace" x-text="d.device"></div>
-                                <div style="text-align:center;margin:4px 0"><span class="badge" style="background:#dcfce7;color:#166534">系统</span></div>
+                                <div style="text-align:center;margin:4px 0"><span class="badge" style="background:#dcfce7;color:#166534" x-text="$t('dashboard.os')"></span></div>
                                 <div style="font-size:11px;color:#6b7280;text-align:center" x-text="d.model||'—'"></div>
                                 <div style="font-size:11px;color:#22c55e;text-align:center;margin:4px 0" x-text="d.temp&&d.temp!=='-'?d.temp+'°C':'—'"></div>
                                 <div style="background:#e5e7eb;border-radius:2px;height:4px;margin:4px 0;overflow:hidden"><div style="background:#22c55e;height:100%;border-radius:2px" :style="'width:50%'"></div></div>
@@ -1415,7 +1464,7 @@
                                 :style="'border:2px dashed '+(selectedDiskDevice===d.device?'#3b82f6':'#e5e7eb')+';border-radius:10px;padding:12px;cursor:pointer;transition:all 0.15s;background:#fff;opacity:'+(selectedDiskDevice===d.device?'1':'0.7')+(selectedDiskDevice===d.device?';box-shadow:0 0 0 3px rgba(59,130,246,0.3)':'')">
                                 <div style="text-align:center;font-size:28px;margin-bottom:6px">➕</div>
                                 <div style="font-size:13px;font-weight:600;text-align:center;font-family:monospace" x-text="d.device"></div>
-                                <div style="text-align:center;margin:4px 0"><span class="badge" style="background:#f3f4f6;color:#374151">空闲</span></div>
+                                <div style="text-align:center;margin:4px 0"><span class="badge" style="background:#f3f4f6;color:#374151" x-text="$t('dashboard.free')"></span></div>
                                 <div style="font-size:11px;color:#6b7280;text-align:center" x-text="d.model||'—'"></div>
                                 <div style="font-size:11px;color:#6b7280;text-align:center;margin:4px 0">—</div>
                                 <div style="font-size:11px;color:#6b7280;text-align:center" x-text="d.size"></div>
@@ -1436,7 +1485,7 @@
                                     <div><span style="color:#6b7280">容量:</span> <span x-text="selectedDisk.size"></span></div>
                                     <div><span style="color:#6b7280">接口:</span> <span x-text="selectedDisk.interface"></span></div>
                                     <div><span style="color:#6b7280">温度:</span> <span :style="(parseInt(selectedDisk.temp)||0)>=50?'color:#ef4444':(parseInt(selectedDisk.temp)||0)>=45?'color:#f59e0b':'color:#22c55e'" x-text="(selectedDisk.temp&&selectedDisk.temp!=='-')?selectedDisk.temp+'°C':'—'"></span></div>
-                                    <div><span style="color:#6b7280">通电时间:</span> <span x-text="selectedDisk.power_on_hours?selectedDisk.power_on_hours+' 小时':'—'"></span></div>
+                                    <div><span style="color:#6b7280">通电时间:</span> <span x-text="$t('common.hours')"></span></div>
                                     <div><span style="color:#6b7280">SMART:</span> <span :style="selectedDisk.smart==='PASSED'?'color:#22c55e':'color:#ef4444'" x-text="selectedDisk.smart==='PASSED'?'通过 ✓':(selectedDisk.smart||'—')"></span></div>
                                     <div><span style="color:#6b7280">坏扇区:</span> <span x-text="selectedDisk.bad_blocks||'0'"></span></div>
                                 </div>
@@ -1460,23 +1509,23 @@
                                     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
                                         <strong style="font-size:14px" x-text="pool.display_name"></strong>
                                         <span class="badge" style="background:#dcfce7;color:#166534" x-text="pool.type.toUpperCase()"></span>
-                                        <span class="badge" :style="pool.healthy?'background:#dcfce7;color:#166534':'background:#fee2e2;color:#991b1b'" x-text="pool.healthy?'健康':'异常'"></span>
+                                        <span class="badge" :style="pool.healthy?'background:#dcfce7;color:#166534':'background:#fee2e2;color:#991b1b'" x-text="$t('common.healthy')"></span>
                                     </div>
-                                    <div style="font-size:12px;color:#6b7280" x-text="pool.disks?.map(function(d){return d.device}).join(' + ') + ' · ' + (pool.avail||'') + ' 可用 / ' + (pool.size||'') + ' 总容量 · ' + (pool.volumes?.[0]?.fstype||'—')"></div>
+                                    <div style="font-size:12px;color:#6b7280" x-text="$t('dashboard.available')"></div>
                                     <div style="display:flex;align-items:center;gap:8px;margin-top:6px">
                                         <div style="flex:1;background:#e5e7eb;border-radius:3px;height:6px;overflow:hidden"><div :style="'width:'+pool.percent+';background:#3b82f6'" style="height:100%;border-radius:3px"></div></div>
                                         <span style="font-size:12px;color:#6b7280" x-text="pool.percent+'%'"></span>
                                     </div>
                                 </div>
                                 <div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0">
-                                    <button class="btn btn-secondary btn-sm" style="font-size:11px;width:60px" @click="openExtendPool(pool)">扩容</button>
+                                    <button class="btn btn-secondary btn-sm" style="font-size:11px;width:60px" @click="openExtendPool(pool)" x-text="$t('storage.expand')"></button>
                                     <button class="btn btn-secondary btn-sm" style="font-size:11px;width:60px" @click="openReplaceDisk(pool)">替换盘</button>
                                     <button class="btn btn-secondary btn-sm" style="font-size:11px;width:60px" @click="scrubPool(pool)">清理</button>
-                                    <button class="btn btn-danger btn-sm" style="font-size:11px;width:60px" @click="deletePool(pool)">删除</button>
+                                    <button class="btn btn-danger btn-sm" style="font-size:11px;width:60px" @click="deletePool(pool)" x-text="$t('backup.delete_backup')"></button>
                                 </div>
                             </div>
                             <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;border-top:1px solid #e5e7eb;padding-top:12px">
-                                <div><div style="font-size:12px;color:#6b7280;margin-bottom:6px">RAID 信息</div><div style="font-size:13px;line-height:1.8"><div>级别: <strong x-text="pool.raid_level||'—'"></strong></div><div>类型: <strong x-text="pool.type.toUpperCase()"></strong></div><div>设备: <strong style="font-family:monospace;font-size:12px" x-text="pool.device||'—'"></strong></div><div>状态: <strong :style="pool.healthy?'color:#22c55e':'color:#ef4444'" x-text="pool.healthy?'健康':'异常'"></strong></div></div></div>
+                                <div><div style="font-size:12px;color:#6b7280;margin-bottom:6px">RAID 信息</div><div style="font-size:13px;line-height:1.8"><div>级别: <strong x-text="pool.raid_level||'—'"></strong></div><div>类型: <strong x-text="pool.type.toUpperCase()"></strong></div><div>设备: <strong style="font-family:monospace;font-size:12px" x-text="pool.device||'—'"></strong></div><div>状态: <strong :style="pool.healthy?'color:#22c55e':'color:#ef4444'" x-text="$t('common.healthy')"></strong></div></div></div>
                                 <div><div style="font-size:12px;color:#6b7280;margin-bottom:6px">LVM 信息</div><div style="font-size:13px;line-height:1.8"><div>文件系统: <strong x-text="pool.volumes?.[0]?.fstype||'—'"></strong></div><div>卷数: <strong x-text="pool.volumes?.length||0"></strong></div><div>文件夹: <strong x-text="pool.volumes?.flatMap(function(v){return v.folders||[]}).length||0"></strong></div><div>成员盘: <strong style="font-family:monospace;font-size:12px" x-text="pool.disks?.map(function(d){return d.device}).join(', ')||'—'"></strong></div></div></div>
                             </div>
                         </div>
@@ -1504,7 +1553,7 @@
                                         <div style="font-size:24px;margin-bottom:4px">💽</div>
                                         <div style="font-size:13px;font-weight:600;font-family:monospace" x-text="d.device"></div>
                                         <div style="font-size:11px;color:#6b7280" x-text="d.model||'—'"></div>
-                                        <div style="font-size:11px;color:#6b7280" x-text="'空闲'"></div>
+                                        <div style="font-size:11px;color:#6b7280" x-text="$t('dashboard.free')"></div>
                                         <div style="font-size:11px;color:#6b7280" x-text="d.size"></div>
                                     </div>
                                 </template>
@@ -1517,10 +1566,10 @@
                         <div x-show="wizStep===2" x-transition.opacity.duration.200ms>
                             <div style="font-size:14px;font-weight:600;color:#374151;margin-bottom:12px">你的首要目标是什么？</div>
                             <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:16px">
-                                <div @click="wizGoal='safety'" :style="wizGoal==='safety'?'border:2px solid #3b82f6;background:#eff6ff':'border:2px solid #e5e7eb'" style="border-radius:10px;padding:16px;text-align:center;cursor:pointer;transition:all 0.15s;background:#fff"><div style="font-size:28px;margin-bottom:6px">🛡️</div><div style="font-size:14px;font-weight:600">数据安全</div><div style="font-size:12px;color:#6b7280;margin-top:4px;line-height:1.5">能容忍磁盘损坏</div><div style="font-size:11px;color:#6b7280;margin-top:6px">推荐 RAID 1/5/6</div></div>
-                                <div @click="wizGoal='capacity'" :style="wizGoal==='capacity'?'border:2px solid #3b82f6;background:#eff6ff':'border:2px solid #e5e7eb'" style="border-radius:10px;padding:16px;text-align:center;cursor:pointer;transition:all 0.15s;background:#fff"><div style="font-size:28px;margin-bottom:6px">💾</div><div style="font-size:14px;font-weight:600">最大容量</div><div style="font-size:12px;color:#6b7280;margin-top:4px;line-height:1.5">最大化可用空间</div><div style="font-size:11px;color:#6b7280;margin-top:6px">推荐 RAID 0 / LVM</div></div>
+                                <div @click="wizGoal='safety'" :style="wizGoal==='safety'?'border:2px solid #3b82f6;background:#eff6ff':'border:2px solid #e5e7eb'" style="border-radius:10px;padding:16px;text-align:center;cursor:pointer;transition:all 0.15s;background:#fff"><div style="font-size:28px;margin-bottom:6px">🛡️</div><div style="font-size:14px;font-weight:600" x-text="$t('storage.safety')"></div><div style="font-size:12px;color:#6b7280;margin-top:4px;line-height:1.5">能容忍磁盘损坏</div><div style="font-size:11px;color:#6b7280;margin-top:6px">推荐 RAID 1/5/6</div></div>
+                                <div @click="wizGoal='capacity'" :style="wizGoal==='capacity'?'border:2px solid #3b82f6;background:#eff6ff':'border:2px solid #e5e7eb'" style="border-radius:10px;padding:16px;text-align:center;cursor:pointer;transition:all 0.15s;background:#fff"><div style="font-size:28px;margin-bottom:6px">💾</div><div style="font-size:14px;font-weight:600" x-text="$t('storage.capacity')"></div><div style="font-size:12px;color:#6b7280;margin-top:4px;line-height:1.5">最大化可用空间</div><div style="font-size:11px;color:#6b7280;margin-top:6px">推荐 RAID 0 / LVM</div></div>
                                 <div @click="wizGoal='performance'" :style="wizGoal==='performance'?'border:2px solid #3b82f6;background:#eff6ff':'border:2px solid #e5e7eb'" style="border-radius:10px;padding:16px;text-align:center;cursor:pointer;transition:all 0.15s;background:#fff"><div style="font-size:28px;margin-bottom:6px">⚡</div><div style="font-size:14px;font-weight:600">读写性能</div><div style="font-size:12px;color:#6b7280;margin-top:4px;line-height:1.5">追求传输速度</div><div style="font-size:11px;color:#6b7280;margin-top:6px">推荐 RAID 0</div></div>
-                                <div @click="wizGoal='balance'" :style="wizGoal==='balance'?'border:2px solid #3b82f6;background:#eff6ff':'border:2px solid #e5e7eb'" style="border-radius:10px;padding:16px;text-align:center;cursor:pointer;transition:all 0.15s;background:#fff"><div style="font-size:28px;margin-bottom:6px">⚖️</div><div style="font-size:14px;font-weight:600">平衡</div><div style="font-size:12px;color:#6b7280;margin-top:4px;line-height:1.5">兼顾容量与安全</div><div style="font-size:11px;color:#6b7280;margin-top:6px">推荐 RAID 5</div></div>
+                                <div @click="wizGoal='balance'" :style="wizGoal==='balance'?'border:2px solid #3b82f6;background:#eff6ff':'border:2px solid #e5e7eb'" style="border-radius:10px;padding:16px;text-align:center;cursor:pointer;transition:all 0.15s;background:#fff"><div style="font-size:28px;margin-bottom:6px">⚖️</div><div style="font-size:14px;font-weight:600" x-text="$t('storage.balance')"></div><div style="font-size:12px;color:#6b7280;margin-top:4px;line-height:1.5">兼顾容量与安全</div><div style="font-size:11px;color:#6b7280;margin-top:6px">推荐 RAID 5</div></div>
                             </div>
                             <div style="display:flex;justify-content:space-between">
                                 <button class="btn btn-secondary" @click="wizStep=1" style="font-size:13px">← 上一步</button>
@@ -1553,7 +1602,7 @@
                             </div>
                         </div>
                         <div x-show="wizStep===4" x-transition.opacity.duration.200ms>
-                            <div style="font-size:14px;font-weight:600;color:#374151;margin-bottom:12px">确认创建</div>
+                            <div style="font-size:14px;font-weight:600;color:#374151;margin-bottom:12px" x-text="$t('storage.confirm_create')"></div>
                             <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:16px;margin-bottom:16px">
                                 <div style="font-size:13px;color:#374151;line-height:1.8">
                                     <div>方案: <strong x-text="(wizardFilteredOptions.find(function(o){return o.id===wizMode})||{}).name||wizMode"></strong></div>
@@ -1593,16 +1642,16 @@
                     <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:20px">
                         <div @click="openReplaceDisk(null)" style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;display:flex;align-items:flex-start;gap:12px;cursor:pointer;transition:all 0.15s"><span style="font-size:20px">🔄</span><div><div style="font-size:14px;font-weight:600;margin-bottom:4px">替换故障盘</div><div style="font-size:12px;color:#6b7280">拔出坏盘，插入新盘，自动重建</div></div></div>
                         <div @click="diskmgmtTab='pools'" style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;display:flex;align-items:flex-start;gap:12px;cursor:pointer;transition:all 0.15s"><span style="font-size:20px">➕</span><div><div style="font-size:14px;font-weight:600;margin-bottom:4px">扩容存储池</div><div style="font-size:12px;color:#6b7280">添加新磁盘到现有池</div></div></div>
-                        <div @click="scrubPool(null)" style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;display:flex;align-items:flex-start;gap:12px;cursor:pointer;transition:all 0.15s"><span style="font-size:20px">🧹</span><div><div style="font-size:14px;font-weight:600;margin-bottom:4px">数据清理</div><div style="font-size:12px;color:#6b7280">扫描静默数据损坏</div></div></div>
+                        <div @click="scrubPool(null)" style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;display:flex;align-items:flex-start;gap:12px;cursor:pointer;transition:all 0.15s"><span style="font-size:20px">🧹</span><div><div style="font-size:14px;font-weight:600;margin-bottom:4px" x-text="$t('storage.scrub')"></div><div style="font-size:12px;color:#6b7280">扫描静默数据损坏</div></div></div>
                         <div @click="startSMARTScan()" style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;display:flex;align-items:flex-start;gap:12px;cursor:pointer;transition:all 0.15s"><span style="font-size:20px">📊</span><div><div style="font-size:14px;font-weight:600;margin-bottom:4px">SMART 检测</div><div style="font-size:12px;color:#6b7280">批量扫描所有磁盘</div></div></div>
-                        <div @click="syncConfigs()" style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;display:flex;align-items:flex-start;gap:12px;cursor:pointer;transition:all 0.15s"><span style="font-size:20px">🔧</span><div><div style="font-size:14px;font-weight:600;margin-bottom:4px">修复配置</div><div style="font-size:12px;color:#6b7280">根据当前文件夹重新生成服务配置</div></div></div>
+                        <div @click="syncConfigs()" style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;display:flex;align-items:flex-start;gap:12px;cursor:pointer;transition:all 0.15s"><span style="font-size:20px">🔧</span><div><div style="font-size:14px;font-weight:600;margin-bottom:4px" x-text="$t('dashboard.fix_config')"></div><div style="font-size:12px;color:#6b7280">根据当前文件夹重新生成服务配置</div></div></div>
                     </div>
-                    <div style="font-size:14px;font-weight:600;color:#374151;margin-bottom:10px">操作日志</div>
+                    <div style="font-size:14px;font-weight:600;color:#374151;margin-bottom:10px" x-text="$t('logs.title')"></div>
                     <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:12px;max-height:400px;overflow-y:auto">
                         <template x-for="op in (operationsLog||[])" :key="op.time">
                             <div style="display:flex;align-items:flex-start;gap:12px;padding:8px 0;border-bottom:1px solid #f3f4f6;font-size:13px">
                                 <span style="font-size:14px;color:#6b7280;white-space:nowrap;min-width:130px" x-text="op.time?.substring(0,16)"></span>
-                                <span class="badge" :style="op.action==='error'?'background:#fee2e2;color:#991b1b':op.action==='warning'?'background:#fef3c7;color:#92400e':'background:#dcfce7;color:#166534'" style="min-width:50px;text-align:center;font-size:11px" x-text="op.action==='error'?'失败':op.action==='warning'?'警告':'成功'"></span>
+                                <span class="badge" :style="op.action==='error'?'background:#fee2e2;color:#991b1b':op.action==='warning'?'background:#fef3c7;color:#92400e':'background:#dcfce7;color:#166534'" style="min-width:50px;text-align:center;font-size:11px" x-text="$t('common.failed')"></span>
                                 <span style="color:#374151;flex:1" x-text="op.message"></span>
                             </div>
                         </template>
@@ -1615,7 +1664,7 @@
                 <div class="modal-box" style="max-width:420px">
                     <h3>扩容存储池</h3>
                     <div class="form-group">
-                        <label>存储池</label>
+                        <label x-text="$t('storage.pools')"></label>
                         <input type="text" disabled :value="poolExtendForm.vg_name" style="background:#f3f4f6">
                     </div>
                     <div class="form-group">
@@ -1624,7 +1673,7 @@
                         <div style="font-size:11px;color:#6b7280;margin-top:4px">输入磁盘设备路径，如 /dev/sdc</div>
                     </div>
                     <div class="modal-actions">
-                        <button class="btn" @click="showExtendPool=false">取消</button>
+                        <button class="btn" @click="showExtendPool=false" x-text="$t('common.cancel')"></button>
                         <button class="btn btn-primary" @click="extendPoolStream()">开始扩容</button>
                     </div>
                 </div>
@@ -1632,7 +1681,7 @@
             <!-- ═══════════════ 替换盘弹窗 ═══════════════ -->
             <div class="modal" x-show="showReplaceDisk" x-cloak @click.self="showReplaceDisk=false">
                 <div class="modal-box" style="max-width:420px">
-                    <h3>替换磁盘</h3>
+                    <h3 x-text="$t('storage.disk_replace')"></h3>
                     <div class="form-group">
                         <label>RAID 设备</label>
                         <input type="text" x-model="replaceDiskForm.md_device" placeholder="/dev/md0">
@@ -1649,7 +1698,7 @@
                         ⚠️ 新磁盘数据将被擦除；RAID 将自动开始重建
                     </div>
                     <div class="modal-actions">
-                        <button class="btn" @click="showReplaceDisk=false">取消</button>
+                        <button class="btn" @click="showReplaceDisk=false" x-text="$t('common.cancel')"></button>
                         <button class="btn btn-primary" @click="replaceDisk()">开始替换</button>
                     </div>
                 </div>
@@ -1657,22 +1706,22 @@
             <!-- System Settings -->
             <div x-show="page === 'system'" class="page" x-init="if(page==='system') loadSystemOverview()" x-transition.opacity.duration.300ms>
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-                    <h2 style="margin:0">系统设置</h2>
-                    <button class="btn btn-sm btn-primary" @click="loadSystemOverview()" style="font-size:12px">刷新</button>
+                    <h2 style="margin:0" x-text="$t('system.title')"></h2>
+                    <button class="btn btn-sm btn-primary" @click="loadSystemOverview()" style="font-size:12px" x-text="$t('common.refresh')"></button>
                 </div>
 
                 <!-- 主机名 -->
                 <div style="background:white;border:1px solid #e0e4e8;border-radius:8px;padding:16px;margin-bottom:12px">
-                    <h3 style="margin-top:0;margin-bottom:12px;font-size:15px">主机名</h3>
+                    <h3 style="margin-top:0;margin-bottom:12px;font-size:15px" x-text="$t('system.hostname')"></h3>
                     <div style="display:flex;gap:12px;align-items:center">
-                        <input type="text" x-model="sysSettings.hostname" placeholder="主机名" class="port-input" style="max-width:300px">
-                        <button class="btn btn-primary" @click="saveHostname()">保存</button>
+                        <input type="text" x-model="sysSettings.hostname" :placeholder="$t('system.hostname')" class="port-input" style="max-width:300px">
+                        <button class="btn btn-primary" @click="saveHostname()" x-text="$t('common.save')"></button>
                     </div>
                 </div>
 
                 <!-- 网络信息（只读） -->
                 <div style="background:white;border:1px solid #e0e4e8;border-radius:8px;padding:16px;margin-bottom:12px">
-                    <h3 style="margin-top:0;margin-bottom:12px;font-size:15px">网络信息</h3>
+                    <h3 style="margin-top:0;margin-bottom:12px;font-size:15px" x-text="$t('system.network')"></h3>
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:14px">
                         <template x-for="iface in (sysSettings.network?.interfaces||[])" :key="iface.interface">
                             <div style="display:flex;gap:8px;padding:4px 0">
@@ -1681,7 +1730,7 @@
                             </div>
                         </template>
                         <div style="display:flex;gap:8px;padding:4px 0">
-                            <span style="color:#475569;min-width:80px">网关</span>
+                            <span style="color:#475569;min-width:80px" x-text="$t('system.gateway')"></span>
                             <strong style="font-family:monospace" x-text="sysSettings.network?.gateway || '-'"></strong>
                         </div>
                         <div style="display:flex;gap:8px;padding:4px 0">
@@ -1693,10 +1742,10 @@
 
                 <!-- 时间与时区 -->
                 <div style="background:white;border:1px solid #e0e4e8;border-radius:8px;padding:16px;margin-bottom:12px">
-                    <h3 style="margin-top:0;margin-bottom:12px;font-size:15px">时间与时区</h3>
+                    <h3 style="margin-top:0;margin-bottom:12px;font-size:15px" x-text="$t('system.time')"></h3>
                     <div style="display:flex;gap:16px;font-size:14px;margin-bottom:12px">
                         <div><span style="color:#475569">当前时间：</span><strong x-text="sysSettings.time?.current"></strong></div>
-                        <div><span style="color:#475569">NTP 同步：</span><strong :style="sysSettings.time?.ntp_synced ? 'color:#16a34a' : 'color:#dc2626'" x-text="sysSettings.time?.ntp_synced ? '已同步' : '未同步'"></strong></div>
+                        <div><span style="color:#475569">NTP 同步：</span><strong :style="sysSettings.time?.ntp_synced ? 'color:#16a34a' : 'color:#dc2626'" x-text="$t('common.synced')"></strong></div>
                     </div>
                     <div style="display:flex;gap:12px;align-items:center">
                         <label style="color:#475569;font-size:14px">时区：</label>
@@ -1710,7 +1759,7 @@
                             <option value="Europe/Berlin">Europe/Berlin (德国)</option>
                             <option value="UTC">UTC (协调世界时)</option>
                         </select>
-                        <button class="btn btn-primary" @click="saveTimezone()">保存</button>
+                        <button class="btn btn-primary" @click="saveTimezone()" x-text="$t('common.save')"></button>
                     </div>
                 </div>
 
@@ -1730,14 +1779,14 @@
                             <label style="color:#475569;min-width:100px">Root 登录：</label>
                             <label style="display:flex;align-items:center;gap:4px;cursor:pointer">
                                 <input type="checkbox" x-model="sysSettings.ssh.permit_root_login">
-                                <span x-text="sysSettings.ssh.permit_root_login ? '允许' : '禁止'"></span>
+                                <span x-text="$t('common.allow')"></span>
                             </label>
                         </div>
                         <div style="display:flex;align-items:center;gap:8px">
                             <label style="color:#475569;min-width:100px">密码认证：</label>
                             <label style="display:flex;align-items:center;gap:4px;cursor:pointer">
                                 <input type="checkbox" x-model="sysSettings.ssh.password_auth">
-                                <span x-text="sysSettings.ssh.password_auth ? '允许' : '禁止'"></span>
+                                <span x-text="$t('common.allow')"></span>
                             </label>
                         </div>
                     </div>
@@ -1749,14 +1798,14 @@
 
                 <!-- 内核参数 -->
                 <div style="background:white;border:1px solid #e0e4e8;border-radius:8px;padding:16px;margin-bottom:12px">
-                    <h3 style="margin-top:0;margin-bottom:12px;font-size:15px">内核参数</h3>
+                    <h3 style="margin-top:0;margin-bottom:12px;font-size:15px" x-text="$t('system.kernel_params')"></h3>
                     <div style="font-size:14px">
                         <template x-for="param in (sysSettings.sysctl||[])" :key="param.key">
                             <div style="display:flex;align-items:center;gap:12px;padding:6px 0;border-bottom:1px solid #f0f0f0">
                                 <span style="color:#475569;min-width:200px;font-family:monospace;font-size:13px" x-text="param.key"></span>
                                 <input type="text" x-model="param.value" class="port-input" style="width:120px;font-family:monospace">
                                 <span style="color:#888;font-size:12px;flex:1" x-text="param.description"></span>
-                                <button class="btn btn-sm btn-primary" @click="saveSysctl(param)" style="font-size:11px;padding:2px 8px">保存</button>
+                                <button class="btn btn-sm btn-primary" @click="saveSysctl(param)" style="font-size:11px;padding:2px 8px" x-text="$t('common.save')"></button>
                             </div>
                         </template>
                     </div>
@@ -1764,7 +1813,7 @@
 
                 <!-- 系统更新 -->
                 <div style="background:white;border:1px solid #e0e4e8;border-radius:8px;padding:16px;margin-bottom:12px">
-                    <h3 style="margin-top:0;margin-bottom:12px;font-size:15px">系统更新</h3>
+                    <h3 style="margin-top:0;margin-bottom:12px;font-size:15px" x-text="$t('system.updates')"></h3>
                     <div style="display:flex;gap:16px;font-size:14px;margin-bottom:12px">
                         <div>
                             <span style="color:#475569">可更新包：</span>
@@ -1776,7 +1825,7 @@
                         </div>
                     </div>
                     <div style="display:flex;gap:8px">
-                        <button class="btn btn-primary" @click="runUpdate('update')">刷新软件源</button>
+                        <button class="btn btn-primary" @click="runUpdate('update')" x-text="$t('system.refresh_sources')"></button>
                         <button class="btn" @click="runUpdate('upgrade')" :disabled="(sysSettings.updates?.upgradable_count||0) === 0" style="background:#f59e0b;color:white;border:none">
                             一键更新
                         </button>
@@ -1785,7 +1834,7 @@
 
                 <!-- 服务管理 -->
                 <div style="background:white;border:1px solid #e0e4e8;border-radius:8px;padding:16px;margin-bottom:12px">
-                    <h3 style="margin-top:0;margin-bottom:12px;font-size:15px">服务管理</h3>
+                    <h3 style="margin-top:0;margin-bottom:12px;font-size:15px" x-text="$t('services.title')"></h3>
                     <div style="font-size:14px">
                         <template x-for="svc in (sysSettings.services||[])" :key="svc.name">
                             <div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #f0f0f0">
@@ -1794,7 +1843,7 @@
                                     <strong x-text="svc.display"></strong>
                                     <span style="color:#888;font-size:12px;margin-left:8px" x-text="svc.name"></span>
                                 </div>
-                                <span style="font-size:12px;padding:2px 8px;border-radius:3px" :style="svc.enabled ? 'background:#dcfce7;color:#16a34a' : 'background:#fee2e2;color:#dc2626'" x-text="svc.enabled ? '自启' : '手动'"></span>
+                                <span style="font-size:12px;padding:2px 8px;border-radius:3px" :style="svc.enabled ? 'background:#dcfce7;color:#16a34a' : 'background:#fee2e2;color:#dc2626'" x-text="$t('common.auto_start')"></span>
                                 <div style="display:flex;gap:4px">
                                     <button x-show="!svc.active" class="btn btn-sm btn-success" @click="serviceAction(svc.name, 'start')" style="font-size:11px;padding:2px 8px">启动</button>
                                     <button x-show="svc.active" class="btn btn-sm" @click="serviceAction(svc.name, 'restart')" style="font-size:11px;padding:2px 8px">重启</button>
@@ -1804,6 +1853,63 @@
                                 </div>
                             </div>
                         </template>
+                    </div>
+                </div>
+
+                <!-- HTTPS 证书 -->
+                <div style="background:white;border:1px solid #e0e4e8;border-radius:8px;padding:16px;margin-bottom:12px">
+                    <h3 style="margin-top:0;margin-bottom:8px;font-size:15px" x-text="$t('system.https_title')"></h3>
+                    <p style="color:#64748b;font-size:13px;margin:0 0 12px" x-text="$t('system.https_desc')"></p>
+
+                    <!-- 证书状态 -->
+                    <div x-show="httpsStatus.type !== 'none'" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:12px;margin-bottom:12px">
+                        <div style="font-size:14px;margin-bottom:8px">
+                            <span style="color:#16a34a;font-weight:600" x-text="$t('system.https_configured')"></span>
+                            <span style="margin-left:8px;color:#475569" x-text="httpsStatus.type === 'self-signed' ? $t('system.https_self_signed') : $t('system.https_custom')"></span>
+                        </div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px">
+                            <div><span style="color:#64748b" x-text="$t('system.https_domain')"></span>: <strong x-text="httpsStatus.domain || '-'"></strong></div>
+                            <div><span style="color:#64748b" x-text="$t('system.https_issued_to')"></span>: <strong x-text="httpsStatus.issued_to || '-'"></strong></div>
+                            <div><span style="color:#64748b" x-text="$t('system.https_expires')"></span>: <strong x-text="httpsStatus.expires || '-'"></strong></div>
+                            <div><span style="color:#64748b" x-text="$t('system.https_days_left')"></span>: <strong :style="httpsStatus.days_left < 30 ? 'color:#dc2626' : 'color:#16a34a'" x-text="httpsStatus.days_left + ' 天'"></strong></div>
+                        </div>
+                        <div style="margin-top:8px">
+                            <template x-for="svc in httpsStatus.services" :key="svc.name">
+                                <span style="display:inline-block;margin-right:8px;padding:2px 8px;border-radius:4px;font-size:12px" :style="svc.https ? 'background:#dcfce7;color:#16a34a' : 'background:#fee2e2;color:#dc2626'" x-text="svc.name + ' :' + svc.port + (svc.https ? ' (HTTPS)' : ' (HTTP)')"></span>
+                            </template>
+                        </div>
+                        <div style="margin-top:12px;display:flex;gap:8px">
+                            <button class="btn btn-primary" @click="applyCert()" x-text="$t('system.https_apply')"></button>
+                            <button class="btn btn-danger" @click="removeCert()" x-text="$t('system.https_remove')"></button>
+                        </div>
+                    </div>
+
+                    <!-- 自签名生成 -->
+                    <div style="border:1px solid #e0e4e8;border-radius:6px;padding:12px;margin-bottom:12px">
+                        <div style="font-weight:600;font-size:14px;margin-bottom:6px" x-text="$t('system.https_self_signed_title')"></div>
+                        <p style="color:#64748b;font-size:13px;margin:0 0 8px" x-text="$t('system.https_self_signed_desc')"></p>
+                        <div style="display:flex;gap:8px;align-items:center">
+                            <input type="text" x-model="httpsDomain" :placeholder="$t('system.https_domain_placeholder')" class="port-input" style="max-width:300px">
+                            <button class="btn btn-primary" @click="generateCert()" x-text="$t('system.https_generate')"></button>
+                        </div>
+                    </div>
+
+                    <!-- 上传自定义证书 -->
+                    <div style="border:1px solid #e0e4e8;border-radius:6px;padding:12px">
+                        <div style="font-weight:600;font-size:14px;margin-bottom:8px" x-text="$t('system.https_upload_title')"></div>
+                        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+                            <label style="color:#475569;font-size:13px;min-width:80px" x-text="$t('system.https_domain')"></label>
+                            <input type="text" x-model="httpsCustomDomain" class="port-input" style="flex:1">
+                        </div>
+                        <div style="margin-bottom:8px">
+                            <label style="color:#475569;font-size:13px;display:block;margin-bottom:4px" x-text="$t('system.https_upload_cert')"></label>
+                            <textarea x-model="httpsCustomCert" rows="5" class="port-input" style="width:100%;font-family:monospace;font-size:12px"></textarea>
+                        </div>
+                        <div style="margin-bottom:8px">
+                            <label style="color:#475569;font-size:13px;display:block;margin-bottom:4px" x-text="$t('system.https_upload_key')"></label>
+                            <textarea x-model="httpsCustomKey" rows="5" class="port-input" style="width:100%;font-family:monospace;font-size:12px"></textarea>
+                        </div>
+                        <button class="btn btn-primary" @click="uploadCert()" x-text="$t('system.https_upload_btn')"></button>
                     </div>
                 </div>
 
@@ -1825,7 +1931,7 @@
             <div x-show="page === 'about'" class="page" x-init="if(page==='about') loadComponents()" x-transition.opacity.duration.300ms>
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
                     <h2 style="margin:0">📦 系统详情</h2>
-                    <button class="btn btn-sm btn-primary" @click="loadComponents()" style="font-size:12px">刷新</button>
+                    <button class="btn btn-sm btn-primary" @click="loadComponents()" style="font-size:12px" x-text="$t('common.refresh')"></button>
                 </div>
                 <div style="background:white;border:1px solid #e0e4e8;border-radius:8px;padding:16px">
                     <div style="margin:0 0 14px;padding-bottom:12px;border-bottom:1px solid #e5e7eb">
@@ -1898,20 +2004,20 @@
 
             <!-- Backup & Restore -->
             <div x-show="page === 'backup'" class="page" x-transition.opacity.duration.300ms>
-                <h2>备份恢复</h2>
+                <h2 x-text="$t('backup.title')"></h2>
 
-                <h3>创建备份</h3>
+                <h3 x-text="$t('backup.create_backup')"></h3>
                 <p style="color:var(--text-light);margin-bottom:12px">手动创建一份当前 NAS 配置的快照（系统配置 + 服务文件 + 用户数据 + crontab）</p>
                 <button class="btn btn-primary" @click="createBackup()" :disabled="backupLoading">
                     <span x-show="!backupLoading">立即备份</span>
                     <span x-show="backupLoading">备份中...</span>
                 </button>
 
-                <h3 style="margin-top:24px">备份列表</h3>
-                <button class="btn btn-primary" @click="loadBackups()" style="margin-bottom:12px">刷新列表</button>
+                <h3 style="margin-top:24px" x-text="$t('backup.backup_list')"></h3>
+                <button class="btn btn-primary" @click="loadBackups()" style="margin-bottom:12px" x-text="$t('backup.refresh_list')"></button>
                 <table class="table">
                     <thead>
-                        <tr><th>备份时间</th><th>大小</th><th>文件名</th><th>操作</th></tr>
+                        <tr><th x-text="$t('backup.backup_time')"></th><th x-text="$t('backup.backup_size')"></th><th x-text="$t('backup.backup_name')"></th><th x-text="$t('logs.log_action')"></th></tr>
                     </thead>
                     <tbody>
                         <template x-for="b in backups" :key="b.path">
@@ -1920,13 +2026,13 @@
                                 <td x-text="b.size"></td>
                                 <td x-text="b.name" style="font-size:13px;font-family:monospace"></td>
                                 <td class="actions">
-                                    <button class="btn btn-sm btn-success" @click="restoreBackup(b.path)" :disabled="b.path.includes('restoring')">恢复</button>
-                                    <button class="btn btn-sm btn-danger" @click="deleteBackup(b.path)">删除</button>
+                                    <button class="btn btn-sm btn-success" @click="restoreBackup(b.path)" :disabled="b.path.includes('restoring')" x-text="$t('backup.restore_backup')"></button>
+                                    <button class="btn btn-sm btn-danger" @click="deleteBackup(b.path)" x-text="$t('backup.delete_backup')"></button>
                                 </td>
                             </tr>
                         </template>
                         <tr x-show="!backups.length">
-                            <td colspan="4" style="text-align:center;color:var(--text-light)">暂无备份</td>
+                            <td colspan="4" style="text-align:center;color:var(--text-light)" x-text="$t('backup.no_backups')"></td>
                         </tr>
                     </tbody>
                 </table>
@@ -1954,18 +2060,129 @@
                 </div>
             </div>
 
+            <!-- Diagnostics -->
+            <div x-show="page === 'diagnostics'" class="page" x-transition.opacity.duration.300ms>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+                    <h2 style="margin:0">🔬 系统诊断</h2>
+                    <button class="btn btn-sm btn-primary" @click="loadDiagnostics()" style="font-size:12px">刷新</button>
+                </div>
+
+                <!-- 诊断项列表 -->
+                <template x-for="item in diagItems" :key="item.id">
+                    <div style="background:white;border:1px solid #e0e4e8;border-radius:8px;padding:16px;margin-bottom:12px">
+                        <div style="display:flex;justify-content:space-between;align-items:start">
+                            <div style="flex:1">
+                                <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+                                    <strong style="font-size:15px" x-text="item.name"></strong>
+                                    <span style="font-size:12px;padding:2px 8px;border-radius:10px"
+                                        :style="item.last_result === 'pass' ? 'background:#dcfce7;color:#16a34a' : item.last_result === 'fail' ? 'background:#fee2e2;color:#dc2626' : item.last_result === 'warn' ? 'background:#fef3c7;color:#d97706' : item.last_result === 'running' ? 'background:#dbeafe;color:#1d4ed8' : 'background:#f3f4f6;color:#9ca3af'"
+                                        x-text="item.last_result === 'pass' ? '✅ 通过' : item.last_result === 'fail' ? '❌ 失败' : item.last_result === 'warn' ? '⚠️ 警告' : item.last_result === 'running' ? '⏳ 运行中' : '--'"></span>
+                                </div>
+                                <div style="font-size:12px;color:#64748b;margin-bottom:6px" x-text="item.description"></div>
+                                <div style="font-size:12px;color:#94a3b8">
+                                    耗时: <span x-text="item.duration"></span>
+                                    <span x-show="item.last_run" style="margin-left:12px">上次: <span x-text="item.last_run"></span></span>
+                                    <span x-show="item.last_detail" style="margin-left:12px;color:#64748b" x-text="item.last_detail"></span>
+                                </div>
+                                <!-- 进度条 -->
+                                <div x-show="item.running" style="margin-top:8px;width:100%;background:#e5e7eb;border-radius:4px;height:6px;overflow:hidden">
+                                    <div :style="'width:' + item.progress + '%'" style="background:#4a9eff;height:100%;border-radius:4px;transition:width 0.5s"></div>
+                                </div>
+                            </div>
+                            <div style="display:flex;flex-direction:column;align-items:end;gap:8px">
+                                <button class="btn btn-sm btn-primary" @click="runDiagnostic(item.id)" :disabled="item.running" style="font-size:12px;white-space:nowrap">
+                                    <span x-show="!item.running">▶ 立即运行</span>
+                                    <span x-show="item.running">运行中...</span>
+                                </button>
+                                <div style="display:flex;align-items:center;gap:6px">
+                                    <label style="font-size:12px;color:#64748b;display:flex;align-items:center;gap:4px;cursor:pointer">
+                                        <input type="checkbox" :checked="item.enabled" @change="toggleDiagItem(item.id, $event.target.checked)">
+                                        <span x-text="item.enabled ? '已启用' : '已禁用'"></span>
+                                    </label>
+                                    <select :value="item.schedule" @change="setDiagSchedule(item.id, $event.target.value)" style="font-size:11px;padding:2px 6px;border:1px solid #d1d5db;border-radius:4px">
+                                        <option value="manual">手动</option>
+                                        <option value="daily">每天</option>
+                                        <option value="weekly">每周</option>
+                                        <option value="monthly">每月</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+
+                <!-- 全局设置 -->
+                <div style="background:white;border:1px solid #e0e4e8;border-radius:8px;padding:16px;margin-bottom:12px">
+                    <h3 style="margin-top:0;margin-bottom:12px;font-size:15px">⚙️ 诊断保护设置</h3>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13px">
+                        <div>
+                            <label style="color:#475569">时间窗口</label>
+                            <div style="display:flex;gap:8px;align-items:center;margin-top:4px">
+                                <input type="time" x-model="diagConfig.time_window_start" class="port-input" style="width:120px">
+                                <span>—</span>
+                                <input type="time" x-model="diagConfig.time_window_end" class="port-input" style="width:120px">
+                            </div>
+                            <small style="color:#94a3b8">长耗时诊断仅在此时间段内运行</small>
+                        </div>
+                        <div>
+                            <label style="color:#475569">温度上限 (°C)</label>
+                            <input type="number" x-model="diagConfig.temp_limit" class="port-input" style="width:80px;margin-top:4px" min="30" max="80">
+                            <small style="color:#94a3b8">超过则跳过诊断</small>
+                        </div>
+                        <div>
+                            <label style="color:#475569">IO 保护阈值 (%)</label>
+                            <input type="number" x-model="diagConfig.io_limit" class="port-input" style="width:80px;margin-top:4px" min="10" max="100">
+                            <small style="color:#94a3b8">磁盘使用率超过则暂停</small>
+                        </div>
+                        <div>
+                            <label style="color:#475569">RAID 清理限速 (KB/s)</label>
+                            <input type="number" x-model="diagConfig.scrub_speed_max" class="port-input" style="width:100px;margin-top:4px" min="1000" step="10000">
+                            <small style="color:#94a3b8">避免占满 IO</small>
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" @click="saveDiagConfig()" style="margin-top:12px;font-size:13px">保存设置</button>
+                </div>
+
+                <!-- 历史记录 -->
+                <div style="background:white;border:1px solid #e0e4e8;border-radius:8px;padding:16px">
+                    <h3 style="margin-top:0;margin-bottom:12px;font-size:15px">📋 诊断历史</h3>
+                    <table class="table">
+                        <thead>
+                            <tr><th>诊断项</th><th>开始时间</th><th>结果</th><th>详情</th></tr>
+                        </thead>
+                        <tbody>
+                            <template x-for="h in diagHistory" :key="h.id">
+                                <tr>
+                                    <td x-text="h.item_name"></td>
+                                    <td style="font-size:12px" x-text="h.start_time"></td>
+                                    <td>
+                                        <span style="padding:2px 8px;border-radius:10px;font-size:11px"
+                                            :style="h.result === 'pass' ? 'background:#dcfce7;color:#16a34a' : h.result === 'fail' ? 'background:#fee2e2;color:#dc2626' : 'background:#fef3c7;color:#d97706'"
+                                            x-text="h.result === 'pass' ? '通过' : h.result === 'fail' ? '失败' : '警告'"></span>
+                                    </td>
+                                    <td style="font-size:12px;color:#64748b;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" x-text="h.detail"></td>
+                                </tr>
+                            </template>
+                            <tr x-show="!diagHistory.length">
+                                <td colspan="4" style="text-align:center;color:#94a3b8">暂无诊断记录</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
             <!-- Rclone Remote Sync -->
             <div x-show="page === 'rclone'" class="page" x-transition.opacity.duration.300ms>
-                <h2>远端同步</h2>
+                <h2 x-text="$t('rclone.title')"></h2>
 
                 <!-- ═══ rclone 状态 ═══ -->
                 <div style="background:white;border:1px solid #e0e4e8;border-radius:12px;padding:20px;margin-bottom:24px" x-show="rcloneStatus.installed">
                     <div style="display:flex;justify-content:space-between;align-items:center">
                         <div>
                             <span style="font-size:14px;font-weight:600;color:#334155">rclone 状态</span>
-                            <div style="font-size:13px;color:#64748b;margin-top:4px" x-text="rcloneStatus.version || '未知版本'"></div>
+                            <div style="font-size:13px;color:#64748b;margin-top:4px" x-text="$t('rclone.unknown_version')"></div>
                         </div>
-                        <span style="padding:4px 12px;border-radius:12px;font-size:13px;background:#dcfce7;color:#16a34a">已安装</span>
+                        <span style="padding:4px 12px;border-radius:12px;font-size:13px;background:#dcfce7;color:#16a34a" x-text="$t('common.installed')"></span>
                     </div>
                 </div>
                 <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:12px;padding:20px;margin-bottom:24px" x-show="!rcloneStatus.installed">
@@ -1976,8 +2193,8 @@
                 <!-- ═══ 远端存储配置 ═══ -->
                 <div style="background:white;border:1px solid #e0e4e8;border-radius:12px;padding:20px;margin-bottom:24px">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-                        <h3 style="margin:0;font-size:16px">远端存储</h3>
-                        <button class="btn btn-primary btn-sm" @click="openAddRemote()">添加远端</button>
+                        <h3 style="margin:0;font-size:16px" x-text="$t('rclone.remotes')"></h3>
+                        <button class="btn btn-primary btn-sm" @click="openAddRemote()" x-text="$t('rclone.add_remote')"></button>
                     </div>
 
                     <div x-show="!rcloneRemotes.length" style="text-align:center;padding:24px;color:#94a3b8">
@@ -1992,15 +2209,15 @@
                                         <div style="font-weight:600;font-size:15px" x-text="remote.name"></div>
                                         <div style="font-size:12px;color:#64748b;margin-top:2px" x-text="remote.type"></div>
                                     </div>
-                                    <span style="padding:2px 8px;border-radius:10px;font-size:11px;background:#dbeafe;color:#1d4ed8">已配置</span>
+                                    <span style="padding:2px 8px;border-radius:10px;font-size:11px;background:#dbeafe;color:#1d4ed8" x-text="$t('rclone.configured')"></span>
                                 </div>
                                 <div style="display:flex;gap:8px;margin-top:12px">
                                     <button class="btn btn-sm" @click="testRemote(remote.name)" :disabled="remoteTesting === remote.name" style="font-size:12px">
                                         <span x-show="remoteTesting !== remote.name">测试连接</span>
                                         <span x-show="remoteTesting === remote.name">测试中...</span>
                                     </button>
-                                    <button class="btn btn-sm" @click="editRemote(remote.name)" style="font-size:12px">编辑</button>
-                                    <button class="btn btn-sm btn-danger" @click="deleteRemote(remote.name)" style="font-size:12px">删除</button>
+                                    <button class="btn btn-sm" @click="editRemote(remote.name)" style="font-size:12px" x-text="$t('common.edit')"></button>
+                                    <button class="btn btn-sm btn-danger" @click="deleteRemote(remote.name)" style="font-size:12px" x-text="$t('backup.delete_backup')"></button>
                                 </div>
                             </div>
                         </template>
@@ -2010,16 +2227,16 @@
                 <!-- ═══ 同步任务 ═══ -->
                 <div style="background:white;border:1px solid #e0e4e8;border-radius:12px;padding:20px;margin-bottom:24px">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-                        <h3 style="margin:0;font-size:16px">同步任务</h3>
-                        <button class="btn btn-primary btn-sm" @click="openAddTask()" :disabled="!rcloneRemotes.length">新建任务</button>
+                        <h3 style="margin:0;font-size:16px" x-text="$t('rclone.tasks')"></h3>
+                        <button class="btn btn-primary btn-sm" @click="openAddTask()" :disabled="!rcloneRemotes.length" x-text="$t('rclone.new_task')"></button>
                     </div>
 
                     <div x-show="!rcloneTasks.length" style="text-align:center;padding:24px;color:#94a3b8">
                         <template x-if="!rcloneRemotes.length">
-                            <span>请先添加远端存储</span>
+                            <span x-text="$t('rclone.add_remote_first')"></span>
                         </template>
                         <template x-if="rcloneRemotes.length">
-                            <span>暂无同步任务</span>
+                            <span x-text="$t('rclone.no_tasks')"></span>
                         </template>
                     </div>
 
@@ -2027,15 +2244,15 @@
                         <table class="table">
                             <thead>
                                 <tr>
-                                    <th>任务名称</th>
-                                    <th>方向</th>
-                                    <th>源</th>
-                                    <th>目标</th>
-                                    <th>模式</th>
-                                    <th>定时</th>
-                                    <th>状态</th>
-                                    <th>最后运行</th>
-                                    <th>操作</th>
+                                    <th x-text="$t('rclone.task_name')"></th>
+                                    <th x-text="$t('rclone.direction')"></th>
+                                    <th x-text="$t('rclone.source')"></th>
+                                    <th x-text="$t('rclone.target')"></th>
+                                    <th x-text="$t('rclone.mode')"></th>
+                                    <th x-text="$t('rclone.schedule')"></th>
+                                    <th x-text="$t('common.status')"></th>
+                                    <th x-text="$t('rclone.last_run')"></th>
+                                    <th x-text="$t('logs.log_action')"></th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -2045,36 +2262,36 @@
                                         <td>
                                             <span style="padding:2px 8px;border-radius:10px;font-size:11px"
                                                 :style="task.direction === 'download' ? 'background:#ede9fe;color:#7c3aed' : 'background:#e0f2fe;color:#0369a1'"
-                                                x-text="task.direction === 'download' ? '⬇ 下载' : '⬆ 上传'"></span>
+                                                x-text="$t('rclone.download_sync')"></span>
                                         </td>
                                         <td style="font-family:monospace;font-size:12px" x-text="task.direction === 'download' ? task.remote + ':' + task.dest_path : task.source"></td>
                                         <td style="font-family:monospace;font-size:12px" x-text="task.direction === 'download' ? task.source : task.remote + ':' + task.dest_path"></td>
                                         <td>
                                             <span style="padding:2px 8px;border-radius:10px;font-size:11px"
                                                 :style="task.mode === 'sync' ? 'background:#dbeafe;color:#1d4ed8' : task.mode === 'copy' ? 'background:#dcfce7;color:#16a34a' : 'background:#fef3c7;color:#d97706'"
-                                                x-text="task.mode === 'sync' ? '单向同步' : task.mode === 'copy' ? '仅复制' : '双向同步'"></span>
+                                                x-text="$t('rclone.sync')"></span>
                                         </td>
-                                        <td style="font-size:12px;font-family:monospace" x-text="task.schedule || '手动'"></td>
+                                        <td style="font-size:12px;font-family:monospace" x-text="$t('rclone.manual_trigger')"></td>
                                         <td>
                                             <span style="padding:2px 8px;border-radius:10px;font-size:11px"
                                                 :style="task.enabled ? 'background:#dcfce7;color:#16a34a' : 'background:#f3f4f6;color:#6b7280'"
-                                                x-text="task.enabled ? '启用' : '禁用'"></span>
+                                                x-text="$t('common.enable')"></span>
                                             <template x-if="task.last_result === 'running'">
-                                                <span style="padding:2px 8px;border-radius:10px;font-size:11px;background:#fef3c7;color:#d97706;margin-left:4px">运行中</span>
+                                                <span style="padding:2px 8px;border-radius:10px;font-size:11px;background:#fef3c7;color:#d97706;margin-left:4px" x-text="$t('rclone.running')"></span>
                                             </template>
                                         </td>
                                         <td style="font-size:12px">
                                             <div x-text="task.last_run || '-'"></div>
                                             <div x-show="task.last_result" style="font-size:11px;margin-top:2px"
                                                 :style="task.last_result === 'success' ? 'color:#16a34a' : task.last_result === 'failed' ? 'color:#dc2626' : 'color:#d97706'"
-                                                x-text="task.last_result === 'success' ? '成功' : task.last_result === 'failed' ? '失败' : '运行中'"></div>
+                                                x-text="$t('common.success')"></div>
                                         </td>
                                         <td class="actions" style="white-space:nowrap">
-                                            <button class="btn btn-sm btn-success" @click="runTask(task.id)" :disabled="task.last_result === 'running'" style="font-size:11px;padding:2px 8px">运行</button>
-                                            <button class="btn btn-sm" @click="editTask(task)" style="font-size:11px;padding:2px 8px">编辑</button>
+                                            <button class="btn btn-sm btn-success" @click="runTask(task.id)" :disabled="task.last_result === 'running'" style="font-size:11px;padding:2px 8px" x-text="$t('common.run')"></button>
+                                            <button class="btn btn-sm" @click="editTask(task)" style="font-size:11px;padding:2px 8px" x-text="$t('common.edit')"></button>
                                             <button class="btn btn-sm" @click="toggleTask(task.id)" style="font-size:11px;padding:2px 8px"
-                                                x-text="task.enabled ? '禁用' : '启用'"></button>
-                                            <button class="btn btn-sm btn-danger" @click="deleteTask(task.id)" style="font-size:11px;padding:2px 8px">删除</button>
+                                                x-text="$t('common.disable')"></button>
+                                            <button class="btn btn-sm btn-danger" @click="deleteTask(task.id)" style="font-size:11px;padding:2px 8px" x-text="$t('backup.delete_backup')"></button>
                                         </td>
                                     </tr>
                                 </template>
@@ -2086,9 +2303,9 @@
                 <!-- ═══ 同步日志 ═══ -->
                 <div style="background:white;border:1px solid #e0e4e8;border-radius:12px;padding:20px">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-                        <h3 style="margin:0;font-size:16px">同步日志</h3>
+                        <h3 style="margin:0;font-size:16px" x-text="$t('rclone.sync_logs')"></h3>
                         <div style="display:flex;gap:8px">
-                            <button class="btn btn-sm" @click="loadRcloneLogs()">刷新</button>
+                            <button class="btn btn-sm" @click="loadRcloneLogs()" x-text="$t('common.refresh')"></button>
                             <button class="btn btn-sm btn-danger" @click="clearRcloneLogs()" x-show="rcloneLogs.length">清空日志</button>
                         </div>
                     </div>
@@ -2107,11 +2324,11 @@
                                     </div>
                                     <span style="padding:2px 8px;border-radius:10px;font-size:11px"
                                         :style="log.result === 'success' ? 'background:#dcfce7;color:#16a34a' : 'background:#fee2e2;color:#dc2626'"
-                                        x-text="log.result === 'success' ? '成功' : '失败'"></span>
+                                        x-text="$t('common.success')"></span>
                                 </div>
                                 <div x-show="log.message" style="font-size:12px;color:#64748b;margin-bottom:8px" x-text="log.message"></div>
                                 <details x-show="log.output" style="font-size:12px">
-                                    <summary style="cursor:pointer;color:#64748b">查看输出</summary>
+                                    <summary style="cursor:pointer;color:#64748b" x-text="$t('rclone.view_output')"></summary>
                                     <pre style="background:#f8fafc;padding:8px;border-radius:4px;margin-top:8px;overflow-x:auto;max-height:200px;overflow-y:auto" x-text="log.output"></pre>
                                 </details>
                             </div>
@@ -2124,13 +2341,13 @@
                     <div class="modal-box" style="max-width:520px;width:520px">
                         <h3 x-text="editingRemote ? '编辑远端存储' : '添加远端存储'"></h3>
                         <div class="form-group">
-                            <label>名称</label>
+                            <label x-text="$t('common.name')"></label>
                             <input type="text" x-model="remoteForm.name" placeholder="如: my-s3, backup-oss" :disabled="!!editingRemote">
                             <small style="color:#64748b" x-show="!editingRemote">只能包含字母、数字、横线和下划线</small>
                             <small style="color:#64748b" x-show="editingRemote">名称不可修改</small>
                         </div>
                         <div class="form-group">
-                            <label>类型</label>
+                            <label x-text="$t('common.type')"></label>
                             <select x-model="remoteForm.type" @change="updateRemoteFormFields()" :disabled="!!editingRemote">
                                 <option value="">选择存储类型</option>
                                 <option value="s3">S3 兼容存储 (AWS S3 / MinIO / OSS / COS)</option>
@@ -2182,15 +2399,15 @@
                                     <input type="text" x-model="remoteForm.host" placeholder="如: 192.168.1.100 或 example.com">
                                 </div>
                                 <div class="form-group">
-                                    <label>端口</label>
+                                    <label x-text="$t('common.port')"></label>
                                     <input type="text" x-model="remoteForm.port" placeholder="默认 22" value="22">
                                 </div>
                                 <div class="form-group">
-                                    <label>用户名</label>
+                                    <label x-text="$t('common.username')"></label>
                                     <input type="text" x-model="remoteForm.user" placeholder="SSH 用户名">
                                 </div>
                                 <div class="form-group">
-                                    <label>密码</label>
+                                    <label x-text="$t('common.password')"></label>
                                     <input type="password" x-model="remoteForm.pass" placeholder="SSH 密码">
                                 </div>
                             </div>
@@ -2213,11 +2430,11 @@
                                     </select>
                                 </div>
                                 <div class="form-group">
-                                    <label>用户名</label>
+                                    <label x-text="$t('common.username')"></label>
                                     <input type="text" x-model="remoteForm.user" placeholder="WebDAV 用户名">
                                 </div>
                                 <div class="form-group">
-                                    <label>密码</label>
+                                    <label x-text="$t('common.password')"></label>
                                     <input type="password" x-model="remoteForm.pass" placeholder="WebDAV 密码">
                                 </div>
                             </div>
@@ -2231,15 +2448,15 @@
                                     <input type="text" x-model="remoteForm.host" placeholder="如: ftp.example.com">
                                 </div>
                                 <div class="form-group">
-                                    <label>端口</label>
+                                    <label x-text="$t('common.port')"></label>
                                     <input type="text" x-model="remoteForm.port" placeholder="默认 21" value="21">
                                 </div>
                                 <div class="form-group">
-                                    <label>用户名</label>
+                                    <label x-text="$t('common.username')"></label>
                                     <input type="text" x-model="remoteForm.user" placeholder="FTP 用户名">
                                 </div>
                                 <div class="form-group">
-                                    <label>密码</label>
+                                    <label x-text="$t('common.password')"></label>
                                     <input type="password" x-model="remoteForm.pass" placeholder="FTP 密码">
                                 </div>
                             </div>
@@ -2257,9 +2474,9 @@
                         </template>
 
                         <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:20px">
-                            <button class="btn" @click="showAddRemote = false">取消</button>
+                            <button class="btn" @click="showAddRemote = false" x-text="$t('common.cancel')"></button>
                             <button class="btn btn-primary" @click="saveRemote()" :disabled="remoteCreating">
-                                <span x-show="!remoteCreating" x-text="editingRemote ? '保存' : '创建'"></span>
+                                <span x-show="!remoteCreating" x-text="$t('common.save')"></span>
                                 <span x-show="remoteCreating" x-text="editingRemote ? '保存中...' : '创建中...'"></span>
                             </button>
                         </div>
@@ -2272,7 +2489,7 @@
                         <h3 x-text="editingTask ? '编辑同步任务' : '新建同步任务'"></h3>
                         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
                             <div class="form-group">
-                                <label>任务名称</label>
+                                <label x-text="$t('rclone.task_name')"></label>
                                 <input type="text" x-model="taskForm.name" placeholder="如: 文档备份到S3">
                             </div>
                             <div class="form-group">
@@ -2301,7 +2518,7 @@
                         </div>
                         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
                             <div class="form-group">
-                                <label>远端存储</label>
+                                <label x-text="$t('rclone.remotes')"></label>
                                 <select x-model="taskForm.remote">
                                     <option value="">选择远端</option>
                                     <template x-for="r in rcloneRemotes" :key="r.name">
@@ -2346,9 +2563,9 @@
                             </div>
                         </div>
                         <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:20px">
-                            <button class="btn" @click="showAddTask = false">取消</button>
+                            <button class="btn" @click="showAddTask = false" x-text="$t('common.cancel')"></button>
                             <button class="btn btn-primary" @click="saveTask()" :disabled="taskCreating">
-                                <span x-show="!taskCreating" x-text="editingTask ? '保存' : '创建'"></span>
+                                <span x-show="!taskCreating" x-text="$t('common.save')"></span>
                                 <span x-show="taskCreating" x-text="editingTask ? '保存中...' : '创建中...'"></span>
                             </button>
                         </div>
@@ -2358,20 +2575,20 @@
 
             <!-- 操作日志 -->
             <div x-show="page === 'logs'" class="page" x-transition.opacity.duration.300ms>
-                <h2>操作日志</h2>
+                <h2 x-text="$t('logs.title')"></h2>
                 <p style="font-size:13px;color:#6b7280;margin-bottom:14px">记录所有用户在系统上的操作，包括存储管理、用户管理、服务管理等</p>
 
                 <div style="display:flex;gap:12px;margin-bottom:14px;align-items:center;flex-wrap:wrap">
                     <select x-model="auditLogFilter.action" @change="auditLogPage=0;loadAuditLogs()" style="padding:6px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
                         <option value="">全部操作</option>
-                        <option value="login">登录</option>
-                        <option value="users">用户管理</option>
-                        <option value="storage">存储管理</option>
-                        <option value="services">服务管理</option>
-                        <option value="firewall">防火墙</option>
-                        <option value="system">系统设置</option>
-                        <option value="backup">备份恢复</option>
-                        <option value="rclone">远端同步</option>
+                        <option value="login" x-text="$t('common.login')"></option>
+                        <option value="users" x-text="$t('users.title')"></option>
+                        <option value="storage" x-text="$t('storage.title')"></option>
+                        <option value="services" x-text="$t('services.title')"></option>
+                        <option value="firewall" x-text="$t('firewall.title')"></option>
+                        <option value="system" x-text="$t('system.title')"></option>
+                        <option value="backup" x-text="$t('backup.title')"></option>
+                        <option value="rclone" x-text="$t('rclone.title')"></option>
                     </select>
                     <select x-model="auditLogFilter.days" @change="auditLogPage=0;loadAuditLogs()" style="padding:6px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
                         <option value="1">今天</option>
@@ -2379,8 +2596,8 @@
                         <option value="30">最近 30 天</option>
                         <option value="90">最近 90 天</option>
                     </select>
-                    <button class="btn btn-sm" @click="auditLogPage=0;loadAuditLogs()">刷新</button>
-                    <button class="btn btn-sm btn-danger" @click="clearAuditLogs()">清空日志</button>
+                    <button class="btn btn-sm" @click="auditLogPage=0;loadAuditLogs()" x-text="$t('common.refresh')"></button>
+                    <button class="btn btn-sm btn-danger" @click="clearAuditLogs()" x-text="$t('logs.clear_logs')"></button>
                     <span style="font-size:12px;color:#6b7280;margin-left:auto" x-text="'共 ' + auditLogTotal + ' 条记录'"></span>
                 </div>
 
@@ -2388,11 +2605,11 @@
                     <table class="table" style="margin-bottom:0">
                         <thead>
                             <tr>
-                                <th style="width:140px">时间</th>
-                                <th style="width:80px">用户</th>
-                                <th style="width:100px">操作</th>
-                                <th>详情</th>
-                                <th style="width:80px;min-width:80px">结果</th>
+                                <th style="width:140px" x-text="$t('logs.log_time')"></th>
+                                <th style="width:80px" x-text="$t('logs.log_user')"></th>
+                                <th style="width:100px" x-text="$t('logs.log_action')"></th>
+                                <th x-text="$t('logs.log_detail')"></th>
+                                <th style="width:80px;min-width:80px" x-text="$t('users.login_result')"></th>
                             </tr>
                         </thead>
                         <tbody>
@@ -2405,7 +2622,7 @@
                                         <span style="color:#374151" x-text="log.detail"></span>
                                         <span style="color:#94a3b8;margin-left:8px;font-size:11px" x-text="log.method + ' ' + log.path"></span>
                                     </td>
-                                    <td><span class="badge" :style="log.result==='error'?'background:#fee2e2;color:#991b1b':'background:#dcfce7;color:#166534'" style="font-size:10px;white-space:nowrap" x-text="log.result==='error'?'失败':'成功'"></span></td>
+                                    <td><span class="badge" :style="log.result==='error'?'background:#fee2e2;color:#991b1b':'background:#dcfce7;color:#166534'" style="font-size:10px;white-space:nowrap" x-text="$t('common.failed')"></span></td>
                                 </tr>
                             </template>
                             <tr x-show="!auditLogs.length">
@@ -2415,7 +2632,7 @@
                     </table>
                 </div>
                 <div x-show="auditLogTotal > 50" style="display:flex;justify-content:center;gap:8px;margin-top:12px">
-                    <button class="btn btn-sm" @click="auditLogPage=Math.max(0,auditLogPage-1);loadAuditLogs()" :disabled="auditLogPage===0">上一页</button>
+                    <button class="btn btn-sm" @click="auditLogPage=Math.max(0,auditLogPage-1);loadAuditLogs()" :disabled="auditLogPage===0" x-text="$t('logs.prev_page')"></button>
                     <span style="font-size:12px;color:#6b7280;padding:4px 8px" x-text="'第 '+(auditLogPage+1)+' 页'"></span>
                     <button class="btn btn-sm" @click="auditLogPage++;loadAuditLogs()" :disabled="(auditLogPage+1)*50 >= auditLogTotal">下一页</button>
                 </div>
