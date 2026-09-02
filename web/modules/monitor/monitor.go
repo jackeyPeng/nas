@@ -98,6 +98,7 @@ func getMonitorStatus() map[string]interface{} {
 	result["services_list"] = svcList
 	result["process_count"] = getProcessCount()
 	result["uptime"] = getUptime()
+	result["uptime_seconds"] = info.UptimeSec
 	result["hostname"] = info.Hostname
 	result["top_procs"] = getTopMemProcs()
 	result["logged_in_users"] = getLoggedInUsers()

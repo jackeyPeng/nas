@@ -105,7 +105,10 @@
     "hours": "hours",
     "days": "days",
     "bytes": "bytes",
-    "none": "None"
+    "none": "None",
+    "uptime_fmt": "{0}d {1}h {2}m",
+    "uptime_fmt_short": "{0}h {1}m",
+    "uptime_fmt_min": "{0}m"
   },
   "login": {
     "title": "🗄️ NAS Management Panel",
@@ -150,7 +153,9 @@
     "sys_info": "System Info",
     "pending": "Pending",
     "free": "Free",
-    "fault": "Fault"
+    "fault": "Fault",
+    "cpu_cores_fmt": "{0} cores {1}",
+    "cores_fmt": "{0} cores"
   },
   "monitor": {
     "title": "Monitoring",
@@ -167,7 +172,12 @@
     "alert_channels": "Alert Channels",
     "auto_refresh": "Auto Refresh",
     "pause": "Pause",
-    "resume": "Resume"
+    "resume": "Resume",
+    "host": "Host",
+    "uptime": "Uptime",
+    "load": "Load",
+    "load_5m": "5m",
+    "load_15m": "15m"
   },
   "storage": {
     "title": "Storage Management",

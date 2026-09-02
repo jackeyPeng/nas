@@ -37,6 +37,7 @@ type SystemInfo struct {
 	OS        string `json:"os"`
 	Kernel    string `json:"kernel"`
 	Uptime    string `json:"uptime"`
+	UptimeSec int64  `json:"uptime_seconds"`
 	CPUUsage  string `json:"cpu_usage"`
 	MemTotal  string `json:"mem_total"`
 	MemUsed   string `json:"mem_used"`
@@ -75,6 +76,7 @@ func GetSystemInfo() SystemInfo {
 
 	// Uptime
 	info.Uptime = getUptime()
+	info.UptimeSec = getUptimeSeconds()
 
 	// Memory
 	info.MemTotal, info.MemUsed, info.MemPct = getMemInfo()
@@ -139,6 +141,7 @@ func handleDashboard(w http.ResponseWriter, r *http.Request) {
 		"os":             info.OS,
 		"kernel":         info.Kernel,
 		"uptime":         info.Uptime,
+		"uptime_seconds": info.UptimeSec,
 		"cpu_usage":      info.CPUUsage,
 		"cpu_cores":      info.CPUCores,
 		"mem_total":      info.MemTotal,
@@ -172,19 +175,29 @@ func unameR() string {
 	return strings.TrimSpace(out)
 }
 
-func getUptime() string {
+// getUptimeSeconds returns total uptime in seconds (for i18n formatting on frontend)
+func getUptimeSeconds() int64 {
 	data, err := os.ReadFile("/proc/uptime")
 	if err != nil {
-		return ""
+		return 0
 	}
 	parts := strings.Fields(string(data))
 	if len(parts) < 1 {
-		return ""
+		return 0
 	}
 	secs, _ := strconv.ParseFloat(parts[0], 64)
-	days := int(secs) / 86400
-	hours := (int(secs) % 86400) / 3600
-	mins := (int(secs) % 3600) / 60
+	return int64(secs)
+}
+
+// getUptime returns a human-readable uptime string (legacy, kept for backward compat)
+func getUptime() string {
+	secs := getUptimeSeconds()
+	if secs <= 0 {
+		return ""
+	}
+	days := secs / 86400
+	hours := (secs % 86400) / 3600
+	mins := (secs % 3600) / 60
 	if days > 0 {
 		return fmt.Sprintf("%d天 %d小时 %d分钟", days, hours, mins)
 	}

@@ -202,6 +202,25 @@ function nasPanel() {
             }
         },
 
+        // 本地化格式化运行时长（读取 store.lang 建立响应式依赖）
+        fmtUptime(seconds) {
+            window.Alpine.store('i18n').lang; // reactive dependency
+            const s = Math.floor(seconds || 0);
+            const d = Math.floor(s / 86400);
+            const h = Math.floor((s % 86400) / 3600);
+            const m = Math.floor((s % 3600) / 60);
+            const t = window.t;
+            if (d > 0) return t('common.uptime_fmt', [d, h, m]);
+            if (h > 0) return t('common.uptime_fmt_short', [h, m]);
+            return t('common.uptime_fmt_min', [m]);
+        },
+
+        // 本地化格式化 CPU 核数（读取 store.lang 建立响应式依赖）
+        fmtCores(cores) {
+            window.Alpine.store('i18n').lang; // reactive dependency
+            return window.t('dashboard.cores_fmt', [cores]);
+        },
+
         async api(path, options = {}) {
             const opts = {
                 ...options,

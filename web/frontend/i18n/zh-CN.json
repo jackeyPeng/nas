@@ -105,7 +105,10 @@
     "hours": "小时",
     "days": "天",
     "bytes": "字节",
-    "none": "无"
+    "none": "无",
+    "uptime_fmt": "{0}天 {1}小时 {2}分钟",
+    "uptime_fmt_short": "{0}小时 {1}分钟",
+    "uptime_fmt_min": "{0}分钟"
   },
   "login": {
     "title": "🗄️ NAS 管理面板",
@@ -150,7 +153,9 @@
     "sys_info": "系统信息",
     "pending": "待配置",
     "free": "空闲",
-    "fault": "故障"
+    "fault": "故障",
+    "cpu_cores_fmt": "{0}核 {1}",
+    "cores_fmt": "{0}核"
   },
   "monitor": {
     "title": "监控告警",
@@ -167,7 +172,12 @@
     "alert_channels": "告警渠道",
     "auto_refresh": "自动刷新",
     "pause": "暂停",
-    "resume": "继续"
+    "resume": "继续",
+    "host": "主机",
+    "uptime": "运行",
+    "load": "负载",
+    "load_5m": "5分",
+    "load_15m": "15分"
   },
   "storage": {
     "title": "存储管理",
