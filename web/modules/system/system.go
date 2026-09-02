@@ -26,6 +26,11 @@ func RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/system/services", common.AuthMiddleware(handleServices))
 	mux.HandleFunc("/api/system/reset", common.AuthMiddleware(handleReset))
 	mux.HandleFunc("/api/system/check", handleSystemCheck) // 公开接口，无需认证
+	mux.HandleFunc("/api/system/https", common.AuthMiddleware(handleHTTPSCert))
+	mux.HandleFunc("/api/system/https/generate", common.AuthMiddleware(handleHTTPSGenerate))
+	mux.HandleFunc("/api/system/https/upload", common.AuthMiddleware(handleHTTPSUpload))
+	mux.HandleFunc("/api/system/https/apply", common.AuthMiddleware(handleHTTPSApply))
+	mux.HandleFunc("/api/system/https/remove", common.AuthMiddleware(handleHTTPSRemove))
 }
 
 // ═══════════════════════════════════════
