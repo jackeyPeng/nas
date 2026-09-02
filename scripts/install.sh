@@ -4,10 +4,13 @@
 #
 # 用法:
 #   wget -qO- https://gitee.com/gitdogcat/nas/raw/master/scripts/install.sh | sudo bash
-#   NAS_PASS=myPass123456 wget -qO- https://gitee.com/gitdogcat/nas/raw/master/scripts/install.sh | sudo bash
+#   wget -qO- https://gitee.com/gitdogcat/nas/raw/master/scripts/install.sh | sudo env NAS_PASS=myPass123456 bash
 #
 # 或本地运行:
 #   sudo bash install.sh
+#
+# 注意: sudo 默认清空环境变量，NAS_PASS 必须用 `sudo env NAS_PASS=... bash` 透传，
+#       否则脚本读不到密码会进入交互分支（非 TTY 下报 stty ioctl 错误）。
 # ═══════════════════════════════════════════════════════════════
 set -euo pipefail
 
@@ -108,6 +111,16 @@ if [ -n "${NAS_PASS:-}" ]; then
         exit 1
     fi
 else
+    # 交互式输入需要 TTY；管道/非 TTY 环境（如 CI、nohup）无法读密码，直接给出明确错误
+    if [ ! -t 0 ]; then
+        echo ""
+        echo -e "${RED}错误: 非交互式环境无法输入密码${NC}"
+        echo -e "  请通过环境变量传入（注意用 sudo env 透传）：${NC}"
+        echo ""
+        echo -e "  wget -qO- https://gitee.com/gitdogcat/nas/raw/master/scripts/install.sh | ${CYAN}sudo env NAS_PASS=你的密码${NC} bash"
+        echo ""
+        exit 1
+    fi
     echo ""
     echo -e "${BOLD}设置管理密码（至少 ${MIN_PASS_LEN} 位，用于所有服务）${NC}"
     while true; do
