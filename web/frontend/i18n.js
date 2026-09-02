@@ -2,6 +2,10 @@
 // Language packs are JSON files in i18n/ directory
 // zh-CN.json is the source of truth; other languages should be kept in sync
 // Usage: t('key.path') or $t('key.path') in Alpine.js templates
+//
+// NOTE: language packs are loaded SYNCHRONOUSLY at startup so that window.$t
+// is defined and populated before Alpine (defer) evaluates the templates.
+// Otherwise $t is undefined at first render and all i18n text is blank.
 
 (function() {
     'use strict';
@@ -21,16 +25,20 @@
         return 'zh-CN'; // default
     }
 
-    // Load a language pack
-    async function loadLang(lang) {
+    // Synchronously load a language pack (blocking, so $t is ready before Alpine starts)
+    function loadLangSync(lang) {
         try {
-            const resp = await fetch(`${I18N_DIR}/${lang}.json`);
-            if (!resp.ok) throw new Error('HTTP ' + resp.status);
-            return await resp.json();
+            const xhr = new XMLHttpRequest();
+            xhr.open('GET', I18N_DIR + '/' + lang + '.json', false); // false = sync
+            xhr.overrideMimeType('application/json');
+            xhr.send(null);
+            if (xhr.status >= 200 && xhr.status < 300) {
+                return JSON.parse(xhr.responseText);
+            }
         } catch (e) {
-            console.warn(`[i18n] Failed to load ${lang}:`, e.message);
-            return null;
+            console.warn('[i18n] Failed to load ' + lang + ':', e && e.message);
         }
+        return null;
     }
 
     // Get nested key value
@@ -54,39 +62,39 @@
         }
         // Fallback to key name
         if (val == null) {
-            console.debug(`[i18n] Missing key: ${key}`);
+            console.debug('[i18n] Missing key: ' + key);
             return key.split('.').pop(); // return last segment as hint
         }
         // Replace params {0}, {1}, ...
         if (params && typeof val === 'string') {
             for (let i = 0; i < params.length; i++) {
-                val = val.replace(`{${i}}`, params[i]);
+                val = val.replace('{' + i + '}', params[i]);
             }
         }
         return val;
     }
 
-    // Switch language
+    // Switch language (async; user-initiated, small file is fine)
     async function switchLang(lang) {
-        const data = await loadLang(lang);
+        const data = loadLangSync(lang);
         if (data) {
             translations = data;
             currentLang = lang;
             localStorage.setItem('nas_lang', lang);
             // Dispatch event so Alpine.js can re-render
-            window.dispatchEvent(new CustomEvent('i18n:changed', { detail: { lang } }));
+            window.dispatchEvent(new CustomEvent('i18n:changed', { detail: { lang: lang } }));
             return true;
         }
         return false;
     }
 
-    // Initialize
-    async function init() {
+    // Initialize synchronously (not async) so $t is defined before Alpine starts
+    function init() {
         currentLang = detectLang();
         // Always load zh-CN as fallback
-        fallbackTranslations = await loadLang('zh-CN') || {};
+        fallbackTranslations = loadLangSync('zh-CN') || {};
         // Load current language
-        const data = await loadLang(currentLang);
+        const data = loadLangSync(currentLang);
         if (data) {
             translations = data;
         } else if (currentLang !== 'zh-CN') {
@@ -96,21 +104,24 @@
         } else {
             translations = fallbackTranslations;
         }
-        // Expose globally
+        // Expose globally (t for JS, $t for Alpine templates)
         window.t = t;
+        window.$t = t;
         window.switchLang = switchLang;
         window.currentLang = currentLang;
         window.availableLangs = ['zh-CN', 'en-US'];
         window.dispatchEvent(new CustomEvent('i18n:ready', { detail: { lang: currentLang } }));
     }
 
-    // Start loading
-    init().catch(err => {
+    try {
+        init();
+    } catch (err) {
         console.error('[i18n] Init failed:', err);
         // Bare minimum fallback
         window.t = function(key) { return key.split('.').pop(); };
+        window.$t = window.t;
         window.switchLang = async function() {};
         window.currentLang = 'zh-CN';
         window.availableLangs = ['zh-CN'];
-    });
+    }
 })();
