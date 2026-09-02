@@ -5,7 +5,7 @@
 set -euo pipefail
 
 BINARY="/home/jacky/soft/nas/web/nas-panel"
-SERVERS=("[REDACTED]" "[REDACTED]")
+SERVERS=("[REDACTED]" "[REDACTED]" "[REDACTED]")
 
 if [ ! -f "$BINARY" ]; then
     echo "错误: 二进制文件不存在: $BINARY"
