@@ -74,6 +74,7 @@ for ARCH in $ARCH_LIST; do
         go build -ldflags "\
             -s -w \
             -X nas-panel/modules/version.Version=${VERSION_TAG} \
+            -X nas-panel/modules/version.DisplayVersion=${VERSION_TAG} \
             -X nas-panel/modules/version.BuildTime=${BUILD_TIME} \
             -X nas-panel/modules/version.GitCommit=${COMMIT}" \
         -o "${RELEASE_DIR}/nas-panel-${ARCH}" \
