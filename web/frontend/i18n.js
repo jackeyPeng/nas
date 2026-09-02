@@ -6,6 +6,10 @@
 // NOTE: language packs are loaded SYNCHRONOUSLY at startup so that window.$t
 // is defined and populated before Alpine (defer) evaluates the templates.
 // Otherwise $t is undefined at first render and all i18n text is blank.
+//
+// Reactivity: $t is ALSO registered as an Alpine magic that reads
+// Alpine.store('i18n').lang. This establishes a reactive dependency so that
+// switching language re-renders every $t(...) expression automatically.
 
 (function() {
     'use strict';
@@ -52,20 +56,16 @@
         return current;
     }
 
-    // Translation function
-    function t(key, params) {
-        // Try current language
-        let val = getNested(translations, key);
-        // Fallback to zh-CN
+    // Translate against a given pack with zh-CN fallback
+    function translateWith(trans, key, params) {
+        let val = getNested(trans, key);
         if (val == null && fallbackTranslations) {
             val = getNested(fallbackTranslations, key);
         }
-        // Fallback to key name
         if (val == null) {
             console.debug('[i18n] Missing key: ' + key);
             return key.split('.').pop(); // return last segment as hint
         }
-        // Replace params {0}, {1}, ...
         if (params && typeof val === 'string') {
             for (let i = 0; i < params.length; i++) {
                 val = val.replace('{' + i + '}', params[i]);
@@ -74,18 +74,25 @@
         return val;
     }
 
-    // Switch language (async; user-initiated, small file is fine)
-    async function switchLang(lang) {
+    // Plain (non-reactive) translator for imperative JS use
+    function t(key, params) {
+        return translateWith(translations, key, params);
+    }
+
+    // Switch language. Updates the closure state AND the reactive Alpine store.
+    function switchLang(lang) {
         const data = loadLangSync(lang);
-        if (data) {
-            translations = data;
-            currentLang = lang;
-            localStorage.setItem('nas_lang', lang);
-            // Dispatch event so Alpine.js can re-render
-            window.dispatchEvent(new CustomEvent('i18n:changed', { detail: { lang: lang } }));
-            return true;
-        }
-        return false;
+        if (!data) return false;
+        translations = data;
+        currentLang = lang;
+        localStorage.setItem('nas_lang', lang);
+        // Trigger reactive re-render via the Alpine store
+        try {
+            const store = window.Alpine && window.Alpine.store && window.Alpine.store('i18n');
+            if (store) store.lang = lang;
+        } catch (e) { /* Alpine not ready yet — event still fires below */ }
+        window.dispatchEvent(new CustomEvent('i18n:changed', { detail: { lang: lang } }));
+        return true;
     }
 
     // Initialize synchronously (not async) so $t is defined before Alpine starts
@@ -104,7 +111,7 @@
         } else {
             translations = fallbackTranslations;
         }
-        // Expose globally (t for JS, $t for Alpine templates)
+        // Expose globally (t for JS, $t for non-Alpine templates)
         window.t = t;
         window.$t = t;
         window.switchLang = switchLang;
@@ -112,6 +119,20 @@
         window.availableLangs = ['zh-CN', 'en-US'];
         window.dispatchEvent(new CustomEvent('i18n:ready', { detail: { lang: currentLang } }));
     }
+
+    // Register a reactive store + $t magic BEFORE Alpine.start() walks the DOM.
+    document.addEventListener('alpine:init', function() {
+        if (!window.Alpine || typeof window.Alpine.store !== 'function') return;
+        window.Alpine.store('i18n', { lang: currentLang });
+        window.Alpine.magic('t', function() {
+            return function(key, params) {
+                // Reading store.lang establishes the reactive dependency so that
+                // a language switch re-renders every $t(...) expression.
+                window.Alpine.store('i18n').lang;
+                return t(key, params);
+            };
+        });
+    });
 
     try {
         init();
