@@ -21,10 +21,10 @@ function nasPanel() {
             { label: 'Samba (445)', port: '445', proto: 'tcp' },
             { label: 'Samba (139)', port: '139', proto: 'tcp' },
             { label: 'FTP (21)', port: '21', proto: 'tcp' },
-            { label: 'FTP 被动 (30000:31000)', port: '30000:31000', proto: 'tcp' },
+            { label: this.t('msg.ftp_passive'), port: '30000:31000', proto: 'tcp' },
             { label: 'NFS (2049)', port: '2049', proto: 'any' },
             { label: 'WebDAV (8080)', port: '8080', proto: 'tcp' },
-            { label: '面板 (8090)', port: '8090', proto: 'tcp' },
+            { label: this.t('msg.panel_port'), port: '8090', proto: 'tcp' },
         ],
         firewallForm: { port: '', proto: 'tcp', action: 'allow', from: '', comment: '' },
         firewallSaving: false,
@@ -221,6 +221,75 @@ function nasPanel() {
             return window.t('dashboard.cores_fmt', [cores]);
         },
 
+        // 运行时文案翻译（confirm/toast 用，非响应式场景）
+        t(key, params) {
+            return window.t(key, params);
+        },
+
+        // 服务显示名翻译（后端 DisplayName 仅 S3 是中文）
+        svcDisplay(name, fallback) {
+            const map = { 'rclone-s3': 'services.label_s3' };
+            return map[name] ? window.t(map[name]) : fallback;
+        },
+        // 服务描述翻译（后端 Description 全部是中文）
+        svcDesc(name, fallback) {
+            const map = {
+                'smbd': 'services.desc_smbd',
+                'nmbd': 'services.desc_nmbd',
+                'nfs-kernel-server': 'services.desc_nfs',
+                'vsftpd': 'services.desc_vsftpd',
+                'rclone-webdav': 'services.desc_webdav',
+                'filebrowser': 'services.desc_filebrowser',
+                'rclone-s3': 'services.desc_s3',
+                'fail2ban': 'services.desc_fail2ban',
+            };
+            return map[name] ? window.t(map[name]) : fallback;
+        },
+
+        // 组件分类名翻译（后端返回中文分类，仅用于显示）
+        catLabel(cat) {
+            const map = {
+                '文件共享': 'component.file_sharing',
+                '网页文件管理': 'component.web_file_mgmt',
+                '对象存储': 'component.object_storage',
+                '网页管理': 'component.web_management',
+                '系统防护': 'component.system_protection',
+                '存储管理': 'component.storage_mgmt',
+                '运行环境': 'component.runtime_env',
+            };
+            return map[cat] ? window.t(map[cat]) : cat;
+        },
+
+        // 存储池/卷 后端生成的显示名（存储池N/卷N）翻译
+        poolLabel(name) {
+            if (!name) return name;
+            const m = name.match(/^存储池(\d+)$/);
+            if (m) return window.t('storage.pool_n', [m[1]]);
+            const v = name.match(/^卷(\d+)$/);
+            if (v) return window.t('storage.vol_n', [v[1]]);
+            return name;
+        },
+        // 告警渠道名翻译
+        channelLabel(name) {
+            const map = { '钉钉': 'monitor.channel_dingtalk', 'Email': 'monitor.channel_email' };
+            return map[name] ? window.t(map[name]) : name;
+        },
+        // 系统设置页服务列表显示名翻译（systemd 服务名 → i18n key）
+        svcListDisplay(name, fallback) {
+            const map = {
+                'smbd': 'services.samba',
+                'nmbd': 'services.netbios',
+                'vsftpd': 'services.ftp_svc',
+                'nfs-server': 'services.nfs_svc',
+                'nas-panel': 'services.nas_panel',
+                'fail2ban': 'services.fail2ban',
+                'cron': 'services.cron',
+                'ssh': 'services.ssh_svc',
+                'filebrowser': 'services.filebrowser',
+            };
+            return map[name] ? window.t(map[name]) : fallback;
+        },
+
         async api(path, options = {}) {
             const opts = {
                 ...options,
@@ -261,10 +330,10 @@ function nasPanel() {
                     localStorage.setItem('nas_token', this.token);
                     this.navigate('dashboard');
                 } else {
-                    this.loginError = data.error || '登录失败';
+                    this.loginError = data.error || this.t('msg.login_failed');
                 }
             } catch (e) {
-                this.loginError = '网络错误: ' + e.message;
+                this.loginError = this.t('msg.network_error') + ': ' + e.message;
             } finally {
                 this.loading = false;
             }
@@ -314,28 +383,28 @@ function nasPanel() {
         },
 
         async installServices() {
-            if (!confirm('确定要安装所有NAS服务？\n\n包括: Samba, NFS, FTP, WebDAV, FileBrowser, S3, Fail2ban\n\n安装过程可能需要几分钟，请耐心等待。')) return;
+            if (!confirm(this.t('msg.install_all_confirm'))) return;
             this.installingServices = true;
-            this.installMsg = '正在安装...';
+            this.installMsg = this.t('msg.installing');
             const data = await this.api('/services/install', { method: 'POST' });
             if (data) {
                 if (data.error) {
-                    this.showToast(`安装失败: ${data.error}`, 'error');
-                    this.installMsg = `安装失败: ${data.error}`;
+                    this.showToast(this.t('msg.install_failed') + ': ' + data.error, 'error');
+                    this.installMsg = this.t('msg.install_failed') + ': ' + data.error;
                 } else {
-                    this.installMsg = data.message || '安装完成';
-                    this.showToast(data.message || '安装完成', 'success');
+                    this.installMsg = data.message || this.t('msg.install_done');
+                    this.showToast(data.message || this.t('msg.install_done'), 'success');
                     setTimeout(() => this.loadServices(), 2000);
                 }
             } else {
-                this.installMsg = '安装失败';
+                this.installMsg = this.t('msg.install_failed');
             }
             this.installingServices = false;
         },
 
         async installService(name) {
-            if (!confirm(`确定安装 ${name}？`)) return;
-            this.installMsg = `正在安装 ${name}...`;
+            if (!confirm(this.t('msg.install_x_confirm', [name]))) return;
+            this.installMsg = this.t('msg.installing_x', [name]);
             const data = await this.api('/services/install', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -343,16 +412,16 @@ function nasPanel() {
             });
             if (data) {
                 if (data.error) {
-                    this.showToast(`安装失败: ${data.error}`, 'error');
-                    this.installMsg = `安装 ${name} 失败: ${data.error}`;
+                    this.showToast(this.t('msg.install_failed') + ': ' + data.error, 'error');
+                    this.installMsg = this.t('msg.install_x_failed', [name]) + ': ' + data.error;
                 } else {
                     const steps = (data.steps || []).join(' → ');
-                    this.showToast(data.message || `${name} 安装完成`, 'success');
+                    this.showToast(data.message || this.t('msg.x_install_done', [name]), 'success');
                     this.installMsg = `${name}: ${steps || data.message}`;
                     setTimeout(() => this.loadServices(), 2000);
                 }
             } else {
-                this.installMsg = `安装 ${name} 失败`;
+                this.installMsg = this.t('msg.install_x_failed', [name]);
             }
         },
 
@@ -367,7 +436,7 @@ function nasPanel() {
         },
 
         async loadSmart() {
-            this.smartStatus = '检查中...';
+            this.smartStatus = this.t('msg.checking');
             const data = await this.api('/storage/smart');
             if (data) this.smartStatus = data;
         },
@@ -384,17 +453,17 @@ function nasPanel() {
         async svcAction(name, action) {
             const data = await this.api(`/services/${name}/${action}`, { method: 'POST' });
             if (data) {
-                this.showToast(data.message || '操作成功', 'success');
+                this.showToast(data.message || this.t('msg.op_success'), 'success');
                 this.loadServices();
             }
         },
 
         async showLogs(name) {
             this.logsService = name;
-            this.logsContent = '加载中...';
+            this.logsContent = this.t('common.loading');
             this.logsModal = true;
             const data = await this.api(`/services/${name}/logs`);
-            if (data) this.logsContent = data || '无日志';
+            if (data) this.logsContent = data || this.t('msg.no_logs');
         },
 
         showAddUser() {
@@ -404,11 +473,11 @@ function nasPanel() {
 
         async addUser() {
             if (!this.addUserForm.username || !this.addUserForm.password) {
-                this.showToast('请填写用户名和密码', 'error');
+                this.showToast(this.t('msg.fill_user_pass'), 'error');
                 return;
             }
             if (this.addUserForm.password.length < 12) {
-                this.showToast('密码至少12位', 'error');
+                this.showToast(this.t('msg.pwd_min_12'), 'error');
                 return;
             }
             const data = await this.api('/users', {
@@ -417,7 +486,7 @@ function nasPanel() {
                 body: `username=${encodeURIComponent(this.addUserForm.username)}&password=${encodeURIComponent(this.addUserForm.password)}`
             });
             if (data) {
-                this.showToast(data.message || '添加成功', 'success');
+                this.showToast(data.message || this.t('msg.add_success'), 'success');
                 this.addUserModal = false;
                 this.loadUsers();
             }
@@ -431,7 +500,7 @@ function nasPanel() {
 
         async changePassword() {
             if (this.pwdForm.password.length < 12) {
-                this.showToast('密码至少12位', 'error');
+                this.showToast(this.t('msg.pwd_min_12'), 'error');
                 return;
             }
             const data = await this.api(`/users/${this.pwdUser}/password`, {
@@ -440,16 +509,16 @@ function nasPanel() {
                 body: `password=${encodeURIComponent(this.pwdForm.password)}`
             });
             if (data) {
-                this.showToast(data.message || '修改成功', 'success');
+                this.showToast(data.message || this.t('msg.modify_success'), 'success');
                 this.pwdModal = false;
             }
         },
 
         async deleteUser(username) {
-            if (!confirm(`确定删除用户 ${username}？`)) return;
+            if (!confirm(this.t('msg.del_user_confirm', [username]))) return;
             const data = await this.api(`/users/${username}?delete_data=false`, { method: 'DELETE' });
             if (data) {
-                this.showToast(data.message || '删除成功', 'success');
+                this.showToast(data.message || this.t('msg.del_success'), 'success');
                 this.loadUsers();
             }
         },
@@ -493,13 +562,13 @@ function nasPanel() {
         wizardNext() {
             if (this.userWizardStep === 1) {
                 if (!this.userWizardForm.username) {
-                    this.showToast('请输入用户名', 'error'); return;
+                    this.showToast(this.t('msg.enter_username'), 'error'); return;
                 }
                 if (this.userWizardForm.password.length < 12) {
-                    this.showToast('密码至少12位', 'error'); return;
+                    this.showToast(this.t('msg.pwd_min_12'), 'error'); return;
                 }
                 if (this.userWizardForm.password !== this.userWizardForm.password2) {
-                    this.showToast('两次密码输入不一致', 'error'); return;
+                    this.showToast(this.t('msg.pwd_mismatch'), 'error'); return;
                 }
             }
             if (this.userWizardStep < 4) this.userWizardStep++;
@@ -523,7 +592,7 @@ function nasPanel() {
                 body: body
             });
             if (data) {
-                this.showToast(data.message || '创建成功', 'success');
+                this.showToast(data.message || this.t('msg.create_success'), 'success');
                 this.addUserModal = false;
                 this.loadUsers();
                 this.loadPermMatrix();
@@ -539,7 +608,7 @@ function nasPanel() {
                 body: body
             });
             if (data) {
-                this.showToast(data.message || '服务权限已更新', 'success');
+                this.showToast(data.message || this.t('msg.perm_updated'), 'success');
                 this.loadUsers();
             }
         },
@@ -552,7 +621,7 @@ function nasPanel() {
                 body: `quota_gb=${quotaGB}`
             });
             if (data) {
-                this.showToast(data.message || '配额已更新', 'success');
+                this.showToast(data.message || this.t('msg.quota_updated'), 'success');
                 this.loadUsers();
             }
         },
@@ -565,7 +634,7 @@ function nasPanel() {
 
         async createGroup() {
             if (!this.groupForm.name) {
-                this.showToast('请输入组名', 'error'); return;
+                this.showToast(this.t('msg.enter_group'), 'error'); return;
             }
             const data = await this.api('/user-groups', {
                 method: 'POST',
@@ -573,17 +642,17 @@ function nasPanel() {
                 body: `name=${encodeURIComponent(this.groupForm.name)}&comment=${encodeURIComponent(this.groupForm.comment)}`
             });
             if (data) {
-                this.showToast(data.message || '创建成功', 'success');
+                this.showToast(data.message || this.t('msg.create_success'), 'success');
                 this.showGroupModal = false;
                 this.loadUserGroups();
             }
         },
 
         async deleteGroup(name) {
-            if (!confirm(`确定删除用户组 ${name}？`)) return;
+            if (!confirm(this.t('msg.del_group_confirm', [name]))) return;
             const data = await this.api(`/user-groups/${name}`, { method: 'DELETE' });
             if (data) {
-                this.showToast(data.message || '删除成功', 'success');
+                this.showToast(data.message || this.t('msg.del_success'), 'success');
                 this.loadUserGroups();
             }
         },
@@ -595,7 +664,7 @@ function nasPanel() {
                 body: `members=${encodeURIComponent(members)}`
             });
             if (data) {
-                this.showToast(data.message || '成员已更新', 'success');
+                this.showToast(data.message || this.t('msg.members_updated'), 'success');
                 this.loadUserGroups();
             }
         },
@@ -608,7 +677,7 @@ function nasPanel() {
                 body: `username=${encodeURIComponent(username)}&folder=${encodeURIComponent(folder)}&permission=${perm}`
             });
             if (data) {
-                this.showToast(data.message || '权限已更新', 'success');
+                this.showToast(data.message || this.t('msg.perm_matrix_updated'), 'success');
                 this.loadPermMatrix();
             }
         },
@@ -623,7 +692,7 @@ function nasPanel() {
         async addFirewallRule() {
             const f = this.firewallForm;
             if (!f.port) {
-                this.showToast('请输入端口号', 'error');
+                this.showToast(this.t('msg.enter_port'), 'error');
                 return;
             }
             this.firewallSaving = true;
@@ -635,36 +704,36 @@ function nasPanel() {
             });
             this.firewallSaving = false;
             if (data && !data.error) {
-                this.showToast(data.message || '规则已添加', 'success');
+                this.showToast(data.message || this.t('msg.rule_added'), 'success');
                 this.firewallForm = { port: '', proto: 'tcp', action: 'allow', from: '', comment: '' };
                 this.loadFirewall();
             } else if (data && data.error) {
-                this.showToast('添加失败: ' + data.error, 'error');
+                this.showToast(this.t('msg.add_failed') + ': ' + data.error, 'error');
             }
         },
 
         async deleteFirewallRule(rule) {
             const desc = (rule.proto === 'any' ? rule.port : rule.port + '/' + rule.proto) + (rule.v6 ? ' (v6)' : '');
-            if (!confirm(`确定删除规则 #${rule.num}（${desc}）？`)) return;
+            if (!confirm(this.t('msg.del_rule_confirm', [rule.num, desc]))) return;
             const data = await this.api('/firewall/rules/' + rule.num, { method: 'DELETE' });
             if (data && !data.error) {
-                this.showToast(data.message || '规则已删除', 'success');
+                this.showToast(data.message || this.t('msg.rule_deleted'), 'success');
                 this.loadFirewall();
             } else if (data && data.error) {
-                this.showToast('删除失败: ' + data.error, 'error');
+                this.showToast(this.t('msg.del_failed') + ': ' + data.error, 'error');
             }
         },
 
         async toggleFirewall() {
             const enabling = !this.firewall.active;
-            if (enabling && !confirm('启用防火墙？会自动放行 SSH(22) 和面板(8090)。')) return;
-            if (!enabling && !confirm('确定禁用防火墙？所有端口将完全开放。')) return;
+            if (enabling && !confirm(this.t('msg.enable_fw_confirm'))) return;
+            if (!enabling && !confirm(this.t('msg.disable_fw_confirm'))) return;
             const data = await this.api('/firewall/' + (enabling ? 'enable' : 'disable'), { method: 'POST' });
             if (data && !data.error) {
-                this.showToast(data.message || '操作成功', 'success');
+                this.showToast(data.message || this.t('msg.op_success'), 'success');
                 this.loadFirewall();
             } else if (data && data.error) {
-                this.showToast('操作失败: ' + data.error, 'error');
+                this.showToast(this.t('msg.op_failed') + ': ' + data.error, 'error');
             }
         },
 
@@ -718,7 +787,7 @@ function nasPanel() {
                 body: params.toString()
             });
             if (data) {
-                this.showToast(data.message || '保存成功', 'success');
+                this.showToast(data.message || this.t('msg.save_success'), 'success');
                 this.loadMonitor();
             }
         },
@@ -736,7 +805,7 @@ function nasPanel() {
 
         async addSambaShare() {
             if (!this.shareForm.name || !this.shareForm.path) {
-                this.showToast('共享名和路径必填', 'error'); return;
+                this.showToast(this.t('msg.share_name_path_required'), 'error'); return;
             }
             const data = await this.api('/config/samba/share', {
                 method: 'POST',
@@ -744,7 +813,7 @@ function nasPanel() {
                 body: new URLSearchParams(this.shareForm).toString()
             });
             if (data) {
-                this.showToast(data.message || '添加成功', 'success');
+                this.showToast(data.message || this.t('msg.add_success'), 'success');
                 this.showAddShare = false;
                 this.shareForm = { name: '', path: '', comment: '', valid_users: '', read_only: false };
                 this.loadSambaShares();
@@ -752,10 +821,10 @@ function nasPanel() {
         },
 
         async deleteSambaShare(name) {
-            if (!confirm(`确定删除共享 [${name}]？`)) return;
+            if (!confirm(this.t('msg.del_share_confirm', [name]))) return;
             const data = await this.api(`/config/samba/share?name=${name}`, { method: 'DELETE' });
             if (data) {
-                this.showToast(data.message || '删除成功', 'success');
+                this.showToast(data.message || this.t('msg.del_success'), 'success');
                 this.loadSambaShares();
             }
         },
@@ -766,31 +835,31 @@ function nasPanel() {
         },
 
         async addFtpUser() {
-            if (!this.ftpUserForm.username) { this.showToast('请输入用户名', 'error'); return; }
+            if (!this.ftpUserForm.username) { this.showToast(this.t('msg.enter_username'), 'error'); return; }
             const data = await this.api('/config/vsftpd-users', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: `username=${encodeURIComponent(this.ftpUserForm.username)}`
             });
             if (data) {
-                this.showToast(data.message || '添加成功', 'success');
+                this.showToast(data.message || this.t('msg.add_success'), 'success');
                 this.ftpUserForm.username = '';
                 this.loadVsftpdUsers();
             }
         },
 
         async removeFtpUser(username) {
-            if (!confirm(`确定从 FTP 白名单移除 ${username}？`)) return;
+            if (!confirm(this.t('msg.ftp_remove_confirm', [username]))) return;
             const data = await this.api(`/config/vsftpd-users?username=${username}`, { method: 'DELETE' });
             if (data) {
-                this.showToast(data.message || '移除成功', 'success');
+                this.showToast(data.message || this.t('msg.remove_success'), 'success');
                 this.loadVsftpdUsers();
             }
         },
 
         async loadConfigFile() {
             if (!this.configFileForm.name) return;
-            this.configFileForm.content = '加载中...';
+            this.configFileForm.content = this.t('common.loading');
             const data = await this.api(`/config/file?name=${this.configFileForm.name}`);
             if (data) this.configFileForm.content = data.content || '';
         },
@@ -801,115 +870,115 @@ function nasPanel() {
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: `name=${this.configFileForm.name}&content=${encodeURIComponent(this.configFileForm.content)}`
             });
-            if (data) this.showToast(data.message || '保存成功', 'success');
+            if (data) this.showToast(data.message || this.t('msg.save_success'), 'success');
         },
 
         async loadEnabledServices() {
-            this.enabledServices = '加载中...';
+            this.enabledServices = this.t('common.loading');
             const data = await this.api('/config/services');
             if (data) this.enabledServices = data;
         },
 
         async toggleService(action) {
-            if (!this.svcToggleForm.service) { this.showToast('请输入服务名', 'error'); return; }
+            if (!this.svcToggleForm.service) { this.showToast(this.t('msg.enter_service'), 'error'); return; }
             const data = await this.api('/config/service-toggle', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: `service=${this.svcToggleForm.service}&action=${action}`
             });
             if (data) {
-                this.showToast(data.message || '操作成功', 'success');
+                this.showToast(data.message || this.t('msg.op_success'), 'success');
                 this.svcToggleForm.service = '';
             }
         },
 
         // Disk management
         async loadDiskInfo() {
-            this.diskInfo = '加载中...';
+            this.diskInfo = this.t('common.loading');
             const data = await this.api('/disk/info');
             if (data) this.diskInfo = data;
         },
 
         async loadDiskMounts() {
-            this.diskMounts = '加载中...';
+            this.diskMounts = this.t('common.loading');
             const data = await this.api('/disk/mounts');
             if (data) this.diskMounts = data;
         },
 
         async loadDiskLVM() {
-            this.diskLVM = '加载中...';
+            this.diskLVM = this.t('common.loading');
             const data = await this.api('/disk/lvm');
             if (data) this.diskLVM = data;
         },
 
         async loadDiskIOStat() {
-            this.diskIOStat = '测试中...(约3秒)';
+            this.diskIOStat = this.t('msg.testing_3s');
             const data = await this.api('/disk/iostat');
             if (data) this.diskIOStat = data;
         },
 
         async loadDiskSmartDetail() {
-            this.diskSmartDetail = '加载中...';
+            this.diskSmartDetail = this.t('common.loading');
             const data = await this.api('/disk/smart-detail');
             if (data) this.diskSmartDetail = data;
         },
 
         async loadDiskPartitions() {
-            this.diskPartitions = '加载中...';
+            this.diskPartitions = this.t('common.loading');
             const data = await this.api('/disk/partitions');
             if (data) this.diskPartitions = data;
         },
 
         async diskMkdir() {
-            if (!this.diskMkdirForm.path) { this.showToast('请输入路径', 'error'); return; }
+            if (!this.diskMkdirForm.path) { this.showToast(this.t('msg.enter_path'), 'error'); return; }
             const data = await this.api('/disk/mkdir', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: `path=${encodeURIComponent(this.diskMkdirForm.path)}`
             });
             if (data) {
-                this.showToast(data.message || '创建成功', 'success');
+                this.showToast(data.message || this.t('msg.create_success'), 'success');
                 this.diskMkdirForm.path = '';
             }
         },
 
         async diskMount() {
-            if (!this.mountForm.device || !this.mountForm.mountpoint) { this.showToast('设备和挂载点必填', 'error'); return; }
+            if (!this.mountForm.device || !this.mountForm.mountpoint) { this.showToast(this.t('msg.device_mount_required'), 'error'); return; }
             const data = await this.api('/disk/mount', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: new URLSearchParams(this.mountForm).toString()
             });
             if (data) {
-                this.showToast(data.message || '挂载成功', 'success');
+                this.showToast(data.message || this.t('msg.mount_success'), 'success');
                 this.loadDiskMounts();
             }
         },
 
         async diskUnmount() {
-            if (!this.unmountForm.target) { this.showToast('请输入挂载点或设备', 'error'); return; }
+            if (!this.unmountForm.target) { this.showToast(this.t('msg.enter_mount_or_device'), 'error'); return; }
             const data = await this.api('/disk/unmount', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: `target=${encodeURIComponent(this.unmountForm.target)}`
             });
             if (data) {
-                this.showToast(data.message || '卸载成功', 'success');
+                this.showToast(data.message || this.t('msg.unmount_success'), 'success');
                 this.unmountForm.target = '';
                 this.loadDiskMounts();
             }
         },
 
         async diskFormat() {
-            if (!this.formatForm.device) { this.showToast('请输入设备名', 'error'); return; }
-            if (!confirm(`⚠️ 确定格式化 ${this.formatForm.device} 为 ${this.formatForm.fstype}？数据将全部丢失！`)) return;
+            if (!this.formatForm.device) { this.showToast(this.t('msg.enter_device'), 'error'); return; }
+            if (!confirm(this.t('msg.format_confirm', [this.formatForm.device, this.formatForm.fstype]))) return;
             const data = await this.api('/disk/format', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: `device=${encodeURIComponent(this.formatForm.device)}&fstype=${this.formatForm.fstype}&confirm=yes`
             });
             if (data) {
-                this.showToast(data.message || '格式化成功', 'success');
+                this.showToast(data.message || this.t('msg.format_success'), 'success');
                 this.formatForm.device = '';
                 this.loadDiskStatus();
             }
@@ -924,9 +993,9 @@ function nasPanel() {
         // New: quick setup
         async diskQuickSetup() {
             if (!this.quickSetupForm.device || !this.quickSetupForm.mountpoint) {
-                this.showToast('请填写设备名和挂载点', 'error'); return;
+                this.showToast(this.t('msg.fill_device_mount'), 'error'); return;
             }
-            if (!confirm(`⚠️ 确定对 ${this.quickSetupForm.device} 执行快速配置？\n将格式化为 ${this.quickSetupForm.fstype}，挂载到 ${this.quickSetupForm.mountpoint}\n该设备上的所有数据将丢失！`)) return;
+            if (!confirm(this.t('msg.quick_setup_confirm', [this.quickSetupForm.device, this.quickSetupForm.fstype, this.quickSetupForm.mountpoint]))) return;
             const params = new URLSearchParams({
                 device: this.quickSetupForm.device,
                 mountpoint: this.quickSetupForm.mountpoint,
@@ -940,7 +1009,7 @@ function nasPanel() {
                 body: params.toString()
             });
             if (data) {
-                this.showToast('配置完成: ' + (data.steps||[]).join(' → '), 'success');
+                this.showToast(this.t('msg.config_done') + ': ' + (data.steps||[]).join(' → '), 'success');
                 this.loadDiskStatus();
                 this.loadFstab();
                 this.quickSetupForm.device = '';
@@ -962,8 +1031,8 @@ function nasPanel() {
 
         // New: create pool
         async createPool() {
-            if (!this.poolCreateForm.devices) { this.showToast('请填写磁盘', 'error'); return; }
-            if (!confirm(`⚠️ 确定创建存储池？\n磁盘: ${this.poolCreateForm.devices}\n这些磁盘上的所有数据将被擦除！`)) return;
+            if (!this.poolCreateForm.devices) { this.showToast(this.t('msg.fill_disk'), 'error'); return; }
+            if (!confirm(this.t('msg.create_pool_confirm', [this.poolCreateForm.devices]))) return;
             const params = new URLSearchParams({
                 devices: this.poolCreateForm.devices,
                 vg_name: this.poolCreateForm.vg_name,
@@ -978,7 +1047,7 @@ function nasPanel() {
                 body: params.toString()
             });
             if (data) {
-                this.showToast('存储池创建完成: ' + (data.steps||[]).join(' → '), 'success');
+                this.showToast(this.t('msg.pool_created') + ': ' + (data.steps||[]).join(' → '), 'success');
                 this.loadPoolStatus();
                 this.loadDiskStatus();
                 this.showCreatePool = false;
@@ -987,8 +1056,8 @@ function nasPanel() {
 
         // New: extend pool
         async extendPool() {
-            if (!this.poolExtendForm.device) { this.showToast('请填写磁盘', 'error'); return; }
-            if (!confirm(`确定将 ${this.poolExtendForm.device} 加入存储池 ${this.poolExtendForm.vg_name}？`)) return;
+            if (!this.poolExtendForm.device) { this.showToast(this.t('msg.fill_disk'), 'error'); return; }
+            if (!confirm(this.t('msg.join_pool_confirm', [this.poolExtendForm.device, this.poolExtendForm.vg_name]))) return;
             const params = new URLSearchParams({
                 device: this.poolExtendForm.device,
                 vg_name: this.poolExtendForm.vg_name,
@@ -1000,7 +1069,7 @@ function nasPanel() {
                 body: params.toString()
             });
             if (data) {
-                this.showToast('扩容完成: ' + (data.steps||[]).join(' → '), 'success');
+                this.showToast(this.t('msg.expand_done') + ': ' + (data.steps||[]).join(' → '), 'success');
                 this.loadPoolStatus();
                 this.loadDiskStatus();
                 this.showExtendPool = false;
@@ -1028,7 +1097,7 @@ function nasPanel() {
                         id++;
                         return {
                             ...d,
-                            friendly: '磁盘 ' + id,
+                            friendly: this.t('msg.disk_label') + ' ' + id,
                             type: (d.type === 'system' || (d.children && d.children.some(c => c.type === 'system'))) ? 'system' : d.type
                         };
                     });
@@ -1040,7 +1109,7 @@ function nasPanel() {
             this.wizardGoal = goal;
             this.wizGoal = goal;
             this.wizardMode = '';
-            const labels = { safety: '数据安全', capacity: '最大容量', performance: '更高性能', balance: '平衡' };
+            const labels = { safety: this.t('storage.safety_goal'), capacity: this.t('storage.goal_capacity_short'), performance: this.t('storage.goal_perf_short'), balance: this.t('storage.goal_balance_short') };
             this.wizardGoalText = labels[goal] || goal;
         },
 
@@ -1067,14 +1136,14 @@ function nasPanel() {
         },
         // Wizard: start setup from UI
         async startWizardSetup() {
-            if (!this.wizMode) { this.showToast('请选择存储方案', 'error'); return; }
-            if (!this.wizDisks || this.wizDisks.length === 0) { this.showToast('请选择磁盘', 'error'); return; }
+            if (!this.wizMode) { this.showToast(this.t('msg.select_plan'), 'error'); return; }
+            if (!this.wizDisks || this.wizDisks.length === 0) { this.showToast(this.t('msg.select_disks'), 'error'); return; }
 
             this.wizStep = 5;
             this.wizardLoading = true;
             this.progressSteps = [];
             this.progressShow = true;
-            this.progressTitle = '创建存储池';
+            this.progressTitle = this.t('msg.create_pool_title');
 
             try {
                 const token = this.token;
@@ -1105,7 +1174,7 @@ function nasPanel() {
                                         this.progressSteps.push({ name: ev.step, status: 'done' });
                                     }
                                 } else if (ev.status === 'complete') {
-                                    this.progressSteps.push({ name: ev.detail || '完成', status: 'complete' });
+                                    this.progressSteps.push({ name: ev.detail || this.t('msg.done'), status: 'complete' });
                                 } else if (ev.status === 'error') {
                                     this.progressSteps.push({ name: ev.step + ': ' + (ev.detail||''), status: 'error' });
                                 }
@@ -1114,22 +1183,22 @@ function nasPanel() {
                     }
                 }
             } catch(e) {
-                this.progressSteps.push({ name: '错误: ' + e.message, status: 'error' });
+                this.progressSteps.push({ name: this.t('msg.error') + ': ' + e.message, status: 'error' });
             }
             this.wizardLoading = false;
             setTimeout(() => { this.loadStorageOverview(); this.loadWizardStatus(); this.loadSharedFolders(); }, 2000);
         },
         // Wizard: setup (streaming with progress)
         async wizardSetup(mode) {
-            if (!mode) { this.showToast('请选择存储方式', 'error'); return; }
-            const modeName = {single:'单盘配置', merge:'容量优先(合并)', separate:'独立模式', raid1:'安全优先(RAID1)'}[mode];
-            if (!confirm(`⚠️ 确定执行「${modeName}」？\n\n选中的磁盘上所有数据将被擦除！`)) return;
+            if (!mode) { this.showToast(this.t('msg.select_mode'), 'error'); return; }
+            const modeName = {single: this.t('msg.mode_single'), merge: this.t('msg.mode_merge'), separate: this.t('msg.mode_separate'), raid1: this.t('msg.mode_raid1')}[mode];
+            if (!confirm(this.t('msg.run_mode_confirm', [modeName]))) return;
 
             // Show progress panel
             this.wizardLoading = true;
             this.progressSteps = [];
             this.progressShow = true;
-            this.progressTitle = '存储配置进度';
+            this.progressTitle = this.t('msg.storage_progress');
 
             try {
                 const token = this.token;
@@ -1160,7 +1229,7 @@ function nasPanel() {
                                         this.progressSteps.push({ name: ev.step, status: 'done', index: ev.index, total: ev.total });
                                     }
                                 } else if (ev.status === 'complete') {
-                                    this.progressSteps.push({ name: ev.detail || '完成', status: 'complete' });
+                                    this.progressSteps.push({ name: ev.detail || this.t('msg.done'), status: 'complete' });
                                 } else if (ev.status === 'error') {
                                     this.progressSteps.push({ name: ev.step + ': ' + (ev.detail||''), status: 'error' });
                                 }
@@ -1169,7 +1238,7 @@ function nasPanel() {
                     }
                 }
             } catch(e) {
-                this.progressSteps.push({ name: '错误: ' + e.message, status: 'error' });
+                this.progressSteps.push({ name: this.t('msg.error') + ': ' + e.message, status: 'error' });
             }
             this.wizardLoading = false;
             this.progressTitle = '';
@@ -1202,7 +1271,7 @@ function nasPanel() {
 
         async createFolder() {
             if (!this.folderForm.pool || !this.folderForm.name) {
-                this.showToast('请选择存储空间并输入文件夹名', 'error'); return;
+                this.showToast(this.t('msg.select_space_folder'), 'error'); return;
             }
             const params = new URLSearchParams({
                 pool: this.folderForm.pool,
@@ -1219,7 +1288,7 @@ function nasPanel() {
                 body: params.toString()
             });
             if (data) {
-                this.showToast(data.message || '文件夹已创建', 'success');
+                this.showToast(data.message || this.t('msg.folder_created'), 'success');
                 if (data.warning) {
                     setTimeout(() => this.showToast(data.warning, 'error'), 500);
                 }
@@ -1232,14 +1301,14 @@ function nasPanel() {
         },
 
         async deleteFolder(f) {
-            if (!confirm(`⚠️ 确定删除文件夹 ${f.name}？\n路径: ${f.path}\n该文件夹及其中所有数据将被永久删除！`)) return;
+            if (!confirm(this.t('msg.del_folder_confirm', [f.name, f.path]))) return;
             const data = await this.api('/disk/folders/delete', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: `path=${encodeURIComponent(f.path)}&confirm=yes`
             });
             if (data) {
-                this.showToast(data.message || '文件夹已删除', 'success');
+                this.showToast(data.message || this.t('msg.folder_deleted'), 'success');
                 this.loadSharedFolders();
                 this.loadStorageOverview();
             }
@@ -1270,7 +1339,7 @@ function nasPanel() {
                 body: params.toString()
             });
             if (data) {
-                this.showToast(data.message || '权限已更新', 'success');
+                this.showToast(data.message || this.t('msg.perm_matrix_updated'), 'success');
                 this.showFolderPerm = false;
                 this.loadSharedFolders();
                 this.loadStorageOverview();
@@ -1279,13 +1348,13 @@ function nasPanel() {
 
         // Pool extend with SSE progress
         async extendPoolStream() {
-            if (!this.poolExtendForm.device) { this.showToast('请选择磁盘', 'error'); return; }
-            if (!confirm(`确定将 ${this.poolExtendForm.device} 加入存储池？\n该磁盘上的数据将被擦除！`)) return;
+            if (!this.poolExtendForm.device) { this.showToast(this.t('msg.select_disks'), 'error'); return; }
+            if (!confirm(this.t('msg.join_pool_confirm2', [this.poolExtendForm.device]))) return;
 
             this.wizardLoading = true;
             this.progressSteps = [];
             this.progressShow = true;
-            this.progressTitle = '扩容进度';
+            this.progressTitle = this.t('msg.expand_progress');
 
             try {
                 const params = new URLSearchParams({
@@ -1319,7 +1388,7 @@ function nasPanel() {
                                         this.progressSteps.push({ name: ev.step, status: 'done' });
                                     }
                                 } else if (ev.status === 'complete') {
-                                    this.progressSteps.push({ name: ev.detail || '完成', status: 'complete' });
+                                    this.progressSteps.push({ name: ev.detail || this.t('msg.done'), status: 'complete' });
                                 } else if (ev.status === 'error') {
                                     this.progressSteps.push({ name: ev.step + ': ' + (ev.detail||''), status: 'error' });
                                 }
@@ -1328,7 +1397,7 @@ function nasPanel() {
                     }
                 }
             } catch(e) {
-                this.progressSteps.push({ name: '错误: ' + e.message, status: 'error' });
+                this.progressSteps.push({ name: this.t('msg.error') + ': ' + e.message, status: 'error' });
             }
             this.wizardLoading = false;
             this.showExtendPool = false;
@@ -1350,17 +1419,17 @@ function nasPanel() {
 
         // RAID expand with SSE progress
         async expandRAIDStream() {
-            if (!this.raidExpandForm.device) { this.showToast('请选择磁盘', 'error'); return; }
+            if (!this.raidExpandForm.device) { this.showToast(this.t('msg.select_disks'), 'error'); return; }
             const raidType = this.raidExpandForm.raidType;
             const warnMsg = raidType === 'RAID1'
-                ? `确定将 ${this.raidExpandForm.device} 加入 ${this.raidExpandForm.mdDevice}？\n该磁盘上的数据将被擦除！`
-                : `确定将 ${this.raidExpandForm.device} 加入 ${this.raidExpandForm.mdDevice}？\n该磁盘上的数据将被擦除！\n\n⚠️ RAID5/6 扩容会触发数据重构，可能需要数小时！`;
+                ? this.t('msg.raid_join_confirm', [this.raidExpandForm.device, this.raidExpandForm.mdDevice])
+                : this.t('msg.raid_join_confirm_reshape', [this.raidExpandForm.device, this.raidExpandForm.mdDevice]);
             if (!confirm(warnMsg)) return;
 
             this.wizardLoading = true;
             this.progressSteps = [];
             this.progressShow = true;
-            this.progressTitle = 'RAID 扩容进度';
+            this.progressTitle = this.t('msg.raid_expand_progress');
 
             try {
                 const params = new URLSearchParams({
@@ -1395,9 +1464,9 @@ function nasPanel() {
                                         this.progressSteps.push({ name: ev.step, status: 'done' });
                                     }
                                 } else if (ev.status === 'complete') {
-                                    this.progressSteps.push({ name: ev.detail || '完成', status: 'complete' });
+                                    this.progressSteps.push({ name: ev.detail || this.t('msg.done'), status: 'complete' });
                                 } else if (ev.status === 'reshaping') {
-                                    this.progressSteps.push({ name: ev.detail || '重构中', status: 'complete' });
+                                    this.progressSteps.push({ name: ev.detail || this.t('msg.reshaping'), status: 'complete' });
                                 } else if (ev.status === 'error') {
                                     this.progressSteps.push({ name: ev.step + ': ' + (ev.detail||''), status: 'error' });
                                 }
@@ -1406,7 +1475,7 @@ function nasPanel() {
                     }
                 }
             } catch(e) {
-                this.progressSteps.push({ name: '错误: ' + e.message, status: 'error' });
+                this.progressSteps.push({ name: this.t('msg.error') + ': ' + e.message, status: 'error' });
             }
             this.wizardLoading = false;
             this.showRAIDExpand = false;
@@ -1416,19 +1485,12 @@ function nasPanel() {
 
         // Wizard: reset storage (streaming)
         async resetStorage() {
-            if (!confirm(`⚠️ 警告：重新配置将清除当前所有存储设置！\n\n` +
-                `• 卸载所有数据磁盘\n` +
-                `• 删除 LVM 卷组/逻辑卷\n` +
-                `• 清除 RAID 配置\n` +
-                `• 删除 fstab 持久化\n` +
-                `• 删除 Samba 共享\n\n` +
-                `磁盘上的数据将被保留（仅解除配置），但建议先备份！\n\n` +
-                `确定继续吗？`)) return;
+            if (!confirm(this.t('msg.reset_confirm'))) return;
 
             this.wizardLoading = true;
             this.progressSteps = [];
             this.progressShow = true;
-            this.progressTitle = '重置存储进度';
+            this.progressTitle = this.t('msg.reset_progress');
 
             try {
                 const resp = await fetch(`/api/disk/wizard/reset-stream?confirm=yes`, {
@@ -1457,14 +1519,14 @@ function nasPanel() {
                                         this.progressSteps.push({ name: ev.step, status: 'done', index: ev.index, total: ev.total });
                                     }
                                 } else if (ev.status === 'complete') {
-                                    this.progressSteps.push({ name: ev.detail || '完成', status: 'complete' });
+                                    this.progressSteps.push({ name: ev.detail || this.t('msg.done'), status: 'complete' });
                                 }
                             } catch(e) {}
                         }
                     }
                 }
             } catch(e) {
-                this.progressSteps.push({ name: '错误: ' + e.message, status: 'error' });
+                this.progressSteps.push({ name: this.t('msg.error') + ': ' + e.message, status: 'error' });
             }
             this.wizardLoading = false;
             this.progressTitle = '';
@@ -1476,7 +1538,7 @@ function nasPanel() {
         // Open extend pool dialog for a specific pool
         openExtendPool(pool) {
             if (!pool) {
-                this.showToast('请先从存储池列表选择', 'error');
+                this.showToast(this.t('msg.select_pool_first'), 'error');
                 return;
             }
             this.poolExtendForm = {
@@ -1502,9 +1564,9 @@ function nasPanel() {
         async replaceDisk() {
             const f = this.replaceDiskForm;
             if (!f.md_device || !f.old_device || !f.new_device) {
-                this.showToast('请填写所有字段', 'error'); return;
+                this.showToast(this.t('msg.fill_all'), 'error'); return;
             }
-            if (!confirm(`⚠️ 确定替换磁盘？\n从 ${f.md_device} 移除 ${f.old_device}\n添加 ${f.new_device}\n\n新磁盘上的数据将被擦除！`)) return;
+            if (!confirm(this.t('msg.replace_disk_confirm', [f.md_device, f.old_device, f.new_device]))) return;
 
             const params = new URLSearchParams({
                 md_device: f.md_device,
@@ -1518,9 +1580,9 @@ function nasPanel() {
                 body: params.toString()
             });
             if (data) {
-                this.showToast(data.message || '替换盘操作完成', 'success');
+                this.showToast(data.message || this.t('msg.replace_done'), 'success');
                 if (data.rebuild && data.rebuild.active) {
-                    this.showToast('重建进行中: ' + (data.rebuild.progress || '') + '%', 'info');
+                    this.showToast(this.t('msg.rebuilding') + ': ' + (data.rebuild.progress || '') + '%', 'info');
                 }
                 this.showReplaceDisk = false;
                 this.loadStorageOverview();
@@ -1529,10 +1591,10 @@ function nasPanel() {
 
         // Trigger scrub on a pool or all pools
         async syncConfigs() {
-            if (!confirm('将根据当前文件夹状态重新生成所有服务配置，确定继续？')) return;
+            if (!confirm(this.t('msg.regen_confirm'))) return;
             const data = await this.api('/disk/config/sync', { method: 'POST' });
             if (data) {
-                this.showToast(data.message || '配置同步完成', 'success');
+                this.showToast(data.message || this.t('msg.config_sync_done'), 'success');
                 const cdata = await this.api('/disk/config/check');
                 if (cdata) this.configIssues = cdata;
             }
@@ -1544,7 +1606,7 @@ function nasPanel() {
         },
 
         async applyPending() {
-            if (!confirm('确定要应用所有待处理的变更？\n\n这将执行创建/修改/删除操作并更新所有服务配置。')) return;
+            if (!confirm(this.t('msg.apply_pending_confirm'))) return;
             const data = await this.api('/disk/pending/apply', { method: 'POST' });
             if (data) {
                 if (data.results) {
@@ -1557,10 +1619,10 @@ function nasPanel() {
         },
 
         async discardPending() {
-            if (!confirm('确定要放弃所有待处理的变更？')) return;
+            if (!confirm(this.t('msg.discard_pending_confirm'))) return;
             const data = await this.api('/disk/pending/discard', { method: 'POST' });
             if (data) {
-                this.showToast(data.message || '已清空', 'success');
+                this.showToast(data.message || this.t('msg.cleared'), 'success');
                 this.pendingCount = 0;
             }
         },
@@ -1571,10 +1633,10 @@ function nasPanel() {
         },
 
         async clearOperationLogs() {
-            if (!confirm('确定要清空操作日志？')) return;
+            if (!confirm(this.t('msg.clear_logs_confirm'))) return;
             const data = await this.api('/disk/oplogs/clear', { method: 'POST' });
             if (data) {
-                this.showToast(data.message || '日志已清空', 'success');
+                this.showToast(data.message || this.t('msg.logs_cleared'), 'success');
                 this.operationLogs = [];
             }
         },
@@ -1594,22 +1656,22 @@ function nasPanel() {
         },
 
         async clearAuditLogs() {
-            if (!confirm('确定要清空所有系统操作日志？')) return;
+            if (!confirm(this.t('msg.clear_all_logs_confirm'))) return;
             const data = await this.api('/logs/clear', { 
                 method: 'POST', 
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: 'confirm=yes' 
             });
             if (data) {
-                this.showToast(data.message || '日志已清空', 'success');
+                this.showToast(data.message || this.t('msg.logs_cleared'), 'success');
                 this.auditLogs = [];
                 this.auditLogTotal = 0;
             }
         },
 
         async scrubPool(pool) {
-            const target = pool ? pool.device + ' (' + pool.display_name + ')' : '所有 RAID 阵列';
-            if (!confirm(`确定对 ${target} 执行数据清理？\n\n清理过程会扫描所有数据块，期间性能可能略有下降。`)) return;
+            const target = pool ? pool.device + ' (' + pool.display_name + ')' : this.t('msg.all_raid');
+            if (!confirm(this.t('msg.scrub_confirm', [target]))) return;
 
             const params = new URLSearchParams({ confirm: 'yes' });
             if (pool && pool.device) {
@@ -1621,14 +1683,14 @@ function nasPanel() {
                 body: params.toString()
             });
             if (data) {
-                this.showToast(data.message || '清理已启动', 'success');
+                this.showToast(data.message || this.t('msg.scrub_started'), 'success');
                 this.loadOperationsLog();
             }
         },
 
         // Start SMART self-test on all disks
         async startSMARTScan() {
-            if (!confirm('确定对所有非系统磁盘执行 SMART 快速检测？\n约需 2 分钟。')) return;
+            if (!confirm(this.t('msg.smart_confirm'))) return;
 
             const params = new URLSearchParams({ type: 'short', confirm: 'yes' });
             const data = await this.api('/disk/smart-scan', {
@@ -1637,7 +1699,7 @@ function nasPanel() {
                 body: params.toString()
             });
             if (data) {
-                this.showToast(data.message || 'SMART 检测已启动', 'success');
+                this.showToast(data.message || this.t('msg.smart_started'), 'success');
                 this.loadOperationsLog();
             }
         },
@@ -1646,15 +1708,11 @@ function nasPanel() {
         async deletePool(pool) {
             if (!pool) return;
             const poolName = pool.display_name || pool.name;
-            if (!confirm(`⚠️ 确定删除 ${poolName}？\n\n` +
-                `• 所有数据将被永久删除\n` +
-                `• 磁盘将被释放为空闲状态\n` +
-                `• 此操作不可恢复！\n\n` +
-                `输入 "${poolName}" 确认删除：`)) return;
+            if (!confirm(this.t('msg.del_pool_confirm', [poolName]))) return;
 
-            const confirmName = prompt(`请输入 "${poolName}" 确认删除：`);
+            const confirmName = prompt(this.t('msg.confirm_prompt', [poolName]));
             if (confirmName !== poolName) {
-                this.showToast('名称不匹配，已取消', 'error');
+                this.showToast(this.t('msg.name_mismatch'), 'error');
                 return;
             }
 
@@ -1670,7 +1728,7 @@ function nasPanel() {
                 body: params.toString()
             });
             if (data) {
-                this.showToast(data.message || '存储池已删除', 'success');
+                this.showToast(data.message || this.t('msg.pool_deleted'), 'success');
                 this.loadStorageOverview();
                 this.loadWizardStatus();
                 this.loadSharedFolders();
@@ -1711,7 +1769,7 @@ function nasPanel() {
 
         async saveHostname() {
             if (!this.sysSettings.hostname) {
-                this.showToast('请输入主机名', 'error');
+                this.showToast(this.t('msg.enter_hostname'), 'error');
                 return;
             }
             const data = await this.api('/system/hostname', {
@@ -1719,7 +1777,7 @@ function nasPanel() {
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: `hostname=${encodeURIComponent(this.sysSettings.hostname)}`
             });
-            if (data) this.showToast(data.message || '修改成功', 'success');
+            if (data) this.showToast(data.message || this.t('msg.modify_success'), 'success');
         },
 
         async saveTimezone() {
@@ -1728,12 +1786,12 @@ function nasPanel() {
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: `timezone=${encodeURIComponent(this.sysSettings.timezone)}`
             });
-            if (data) this.showToast(data.message || '时区已修改', 'success');
+            if (data) this.showToast(data.message || this.t('msg.timezone_updated'), 'success');
         },
 
         async saveSSHConfig() {
             const ssh = this.sysSettings.ssh;
-            if (!confirm(`确定修改 SSH 配置？\n端口: ${ssh.port}\nRoot登录: ${ssh.permit_root_login ? '允许' : '禁止'}\n密码认证: ${ssh.password_auth ? '允许' : '禁止'}\n\n修改后 SSH 将重启！`)) return;
+            if (!confirm(this.t('msg.ssh_confirm', [ssh.port, ssh.permit_root_login ? this.t('msg.allow') : this.t('msg.deny'), ssh.password_auth ? this.t('msg.allow') : this.t('msg.deny')]))) return;
             const params = new URLSearchParams({
                 port: String(ssh.port),
                 permit_root_login: ssh.permit_root_login ? 'yes' : 'no',
@@ -1745,7 +1803,7 @@ function nasPanel() {
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: params.toString()
             });
-            if (data) this.showToast(data.message || 'SSH 配置已更新', 'success');
+            if (data) this.showToast(data.message || this.t('msg.ssh_updated'), 'success');
         },
 
         async saveSysctl(param) {
@@ -1754,11 +1812,11 @@ function nasPanel() {
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: `key=${encodeURIComponent(param.key)}&value=${encodeURIComponent(param.value)}`
             });
-            if (data) this.showToast(data.message || '已保存', 'success');
+            if (data) this.showToast(data.message || this.t('msg.saved'), 'success');
         },
 
         async runUpdate(action) {
-            const msg = action === 'update' ? '正在刷新软件源...' : '正在更新系统，这可能需要几分钟...';
+            const msg = action === 'update' ? this.t('msg.refreshing_sources') : this.t('msg.updating_system');
             this.showToast(msg, 'info');
             const data = await this.api('/system/updates', {
                 method: 'POST',
@@ -1766,28 +1824,28 @@ function nasPanel() {
                 body: `action=${action}`
             });
             if (data) {
-                this.showToast(data.message || '完成', 'success');
+                this.showToast(data.message || this.t('msg.done'), 'success');
                 this.loadSystemOverview();
             }
         },
 
         async serviceAction(name, action) {
-            const actionText = { start: '启动', stop: '停止', restart: '重启', enable: '启用自启', disable: '禁用自启' };
+            const actionText = { start: this.t('common.start'), stop: this.t('common.stop'), restart: this.t('common.restart'), enable: this.t('msg.enable_autostart'), disable: this.t('msg.disable_autostart') };
             const data = await this.api('/system/services', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: `name=${encodeURIComponent(name)}&action=${action}`
             });
             if (data) {
-                this.showToast(data.message || `${actionText[action]}成功`, 'success');
+                this.showToast(data.message || this.t('msg.x_success', [actionText[action]]), 'success');
                 this.loadSystemOverview();
             }
         },
 
         async resetSystem() {
-            if (!confirm('⚠️ 确定恢复出厂设置？\n\n此操作将：\n- 销毁所有存储配置（LVM/RAID/磁盘签名）\n- 移除所有 Z1 托管共享（Samba + NFS）\n- 删除面板数据库\n- 恢复为出厂状态\n- 数据文件将丢失！\n\n当前配置会自动备份到 /data/backups/')) return;
-            if (!confirm('⚠️ 最终确认：此操作不可撤销！\n\n所有存储配置和数据将被清除。\n确定继续？')) return;
-            this.resetMsg = '正在重置，请稍候...';
+            if (!confirm(this.t('msg.factory_reset_confirm'))) return;
+            if (!confirm(this.t('msg.factory_reset_final'))) return;
+            this.resetMsg = this.t('msg.resetting_wait');
             const data = await this.api('/system/reset', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -1796,15 +1854,15 @@ function nasPanel() {
             if (data) {
                 if (data.error) {
                     this.showToast(data.error, 'error');
-                    this.resetMsg = '失败: ' + data.error;
+                    this.resetMsg = this.t('msg.error') + ': ' + data.error;
                 } else if (data.status === 'running') {
-                    this.showToast('重置已在后台开始，请等待...', 'success');
-                    this.resetMsg = '重置中...';
+                    this.showToast(this.t('msg.reset_bg_started'), 'success');
+                    this.resetMsg = this.t('msg.resetting');
                     // 轮询等待完成
                     await this.waitForReset();
                 } else {
-                    this.showToast(data.message || '恢复完成', 'success');
-                    this.resetMsg = data.message || '恢复完成';
+                    this.showToast(data.message || this.t('msg.restore_done'), 'success');
+                    this.resetMsg = data.message || this.t('msg.restore_done');
                     setTimeout(() => { this.loadSystemOverview(); this.resetMsg = ''; }, 3000);
                 }
             }
@@ -1818,15 +1876,15 @@ function nasPanel() {
                 const d = ov.overview || ov;
                 // 重置完成标志：无存储池，有可用磁盘
                 if (!d.pools || d.pools.length === 0) {
-                    this.showToast('恢复出厂设置完成', 'success');
-                    this.resetMsg = '恢复出厂设置完成';
+                    this.showToast(this.t('msg.reset_done'), 'success');
+                    this.resetMsg = this.t('msg.reset_done');
                     setTimeout(() => { location.reload(); }, 2000);
                     return;
                 }
-                this.resetMsg = '重置中... (' + (i + 1) * 2 + 's)';
+                this.resetMsg = this.t('msg.reset_progress_pct') + ' (' + (i + 1) * 2 + 's)';
             }
-            this.resetMsg = '重置超时，请刷新页面查看';
-            this.showToast('重置可能仍在进行中，请刷新页面查看', 'error');
+            this.resetMsg = this.t('msg.reset_timeout');
+            this.showToast(this.t('msg.reset_may_still_run'), 'error');
         },
 
         // ═══ HTTPS 证书管理 ═══
@@ -1843,14 +1901,14 @@ function nasPanel() {
                 body: domain ? `domain=${encodeURIComponent(domain)}` : ''
             });
             if (data) {
-                this.showToast(data.message || '证书已生成', 'success');
+                this.showToast(data.message || this.t('msg.cert_generated'), 'success');
                 this.httpsStatus = data.status;
             }
         },
 
         async uploadCert() {
             if (!this.httpsCustomDomain || !this.httpsCustomCert || !this.httpsCustomKey) {
-                this.showToast('请填写域名、证书和私钥', 'error');
+                this.showToast(this.t('msg.fill_cert'), 'error');
                 return;
             }
             const body = `domain=${encodeURIComponent(this.httpsCustomDomain)}&cert=${encodeURIComponent(this.httpsCustomCert)}&key=${encodeURIComponent(this.httpsCustomKey)}`;
@@ -1860,7 +1918,7 @@ function nasPanel() {
                 body: body
             });
             if (data) {
-                this.showToast(data.message || '证书已上传', 'success');
+                this.showToast(data.message || this.t('msg.cert_uploaded'), 'success');
                 this.httpsStatus = data.status;
                 this.httpsCustomDomain = '';
                 this.httpsCustomCert = '';
@@ -1869,25 +1927,25 @@ function nasPanel() {
         },
 
         async applyCert() {
-            if (!confirm('将 HTTPS 证书应用到所有 Web 服务（面板/FileBrowser/WebDAV/S3），服务会重启，确定继续？')) return;
-            this.showToast('正在应用证书...', 'info');
+            if (!confirm(this.t('msg.apply_cert_confirm'))) return;
+            this.showToast(this.t('msg.applying_cert'), 'info');
             const data = await this.api('/system/https/apply', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
             });
             if (data) {
-                this.showToast(data.message || '证书已应用', 'success');
+                this.showToast(data.message || this.t('msg.cert_applied'), 'success');
                 this.httpsStatus = data.status;
             }
         },
 
         async removeCert() {
-            if (!confirm('移除 HTTPS 证书后，所有服务将恢复为 HTTP。确定继续？')) return;
+            if (!confirm(this.t('msg.remove_cert_confirm'))) return;
             const data = await this.api('/system/https/remove', {
                 method: 'DELETE'
             });
             if (data) {
-                this.showToast(data.message || '证书已移除', 'success');
+                this.showToast(data.message || this.t('msg.cert_removed'), 'success');
                 this.httpsStatus = data.status;
             }
         },
@@ -1902,34 +1960,34 @@ function nasPanel() {
             this.backupLoading = true;
             const data = await this.api('/backup/create', { method: 'POST' });
             if (data) {
-                this.showToast('备份已创建', 'success');
+                this.showToast(this.t('msg.backup_created'), 'success');
                 this.loadBackups();
             }
             this.backupLoading = false;
         },
 
         async restoreBackup(file) {
-            if (!confirm('⚠️ 确定从此备份恢复？当前所有 NAS 配置将被覆盖，服务将重启。')) return;
-            this.showToast('恢复中，请等待...', 'success');
+            if (!confirm(this.t('msg.restore_backup_confirm'))) return;
+            this.showToast(this.t('msg.restoring'), 'success');
             const data = await this.api('/backup/restore', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: `file=${encodeURIComponent(file)}`
             });
             if (data) {
-                this.showToast('恢复完成，服务已重启', 'success');
+                this.showToast(this.t('msg.restore_done_restarted'), 'success');
             }
         },
 
         async deleteBackup(file) {
-            if (!confirm('确定删除此备份文件？')) return;
+            if (!confirm(this.t('msg.del_backup_confirm'))) return;
             const data = await this.api('/backup/delete', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: `file=${encodeURIComponent(file)}`
             });
             if (data) {
-                this.showToast('备份已删除', 'success');
+                this.showToast(this.t('msg.backup_deleted'), 'success');
                 this.loadBackups();
             }
         },
@@ -1977,7 +2035,7 @@ function nasPanel() {
         async editRemote(name) {
             const data = await this.api('/rclone/remotes/' + encodeURIComponent(name));
             if (!data || data.error) {
-                this.showToast('读取远端配置失败: ' + (data && data.error || ''), 'error');
+                this.showToast(this.t('msg.read_remote_failed') + ': ' + (data && data.error || ''), 'error');
                 return;
             }
             const f = this.blankRemoteForm();
@@ -2004,7 +2062,7 @@ function nasPanel() {
 
         async createRemote() {
             if (!this.remoteForm.name || !this.remoteForm.type) {
-                this.showToast('请填写名称和类型', 'error');
+                this.showToast(this.t('msg.fill_name_type'), 'error');
                 return;
             }
             this.remoteCreating = true;
@@ -2017,12 +2075,12 @@ function nasPanel() {
             });
             this.remoteCreating = false;
             if (data && !data.error) {
-                this.showToast(data.message || '远端已创建', 'success');
+                this.showToast(data.message || this.t('msg.remote_created'), 'success');
                 this.showAddRemote = false;
                 this.remoteForm = this.blankRemoteForm();
                 this.loadRcloneRemotes();
             } else if (data && data.error) {
-                this.showToast('创建失败: ' + data.error, 'error');
+                this.showToast(this.t('msg.create_failed') + ': ' + data.error, 'error');
             }
         },
 
@@ -2062,23 +2120,23 @@ function nasPanel() {
             });
             this.remoteCreating = false;
             if (data && !data.error) {
-                this.showToast(data.message || '远端已更新', 'success');
+                this.showToast(data.message || this.t('msg.remote_updated'), 'success');
                 this.showAddRemote = false;
                 this.editingRemote = '';
                 this.loadRcloneRemotes();
             } else if (data && data.error) {
-                this.showToast('保存失败: ' + data.error, 'error');
+                this.showToast(this.t('msg.save_failed') + ': ' + data.error, 'error');
             }
         },
 
         async deleteRemote(name) {
-            if (!confirm('确定删除远端 "' + name + '"？相关同步任务将无法运行。')) return;
+            if (!confirm(this.t('msg.del_remote_confirm', [name]))) return;
             const data = await this.api('/rclone/remotes/' + encodeURIComponent(name), { method: 'DELETE' });
             if (data && !data.error) {
-                this.showToast(data.message || '远端已删除', 'success');
+                this.showToast(data.message || this.t('msg.remote_deleted'), 'success');
                 this.loadRcloneRemotes();
             } else if (data && data.error) {
-                this.showToast('删除失败: ' + data.error, 'error');
+                this.showToast(this.t('msg.del_failed') + ': ' + data.error, 'error');
             }
         },
 
@@ -2092,9 +2150,9 @@ function nasPanel() {
             this.remoteTesting = '';
             if (data) {
                 if (data.ok) {
-                    this.showToast('连接成功: ' + name, 'success');
+                    this.showToast(this.t('msg.conn_success') + ': ' + name, 'success');
                 } else {
-                    this.showToast('连接失败: ' + (data.error || data.message), 'error');
+                    this.showToast(this.t('msg.conn_failed') + ': ' + (data.error || data.message), 'error');
                 }
             }
         },
@@ -2149,9 +2207,9 @@ function nasPanel() {
                 body: `dir=${encodeURIComponent(t.source)}&sub=${encodeURIComponent(t.sub_path)}`
             });
             if (data && !data.error) {
-                this.showToast('目录已创建: ' + data.path, 'success');
+                this.showToast(this.t('msg.dir_created') + ': ' + data.path, 'success');
             } else if (data && data.error) {
-                this.showToast('创建失败: ' + data.error, 'error');
+                this.showToast(this.t('msg.create_failed') + ': ' + data.error, 'error');
             }
         },
 
@@ -2165,7 +2223,7 @@ function nasPanel() {
         async createTask() {
             const fullSource = this.taskFullSource();
             if (!this.taskForm.name || !fullSource || !this.taskForm.remote || !this.taskForm.dest_path) {
-                this.showToast('请填写必填项', 'error');
+                this.showToast(this.t('msg.fill_required'), 'error');
                 return;
             }
             this.taskCreating = true;
@@ -2178,12 +2236,12 @@ function nasPanel() {
             });
             this.taskCreating = false;
             if (data && !data.error) {
-                this.showToast(data.message || '任务已创建', 'success');
+                this.showToast(data.message || this.t('msg.task_created'), 'success');
                 this.showAddTask = false;
                 this.taskForm = this.blankTaskForm();
                 this.loadRcloneTasks();
             } else if (data && data.error) {
-                this.showToast('创建失败: ' + data.error, 'error');
+                this.showToast(this.t('msg.create_failed') + ': ' + data.error, 'error');
             }
         },
 
@@ -2191,7 +2249,7 @@ function nasPanel() {
             const fullSource = this.taskFullSource();
             const t = this.taskForm;
             if (!t.name || !fullSource || !t.remote || !t.dest_path) {
-                this.showToast('请填写必填项', 'error');
+                this.showToast(this.t('msg.fill_required'), 'error');
                 return;
             }
             this.taskCreating = true;
@@ -2203,53 +2261,53 @@ function nasPanel() {
             });
             this.taskCreating = false;
             if (data && !data.error) {
-                this.showToast(data.message || '任务已更新', 'success');
+                this.showToast(data.message || this.t('msg.task_updated'), 'success');
                 this.showAddTask = false;
                 this.editingTask = null;
                 this.loadRcloneTasks();
             } else if (data && data.error) {
-                this.showToast('保存失败: ' + data.error, 'error');
+                this.showToast(this.t('msg.save_failed') + ': ' + data.error, 'error');
             }
         },
 
         async deleteTask(id) {
-            if (!confirm('确定删除此同步任务？')) return;
+            if (!confirm(this.t('msg.del_task_confirm'))) return;
             const data = await this.api('/rclone/tasks/' + encodeURIComponent(id), { method: 'DELETE' });
             if (data && !data.error) {
-                this.showToast(data.message || '任务已删除', 'success');
+                this.showToast(data.message || this.t('msg.task_deleted'), 'success');
                 this.loadRcloneTasks();
             } else if (data && data.error) {
-                this.showToast('删除失败: ' + data.error, 'error');
+                this.showToast(this.t('msg.del_failed') + ': ' + data.error, 'error');
             }
         },
 
         async runTask(id) {
             const data = await this.api('/rclone/tasks/' + encodeURIComponent(id) + '/run', { method: 'POST' });
             if (data && !data.error) {
-                this.showToast(data.message || '任务已开始执行', 'success');
+                this.showToast(data.message || this.t('msg.task_started'), 'success');
                 this.loadRcloneTasks();
                 // 3秒后刷新日志
                 setTimeout(() => { this.loadRcloneTasks(); this.loadRcloneLogs(); }, 3000);
             } else if (data && data.error) {
-                this.showToast('启动失败: ' + data.error, 'error');
+                this.showToast(this.t('msg.start_failed') + ': ' + data.error, 'error');
             }
         },
 
         async toggleTask(id) {
             const data = await this.api('/rclone/tasks/' + encodeURIComponent(id) + '/toggle', { method: 'POST' });
             if (data && !data.error) {
-                this.showToast(data.message || '状态已切换', 'success');
+                this.showToast(data.message || this.t('msg.status_toggled'), 'success');
                 this.loadRcloneTasks();
             } else if (data && data.error) {
-                this.showToast('操作失败: ' + data.error, 'error');
+                this.showToast(this.t('msg.op_failed') + ': ' + data.error, 'error');
             }
         },
 
         async clearRcloneLogs() {
-            if (!confirm('确定清空所有同步日志？')) return;
+            if (!confirm(this.t('msg.clear_sync_logs_confirm'))) return;
             const data = await this.api('/rclone/logs', { method: 'DELETE' });
             if (data && !data.error) {
-                this.showToast('日志已清空', 'success');
+                this.showToast(this.t('msg.logs_cleared'), 'success');
                 this.loadRcloneLogs();
             }
         },
@@ -2276,15 +2334,15 @@ function nasPanel() {
         },
 
         async runDiagnostic(itemId) {
-            if (!confirm('确定立即运行此项诊断？')) return;
-            this.showToast('诊断任务已启动', 'success');
+            if (!confirm(this.t('msg.diag_confirm'))) return;
+            this.showToast(this.t('msg.diag_started'), 'success');
             const data = await this.api('/diagnostics/run', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: `item_id=${encodeURIComponent(itemId)}`
             });
             if (data) {
-                this.showToast(data.message || '已开始', 'success');
+                this.showToast(data.message || this.t('msg.started'), 'success');
                 setTimeout(() => this.loadDiagnostics(), 3000);
             }
         },
@@ -2304,7 +2362,7 @@ function nasPanel() {
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: `item_id=${encodeURIComponent(itemId)}&schedule=${encodeURIComponent(schedule)}`
             });
-            this.showToast('已保存', 'success');
+            this.showToast(this.t('msg.saved'), 'success');
         },
 
         async saveDiagConfig() {
@@ -2315,7 +2373,7 @@ function nasPanel() {
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: body
             });
-            this.showToast('诊断配置已保存', 'success');
+            this.showToast(this.t('msg.diag_saved'), 'success');
         }
     };
 }
