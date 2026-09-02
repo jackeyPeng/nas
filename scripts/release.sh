@@ -70,7 +70,7 @@ mkdir -p "$RELEASE_DIR"
 # ── 构建所有架构 ─────────────────────────────────────────────────
 for ARCH in $ARCH_LIST; do
     info "Building for linux/${ARCH} ..."
-    GOOS=linux GOARCH=$ARCH CGO_ENABLED=0 \
+    (cd web && GOOS=linux GOARCH=$ARCH CGO_ENABLED=0 \
         go build -ldflags "\
             -s -w \
             -X nas-panel/modules/version.Version=${VERSION_TAG} \
@@ -78,7 +78,7 @@ for ARCH in $ARCH_LIST; do
             -X nas-panel/modules/version.BuildTime=${BUILD_TIME} \
             -X nas-panel/modules/version.GitCommit=${COMMIT}" \
         -o "${RELEASE_DIR}/nas-panel-${ARCH}" \
-        ./web/
+        .)
 
     # strip 进一步减小体积
     strip "${RELEASE_DIR}/nas-panel-${ARCH}" 2>/dev/null || true
