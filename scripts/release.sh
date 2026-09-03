@@ -54,8 +54,10 @@ PACK_NAME="nas-${VERSION_TAG}"
 
 # 颜色
 RED='\033[0;31m'; GREEN='\033[0;32m'; BLUE='\033[0;34m'; BOLD='\033[1m'; NC='\033[0m'
+YELLOW='\033[0;33m'
 info()  { echo -e "${BLUE}[INFO]${NC} $*"; }
 ok()    { echo -e "${GREEN}[OK]${NC} $*"; }
+warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
 error() { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 
 echo -e "${BOLD}══════════════════════════════════════════════${NC}"
@@ -175,6 +177,40 @@ with open('${LOCAL_PATH}', 'rb') as f:
 print('  OK: ${R2_KEY}')
 " || error "R2 上传失败: ${TARBALL}"
 done
+
+# ── 上传裸二进制到 control 通道（setup.sh 安装流程从这里下载） ──
+# 与 releases/ 通道打通：安装装出来的面板二进制才带版本号，否则是旧 dev 产物
+info "Uploading raw binaries to control/ channel..."
+for ARCH in $ARCH_LIST; do
+    LOCAL_BIN="${RELEASE_DIR}/nas-panel-${ARCH}"
+    CONTROL_KEY="control/nas-panel-${ARCH}.latest"
+    python3 -c "
+import boto3
+s3 = boto3.client('s3',
+    endpoint_url='${CLOUDFLARE_S3_API}',
+    aws_access_key_id='${CLOUDFLARE_KEY_ID}',
+    aws_secret_access_key='${CLOUDFLARE_SECRET}',
+    region_name='auto')
+with open('${LOCAL_BIN}', 'rb') as f:
+    s3.put_object(Bucket='${BUCKET}', Key='${CONTROL_KEY}', Body=f,
+        ContentType='application/octet-stream', CacheControl='no-cache')
+print('  OK: ${CONTROL_KEY}')
+" || warn "control 上传失败: ${CONTROL_KEY}"
+done
+
+# 通用回退 control/nas-panel.latest = amd64 裸二进制
+python3 -c "
+import boto3
+s3 = boto3.client('s3',
+    endpoint_url='${CLOUDFLARE_S3_API}',
+    aws_access_key_id='${CLOUDFLARE_KEY_ID}',
+    aws_secret_access_key='${CLOUDFLARE_SECRET}',
+    region_name='auto')
+with open('${RELEASE_DIR}/nas-panel-amd64', 'rb') as f:
+    s3.put_object(Bucket='${BUCKET}', Key='control/nas-panel.latest', Body=f,
+        ContentType='application/octet-stream', CacheControl='no-cache')
+print('  OK: control/nas-panel.latest')
+" || warn "control/nas-panel.latest 上传失败"
 
 # ── 更新 latest 指针 ──────────────────────────────────────────────
 if [ "$CHANNEL" = "stable" ]; then
