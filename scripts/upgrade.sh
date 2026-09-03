@@ -112,17 +112,20 @@ if [ "$NEW_SIZE" -lt 5000000 ]; then
     exit 1
 fi
 
-# 从二进制里提取版本号（ldflags 注入的 Version）
-NEW_VERSION=$(strings "$TMP_BIN" | grep -m1 -E '^v[0-9]+\.[0-9]+' || echo "unknown")
+# 从二进制里提取版本号（ldflags 注入的 Version 字符串，用 grep -a 读二进制，
+# 不依赖 binutils 的 strings 命令——老机器可能没装）
+NEW_VERSION=$(grep -a -o -m1 'v[0-9][0-9]*\.[0-9][0-9]*[-0-9A-Za-z.]*' "$TMP_BIN" | head -1 || echo "unknown")
 ok "下载完成: ${NEW_SIZE} 字节, 版本 ${NEW_VERSION}"
 
 # ── --check 模式到此结束 ─────────────────────────────────────
 if [ "$CHECK_ONLY" = true ]; then
     echo ""
-    if [ "$NEW_VERSION" != "unknown" ] && [ "$NEW_VERSION" != "$OLD_VERSION" ]; then
-        ok "有新版本可用: ${OLD_VERSION} → ${NEW_VERSION}"
+    OLD_MD5=$(md5sum "$PANEL_BIN" 2>/dev/null | awk '{print $1}')
+    NEW_MD5=$(md5sum "$TMP_BIN" 2>/dev/null | awk '{print $1}')
+    if [ "$OLD_MD5" = "$NEW_MD5" ]; then
+        info "已是最新版本（当前 ${OLD_VERSION}）"
     else
-        info "已是最新版本（${OLD_VERSION}）"
+        ok "有新版本可用: ${OLD_VERSION} → ${NEW_VERSION}"
     fi
     exit 0
 fi
