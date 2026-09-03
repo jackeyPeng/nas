@@ -1,5 +1,37 @@
 # NAS 项目变更日志
 
+## [2026-09-03] - 权限模型联动修复 + 配置生成引擎健壮化
+
+### 版本 v1.4.0-beta.2
+
+---
+
+### 1. 存储-文件-用户权限联动修复
+
+- 创建/修改文件夹改为立即生效（不再走「待应用」队列），删除保持待应用（rm -rf 高危二次确认）
+- SMB 托管共享补 `force user/group` + `create/directory mask = 0775`，白名单用户（非属主）能真正写入目录
+- 同步全部 4 条 SMB 共享生成路径：托管共享(GenerateSambaConfig)、SSE 向导(addSambaShare)、遗留 config 模块(handleSambaShare)、默认模板(configs/smb.conf)
+- NFS 导出网段从硬编码 `192.168.0.0/16` 改为自动检测局域网网段
+- FTP userlist 白名单逻辑修正（enable=加入、disable=移除，与 vsftpd `userlist_deny=NO` 对齐）
+- 权限矩阵统一走元数据 + SyncAllConfigs，消除与文件夹权限弹窗的写入冲突
+- 创建用户时真正启用 Samba（`smbpasswd -a`）/ FTP / WebDAV（`htpasswd -b`）
+
+### 2. 配置生成引擎健壮化
+
+- `replaceManagedBlock` 幂等化，修复 smb.conf 托管段重复 START 标记
+- 修复权限矩阵「按用户设只读」被落地成整组 `read only=yes` 的误导（按用户读写粒度记入 TODO #30）
+
+### 3. 文档
+
+- 新增《存储-目录-用户权限模型梳理与讨论》中英文版（docs/permission-model-discussion.md / .en.md）
+- TODO 新增 #30 权限模型统一、#31 显示当前连接设备与用户
+
+### 4. 验证
+
+- [REDACTED] 重置后从零跑 install.sh 一键安装，9 服务全部 active、系统注册表 46/46 通过
+
+---
+
 ## [2026-09-02] - i18n 全站完成 + 移动端 PWA + 前端集成
 
 ### 版本 v1.4.0（开发中）
