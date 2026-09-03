@@ -112,9 +112,11 @@ if [ "$NEW_SIZE" -lt 5000000 ]; then
     exit 1
 fi
 
-# 从二进制里提取版本号（ldflags 注入的 Version 字符串，用 grep -a 读二进制，
-# 不依赖 binutils 的 strings 命令——老机器可能没装）
-NEW_VERSION=$(grep -a -o -m1 'v[0-9][0-9]*\.[0-9][0-9]*[-0-9A-Za-z.]*' "$TMP_BIN" | head -1 || echo "unknown")
+# 从二进制里提取版本号。ldflags 注入的 buildinfo 里存有
+# `version.Version=vX.Y.Z` 字符串，以此为锚点最可靠。
+# （不能用裸 grep 第一个 vX.Y.Z —— 二进制里混有依赖的版本串，会抓到 v1.0.0 之类）
+NEW_VERSION=$(grep -a -o -m1 'version\.Version=v[0-9][0-9.]*[-0-9A-Za-z.]*' "$TMP_BIN" \
+    | sed 's/^version\.Version=//' || echo "unknown")
 ok "下载完成: ${NEW_SIZE} 字节, 版本 ${NEW_VERSION}"
 
 # ── --check 模式到此结束 ─────────────────────────────────────
