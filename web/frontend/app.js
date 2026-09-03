@@ -1373,7 +1373,8 @@ function nasPanel() {
                 body: `path=${encodeURIComponent(f.path)}&confirm=yes`
             });
             if (data) {
-                this.showToast(this.t('msg.folder_deleted'), 'success');
+                this.showToast(this.t('msg.folder_queued'), 'success');
+                this.loadPendingOps();
                 this.loadSharedFolders();
                 this.loadStorageOverview();
             }

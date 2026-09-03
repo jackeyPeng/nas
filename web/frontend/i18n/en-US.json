@@ -885,6 +885,7 @@
     "folder_created": "Folder created",
     "del_folder_confirm": "⚠️ Delete folder {0}?\nPath: {1}\nThe folder and all its data will be permanently deleted!",
     "folder_deleted": "Folder deleted",
+    "folder_queued": "Added to apply queue. Click \"Apply Config\" to take effect.",
     "join_pool_confirm2": "Add {0} to pool?\nData on the disk will be erased!",
     "expand_progress": "Expand Progress",
     "raid_join_confirm": "Add {0} to {1}?\nData on the disk will be erased!",

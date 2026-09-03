@@ -195,15 +195,33 @@ func handleCreateFolder(w http.ResponseWriter, r *http.Request) {
 	recycle := recycleBin == "yes"
 	nfs := nfsExport == "yes"
 
+	op := PendingOp{
+		Action:      "create",
+		FolderName:  name,
+		FolderPath:  folderPath,
+		Pool:        pool,
+		Permission:  permission,
+		ValidUsers:  validUsers,
+		RecycleBin:  recycle,
+		SambaShare:  permission != "noaccess",
+		NFSExport:   nfs,
+		QuotaGB:     quotaGB,
+	}
+	if err := executeCreateFolder(op); err != nil {
+		common.JSONResponse(w, map[string]interface{}{"error": "创建文件夹失败: " + err.Error()})
+		return
+	}
+	if err := SyncAllConfigs(); err != nil {
+		common.JSONResponse(w, map[string]interface{}{"error": "配置同步失败: " + err.Error()})
+		return
+	}
+
 	common.JSONResponse(w, map[string]interface{}{
-		"message": fmt.Sprintf("文件夹 %s 已加入待应用队列，请点击「应用配置」生效", name),
+		"message": fmt.Sprintf("文件夹 %s 已创建", name),
 		"name":    name,
 		"pool":    pool,
-		"pending": true,
 	})
-
-	AddPendingOp("create", name, folderPath, pool, permission, validUsers, permission != "noaccess", nfs, recycle, quotaGB)
-	common.LogAudit("system", "创建共享文件夹", "STORAGE", "/api/disk/folders/create", fmt.Sprintf("%s -> %s (perm=%s)", name, folderPath, permission), "pending", "")
+	common.LogAudit("system", "创建共享文件夹", "STORAGE", "/api/disk/folders/create", fmt.Sprintf("%s -> %s (perm=%s)", name, folderPath, permission), "success", "")
 }
 
 // handleDeleteFolder deletes a shared folder (deferred to pending queue)
@@ -260,13 +278,29 @@ func handleFolderPermission(w http.ResponseWriter, r *http.Request) {
 
 	shareName := filepath.Base(path)
 
-	common.JSONResponse(w, map[string]interface{}{
-		"message": fmt.Sprintf("共享 %s 权限修改已加入待应用队列", shareName),
-		"pending": true,
-	})
+	op := PendingOp{
+		Action:      "update",
+		FolderName:  shareName,
+		FolderPath:  path,
+		Pool:        filepath.Dir(path),
+		Permission:  permission,
+		ValidUsers:  validUsers,
+		RecycleBin:  recycleBin == "yes",
+		SambaShare:  permission != "noaccess",
+	}
+	if err := executeUpdateFolder(op); err != nil {
+		common.JSONResponse(w, map[string]interface{}{"error": "更新权限失败: " + err.Error()})
+		return
+	}
+	if err := SyncAllConfigs(); err != nil {
+		common.JSONResponse(w, map[string]interface{}{"error": "配置同步失败: " + err.Error()})
+		return
+	}
 
-	AddPendingOp("update", shareName, path, filepath.Dir(path), permission, validUsers, permission != "noaccess", false, recycleBin == "yes", 0)
-	common.LogAudit("system", "更新共享文件夹", "STORAGE", "/api/disk/folders/update", fmt.Sprintf("%s -> %s (perm=%s)", shareName, path, permission), "pending", "")
+	common.JSONResponse(w, map[string]interface{}{
+		"message": fmt.Sprintf("共享 %s 权限已更新", shareName),
+	})
+	common.LogAudit("system", "更新共享文件夹", "STORAGE", "/api/disk/folders/permission", fmt.Sprintf("%s -> %s (perm=%s)", shareName, path, permission), "success", "")
 }
 
 // parseSambaShares returns map[sharePath]config map

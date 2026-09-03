@@ -97,15 +97,30 @@ func handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	addStep("设置密码")
 
 		// 2. 更新服务开关（默认全关，按需开启）
-	if !req.Services["samba"] {
+	if req.Services["samba"] {
+		if err := addSambaUser(req.Username, req.Password); err != nil {
+			addStep("⚠️ Samba 启用失败: %v", err)
+		} else {
+			addStep("启用 Samba 服务")
+		}
+	} else {
 		addStep("关闭 Samba 服务")
 		disableSambaUser(req.Username)
 	}
-	if !req.Services["ftp"] {
+	if req.Services["ftp"] {
+		addStep("启用 FTP 服务")
+		enableFTPUser(req.Username)
+	} else {
 		addStep("关闭 FTP 服务")
 		disableFTPUser(req.Username)
 	}
-	if !req.Services["webdav"] {
+	if req.Services["webdav"] {
+		if err := addWebDAVUser(req.Username, req.Password); err != nil {
+			addStep("⚠️ WebDAV 启用失败: %v", err)
+		} else {
+			addStep("启用 WebDAV 服务")
+		}
+	} else {
 		addStep("关闭 WebDAV 服务")
 		disableWebDAVUser(req.Username)
 	}
@@ -175,6 +190,18 @@ func updateUserServices(username string, services map[string]bool) error {
 
 // --- Samba 服务开关 ---
 
+// addSambaUser 将用户加入 Samba 密码库并设置密码（新建用户时必须用 -a，不能用 -e）
+func addSambaUser(username, password string) error {
+	out, err := common.SudoExec("bash", "-c", fmt.Sprintf(
+		"printf '%%s\n%%s\n' %s %s | smbpasswd -a %s -s",
+		shellQuote(password), shellQuote(password), shellQuote(username),
+	))
+	if err != nil {
+		return fmt.Errorf("smbpasswd -a 失败: %s: %v", out, err)
+	}
+	return nil
+}
+
 func enableSambaUser(username string) error {
 	// smbpasswd -e 启用
 	out, err := common.SudoExec("smbpasswd", "-e", username)
@@ -193,11 +220,19 @@ func disableSambaUser(username string) error {
 }
 
 // --- FTP 服务开关 ---
+// 注意：vsftpd.conf 里 userlist_deny=NO，即 userlist 是【白名单】——
+// 在列表里 = 允许登录，不在列表里 = 拒绝登录。
 
 func enableFTPUser(username string) error {
-	// 从 userlist 移除 = 允许登录
+	// 加入 userlist = 允许登录（白名单模式）
+	data, _ := common.ExecOutput("cat", "/etc/vsftpd.userlist")
+	for _, line := range strings.Split(data, "\n") {
+		if strings.TrimSpace(line) == username {
+			return nil // 已在白名单
+		}
+	}
 	out, err := common.SudoExec("bash", "-c",
-		fmt.Sprintf("sed -i '/^%s$/d' /etc/vsftpd.userlist", shellQuote(username)))
+		fmt.Sprintf("echo %s >> /etc/vsftpd.userlist", shellQuote(username)))
 	if err != nil {
 		return fmt.Errorf("启用 FTP 失败: %s: %v", out, err)
 	}
@@ -207,16 +242,9 @@ func enableFTPUser(username string) error {
 }
 
 func disableFTPUser(username string) error {
-	// 加入 userlist = 拒绝登录（vsftpd 配置 userlist_deny=YES）
-	// 先检查是否已存在
-	data, _ := common.ExecOutput("cat", "/etc/vsftpd.userlist")
-	for _, line := range strings.Split(data, "\n") {
-		if strings.TrimSpace(line) == username {
-			return nil // 已禁用
-		}
-	}
+	// 从 userlist 移除 = 拒绝登录（白名单模式）
 	out, err := common.SudoExec("bash", "-c",
-		fmt.Sprintf("echo %s >> /etc/vsftpd.userlist", shellQuote(username)))
+		fmt.Sprintf("sed -i '/^%s$/d' /etc/vsftpd.userlist", shellQuote(username)))
 	if err != nil {
 		return fmt.Errorf("禁用 FTP 失败: %s: %v", out, err)
 	}
@@ -225,6 +253,15 @@ func disableFTPUser(username string) error {
 }
 
 // --- WebDAV 服务开关 ---
+
+// addWebDAVUser 将用户加入 rclone-htpasswd 并设置密码
+func addWebDAVUser(username, password string) error {
+	out, err := common.SudoExec("htpasswd", "-b", "/etc/rclone-htpasswd", username, password)
+	if err != nil {
+		return fmt.Errorf("htpasswd 失败: %s: %v", out, err)
+	}
+	return nil
+}
 
 func enableWebDAVUser(username string) error {
 	// 重新添加 htpasswd 条目（密码无法恢复，需要用户重新设置）

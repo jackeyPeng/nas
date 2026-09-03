@@ -885,6 +885,7 @@
     "folder_created": "文件夹已创建",
     "del_folder_confirm": "⚠️ 确定删除文件夹 {0}？\n路径: {1}\n该文件夹及其中所有数据将被永久删除！",
     "folder_deleted": "文件夹已删除",
+    "folder_queued": "已加入待应用队列，请点击「应用配置」生效",
     "join_pool_confirm2": "确定将 {0} 加入存储池？\n该磁盘上的数据将被擦除！",
     "expand_progress": "扩容进度",
     "raid_join_confirm": "确定将 {0} 加入 {1}？\n该磁盘上的数据将被擦除！",

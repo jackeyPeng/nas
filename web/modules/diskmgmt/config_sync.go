@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -201,6 +202,7 @@ func GenerateSambaConfig() error {
 	// Build the managed section
 	var sb strings.Builder
 	sb.WriteString(managedStart + "\n")
+	nasUser := getNASUser()
 	for _, m := range metas {
 		if !m.SambaShare {
 			continue
@@ -211,7 +213,7 @@ func GenerateSambaConfig() error {
 		}
 		users := m.ValidUsers
 		if users == "" {
-			users = getNASUser()
+			users = nasUser
 		}
 
 		sb.WriteString(fmt.Sprintf(`
@@ -220,7 +222,11 @@ func GenerateSambaConfig() error {
    browseable = yes
    %s
    valid users = %s
-`, m.Name, m.Path, writeMode, users))
+   create mask = 0775
+   directory mask = 0775
+   force user = %s
+   force group = %s
+`, m.Name, m.Path, writeMode, users, nasUser, nasUser))
 
 		if m.RecycleBin {
 			sb.WriteString(`   vfs objects = recycle
@@ -259,6 +265,7 @@ func GenerateNFSConfig() error {
 
 	var sb strings.Builder
 	sb.WriteString(managedStart + "\n")
+	subnet := detectLANSubnet()
 	for _, m := range metas {
 		if !m.NFSExport {
 			continue
@@ -267,7 +274,7 @@ func GenerateNFSConfig() error {
 		if m.Permission == "readonly" {
 			opts = "ro,sync,no_subtree_check"
 		}
-		sb.WriteString(fmt.Sprintf("%s 192.168.0.0/16(%s)\n", m.Path, opts))
+		sb.WriteString(fmt.Sprintf("%s %s(%s)\n", m.Path, subnet, opts))
 	}
 	sb.WriteString(managedEnd + "\n")
 
@@ -501,30 +508,64 @@ func getNASUser() string {
 	return user
 }
 
-// replaceManagedBlock replaces or inserts the managed block in config content
-// Also removes any duplicate shares from the non-managed area
+// detectLANSubnet 返回主网卡的局域网网段（CIDR 形式，如 [REDACTED]/24）
+// 用于 NFS 导出，替代原来硬编码的 192.168.0.0/16
+func detectLANSubnet() string {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return "192.168.0.0/16"
+	}
+	for _, a := range addrs {
+		ipnet, ok := a.(*net.IPNet)
+		if !ok || ipnet.IP.IsLoopback() {
+			continue
+		}
+		ip4 := ipnet.IP.To4()
+		if ip4 == nil {
+			continue
+		}
+		ones, bits := ipnet.Mask.Size()
+		if bits != 32 {
+			continue
+		}
+		network := ip4.Mask(ipnet.Mask)
+		return fmt.Sprintf("%s/%d", network.String(), ones)
+	}
+	return "192.168.0.0/16"
+}
+
+// replaceManagedBlock replaces or inserts the managed block in config content.
+// Strips any existing managed block (everything between the first START marker and
+// the last END marker, plus orphaned markers), then appends the fresh block.
 func replaceManagedBlock(current, managedBlock string) string {
 	startIdx := strings.Index(current, managedStart)
-	endIdx := strings.Index(current, managedEnd)
+	endIdx := strings.LastIndex(current, managedEnd)
 
-	// Extract the non-managed portion (before managed block)
 	var body string
-	if startIdx >= 0 && endIdx > startIdx {
+	switch {
+	case startIdx >= 0 && endIdx >= startIdx:
+		// Normal case: strip [first START .. last END] inclusive.
+		body = current[:startIdx] + current[endIdx+len(managedEnd):]
+	case startIdx >= 0:
+		// Orphan START without END: strip from START to EOF.
 		body = current[:startIdx]
-	} else {
+	case endIdx >= 0:
+		// Orphan END without START: strip the stray marker.
+		body = current[:endIdx] + current[endIdx+len(managedEnd):]
+	default:
 		body = current
 	}
 
-	// Remove managed shares from body (they'll be in the managed block)
+	// Remove managed shares from body (they'll be regenerated in the managed block)
 	metas := GetAllFolderMeta()
 	for _, m := range metas {
 		body = removeShareFromBody(body, m)
 	}
 
 	// Clean up extra whitespace
-	body = strings.TrimRight(body, "\n") + "\n"
+	body = strings.TrimRight(body, "\n")
 
-	return body + "\n" + managedBlock
+	return body + "\n\n" + strings.TrimRight(managedBlock, "\n") + "\n"
 }
 
 // removeShareFromBody removes a managed share from the config body (non-managed area)
