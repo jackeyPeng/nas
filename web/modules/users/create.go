@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"nas-panel/common"
+	"nas-panel/modules/diskmgmt"
 )
 
 // CreateUserRequest 向导创建用户的请求参数
@@ -280,92 +281,37 @@ func disableWebDAVUser(username string) error {
 
 // --- 共享文件夹权限 ---
 
+// setSharePermission 更新用户对某个共享文件夹的访问权限。
+// 统一走元数据 + SyncAllConfigs 重生成，避免直接改 smb.conf 被下次配置同步覆盖。
 func setSharePermission(username, folder, perm string) error {
-	smbConf, err := common.SudoOutput("cat", "/etc/samba/smb.conf")
-	if err != nil {
-		return fmt.Errorf("读取 Samba 配置失败: %v", err)
-	}
-
-	// 找到共享段落
-	shareTag := "[" + folder + "]"
-	if !strings.Contains(smbConf, shareTag) {
-		return fmt.Errorf("共享 %s 不存在", folder)
-	}
-
-	// 修改 valid users 和 read only
-	lines := strings.Split(smbConf, "\n")
-	inShare := false
-	shareStart := -1
-	shareEnd := -1
-
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == shareTag {
-			inShare = true
-			shareStart = i
-			continue
-		}
-		if inShare && strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
-			shareEnd = i
+	metas := diskmgmt.GetAllFolderMeta()
+	var target *diskmgmt.FolderMeta
+	for i := range metas {
+		if metas[i].Name == folder {
+			target = &metas[i]
 			break
 		}
 	}
-	if shareEnd == -1 {
-		shareEnd = len(lines)
+	if target == nil {
+		return fmt.Errorf("共享 %s 不存在", folder)
 	}
 
-	// 在共享段落中处理权限
-	var newLines []string
-	validUsersLine := -1
-	readOnlyLine := -1
-
-	for i := shareStart; i < shareEnd; i++ {
-		trimmed := strings.TrimSpace(lines[i])
-		if strings.HasPrefix(trimmed, "valid users") {
-			validUsersLine = i
-		}
-		if strings.HasPrefix(trimmed, "read only") {
-			readOnlyLine = i
+	// 更新 valid_users：noaccess 移除，readwrite/readonly 加入
+	// （按用户的读写粒度见 TODO #30，当前由文件夹级 permission 统一控制）
+	var newUsers []string
+	for _, u := range strings.Split(target.ValidUsers, ",") {
+		u = strings.TrimSpace(u)
+		if u != "" && u != username {
+			newUsers = append(newUsers, u)
 		}
 	}
-
-	// 构建新的 valid users 列表
-	if validUsersLine >= 0 {
-		parts := strings.SplitN(lines[validUsersLine], "=", 2)
-		if len(parts) == 2 {
-			users := strings.Split(parts[1], ",")
-			var newUsers []string
-			for _, u := range users {
-				u = strings.TrimSpace(u)
-				if u != "" && u != username {
-					newUsers = append(newUsers, u)
-				}
-			}
-			if perm != "noaccess" {
-				newUsers = append(newUsers, username)
-			}
-			lines[validUsersLine] = "   valid users = " + strings.Join(newUsers, ", ")
-		}
+	if perm != "noaccess" {
+		newUsers = append(newUsers, username)
 	}
+	validUsers := strings.Join(newUsers, ",")
 
-	// 设置 read only
-	if readOnlyLine >= 0 {
-		if perm == "readonly" {
-			lines[readOnlyLine] = "   read only = yes"
-		} else {
-			lines[readOnlyLine] = "   read only = no"
-		}
-	}
+	diskmgmt.SyncFolderMeta(target.Name, target.Path, target.Pool, target.Permission, validUsers,
+		target.SambaShare, target.NFSExport, target.RecycleBin, target.QuotaGB)
 
-	newLines = lines
-	newConf := strings.Join(newLines, "\n")
-
-	// 写回配置
-	if err := common.SafeWriteFile("/etc/samba/smb.conf", newConf); err != nil {
-		return fmt.Errorf("写入 Samba 配置失败: %v", err)
-	}
-
-	// 重载 Samba
-	common.SudoExec("systemctl", "reload", "smbd")
-	return nil
+	return diskmgmt.SyncAllConfigs()
 }
