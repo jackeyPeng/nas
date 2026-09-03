@@ -509,10 +509,11 @@ func shareNameFromMount(mountPoint string) string {
 
 // addSambaShare adds a share to smb.conf and restarts smbd
 // Removes existing share with same name first to avoid duplicates
+// 格式与托管共享一致：含 create/directory mask + force user/group
 func addSambaShare(name, path, user string) {
 	// Read existing config and remove any existing share with same name
 	smbConf, _ := common.SudoOutput("cat", "/etc/samba/smb.conf")
-	conf := fmt.Sprintf("\n[%s]\n   path = %s\n   browseable = yes\n   writable = yes\n   valid users = %s\n", name, path, user)
+	conf := fmt.Sprintf("\n[%s]\n   path = %s\n   browseable = yes\n   writable = yes\n   valid users = %s\n   create mask = 0775\n   directory mask = 0775\n   force user = %s\n   force group = %s\n", name, path, user, user, user)
 	if smbConf != "" {
 		// Remove existing share with same name
 		newConf := removeSambaShare(smbConf, name)

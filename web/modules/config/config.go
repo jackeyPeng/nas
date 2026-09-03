@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"net/http"
+	"os"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -130,6 +131,10 @@ func handleSambaShare(w http.ResponseWriter, r *http.Request) {
 		if validUsers != "" {
 			shareBlock += fmt.Sprintf("   valid users = %s\n", validUsers)
 		}
+		// 与托管共享一致：补 force user/group，避免 valid_users 非属主时写不进
+		nasUser := getNASUser()
+		shareBlock += fmt.Sprintf("   force user = %s\n", nasUser)
+		shareBlock += fmt.Sprintf("   force group = %s\n", nasUser)
 
 		// 追加到 smb.conf
 		cmd := exec.Command("sudo", "tee", "-a", "/etc/samba/smb.conf")
@@ -340,6 +345,18 @@ func handleConfigFile(w http.ResponseWriter, r *http.Request) {
 // ═══════════════════════════════════════
 // 工具函数
 // ═══════════════════════════════════════
+
+// getNASUser 返回 NAS 管理员用户名（.env > 环境变量 > root）
+func getNASUser() string {
+	user, _ := common.ReadEnvFile(common.GetEnvFilePath(), "NAS_USER")
+	if user == "" {
+		user = os.Getenv("NAS_USER")
+	}
+	if user == "" {
+		user = "root"
+	}
+	return user
+}
 
 func readFileWithSudo(path string) string {
 	out, _ := common.SudoExec("cat", path)
