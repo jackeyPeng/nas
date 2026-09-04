@@ -301,8 +301,31 @@ func setSharePermission(username, folder, perm string) error {
 		return fmt.Errorf("共享 %s 不存在", folder)
 	}
 
-	validUsers := listRemove(target.ValidUsers, username)
-	writeUsers := listRemove(target.WriteUsers, username)
+	validUsers := target.ValidUsers
+	writeUsers := target.WriteUsers
+	permission := target.Permission
+
+	validUsers, writeUsers, permission = applyPermissionChange(validUsers, writeUsers, permission, username, perm)
+
+	diskmgmt.SyncFolderMeta(target.Name, target.Path, target.Pool, permission, validUsers, writeUsers,
+		target.SambaShare, target.NFSExport, target.RecycleBin, target.QuotaGB)
+
+	return diskmgmt.SyncAllConfigs()
+}
+
+// applyPermissionChange 计算单用户权限变更后的 (valid_users, write_users, permission)。
+// 纯函数，便于单测。关键点：
+//   - 物化：write_users 空 + 文件夹级 readwrite 时，先显式化为全部 valid_users，
+//     否则「降为只读」在纯文件夹级数据上失效。
+//   - 同步 permission：write_users 空 → readonly；valid_users 空 → noaccess；否则 readwrite。
+func applyPermissionChange(validUsers, writeUsers, permission, username, perm string) (string, string, string) {
+	// 物化
+	if strings.TrimSpace(writeUsers) == "" && permission == "readwrite" {
+		writeUsers = validUsers
+	}
+
+	validUsers = listRemove(validUsers, username)
+	writeUsers = listRemove(writeUsers, username)
 
 	switch perm {
 	case "readwrite":
@@ -315,10 +338,16 @@ func setSharePermission(username, folder, perm string) error {
 		// 两个列表都已移除
 	}
 
-	diskmgmt.SyncFolderMeta(target.Name, target.Path, target.Pool, target.Permission, validUsers, writeUsers,
-		target.SambaShare, target.NFSExport, target.RecycleBin, target.QuotaGB)
+	switch {
+	case strings.TrimSpace(writeUsers) != "":
+		permission = "readwrite"
+	case strings.TrimSpace(validUsers) == "":
+		permission = "noaccess"
+	default:
+		permission = "readonly"
+	}
 
-	return diskmgmt.SyncAllConfigs()
+	return validUsers, writeUsers, permission
 }
 
 // listAdd 向逗号分隔的用户列表加入一个用户（去重）
