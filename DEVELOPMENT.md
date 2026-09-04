@@ -585,6 +585,7 @@ modules/A/  ←  modules/B/  （✗ 禁止模块间直接 import）
 2. **sudoers 白名单**：新增需要 root 的命令时，同步更新 sudoers 配置
 3. **JWT secret**：生产环境必须通过 `JWT_SECRET` 环境变量覆盖默认值
 4. **路径注入**：所有用户输入的路径参数必须校验（参照 `backup.go` 的做法）
+5. **发布产品不写内网 IP / 明文密码**（2026-09-04 确立）：`deploy-nas-panel.sh` 目标机器一律命令行参数传入，禁止写死 SERVERS 数组、IP→用户映射、本机绝对路径；`install-services.sh` 账号密码从环境变量 / `/opt/nas/.env` 读取；一次性内网脚本（deploy-115.sh）不进仓库；文档示例 IP 用 192.168.1.100 这类通用示例。发版前 `grep -rnE "10\.216\.|10\.187\.|192\.168\.213\.|nas123456" scripts/ docs/ configs/` 必须为空。详见 `docs/release-system.md`。
 
 ### 不要在 Windows 上做的事
 

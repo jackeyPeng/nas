@@ -135,6 +135,22 @@ bash scripts/release.sh stable
 
 在系统设置页底部显示当前版本号，点击可检查更新（后续版本更新功能实现）。
 
+## 发布安全红线（禁止内网 IP / 明文密码）
+
+> 2026-09-04 确立。任何对外发布的产品文件都不得包含本地测试/生产机器的内网 IP 和明文密码。
+
+### 规则
+
+1. **deploy-nas-panel.sh**：目标机器一律通过命令行参数传入（`[user@]host`）。禁止写死 SERVERS 数组、IP→用户映射表、以及 `/home/jacky` 等本机绝对路径（二进制路径用 `$SCRIPT_DIR/../web/nas-panel` 自定位）。
+2. **install-services.sh**：账号密码从环境变量 `NAS_USER`/`NAS_PASS` 或 `/opt/nas/.env` 读取，禁止硬编码。
+3. **一次性内网脚本**（如 deploy-115.sh）不得进仓库。
+4. **文档示例 IP**：统一用 `192.168.1.100` / `192.168.1.0/24` 等通用示例。
+5. **发版前检查**：`grep -rnE "10\.216\.|10\.187\.|192\.168\.213\.|nas123456" scripts/ docs/ configs/` 必须为空。
+
+### 历史教训
+
+- 2026-09-04：已发布的 beta.2 release tarball 和 R2 附件里 setup.sh 注释仍残留内网 IP。发布产物（release tarball / R2 附件）也是产品的一部分，只改 git 源码不够，必须重发。
+
 ## 文件清单
 
 | 文件 | 作用 |
