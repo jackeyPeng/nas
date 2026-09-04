@@ -1,5 +1,37 @@
 # NAS 项目变更日志
 
+## [2026-09-04] - 权限模型（SMB 按用户粒度）+ 协议诚实标注
+
+### 版本 v1.4.0-beta.4
+
+---
+
+### 1. 权限模型：SMB 按用户读写粒度（TODO #30）
+
+- `folders` 表新增 `write_users` 列（幂等迁移），`FolderMeta`/`SyncFolderMeta`/`GetAllFolderMeta` 同步
+- SMB 配置生成：`write_users` 非空时生成 `read only = yes` + `write list`，实现「A 读写、B 只读、C 禁止」的用户级差异；空时兼容旧文件夹级 permission
+- 权限矩阵 API 重写：readwrite/readonly/noaccess 分别维护 valid_users + write_users，deny 同时清两个列表
+- 矩阵回显解析 `write list`，返回权限与实际生效一致
+- 修复：文件夹级数据上「降为只读」失效（write_users 为空时先物化为全部 valid_users，再执行变更）
+
+### 2. 协议诚实标注
+
+- 共享文件夹协议 tag 按真实能力区分：SMB 蓝（按用户）、NFS 灰（网段级）、DAV/S3 黄（全局）
+- FTP 从共享文件夹 tag 与「访问方式」行移除（vsftpd 仅 chroot 私有目录，不暴露共享）
+- 移除共享文件夹的 FTP 探测与 `isFTPAccessible` 死代码
+- i18n 新增 proto_per_user / proto_network / proto_global 三键（中英文各 974 键）
+
+### 3. 安装体验
+
+- install.sh 安装完成显示真实账号密码（原来打「(你设置的密码)」占位符）
+
+### 4. 验证
+
+- 单元测试：SMB 生成 4 场景 + 列表辅助 3 用例 + 权限变更物化 3 用例
+- 真机端到端（10.216.10.57，空白 Debian 13 从零部署）：LVM 池 → 共享文件夹 team → alice/bob/charlie 三用户，smbclient 实测读写/只读/禁止三态全部正确
+
+---
+
 ## [2026-09-04] - 发布产物安全清洗 + 部署脚本参数化
 
 ### 版本 v1.4.0-beta.3

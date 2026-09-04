@@ -18,13 +18,13 @@
 
 # ── 本次发版信息（打包前填写）─────────────────────────────
 # 格式: v主.次.修订[-rc.N / -beta.N]
-VERSION=
+VERSION=v1.4.0-beta.4
 
 # 发版说明（一句话，会体现在 commit / tag / Release）
-RELEASE_NOTE=
+RELEASE_NOTE=权限模型 SMB 按用户粒度 + 协议诚实标注 + 安装显示真实账号密码
 
 # 发版类型: stable / beta
-CHANNEL=stable
+CHANNEL=beta
 
 # ── 上次发版记录（自动历史，勿手填下面区域）────────────────
 # 2026-08-28  v1.3.0-113-g11e96b1  测试构建（未打 tag，含系统详情页）
