@@ -204,7 +204,7 @@ fi
 DETECT_SUBNET=""
 PRIMARY_IP=$(ip -4 -o addr show scope global | grep -v 'docker\|virbr\|lo' | head -1 | awk '{print $4}')
 if [ -n "$PRIMARY_IP" ]; then
-    # 提取 /24 子网: [REDACTED]/24 → [REDACTED]/24
+    # 提取 /24 子网: 192.168.1.100/24 → 192.168.1.0/24
     DETECT_SUBNET=$(echo "$PRIMARY_IP" | sed -E 's/\.[0-9]+\/[0-9]+$/.0\/24/' 2>/dev/null)
     if [ -z "$DETECT_SUBNET" ] || [ "$DETECT_SUBNET" = "$PRIMARY_IP" ]; then
         DETECT_SUBNET="192.168.0.0/24"  # fallback

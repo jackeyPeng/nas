@@ -1,7 +1,7 @@
 # Z1 存储管理 — 功能清单与测试矩阵
 
 > 版本: 2026-08-17  
-> 测试环境: [REDACTED] (fm / [REDACTED]) 或 [REDACTED] (jacky / [REDACTED])  
+> 测试环境: 192.168.1.100 (fm / <NAS_PASS>) 或 192.168.1.100 (jacky / <NAS_PASS>)  
 > 面板地址: http://<ip>:8090  
 > 测试前: 硬刷新浏览器 (Ctrl+Shift+R) 清除缓存
 
@@ -219,7 +219,7 @@ for i in range(3):
 ```bash
 # 登录
 TOKEN=$(curl -s -X POST http://<ip>:8090/api/login \
-  -d "username=<user>&password=[REDACTED]" | \
+  -d "username=<user>&password=<NAS_PASS>" | \
   python3 -c "import sys,json;print(json.load(sys.stdin)['token'])")
 
 # 重置

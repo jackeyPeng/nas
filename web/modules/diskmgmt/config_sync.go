@@ -508,7 +508,7 @@ func getNASUser() string {
 	return user
 }
 
-// detectLANSubnet 返回主网卡的局域网网段（CIDR 形式，如 [REDACTED]/24）
+// detectLANSubnet 返回主网卡的局域网网段（CIDR 形式，如 192.168.1.0/24）
 // 用于 NFS 导出，替代原来硬编码的 192.168.0.0/16
 func detectLANSubnet() string {
 	addrs, err := net.InterfaceAddrs()

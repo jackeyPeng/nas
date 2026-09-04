@@ -28,7 +28,7 @@
 
 ### 4. 验证
 
-- [REDACTED] 重置后从零跑 install.sh 一键安装，9 服务全部 active、系统注册表 46/46 通过
+- 192.168.1.100 重置后从零跑 install.sh 一键安装，9 服务全部 active、系统注册表 46/46 通过
 
 ---
 
@@ -65,7 +65,7 @@
 
 ### 4. 部署
 
-- 三台服务器统一部署（[REDACTED] / [REDACTED] / [REDACTED]）
+- 三台服务器统一部署（192.168.1.100 / 192.168.1.100 / 192.168.1.100）
 
 ---
 
@@ -105,7 +105,7 @@
 
 ### 4. 新增服务器
 
-- [REDACTED] 加入部署列表，三台服务器统一部署
+- 192.168.1.100 加入部署列表，三台服务器统一部署
 
 ---
 
@@ -162,7 +162,7 @@
 
 ### 9. 验证结果
 
-- 在 [REDACTED]（全新 Debian 13）上完整跑通：9/9 服务 active，46/46 注册表通过
+- 在 192.168.1.100（全新 Debian 13）上完整跑通：9/9 服务 active，46/46 注册表通过
 - 4 块数据盘正常识别，登录/存储页面正常
 
 ---
@@ -868,7 +868,7 @@
 - sudoers 新增：pvremove/vgremove/lvremove/wipefs/mdadm/parted/ls
 - LVM 命令用绝对路径 /usr/sbin/
 
-### 验证 ([REDACTED])
+### 验证 (192.168.1.100)
 - sdb+sdc RAID1 → /dev/md0 50G xfs → /data/nas1 ✓
 - 无 lost+found 目录 ✓
 - fstab 持久化 ✓
@@ -1173,7 +1173,7 @@
 - setup.sh .env 不存在时显示创建步骤和必填项
 
 ### 验证
-- 2026-07-09 在 [REDACTED] (用户 dog) 部署验证通过
+- 2026-07-09 在 192.168.1.100 (用户 dog) 部署验证通过
 - 9/9 服务全部 active (含 nas-panel)
 - Web 面板 API 全部正常: 登录/仪表盘/服务/用户/存储/防火墙/监控/告警配置
 - 监控数据实时采集: 磁盘/内存/CPU/进程/网络流量/登录用户/错误日志
@@ -1183,7 +1183,7 @@
 
 ### 安全
 - git filter-repo 重写全部历史，清除所有明文密码
-  - [REDACTED], [REDACTED], [REDACTED] 等密码从历史中彻底清除
+  - 历史遗留的明文密码（Samba/FTP/MinIO 等）已从历史中彻底清除
   - Gitee OAuth token 确认从未进入代码库
 - 密码改用 .env 文件读取（.env.example 作为模板）
   - setup.sh 从 $SCRIPT_DIR/.env 读取 NAS_PASS
@@ -1205,7 +1205,7 @@
 - .env.example 环境变量模板
 
 ### 验证
-- 2026-07-08 在 [REDACTED] 全新系统上 cleanup -> setup 完整验证通过
+- 2026-07-08 在 192.168.1.100 全新系统上 cleanup -> setup 完整验证通过
 - 8/8 服务全部 active
 - Samba 列出 5 个共享, NFS 挂载成功, FTP 正常, WebDAV HTTP 200
 - FileBrowser JWT 登录成功, MinIO Health 200, Console 200
@@ -1253,13 +1253,13 @@
 ### 访问信息
 | 服务 | 地址 | 用户名 | 密码 |
 |------|------|--------|------|
-| Samba | //[REDACTED]/shared | <NAS_USER> | <NAS_PASS> |
-| NFS | mount [REDACTED]:/data/shared | - | - |
-| FTP | ftp://[REDACTED] | <NAS_USER> | <NAS_PASS> |
-| WebDAV | http://[REDACTED]:8080 | <NAS_USER> | <NAS_PASS> |
-| FileBrowser | http://[REDACTED]:8081 | <NAS_USER> | <NAS_PASS> |
-| MinIO Console | http://[REDACTED]:9002 | admin | <NAS_PASS> |
-| MinIO API | http://[REDACTED]:9000 | - | - |
+| Samba | //192.168.1.100/shared | <NAS_USER> | <NAS_PASS> |
+| NFS | mount 192.168.1.100:/data/shared | - | - |
+| FTP | ftp://192.168.1.100 | <NAS_USER> | <NAS_PASS> |
+| WebDAV | http://192.168.1.100:8080 | <NAS_USER> | <NAS_PASS> |
+| FileBrowser | http://192.168.1.100:8081 | <NAS_USER> | <NAS_PASS> |
+| MinIO Console | http://192.168.1.100:9002 | admin | <NAS_PASS> |
+| MinIO API | http://192.168.1.100:9000 | - | - |
 
 ## [2026-07-02] - NFS 端口固定
 

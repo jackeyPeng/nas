@@ -1,9 +1,35 @@
 #!/bin/bash
-# 115 服务安装脚本
-# 在 [REDACTED] 上运行: sudo bash install-services.sh
-set -e
+# 服务安装脚本
+# 在目标 NAS 机器上运行: sudo bash install-services.sh
+#
+# 注意: 此脚本是公开发布的产品，不含任何真实 IP / 用户名 / 密码。
+#       账号密码从环境变量或 /opt/nas/.env 读取。
 
-echo "=== 安装 NAS 服务 ==="
+set -euo pipefail
+
+# ==================== 配置（从 .env 或环境变量读取） ====================
+NAS_USER="${NAS_USER:-}"
+NAS_PASS="${NAS_PASS:-}"
+
+ENV_FILE="${NAS_ENV_FILE:-/opt/nas/.env}"
+if [ -f "$ENV_FILE" ]; then
+    [ -z "$NAS_USER" ] && NAS_USER="$(grep '^NAS_USER=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2-)"
+    [ -z "$NAS_PASS" ] && NAS_PASS="$(grep '^NAS_PASS=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2-)"
+fi
+
+if [ -z "$NAS_USER" ] || [ "$NAS_USER" = "root" ]; then
+    NAS_USER="${SUDO_USER:-$USER}"
+fi
+if [ -z "$NAS_USER" ] || [ "$NAS_USER" = "root" ]; then
+    echo "错误: 无法确定 NAS_USER，请通过环境变量 NAS_USER 或 $ENV_FILE 指定"
+    exit 1
+fi
+if [ -z "$NAS_PASS" ]; then
+    echo "错误: 未设置 NAS_PASS，请通过环境变量 NAS_PASS 或 $ENV_FILE 指定"
+    exit 1
+fi
+
+echo "=== 安装 NAS 服务（用户: $NAS_USER） ==="
 
 # 1. Samba
 echo "[1/7] 安装 Samba..."
@@ -26,13 +52,13 @@ systemctl start vsftpd
 # 4. WebDAV (rclone)
 echo "[4/7] 安装 WebDAV..."
 apt-get install -y rclone 2>&1 | tail -1
-cat > /etc/systemd/system/rclone-webdav.service << 'EOF'
+cat > /etc/systemd/system/rclone-webdav.service << EOF
 [Unit]
 Description=Rclone WebDAV Server
 After=network.target
 [Service]
 Type=simple
-ExecStart=/usr/bin/rclone serve webdav /data --addr :8080 --user fm --pass [REDACTED]
+ExecStart=/usr/bin/rclone serve webdav /data --addr :8080 --user ${NAS_USER} --pass ${NAS_PASS}
 Restart=on-failure
 [Install]
 WantedBy=multi-user.target
@@ -58,7 +84,7 @@ Description=FileBrowser
 After=network.target
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/filebrowser -a :8081 -r /data --username fm --password [REDACTED]
+ExecStart=/usr/local/bin/filebrowser -a :8081 -r /data --username ${NAS_USER} --password ${NAS_PASS}
 Restart=on-failure
 [Install]
 WantedBy=multi-user.target

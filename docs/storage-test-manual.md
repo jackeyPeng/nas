@@ -4,7 +4,7 @@
 > 日期: 2026-08-17  
 > 适用: Z1 NAS Web 管理面板 — 存储管理模块  
 > 目标读者: 测试人员 / AI Agent  
-> 测试环境: [REDACTED] (fm / [REDACTED]) 或 [REDACTED] (jacky / [REDACTED])
+> 测试环境: 192.168.1.100 (fm / <NAS_PASS>) 或 192.168.1.100 (jacky / <NAS_PASS>)
 
 ---
 
@@ -14,8 +14,8 @@
 
 | 机器 | IP | 用户 | 面板端口 | 登录 |
 |------|-----|------|---------|------|
-| 52 | [REDACTED] | fm | 8090 | fm / [REDACTED] |
-| 85 | [REDACTED] | jacky | 8090 | jacky / [REDACTED] |
+| 57 | 192.168.1.100 | fm | 8090 | fm / <NAS_PASS> |
+| 85 | 192.168.1.100 | jacky | 8090 | jacky / <NAS_PASS> |
 
 ### 1.2 测试前置条件
 
@@ -24,7 +24,7 @@
 ```bash
 # 方式 A: 通过面板 API
 ssh <user>@<ip> 'TOKEN=$(curl -s -X POST http://localhost:8090/api/login \
-  -d "username=<user>&password=[REDACTED]" | python3 -c "import sys,json;print(json.load(sys.stdin)[\"token\"])") && \
+  -d "username=<user>&password=<NAS_PASS>" | python3 -c "import sys,json;print(json.load(sys.stdin)[\"token\"])") && \
 curl -s -H "Authorization: Bearer $TOKEN" \
   http://localhost:8090/api/disk/wizard/reset-stream?confirm=yes'
 ```
@@ -41,7 +41,7 @@ ssh <user>@<ip> 'lsblk -o NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE | grep -v sda | grep 
 
 ```bash
 TOKEN=$(curl -s -X POST http://<ip>:8090/api/login \
-  -d "username=<user>&password=[REDACTED]" | \
+  -d "username=<user>&password=<NAS_PASS>" | \
   python3 -c "import sys,json;print(json.load(sys.stdin)['token'])")
 ```
 
@@ -434,9 +434,9 @@ for p in ov['pools']:
 import urllib.request, json, subprocess, time
 
 # ===== 配置 =====
-HOST = "[REDACTED]"
+HOST = "192.168.1.100"
 USER = "fm"
-PASS = "[REDACTED]"
+PASS = "<NAS_PASS>"
 BASE = f"http://localhost:8090"
 
 # ===== 登录 =====

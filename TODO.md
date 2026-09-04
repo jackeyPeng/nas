@@ -643,7 +643,7 @@ NAS 里的视频/音乐/照片直接在浏览器播放，带媒体库海报墙�
 - 产品手册: `docs/nas-product-manual.md`
 - Git 仓库: https://gitee.com/gitdogcat/nas
 - 官网仓库: https://gitee.com/gitdogcat/nas-website
-- 服务器: [REDACTED] (nas.abwen.com) / [REDACTED]
+- 服务器: 192.168.1.100 (nas.abwen.com) / 192.168.1.100
 
 ---
 

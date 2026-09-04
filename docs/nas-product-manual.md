@@ -908,7 +908,7 @@ sudo ufw allow 9000/tcp   # S3 API
 
 **访问方式：**
 
-- S3 API: `http://[REDACTED]:9000`
+- S3 API: `http://192.168.1.100:9000`
 - Access Key: `<NAS_USER>`
 - Secret Key: `<NAS_PASS>`
 - Bucket 映射：`/data/backups` → bucket `backups`，`/data/media` → bucket `media`，以此类推
@@ -927,8 +927,8 @@ cat > ~/.s3cfg << EOF
 [default]
 access_key = <NAS_USER>
 secret_key = <NAS_PASS>
-host_base = [REDACTED]:9000
-host_bucket = [REDACTED]:9000
+host_base = 192.168.1.100:9000
+host_bucket = 192.168.1.100:9000
 use_https = False
 EOF
 
@@ -948,7 +948,7 @@ import boto3
 
 s3 = boto3.client(
     's3',
-    endpoint_url='http://[REDACTED]:9000',
+    endpoint_url='http://192.168.1.100:9000',
     aws_access_key_id='<NAS_USER>',
     aws_secret_access_key='<NAS_PASS>',
     region_name='us-east-1'
@@ -1447,8 +1447,8 @@ tar czf /data/backups/nas-config-$(date +%Y%m%d).tar.gz \
 **方法 1 — 资源管理器地址栏：**
 
 ```
-\\[REDACTED]\shared
-\\[REDACTED]\<NAS_USER>
+\\192.168.1.100\shared
+\\192.168.1.100\<NAS_USER>
 ```
 
 输入用户名 `<NAS_USER>`，密码 `<NAS_PASS>`。
@@ -1456,20 +1456,20 @@ tar czf /data/backups/nas-config-$(date +%Y%m%d).tar.gz \
 **方法 2 — 映射网络驱动器：**
 
 1. 打开"此电脑" → 右键 → "映射网络驱动器"
-2. 输入路径: `\\[REDACTED]\shared`
+2. 输入路径: `\\192.168.1.100\shared`
 3. 勾选"使用其他凭据连接"
 4. 输入用户名和密码
 
 **方法 3 — 命令行：**
 
 ```cmd
-net use Z: \\[REDACTED]\shared /user:<NAS_USER> <NAS_PASS> /persistent:yes
+net use Z: \\192.168.1.100\shared /user:<NAS_USER> <NAS_PASS> /persistent:yes
 ```
 
 ### macOS 访问 Samba
 
 1. Finder → 前往 → 连接服务器 (⌘K)
-2. 输入: `smb://[REDACTED]/shared`
+2. 输入: `smb://192.168.1.100/shared`
 3. 输入用户名 `<NAS_USER>`，密码 `<NAS_PASS>`
 
 ### Linux 访问 Samba
@@ -1479,11 +1479,11 @@ net use Z: \\[REDACTED]\shared /user:<NAS_USER> <NAS_PASS> /persistent:yes
 sudo apt-get install cifs-utils
 
 # 挂载
-sudo mount -t cifs //[REDACTED]/shared /mnt/nas \
+sudo mount -t cifs //192.168.1.100/shared /mnt/nas \
     -o username=<NAS_USER>,password=<NAS_PASS>
 
 # 永久挂载（加入 /etc/fstab）
-echo '//[REDACTED]/shared /mnt/nas cifs credentials=/etc/samba/credentials,uid=1000,gid=1000 0 0' | sudo tee -a /etc/fstab
+echo '//192.168.1.100/shared /mnt/nas cifs credentials=/etc/samba/credentials,uid=1000,gid=1000 0 0' | sudo tee -a /etc/fstab
 echo 'username=<NAS_USER>' | sudo tee /etc/samba/credentials
 echo 'password=<NAS_PASS>' | sudo tee -a /etc/samba/credentials
 sudo chmod 600 /etc/samba/credentials
@@ -1496,23 +1496,23 @@ sudo chmod 600 /etc/samba/credentials
 sudo apt-get install nfs-common
 
 # 挂载
-sudo mount -t nfs [REDACTED]:/data/shared /mnt/nas
+sudo mount -t nfs 192.168.1.100:/data/shared /mnt/nas
 
 # 永久挂载（加入 /etc/fstab）
-echo '[REDACTED]:/data/shared /mnt/nas nfs defaults 0 0' | sudo tee -a /etc/fstab
+echo '192.168.1.100:/data/shared /mnt/nas nfs defaults 0 0' | sudo tee -a /etc/fstab
 ```
 
 ### FTP 访问
 
 **命令行：**
 ```bash
-ftp [REDACTED]
+ftp 192.168.1.100
 # 用户名: <NAS_USER>
 # 密码: <NAS_PASS>
 ```
 
 **GUI 工具（FileZilla 等）：**
-- 主机: `[REDACTED]`
+- 主机: `192.168.1.100`
 - 端口: `21`
 - 用户名: `<NAS_USER>`
 - 密码: `<NAS_PASS>`
@@ -1521,29 +1521,29 @@ ftp [REDACTED]
 
 **浏览器直接访问：**
 ```
-http://[REDACTED]:8080/
+http://192.168.1.100:8080/
 ```
 输入用户名 `<NAS_USER>`，密码 `<NAS_PASS>`。
 
 **Linux 挂载 WebDAV：**
 ```bash
 sudo apt-get install davfs2
-sudo mount -t davfs http://[REDACTED]:8080/ /mnt/webdav
+sudo mount -t davfs http://192.168.1.100:8080/ /mnt/webdav
 ```
 
 **macOS 挂载 WebDAV：**
-Finder → 前往 → 连接服务器 → `http://[REDACTED]:8080/`
+Finder → 前往 → 连接服务器 → `http://192.168.1.100:8080/`
 
 **Windows 映射 WebDAV：**
 ```cmd
-net use W: http://[REDACTED]:8080/ /user:<NAS_USER> <NAS_PASS>
+net use W: http://192.168.1.100:8080/ /user:<NAS_USER> <NAS_PASS>
 ```
 
 ### FileBrowser 访问
 
 **浏览器访问：**
 ```
-http://[REDACTED]:8081/
+http://192.168.1.100:8081/
 ```
 输入用户名 `<NAS_USER>`，密码 `<NAS_PASS>`。
 
@@ -1711,7 +1711,7 @@ sudo exportfs -v
 systemctl status rpcbind
 
 # 4. 客户端测试
-showmount -e [REDACTED]
+showmount -e 192.168.1.100
 
 # 5. 检查 exports 语法
 cat /etc/exports
