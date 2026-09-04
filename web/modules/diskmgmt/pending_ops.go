@@ -17,18 +17,18 @@ import (
 
 // PendingOp represents a pending folder operation
 type PendingOp struct {
-	ID          int    `json:"id"`
-	Action      string `json:"action"` // create, update, delete
-	FolderName  string `json:"folder_name"`
-	FolderPath  string `json:"folder_path"`
-	Pool        string `json:"pool"`
-	Permission  string `json:"permission"`
-	ValidUsers  string `json:"valid_users"`
-	RecycleBin  bool   `json:"recycle_bin"`
-	SambaShare  bool   `json:"samba_share"`
-	NFSExport   bool   `json:"nfs_export"`
-	QuotaGB     int    `json:"quota_gb"`
-	CreatedAt   string `json:"created_at"`
+	ID         int    `json:"id"`
+	Action     string `json:"action"` // create, update, delete
+	FolderName string `json:"folder_name"`
+	FolderPath string `json:"folder_path"`
+	Pool       string `json:"pool"`
+	Permission string `json:"permission"`
+	ValidUsers string `json:"valid_users"`
+	RecycleBin bool   `json:"recycle_bin"`
+	SambaShare bool   `json:"samba_share"`
+	NFSExport  bool   `json:"nfs_export"`
+	QuotaGB    int    `json:"quota_gb"`
+	CreatedAt  string `json:"created_at"`
 }
 
 // OperationLog represents a completed operation log entry
@@ -215,14 +215,14 @@ func executeCreateFolder(op PendingOp) error {
 	common.SudoExec("chown", "-R", nasUser+":"+nasUser, folderPath)
 
 	// Sync metadata
-	SyncFolderMeta(op.FolderName, folderPath, op.Pool, op.Permission, op.ValidUsers, op.SambaShare, op.NFSExport, op.RecycleBin, op.QuotaGB)
+	SyncFolderMeta(op.FolderName, folderPath, op.Pool, op.Permission, op.ValidUsers, "", op.SambaShare, op.NFSExport, op.RecycleBin, op.QuotaGB)
 
 	return nil
 }
 
 // executeUpdateFolder updates permissions
 func executeUpdateFolder(op PendingOp) error {
-	SyncFolderMeta(op.FolderName, op.FolderPath, op.Pool, op.Permission, op.ValidUsers, op.SambaShare, op.NFSExport, op.RecycleBin, op.QuotaGB)
+	SyncFolderMeta(op.FolderName, op.FolderPath, op.Pool, op.Permission, op.ValidUsers, "", op.SambaShare, op.NFSExport, op.RecycleBin, op.QuotaGB)
 	return nil
 }
 

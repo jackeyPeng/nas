@@ -196,16 +196,16 @@ func handleCreateFolder(w http.ResponseWriter, r *http.Request) {
 	nfs := nfsExport == "yes"
 
 	op := PendingOp{
-		Action:      "create",
-		FolderName:  name,
-		FolderPath:  folderPath,
-		Pool:        pool,
-		Permission:  permission,
-		ValidUsers:  validUsers,
-		RecycleBin:  recycle,
-		SambaShare:  permission != "noaccess",
-		NFSExport:   nfs,
-		QuotaGB:     quotaGB,
+		Action:     "create",
+		FolderName: name,
+		FolderPath: folderPath,
+		Pool:       pool,
+		Permission: permission,
+		ValidUsers: validUsers,
+		RecycleBin: recycle,
+		SambaShare: permission != "noaccess",
+		NFSExport:  nfs,
+		QuotaGB:    quotaGB,
 	}
 	if err := executeCreateFolder(op); err != nil {
 		common.JSONResponse(w, map[string]interface{}{"error": "创建文件夹失败: " + err.Error()})
@@ -279,14 +279,14 @@ func handleFolderPermission(w http.ResponseWriter, r *http.Request) {
 	shareName := filepath.Base(path)
 
 	op := PendingOp{
-		Action:      "update",
-		FolderName:  shareName,
-		FolderPath:  path,
-		Pool:        filepath.Dir(path),
-		Permission:  permission,
-		ValidUsers:  validUsers,
-		RecycleBin:  recycleBin == "yes",
-		SambaShare:  permission != "noaccess",
+		Action:     "update",
+		FolderName: shareName,
+		FolderPath: path,
+		Pool:       filepath.Dir(path),
+		Permission: permission,
+		ValidUsers: validUsers,
+		RecycleBin: recycleBin == "yes",
+		SambaShare: permission != "noaccess",
 	}
 	if err := executeUpdateFolder(op); err != nil {
 		common.JSONResponse(w, map[string]interface{}{"error": "更新权限失败: " + err.Error()})
@@ -343,6 +343,9 @@ func parseSambaShares(conf string) map[string]map[string]string {
 				}
 				if lowerKey == "valid users" {
 					result[currentPath]["valid_users"] = val
+				}
+				if lowerKey == "write list" {
+					result[currentPath]["write_list"] = val
 				}
 			}
 		}

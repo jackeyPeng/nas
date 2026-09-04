@@ -47,6 +47,7 @@ func initConfigDB() *sql.DB {
 			pool TEXT NOT NULL,
 			permission TEXT NOT NULL DEFAULT 'readwrite',
 			valid_users TEXT NOT NULL DEFAULT '',
+			write_users TEXT NOT NULL DEFAULT '',
 			recycle_bin INTEGER NOT NULL DEFAULT 0,
 			samba_share INTEGER NOT NULL DEFAULT 1,
 			nfs_export INTEGER NOT NULL DEFAULT 0,
@@ -54,6 +55,8 @@ func initConfigDB() *sql.DB {
 			created_at TEXT NOT NULL DEFAULT (datetime('now')),
 			updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 		)`)
+		// 迁移：老库补 write_users 列（幂等，检测列是否存在）
+		migrateWriteUsersColumn(configDB)
 		log.Printf("[CONFIG_SYNC] 元数据库已初始化: %s", configDBPath())
 
 		// Seed from existing folders if table is empty
@@ -87,6 +90,7 @@ func seedFromFileSystem(db *sql.DB) {
 			smb, hasSamba := smbMap[path]
 			perm := "readwrite"
 			validUsers := ""
+			writeUsers := ""
 			recycle := false
 			samba := hasSamba
 			if hasSamba {
@@ -94,15 +98,16 @@ func seedFromFileSystem(db *sql.DB) {
 					perm = "readonly"
 				}
 				validUsers = smb["valid_users"]
+				writeUsers = smb["write_list"]
 				recycle = hasRecycleBin(smbConf, name)
 			}
 
 			// Check NFS
 			nfs := isNFSExported(path)
 
-			_, err = db.Exec(`INSERT OR IGNORE INTO folders (name, path, pool, permission, valid_users, recycle_bin, samba_share, nfs_export)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-				name, path, m["mount"], perm, validUsers, boolToInt(recycle), boolToInt(samba), boolToInt(nfs))
+			_, err = db.Exec(`INSERT OR IGNORE INTO folders (name, path, pool, permission, valid_users, write_users, recycle_bin, samba_share, nfs_export)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				name, path, m["mount"], perm, validUsers, writeUsers, boolToInt(recycle), boolToInt(samba), boolToInt(nfs))
 			if err != nil {
 				log.Printf("[CONFIG_SYNC] seed 失败 %s: %v", name, err)
 			} else {
@@ -121,6 +126,7 @@ type FolderMeta struct {
 	Pool       string `json:"pool"`
 	Permission string `json:"permission"`
 	ValidUsers string `json:"valid_users"`
+	WriteUsers string `json:"write_users"`
 	RecycleBin bool   `json:"recycle_bin"`
 	SambaShare bool   `json:"samba_share"`
 	NFSExport  bool   `json:"nfs_export"`
@@ -128,23 +134,56 @@ type FolderMeta struct {
 	CreatedAt  string `json:"created_at"`
 }
 
+// migrateWriteUsersColumn adds the write_users column to an existing folders
+// table if it is missing (idempotent, safe to run on every startup).
+func migrateWriteUsersColumn(db *sql.DB) {
+	rows, err := db.Query(`PRAGMA table_info(folders)`)
+	if err != nil {
+		log.Printf("[CONFIG_SYNC] 检查 folders 列失败: %v", err)
+		return
+	}
+	defer rows.Close()
+	hasWriteUsers := false
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull, pk int
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			continue
+		}
+		if name == "write_users" {
+			hasWriteUsers = true
+		}
+	}
+	if hasWriteUsers {
+		return
+	}
+	if _, err := db.Exec(`ALTER TABLE folders ADD COLUMN write_users TEXT NOT NULL DEFAULT ''`); err != nil {
+		log.Printf("[CONFIG_SYNC] 添加 write_users 列失败: %v", err)
+		return
+	}
+	log.Printf("[CONFIG_SYNC] 已迁移: folders 表新增 write_users 列")
+}
+
 // SyncFolderMeta ensures the metadata table matches the file system
 // Called after create/edit/delete folder operations
-func SyncFolderMeta(name, folderPath, pool, permission, validUsers string, samba, nfs, recycle bool, quotaGB int) {
+func SyncFolderMeta(name, folderPath, pool, permission, validUsers, writeUsers string, samba, nfs, recycle bool, quotaGB int) {
 	db := initConfigDB()
 	if db == nil {
 		return
 	}
 
 	// Upsert: insert or update
-	_, err := db.Exec(`INSERT INTO folders (name, path, pool, permission, valid_users, samba_share, nfs_export, recycle_bin, quota_gb, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+	_, err := db.Exec(`INSERT INTO folders (name, path, pool, permission, valid_users, write_users, samba_share, nfs_export, recycle_bin, quota_gb, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
 		ON CONFLICT(path) DO UPDATE SET
 			name=excluded.name, pool=excluded.pool, permission=excluded.permission,
-			valid_users=excluded.valid_users, samba_share=excluded.samba_share,
+			valid_users=excluded.valid_users, write_users=excluded.write_users,
+			samba_share=excluded.samba_share,
 			nfs_export=excluded.nfs_export, recycle_bin=excluded.recycle_bin,
 			quota_gb=excluded.quota_gb, updated_at=datetime('now')`,
-		name, folderPath, pool, permission, validUsers, boolToInt(samba), boolToInt(nfs), boolToInt(recycle), quotaGB)
+		name, folderPath, pool, permission, validUsers, writeUsers, boolToInt(samba), boolToInt(nfs), boolToInt(recycle), quotaGB)
 	if err != nil {
 		log.Printf("[CONFIG_SYNC] 同步元数据失败: %v", err)
 	}
@@ -165,7 +204,7 @@ func GetAllFolderMeta() []FolderMeta {
 	if db == nil {
 		return nil
 	}
-	rows, err := db.Query("SELECT id, name, path, pool, permission, valid_users, recycle_bin, samba_share, nfs_export, quota_gb, created_at FROM folders ORDER BY id")
+	rows, err := db.Query("SELECT id, name, path, pool, permission, valid_users, write_users, recycle_bin, samba_share, nfs_export, quota_gb, created_at FROM folders ORDER BY id")
 	if err != nil {
 		log.Printf("[CONFIG_SYNC] 查询元数据失败: %v", err)
 		return nil
@@ -176,7 +215,7 @@ func GetAllFolderMeta() []FolderMeta {
 	for rows.Next() {
 		var m FolderMeta
 		var rb, smb, nfs int
-		rows.Scan(&m.ID, &m.Name, &m.Path, &m.Pool, &m.Permission, &m.ValidUsers, &rb, &smb, &nfs, &m.QuotaGB, &m.CreatedAt)
+		rows.Scan(&m.ID, &m.Name, &m.Path, &m.Pool, &m.Permission, &m.ValidUsers, &m.WriteUsers, &rb, &smb, &nfs, &m.QuotaGB, &m.CreatedAt)
 		m.RecycleBin = rb != 0
 		m.SambaShare = smb != 0
 		m.NFSExport = nfs != 0
@@ -207,26 +246,24 @@ func GenerateSambaConfig() error {
 		if !m.SambaShare {
 			continue
 		}
-		writeMode := "writable = yes"
-		if m.Permission == "readonly" {
-			writeMode = "read only = yes"
-		}
 		users := m.ValidUsers
 		if users == "" {
 			users = nasUser
 		}
+
+		writeMode, writeList := smbShareParams(m, nasUser)
 
 		sb.WriteString(fmt.Sprintf(`
 [%s]
    path = %s
    browseable = yes
    %s
-   valid users = %s
+%s   valid users = %s
    create mask = 0775
    directory mask = 0775
    force user = %s
    force group = %s
-`, m.Name, m.Path, writeMode, users, nasUser, nasUser))
+`, m.Name, m.Path, writeMode, writeList, users, nasUser, nasUser))
 
 		if m.RecycleBin {
 			sb.WriteString(`   vfs objects = recycle
@@ -497,6 +534,24 @@ func boolToInt(b bool) int {
 	return 0
 }
 
+// smbShareParams 决定单个 SMB 共享的权限模式。
+// 返回 (writeMode, writeList)：
+//
+//	write_users 非空 → 按用户粒度：read only = yes + write list（write list 覆盖 read only）
+//	write_users 为空 → 兼容旧数据：文件夹级 permission 决定 read only / writable
+func smbShareParams(m FolderMeta, nasUser string) (string, string) {
+	writeList := ""
+	writeMode := "writable = yes"
+	if strings.TrimSpace(m.WriteUsers) != "" {
+		writeMode = "read only = yes"
+		writeList = "   write list = " + m.WriteUsers + "\n"
+	} else if m.Permission == "readonly" {
+		writeMode = "read only = yes"
+	}
+	return writeMode, writeList
+}
+
+// getNASUser returns the NAS service account name used for force user/group.
 func getNASUser() string {
 	user, _ := common.ReadEnvFile(common.GetEnvFilePath(), "NAS_USER")
 	if user == "" {

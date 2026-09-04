@@ -9,9 +9,9 @@ import (
 
 // PermissionMatrix 权限矩阵
 type PermissionMatrix struct {
-	Folders []string            `json:"folders"` // 共享文件夹列表
-	Users   []string            `json:"users"`   // 用户列表
-	Matrix  map[string]map[string]string `json:"matrix"` // user -> folder -> permission
+	Folders []string                     `json:"folders"` // 共享文件夹列表
+	Users   []string                     `json:"users"`   // 用户列表
+	Matrix  map[string]map[string]string `json:"matrix"`  // user -> folder -> permission
 }
 
 // handleMatrix 权限矩阵 API
@@ -136,6 +136,7 @@ func getUserFolderPermission(smbConf, username, folder string) string {
 	shareTag := "[" + folder + "]"
 	inShare := false
 	validUsers := ""
+	writeList := ""
 	readOnly := "no"
 
 	for _, line := range lines {
@@ -155,6 +156,12 @@ func getUserFolderPermission(smbConf, username, folder string) string {
 			parts := strings.SplitN(trimmed, "=", 2)
 			if len(parts) == 2 {
 				validUsers = strings.TrimSpace(parts[1])
+			}
+		}
+		if strings.HasPrefix(trimmed, "write list") {
+			parts := strings.SplitN(trimmed, "=", 2)
+			if len(parts) == 2 {
+				writeList = strings.TrimSpace(parts[1])
 			}
 		}
 		if strings.HasPrefix(trimmed, "read only") {
@@ -180,6 +187,13 @@ func getUserFolderPermission(smbConf, username, folder string) string {
 
 	if !userInList {
 		return "noaccess"
+	}
+
+	// 在 write list 里 → 读写（write list 覆盖 read only，见 Samba 手册）
+	for _, u := range strings.Split(writeList, ",") {
+		if strings.TrimSpace(u) == username {
+			return "readwrite"
+		}
 	}
 
 	if readOnly == "yes" {

@@ -14,8 +14,8 @@ import (
 type CreateUserRequest struct {
 	Username   string
 	Password   string
-	Services   map[string]bool // samba/ftp/webdav
-	QuotaGB    int             // 私有目录配额，0=无限制
+	Services   map[string]bool   // samba/ftp/webdav
+	QuotaGB    int               // 私有目录配额，0=无限制
 	SharePerms map[string]string // 共享文件夹 -> 权限 (readwrite/readonly/noaccess)
 }
 
@@ -97,7 +97,7 @@ func handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 	addStep("设置密码")
 
-		// 2. 更新服务开关（默认全关，按需开启）
+	// 2. 更新服务开关（默认全关，按需开启）
 	if req.Services["samba"] {
 		if err := addSambaUser(req.Username, req.Password); err != nil {
 			addStep("⚠️ Samba 启用失败: %v", err)
@@ -283,6 +283,11 @@ func disableWebDAVUser(username string) error {
 
 // setSharePermission 更新用户对某个共享文件夹的访问权限。
 // 统一走元数据 + SyncAllConfigs 重生成，避免直接改 smb.conf 被下次配置同步覆盖。
+// 权限粒度（TODO #30）：
+//
+//	readwrite → 加入 valid_users + write_users
+//	readonly  → 加入 valid_users，移出 write_users
+//	noaccess  → 移出 valid_users + write_users（deny 必须同时清两个列表）
 func setSharePermission(username, folder, perm string) error {
 	metas := diskmgmt.GetAllFolderMeta()
 	var target *diskmgmt.FolderMeta
@@ -296,22 +301,60 @@ func setSharePermission(username, folder, perm string) error {
 		return fmt.Errorf("共享 %s 不存在", folder)
 	}
 
-	// 更新 valid_users：noaccess 移除，readwrite/readonly 加入
-	// （按用户的读写粒度见 TODO #30，当前由文件夹级 permission 统一控制）
-	var newUsers []string
-	for _, u := range strings.Split(target.ValidUsers, ",") {
-		u = strings.TrimSpace(u)
-		if u != "" && u != username {
-			newUsers = append(newUsers, u)
-		}
-	}
-	if perm != "noaccess" {
-		newUsers = append(newUsers, username)
-	}
-	validUsers := strings.Join(newUsers, ",")
+	validUsers := listRemove(target.ValidUsers, username)
+	writeUsers := listRemove(target.WriteUsers, username)
 
-	diskmgmt.SyncFolderMeta(target.Name, target.Path, target.Pool, target.Permission, validUsers,
+	switch perm {
+	case "readwrite":
+		validUsers = listAdd(validUsers, username)
+		writeUsers = listAdd(writeUsers, username)
+	case "readonly":
+		validUsers = listAdd(validUsers, username)
+		// writeUsers 保持移除状态
+	case "noaccess":
+		// 两个列表都已移除
+	}
+
+	diskmgmt.SyncFolderMeta(target.Name, target.Path, target.Pool, target.Permission, validUsers, writeUsers,
 		target.SambaShare, target.NFSExport, target.RecycleBin, target.QuotaGB)
 
 	return diskmgmt.SyncAllConfigs()
+}
+
+// listAdd 向逗号分隔的用户列表加入一个用户（去重）
+func listAdd(list, user string) string {
+	user = strings.TrimSpace(user)
+	if user == "" {
+		return list
+	}
+	if listHas(list, user) {
+		return list
+	}
+	if strings.TrimSpace(list) == "" {
+		return user
+	}
+	return strings.TrimRight(strings.TrimSpace(list), ",") + "," + user
+}
+
+// listRemove 从逗号分隔的用户列表移除一个用户
+func listRemove(list, user string) string {
+	user = strings.TrimSpace(user)
+	var keep []string
+	for _, u := range strings.Split(list, ",") {
+		u = strings.TrimSpace(u)
+		if u != "" && u != user {
+			keep = append(keep, u)
+		}
+	}
+	return strings.Join(keep, ",")
+}
+
+// listHas 判断逗号分隔列表是否包含某用户
+func listHas(list, user string) bool {
+	for _, u := range strings.Split(list, ",") {
+		if strings.TrimSpace(u) == user {
+			return true
+		}
+	}
+	return false
 }
