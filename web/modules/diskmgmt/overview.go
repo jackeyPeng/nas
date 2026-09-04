@@ -18,26 +18,26 @@ import (
 
 // StorageOverview 存储首页顶层
 type StorageOverview struct {
-	TotalCapacity  string          `json:"total_capacity"`
-	TotalUsed     string          `json:"total_used"`
-	TotalAvail    string          `json:"total_avail"`
-	UsedPercent   string          `json:"used_percent"`
-	Pools         []PoolSummary   `json:"pools"`                    // 存储池
-	SystemDisks   []DiskSummary   `json:"system_disks"`            // 系统盘
-	FreeDisks     []DiskSummary   `json:"free_disks"`              // 空闲盘
-	SystemFolders []SharedFolder  `json:"system_folders,omitempty"` // 系统盘共享目录
-	SystemShareSize string        `json:"system_share_size,omitempty"`
-	RAIDHealth    []RAIDStatus    `json:"raid_health,omitempty"`
-	Unconfigured  int             `json:"unconfigured_count"`
-	HasIssues     bool            `json:"has_issues"`
-	Issues        []string        `json:"issues,omitempty"`
-	Stats         StorageStats    `json:"stats"`                    // 四层计数（总览卡片）
-	Alerts        []StorageAlert  `json:"alerts,omitempty"`         // 告警栏（高温/SMART失败/RAID降级）
+	TotalCapacity   string         `json:"total_capacity"`
+	TotalUsed       string         `json:"total_used"`
+	TotalAvail      string         `json:"total_avail"`
+	UsedPercent     string         `json:"used_percent"`
+	Pools           []PoolSummary  `json:"pools"`                    // 存储池
+	SystemDisks     []DiskSummary  `json:"system_disks"`             // 系统盘
+	FreeDisks       []DiskSummary  `json:"free_disks"`               // 空闲盘
+	SystemFolders   []SharedFolder `json:"system_folders,omitempty"` // 系统盘共享目录
+	SystemShareSize string         `json:"system_share_size,omitempty"`
+	RAIDHealth      []RAIDStatus   `json:"raid_health,omitempty"`
+	Unconfigured    int            `json:"unconfigured_count"`
+	HasIssues       bool           `json:"has_issues"`
+	Issues          []string       `json:"issues,omitempty"`
+	Stats           StorageStats   `json:"stats"`            // 四层计数（总览卡片）
+	Alerts          []StorageAlert `json:"alerts,omitempty"` // 告警栏（高温/SMART失败/RAID降级）
 }
 
 // StorageStats 四层对象计数（总览页顶部统计卡片）
 type StorageStats struct {
-	TotalDisks   int `json:"total_disks"`    // 物理磁盘总数（含系统盘）
+	TotalDisks   int `json:"total_disks"` // 物理磁盘总数（含系统盘）
 	TotalPools   int `json:"total_pools"`
 	TotalVolumes int `json:"total_volumes"`
 	TotalShares  int `json:"total_shares"`
@@ -52,54 +52,54 @@ type StorageAlert struct {
 
 // PoolSummary 存储池 — RAID/LVM VG/单盘，不暴露底层实现
 type PoolSummary struct {
-	Name         string           `json:"name"`           // 内部名(nas1, vg_nas)
-	DisplayName  string           `json:"display_name"`   // 存储池1
-	Type         string           `json:"type"`           // lvm, raid1, raid5, raid6, single
-	RaidLevel    string           `json:"raid_level"`     // "1","5","6","" (UI 不直接展示)
-	Device      string           `json:"device"`         // /dev/md0, /dev/vg_nas (UI 不展示)
-	Size        string           `json:"size"`           // 池总容量(各 Volume 之和)
-	Used        string           `json:"used"`
-	Avail       string           `json:"avail"`
-	Percent     string           `json:"percent"`
-	Healthy     bool             `json:"healthy"`
-	MemberDisks []DiskSummary    `json:"disks,omitempty"`       // 成员物理盘
-	Volumes     []VolumeSummary  `json:"volumes"`               // ★ 逻辑卷列表
+	Name        string          `json:"name"`         // 内部名(nas1, vg_nas)
+	DisplayName string          `json:"display_name"` // 存储池1
+	Type        string          `json:"type"`         // lvm, raid1, raid5, raid6, single
+	RaidLevel   string          `json:"raid_level"`   // "1","5","6","" (UI 不直接展示)
+	Device      string          `json:"device"`       // /dev/md0, /dev/vg_nas (UI 不展示)
+	Size        string          `json:"size"`         // 池总容量(各 Volume 之和)
+	Used        string          `json:"used"`
+	Avail       string          `json:"avail"`
+	Percent     string          `json:"percent"`
+	Healthy     bool            `json:"healthy"`
+	MemberDisks []DiskSummary   `json:"disks,omitempty"` // 成员物理盘
+	Volumes     []VolumeSummary `json:"volumes"`         // ★ 逻辑卷列表
 }
 
 // VolumeSummary 逻辑卷 — 池上可分配空间，快照/配额/压缩的挂载点
 type VolumeSummary struct {
-	Name               string          `json:"name"`               // data, md0 (内部)
-	DisplayName        string          `json:"display_name"`        // 卷1
-	Device             string          `json:"device"`              // /dev/vg_nas/data, /dev/md0 (UI 不展示)
-	MountPoint         string          `json:"mountpoint"`          // /data/nas1
-	FSType             string          `json:"fstype"`              // xfs, ext4, btrfs
-	Size               string          `json:"size"`
-	Used               string          `json:"used"`
-	Avail              string          `json:"avail"`
-	Percent            string          `json:"percent"`
-	Healthy            bool            `json:"healthy"`
-	QuotaEnabled       bool            `json:"quota_enabled,omitempty"`        // 预留：配额
-	CompressionEnabled bool            `json:"compression,omitempty"`         // 预留：压缩
-	SnapshotCount      int             `json:"snapshot_count,omitempty"`      // 预留：快照数
-	Folders            []SharedFolder  `json:"folders,omitempty"`             // 这个卷下的共享文件夹
+	Name               string         `json:"name"`         // data, md0 (内部)
+	DisplayName        string         `json:"display_name"` // 卷1
+	Device             string         `json:"device"`       // /dev/vg_nas/data, /dev/md0 (UI 不展示)
+	MountPoint         string         `json:"mountpoint"`   // /data/nas1
+	FSType             string         `json:"fstype"`       // xfs, ext4, btrfs
+	Size               string         `json:"size"`
+	Used               string         `json:"used"`
+	Avail              string         `json:"avail"`
+	Percent            string         `json:"percent"`
+	Healthy            bool           `json:"healthy"`
+	QuotaEnabled       bool           `json:"quota_enabled,omitempty"`  // 预留：配额
+	CompressionEnabled bool           `json:"compression,omitempty"`    // 预留：压缩
+	SnapshotCount      int            `json:"snapshot_count,omitempty"` // 预留：快照数
+	Folders            []SharedFolder `json:"folders,omitempty"`        // 这个卷下的共享文件夹
 }
 
 // DiskSummary 物理盘 — 只描述硬件
 type DiskSummary struct {
-	Device       string            `json:"device"`       // /dev/sdb
-	Friendly     string            `json:"friendly"`     // 磁盘 1
-	Size         string            `json:"size"`
-	Interface    string            `json:"interface"`    // SATA, NVMe, VirtIO, USB
-	Rotational   string            `json:"rotational"`   // 0=SSD 1=HDD
-	Model        string            `json:"model"`
-	Temp         string            `json:"temp"`
-	Smart        string            `json:"smart"`
-	Serial       string            `json:"serial,omitempty"`        // 序列号
-	PowerOnHours string            `json:"power_on_hours,omitempty"` // 通电时间
-	BadBlocks    string            `json:"bad_blocks,omitempty"`     // 坏块
-	Status       string            `json:"status"`                   // system, data, unused, pool_member
-	Pool         string            `json:"pool,omitempty"`
-	Partitions   []PartitionInfo   `json:"partitions,omitempty"`
+	Device       string          `json:"device"`   // /dev/sdb
+	Friendly     string          `json:"friendly"` // 磁盘 1
+	Size         string          `json:"size"`
+	Interface    string          `json:"interface"`  // SATA, NVMe, VirtIO, USB
+	Rotational   string          `json:"rotational"` // 0=SSD 1=HDD
+	Model        string          `json:"model"`
+	Temp         string          `json:"temp"`
+	Smart        string          `json:"smart"`
+	Serial       string          `json:"serial,omitempty"`         // 序列号
+	PowerOnHours string          `json:"power_on_hours,omitempty"` // 通电时间
+	BadBlocks    string          `json:"bad_blocks,omitempty"`     // 坏块
+	Status       string          `json:"status"`                   // system, data, unused, pool_member
+	Pool         string          `json:"pool,omitempty"`
+	Partitions   []PartitionInfo `json:"partitions,omitempty"`
 }
 
 // PartitionInfo 分区/卷信息
@@ -145,7 +145,7 @@ func handleStorageOverview(w http.ResponseWriter, r *http.Request) {
 
 	// 按 device 分组挂载点：同一个 Pool（md0 或 vg_nas）下可能有多个 Volume
 	poolMounts := make(map[string][]map[string]string) // device → mounts
-	poolOrder := []string{}                           // 保持顺序
+	poolOrder := []string{}                            // 保持顺序
 
 	for _, m := range mounts {
 		mountPoint := m["mount"]
@@ -295,10 +295,8 @@ func handleStorageOverview(w http.ResponseWriter, r *http.Request) {
 					if isWebDAVServed(entry.Name()) {
 						f.WebDAVAccess = true
 					}
-					// Check FTP (vsftpd users)
-					if isFTPAccessible(folderPath) {
-						f.FTPAccess = true
-					}
+					// FTP 不参与共享文件夹（vsftpd 仅 chroot 到 /data/private/$USER），
+					// 因此不再给共享文件夹打 FTP 标记，避免夸大。
 					// Check S3 (rclone serve s3)
 					if isS3Served(folderPath) {
 						f.S3Access = true
@@ -333,16 +331,16 @@ func handleStorageOverview(w http.ResponseWriter, r *http.Request) {
 			realStatus = "system"
 		}
 		ds := DiskSummary{
-			Device:       d.Device,
-			Friendly:     fmt.Sprintf("磁盘 %d", diskID),
-			Size:         d.Size,
-			Interface:    d.Interface,
-			Rotational:   d.Rotational,
-			Model:        d.Model,
-			Temp:         d.Temp,
-			Smart:        d.Smart,
-			Serial:       d.Serial,
-			Status:       realStatus,
+			Device:     d.Device,
+			Friendly:   fmt.Sprintf("磁盘 %d", diskID),
+			Size:       d.Size,
+			Interface:  d.Interface,
+			Rotational: d.Rotational,
+			Model:      d.Model,
+			Temp:       d.Temp,
+			Smart:      d.Smart,
+			Serial:     d.Serial,
+			Status:     realStatus,
 		}
 		// 分区列表
 		for _, c := range d.Children {
@@ -881,7 +879,7 @@ func regexp_match(pattern, s string) bool {
 // OpLogEntry 操作日志条目
 type OpLogEntry struct {
 	Time    string `json:"time"`
-	Action  string `json:"action"`  // success / warning / error
+	Action  string `json:"action"` // success / warning / error
 	Message string `json:"message"`
 }
 
@@ -971,17 +969,6 @@ func isWebDAVServed(folderName string) bool {
 		return false
 	}
 	return true
-}
-
-// isFTPAccessible checks if a path is accessible via FTP
-func isFTPAccessible(path string) bool {
-	out, _ := common.SudoOutput("cat", "/etc/vsftpd.userlist")
-	if out == "" {
-		out, _ = common.SudoOutput("cat", "/etc/vsftpd.user_list")
-	}
-	// FTP access is per-user, not per-folder. If FTP is running, users can access /data
-	_, err := common.SudoOutput("systemctl", "is-active", "vsftpd")
-	return err == nil
 }
 
 // isS3Served checks if rclone S3 server is running

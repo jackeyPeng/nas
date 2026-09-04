@@ -1240,10 +1240,9 @@
                                                 <span style="font-size:13px;color:#6b7280" x-text="vol.size?(vol.used+'/'+vol.size):''"></span>
                                                 <span class="badge" style="background:#ede9fe;color:#6d28d9;font-size:11px" x-text="'·'+(vol.fstype||'')+'·'+$t('storage.snapshot')+':'+(vol.snapshot_count>0?$t('common.on'):$t('common.off'))"></span>
                                                 <span style="margin-left:auto;display:flex;gap:6px">
-                                                    <span class="badge" :style="vol.folders?.some(function(f){return f.samba_share})?'background:#dbeafe;color:#1e40af':'background:#f3f4f6;color:#374151'" style="font-size:11px;padding:3px 7px" x-text="'SMB'+(vol.folders?.some(function(f){return f.samba_share})?'✓':'✗')"></span>
-                                                    <span class="badge" :style="vol.folders?.some(function(f){return f.nfs_export})?'background:#dbeafe;color:#1e40af':'background:#f3f4f6;color:#374151'" style="font-size:11px;padding:3px 7px" x-text="'NFS'+(vol.folders?.some(function(f){return f.nfs_export})?'✓':'✗')"></span>
-                                                    <span class="badge" :style="vol.folders?.some(function(f){return f.ftp_access})?'background:#dbeafe;color:#1e40af':'background:#f3f4f6;color:#374151'" style="font-size:11px;padding:3px 7px" x-text="'FTP'+(vol.folders?.some(function(f){return f.ftp_access})?'✓':'✗')"></span>
-                                                    <span class="badge" :style="vol.folders?.some(function(f){return f.s3_access})?'background:#dbeafe;color:#1e40af':'background:#f3f4f6;color:#374151'" style="font-size:11px;padding:3px 7px" x-text="'S3'+(vol.folders?.some(function(f){return f.s3_access})?'✓':'✗')"></span>
+                                                    <span class="badge" :style="vol.folders?.some(function(f){return f.samba_share})?'background:#dbeafe;color:#1e40af':'background:#f3f4f6;color:#374151'" style="font-size:11px;padding:3px 7px" :title="$t('storage.proto_per_user')" x-text="'SMB'+(vol.folders?.some(function(f){return f.samba_share})?'✓':'✗')"></span>
+                                                    <span class="badge" :style="vol.folders?.some(function(f){return f.nfs_export})?'background:#f3f4f6;color:#6b7280':'background:#f3f4f6;color:#cbd5e1'" style="font-size:11px;padding:3px 7px" :title="$t('storage.proto_network')" x-text="'NFS'+(vol.folders?.some(function(f){return f.nfs_export})?'✓':'✗')"></span>
+                                                    <span class="badge" :style="vol.folders?.some(function(f){return f.s3_access})?'background:#fef3c7;color:#92400e':'background:#f3f4f6;color:#cbd5e1'" style="font-size:11px;padding:3px 7px" :title="$t('storage.proto_global')" x-text="'S3'+(vol.folders?.some(function(f){return f.s3_access})?'✓':'✗')"></span>
                                                 </span>
                                             </div>
                                             <div style="margin-left:16px">
@@ -1258,11 +1257,10 @@
                                                             <span style="font-size:13px;color:#6b7280" x-text="f.size||'-'"></span>
                                                             <span style="font-size:13px;color:#6b7280" x-text="$t('common.readwrite')"></span>
                                                             <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
-                                                                <span class="badge" :style="f.samba_share?'background:#dbeafe;color:#1e40af':'background:#f3f4f6;color:#374151'" style="font-size:11px;padding:3px 7px" x-text="'SMB'+(f.samba_share?'✓':'✗')"></span>
-                                                                <span class="badge" :style="f.nfs_export?'background:#dbeafe;color:#1e40af':'background:#f3f4f6;color:#374151'" style="font-size:11px;padding:3px 7px" x-text="'NFS'+(f.nfs_export?'✓':'✗')"></span>
-                                                                <span class="badge" :style="f.webdav_access?'background:#dbeafe;color:#1e40af':'background:#f3f4f6;color:#374151'" style="font-size:11px;padding:3px 7px" x-text="'DAV'+(f.webdav_access?'✓':'✗')"></span>
-                                                                <span class="badge" :style="f.ftp_access?'background:#dbeafe;color:#1e40af':'background:#f3f4f6;color:#374151'" style="font-size:11px;padding:3px 7px" x-text="'FTP'+(f.ftp_access?'✓':'✗')"></span>
-                                                                <span class="badge" :style="f.s3_access?'background:#dbeafe;color:#1e40af':'background:#f3f4f6;color:#374151'" style="font-size:11px;padding:3px 7px" x-text="'S3'+(f.s3_access?'✓':'✗')"></span>
+                                                                <span class="badge" :style="f.samba_share?'background:#dbeafe;color:#1e40af':'background:#f3f4f6;color:#374151'" style="font-size:11px;padding:3px 7px" :title="$t('storage.proto_per_user')" x-text="'SMB'+(f.samba_share?'✓':'✗')"></span>
+                                                                <span class="badge" :style="f.nfs_export?'background:#f3f4f6;color:#6b7280':'background:#f3f4f6;color:#cbd5e1'" style="font-size:11px;padding:3px 7px" :title="$t('storage.proto_network')" x-text="'NFS'+(f.nfs_export?'✓':'✗')"></span>
+                                                                <span class="badge" :style="f.webdav_access?'background:#fef3c7;color:#92400e':'background:#f3f4f6;color:#cbd5e1'" style="font-size:11px;padding:3px 7px" :title="$t('storage.proto_global')" x-text="'DAV'+(f.webdav_access?'✓':'✗')"></span>
+                                                                <span class="badge" :style="f.s3_access?'background:#fef3c7;color:#92400e':'background:#f3f4f6;color:#cbd5e1'" style="font-size:11px;padding:3px 7px" :title="$t('storage.proto_global')" x-text="'S3'+(f.s3_access?'✓':'✗')"></span>
                                                                 <button class="btn btn-sm" @click.stop="editFolderPermission(f)" style="font-size:12px;padding:3px 6px" title="编辑">✏️</button>
                                                                 <button class="btn btn-sm btn-danger" @click.stop="deleteFolder(f)" style="font-size:12px;padding:3px 6px" title="删除">🗑️</button>
                                                             </span>
@@ -1280,10 +1278,6 @@
                                                             <div x-show="f.webdav_access" style="display:flex;align-items:center;gap:6px;font-size:12px;color:#475569">
                                                                 <span style="font-weight:600;color:#7c3aed">WebDAV</span>
                                                                 <code style="font-size:12px;color:#334155;user-select:all">http://<span x-text="dashboard.ip_addr||'IP'"></span>:8080/<span x-text="f.name"></span></code>
-                                                            </div>
-                                                            <div x-show="f.ftp_access" style="display:flex;align-items:center;gap:6px;font-size:12px;color:#475569">
-                                                                <span style="font-weight:600;color:#d97706">FTP</span>
-                                                                <code style="font-size:12px;color:#334155">ftp://<span x-text="f.valid_users.split(',')[0]||'user'"></span>@<span x-text="dashboard.ip_addr||'IP'"></span>:21</code>
                                                             </div>
                                                             <div x-show="f.s3_access" style="display:flex;align-items:center;gap:6px;font-size:12px;color:#475569">
                                                                 <span style="font-weight:600;color:#e67e22">S3</span>
