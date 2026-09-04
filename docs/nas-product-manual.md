@@ -677,16 +677,16 @@ Samba 的 `path` 指令虽然文档声称支持 `%U` 变量，但 `%U` 表示的
 #   no_subtree_check - 不检查子目录（性能更好）
 #   no_root_squash  - 允许远程 root 保持 root 权限（局域网内信任）
 
-/data/shared    [REDACTED]/24(rw,sync,no_subtree_check,no_root_squash)
-/data/media     [REDACTED]/24(ro,sync,no_subtree_check)
-/data/documents [REDACTED]/24(rw,sync,no_subtree_check,no_root_squash)
-/data/photos    [REDACTED]/24(rw,sync,no_subtree_check,no_root_squash)
-/data/backups   [REDACTED]/24(rw,sync,no_subtree_check,no_root_squash)
+/data/shared    192.168.1.0/24(rw,sync,no_subtree_check,no_root_squash)
+/data/media     192.168.1.0/24(ro,sync,no_subtree_check)
+/data/documents 192.168.1.0/24(rw,sync,no_subtree_check,no_root_squash)
+/data/photos    192.168.1.0/24(rw,sync,no_subtree_check,no_root_squash)
+/data/backups   192.168.1.0/24(rw,sync,no_subtree_check,no_root_squash)
 ```
 
 **注意事项：**
 
-- IP 段限制为 `[REDACTED]/24`，仅允许同局域网设备访问
+- IP 段限制为 `192.168.1.0/24`，仅允许同局域网设备访问
 - `/data/media` 设为只读，防止客户端误删影音文件
 - 批量部署时，如果网段不同，需修改此文件中的 IP 段
 - `no_root_squash` 允许远程 root 以 root 身份操作文件，适合家庭/办公局域网；
