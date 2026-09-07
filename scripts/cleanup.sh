@@ -179,10 +179,41 @@ rm -rf /var/lib/vsftpd 2>/dev/null || true
 
 echo "  ✓ 其他文件已清理"
 
-# ==================== [额外] 清理磁盘签名 ====================
+# ==================== [额外] 清理存储池与磁盘签名 ====================
 echo ""
-echo "[额外] 清理数据盘 RAID/LVM 签名..."
-DATA_DISKS=$(lsblk -nd -o NAME,TYPE | grep disk | awk '{print $1}' | grep -v "^$(lsblk -nd -o NAME / | head -1)")
+echo "[额外] 拆除存储池 + 清理磁盘 RAID/LVM 签名..."
+
+# 卸载 /data/nas* 存储池
+for mp in $(mount | grep -oE '/data/nas[0-9]+' | sort -u); do
+    umount "$mp" 2>/dev/null && echo "  卸载 $mp" || true
+done
+
+# 拆除 LVM：先 LV → VG → PV（旧版本只做 mdadm，遇到 LVM 池会残留）
+if command -v lvremove >/dev/null 2>&1; then
+    for lv in $(lvs --noheadings -o lv_name,vg_name 2>/dev/null | awk '{print $2"/"$1}'); do
+        lvremove -f "$lv" 2>/dev/null && echo "  删除 LV $lv" || true
+    done
+fi
+if command -v vgremove >/dev/null 2>&1; then
+    for vg in $(vgs --noheadings -o vg_name 2>/dev/null); do
+        vgremove -f "$vg" 2>/dev/null && echo "  删除 VG $vg" || true
+    done
+fi
+if command -v pvremove >/dev/null 2>&1; then
+    for pv in $(pvs --noheadings -o pv_name 2>/dev/null); do
+        pvremove -f "$pv" 2>/dev/null && echo "  删除 PV $pv" || true
+    done
+fi
+
+# 清除数据盘 fstab 条目（/data/nas*）
+if [ -f /etc/fstab ]; then
+    sed -i '/\/data\/nas[0-9]*/d' /etc/fstab
+    echo "  清除 fstab 数据盘条目"
+fi
+
+# 识别系统盘（根挂载所在磁盘），排除后得到数据盘
+SYS_DISK=$(findmnt -n -o SOURCE / 2>/dev/null | sed 's|/dev/||; s|[0-9]*$||; s|p[0-9]*$||')
+DATA_DISKS=$(lsblk -nd -o NAME,TYPE | awk '$2=="disk"{print $1}' | grep -v "^$SYS_DISK$")
 for disk in $DATA_DISKS; do
     # 停止该磁盘相关的 RAID 阵列
     mdadm --stop "/dev/${disk}" 2>/dev/null || true
