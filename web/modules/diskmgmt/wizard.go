@@ -319,7 +319,7 @@ func setupMergeDisks(devs []string, mountPoint, nasUser string) []string {
 	common.SudoExec("/usr/sbin/vgcreate", vgArgs...)
 	steps = append(steps, "创建卷组 "+vgName)
 	// lvcreate
-	common.SudoExec("/usr/sbin/lvcreate", "-l", "100%FREE", "-n", "data", vgName)
+	common.SudoExec("/usr/sbin/lvcreate", "-y", "-l", "100%FREE", "-n", "data", vgName)
 	lvPath := "/dev/" + vgName + "/data"
 	steps = append(steps, "创建逻辑卷 data")
 	// format
