@@ -246,24 +246,46 @@ func GenerateSambaConfig() error {
 		if !m.SambaShare {
 			continue
 		}
-		users := m.ValidUsers
-		if users == "" {
-			users = nasUser
+
+		// 文件夹类型决定 force user/group 与 mask：
+		//   public → 全用户读写，force user=nasUser，force group=nasusers，mask 0775
+		//   home   → 用户主目录，force user=owner，mask 0700
+		isPublic := m.Name == "public"
+		forceUser := nasUser
+		forceGroup := nasUser
+		mask := "0775"
+		if isPublic {
+			forceGroup = "nasusers"
+		} else {
+			forceUser = m.Name
+			forceGroup = m.Name
+			mask = "0700"
 		}
 
-		writeMode, writeList := smbShareParams(m, nasUser)
+		writeMode := "writable = yes"
+		writeList := ""
+		validLine := ""
+		if isPublic {
+			// public：不设 valid users（所有认证用户可读写）
+		} else {
+			users := m.ValidUsers
+			if users == "" {
+				users = m.Name
+			}
+			validLine = fmt.Sprintf("   valid users = %s\n", users)
+			writeMode, writeList = smbShareParams(m, nasUser)
+		}
 
 		sb.WriteString(fmt.Sprintf(`
 [%s]
    path = %s
    browseable = yes
    %s
-%s   valid users = %s
-   create mask = 0775
-   directory mask = 0775
+%s%s   create mask = %s
+   directory mask = %s
    force user = %s
    force group = %s
-`, m.Name, m.Path, writeMode, writeList, users, nasUser, nasUser))
+`, m.Name, m.Path, writeMode, validLine, writeList, mask, mask, forceUser, forceGroup))
 
 		if m.RecycleBin {
 			sb.WriteString(`   vfs objects = recycle
@@ -696,4 +718,66 @@ func handleConfigSync(w http.ResponseWriter, r *http.Request) {
 	common.JSONResponse(w, map[string]interface{}{
 		"message": "配置同步完成",
 	})
+}
+
+// EnsurePoolStructure 在存储池挂载完成后创建 public + 用户 home，写入 folders.db，并重生成托管配置。
+// 幂等：目录已存在则跳过创建，元数据用 upsert。由存储向导（wizard.go / stream.go）在池创建后调用。
+func EnsurePoolStructure(mountPoint, nasUser string) error {
+	// 公共组 nasusers：setup.sh [2/9] 已创建并加入 nasUser，这里兜底确保存在
+	common.SudoExec("groupadd", "-f", "nasusers")
+	common.SudoExec("usermod", "-a", "-G", "nasusers", nasUser)
+
+	// 1. public（2775 nasusers，setgid 组级读写）
+	pubPath := filepath.Join(mountPoint, "public")
+	if err := os.MkdirAll(pubPath, 0775); err != nil {
+		return fmt.Errorf("创建 public 失败: %v", err)
+	}
+	os.Chmod(pubPath, 02775)
+	for _, sub := range []string{"media", "photos", "documents", "downloads"} {
+		p := filepath.Join(pubPath, sub)
+		os.MkdirAll(p, 0775)
+		os.Chmod(p, 02775)
+	}
+	common.SudoExec("chown", "-R", nasUser+":nasusers", pubPath)
+
+	// 2. nasUser home（0700 owner）
+	homePath := filepath.Join(mountPoint, nasUser)
+	if err := os.MkdirAll(homePath, 0700); err != nil {
+		return fmt.Errorf("创建 home 失败: %v", err)
+	}
+	os.Chmod(homePath, 0700)
+	for _, sub := range []string{"media", "photos", "documents", "downloads"} {
+		p := filepath.Join(homePath, sub)
+		os.MkdirAll(p, 0700)
+		os.Chmod(p, 0700)
+	}
+	common.SudoExec("chown", "-R", nasUser+":"+nasUser, homePath)
+
+	// 3. 写入 folders.db（upsert）：public = samba+nfs；home = 仅 samba
+	SyncFolderMeta("public", pubPath, mountPoint, "readwrite", "", "", true, true, false, 0)
+	SyncFolderMeta(nasUser, homePath, mountPoint, "readwrite", nasUser, "", true, false, false, 0)
+
+	// 4. 重生成 SMB + NFS 托管配置
+	return SyncAllConfigs()
+}
+
+// EnsureUserHome 创建用户主目录 /data/nas1/<username> + 默认子目录，写入 folders.db，并重生成托管配置。
+// 供用户创建（users/create.go）复用。
+func EnsureUserHome(username string) error {
+	const pool = "/data/nas1"
+	homePath := filepath.Join(pool, username)
+	if err := os.MkdirAll(homePath, 0700); err != nil {
+		return fmt.Errorf("创建 home 失败: %v", err)
+	}
+	os.Chmod(homePath, 0700)
+	for _, sub := range []string{"media", "photos", "documents", "downloads"} {
+		p := filepath.Join(homePath, sub)
+		os.MkdirAll(p, 0700)
+		os.Chmod(p, 0700)
+	}
+	common.SudoExec("chown", "-R", username+":"+username, homePath)
+
+	// valid_users=username，write_users 留空（owner 默认 writable，后续授权走 write list）
+	SyncFolderMeta(username, homePath, pool, "readwrite", username, "", true, false, false, 0)
+	return SyncAllConfigs()
 }

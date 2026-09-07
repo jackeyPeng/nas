@@ -1,7 +1,7 @@
 #!/bin/bash
 # NAS 配置备份脚本
 # 用法: sudo bash backup-config.sh
-# 备份所有 NAS 配置到 /data/backups/config-YYYYMMDD-HHMMSS.tar.gz
+# 备份所有 NAS 配置到 /opt/nas/backups/config-YYYYMMDD-HHMMSS.tar.gz
 # 保留最近 3 个备份，自动清理旧的
 
 set -e
@@ -12,7 +12,7 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-BACKUP_DIR="/data/backups"
+BACKUP_DIR="/opt/nas/backups"
 BACKUP_NAME="config-${TIMESTAMP}"
 BACKUP_PATH="${BACKUP_DIR}/${BACKUP_NAME}"
 TARBALL="${BACKUP_DIR}/${BACKUP_NAME}.tar.gz"

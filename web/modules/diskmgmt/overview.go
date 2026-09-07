@@ -295,7 +295,7 @@ func handleStorageOverview(w http.ResponseWriter, r *http.Request) {
 					if isWebDAVServed(entry.Name()) {
 						f.WebDAVAccess = true
 					}
-					// FTP 不参与共享文件夹（vsftpd 仅 chroot 到 /data/private/$USER），
+					// FTP 不参与共享文件夹（vsftpd chroot 到 /data/nas1，靠文件系统权限隔离），
 					// 因此不再给共享文件夹打 FTP 标记，避免夸大。
 					// Check S3 (rclone serve s3)
 					if isS3Served(folderPath) {

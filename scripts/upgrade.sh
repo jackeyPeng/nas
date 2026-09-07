@@ -8,7 +8,7 @@
 #
 # 数据安全保障:
 #   1. 只替换 /usr/local/bin/nas-panel 二进制 + 重启 nas-panel，不碰 /data
-#   2. 升级前自动跑 backup-config.sh 备份配置到 /data/backups
+#   2. 升级前自动跑 backup-config.sh 备份配置到 /opt/nas/backups
 #   3. 升级前备份旧二进制 nas-panel.bak.<时间戳>，失败自动回滚
 #   4. 下载后校验 ELF + 大小，替换后健康检查，起不来自动回滚
 #

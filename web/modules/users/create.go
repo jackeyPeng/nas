@@ -79,7 +79,7 @@ func handleCreateUser(w http.ResponseWriter, r *http.Request) {
 
 	// 1. Create system user (inline, no external script dependency)
 	addStep("创建系统用户 %s", req.Username)
-	out, err := common.SudoExec("useradd", "-m", "-s", "/bin/bash", req.Username)
+	out, err := common.SudoExec("useradd", "-m", "-s", "/bin/bash", "-G", "nasusers", req.Username)
 	if err != nil {
 		// Check if user already exists
 		if out2, err2 := common.SudoExec("id", req.Username); err2 == nil && out2 != "" {
@@ -96,6 +96,13 @@ func handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	addStep("设置密码")
+
+	// 1.5 创建用户主目录 + 默认子目录 + 写入 folders.db + 生成托管配置
+	if err := diskmgmt.EnsureUserHome(req.Username); err != nil {
+		addStep("⚠️ 创建主目录失败: %v", err)
+	} else {
+		addStep("创建用户主目录 %s", req.Username)
+	}
 
 	// 2. 更新服务开关（默认全关，按需开启）
 	if req.Services["samba"] {

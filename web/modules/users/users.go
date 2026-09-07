@@ -13,7 +13,7 @@ import (
 type NASUser struct {
 	Username   string            `json:"username"`
 	Services   map[string]bool   `json:"services"`    // samba/ftp/webdav/nfs
-	PrivateDir string            `json:"private_dir"` // /data/private/xxx
+	PrivateDir string            `json:"private_dir"` // /data/nas1/xxx（用户主目录）
 	PrivateUsed string           `json:"private_used"` // 已用容量，如 "1.2G"
 	QuotaGB    int               `json:"quota_gb"`    // 私有目录配额，0=无限制
 	QuotaUsed  string            `json:"quota_used"`  // 配额已用
@@ -89,8 +89,8 @@ func getUsers() []NASUser {
 	shareCount := countSharesPerUser(smbConf)
 
 	for name, u := range userMap {
-		// 私有目录 + 容量
-		privDir := "/data/private/" + name
+		// 主目录 + 容量
+		privDir := "/data/nas1/" + name
 		if dirExists(privDir) {
 			u.PrivateDir = privDir
 			u.PrivateUsed = dirSize(privDir)

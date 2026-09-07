@@ -155,12 +155,15 @@ echo "  ✓ 软件包安装完成"
 # ==================== [2/9] 创建数据目录结构 ====================
 echo ""
 echo "[2/9] 创建数据目录结构..."
-mkdir -p "$DATA_DIR"/system
-mkdir -p "$DATA_DIR"/{shared,media/{movies,tv,music},documents,photos,backups,downloads,private/$NAS_USER}
+mkdir -p "$DATA_DIR"
 chown -R "$NAS_USER:$NAS_USER" "$DATA_DIR"
 chmod 755 "$DATA_DIR"
-chmod 775 "$DATA_DIR"/{shared,media,documents,photos,system}
-echo "  ✓ 目录结构创建完成（含 /data/system 系统盘共享目录）"
+# 公共组 nasusers：public 目录组级读写用，所有 NAS 用户都加入
+if ! getent group nasusers >/dev/null 2>&1; then
+    groupadd nasusers
+fi
+usermod -a -G nasusers "$NAS_USER" 2>/dev/null || true
+echo "  ✓ 目录结构创建完成（存储池挂载 /data/nas1，public 与用户 home 由存储向导创建）"
 
 # ==================== [3/9] 配置 Samba ====================
 echo ""
@@ -224,11 +227,7 @@ if [ -f "$NAS_DIR/configs/exports" ]; then
     sed "s|__SUBNET__|${DETECT_SUBNET}|g" "$NAS_DIR/configs/exports" > /etc/exports
 else
     cat > /etc/exports << EXPEOF
-$DATA_DIR/shared    ${DETECT_SUBNET}(rw,sync,no_subtree_check,no_root_squash)
-$DATA_DIR/media     ${DETECT_SUBNET}(ro,sync,no_subtree_check)
-$DATA_DIR/documents ${DETECT_SUBNET}(rw,sync,no_subtree_check,no_root_squash)
-$DATA_DIR/photos    ${DETECT_SUBNET}(rw,sync,no_subtree_check,no_root_squash)
-$DATA_DIR/backups   ${DETECT_SUBNET}(rw,sync,no_subtree_check,no_root_squash)
+# NFS 导出由面板托管段生成（仅 /data/nas1/public），此处保持空
 EXPEOF
 fi
 
@@ -263,7 +262,7 @@ connect_from_port_20=YES
 chroot_local_user=YES
 allow_writeable_chroot=YES
 user_sub_token=\$USER
-local_root=$DATA_DIR/private/\$USER
+local_root=$DATA_DIR/nas1
 pasv_enable=YES
 pasv_min_port=30000
 pasv_max_port=31000
@@ -296,7 +295,7 @@ After=network.target
 [Service]
 Type=simple
 User=$NAS_USER
-ExecStart=/usr/bin/rclone serve webdav $DATA_DIR --addr :8080 --htpasswd /etc/rclone-htpasswd
+ExecStart=/usr/bin/rclone serve webdav $DATA_DIR/nas1/public --addr :8080 --htpasswd /etc/rclone-htpasswd
 Restart=on-failure
 RestartSec=10
 
@@ -361,7 +360,7 @@ if filebrowser config set \
     --database /etc/filebrowser/filebrowser.db \
     --address 0.0.0.0 \
     --port 8081 \
-    --root "$DATA_DIR" \
+    --root "$DATA_DIR/nas1/public" \
     --log /var/log/filebrowser.log >/dev/null 2>&1; then
     echo "  ✓ FileBrowser 监听 0.0.0.0:8081"
 else
@@ -439,7 +438,7 @@ After=network.target
 Type=simple
 User=$NAS_USER
 EnvironmentFile=/etc/rclone/s3-env
-ExecStart=/usr/bin/rclone serve s3 $DATA_DIR --addr :9000 --auth-key $NAS_USER,$NAS_PASS
+ExecStart=/usr/bin/rclone serve s3 $DATA_DIR/nas1/public --addr :9000 --auth-key $NAS_USER,$NAS_PASS
 Restart=on-failure
 RestartSec=10
 
@@ -451,8 +450,8 @@ systemctl daemon-reload
 systemctl enable rclone-s3
 systemctl reset-failed rclone-s3 2>/dev/null; systemctl restart rclone-s3
 echo "  ✓ S3 对象存储配置完成 (rclone serve s3, 端口 9000)"
-echo "    bucket 列表: $DATA_DIR 下每个目录自动成为一个 bucket"
-echo "    访问方式: s3cmd --no-ssl --host=NAS_IP:9000 ls s3://shared/"
+echo "    bucket 列表: public 目录自动成为一个 bucket"
+echo "    访问方式: s3cmd --no-ssl --host=NAS_IP:9000 ls s3://public/"
 
 # ==================== [9/9] 配置防火墙和安全 ====================
 echo ""
@@ -542,7 +541,7 @@ systemctl reset-failed nas-panel 2>/dev/null; systemctl restart nas-panel
 
 # 配置 sudo 免密权限（nas-panel 需要执行系统管理命令）
 SUDOERS_FILE="/etc/sudoers.d/nas-panel"
-echo "${NAS_USER} ALL=(ALL) NOPASSWD: /usr/bin/pdbedit, /opt/nas/scripts/add-user.sh, /opt/nas/scripts/remove-user.sh, /usr/sbin/smartctl, /usr/bin/chpasswd, /usr/bin/smbpasswd, /usr/bin/htpasswd, /bin/systemctl start *, /bin/systemctl stop *, /bin/systemctl restart *, /bin/systemctl reset-failed *, /bin/systemctl enable *, /bin/systemctl disable *, /usr/sbin/ufw status, /usr/sbin/ufw allow *, /usr/sbin/ufw deny *, /usr/sbin/exportfs, /usr/sbin/smartctl -H *, /usr/sbin/smartctl -a *, /usr/bin/tee /opt/nas/.env, /usr/bin/tee -a /etc/samba/smb.conf, /usr/bin/tee /etc/samba/smb.conf, /usr/bin/tee /etc/vsftpd.userlist, /usr/bin/tee -a /etc/vsftpd.userlist, /usr/bin/tee /etc/exports, /usr/bin/tee /etc/nfs.conf, /usr/bin/tee /etc/fail2ban/jail.local, /usr/bin/tee /etc/rclone-htpasswd, /usr/bin/journalctl -p err -n * --no-pager --since *, /usr/sbin/pvs --noheadings *, /usr/sbin/vgs --noheadings *, /usr/sbin/lvs --noheadings *, /usr/sbin/fdisk -l, /usr/sbin/mkfs.ext4 -F *, /usr/sbin/mkfs.xfs -f *, /usr/sbin/mkfs.btrfs *, /bin/mount *, /bin/umount *, /bin/mkdir -p /data/*, /bin/mkdir -p /data, /bin/cat /etc/samba/smb.conf, /bin/cat /etc/vsftpd.userlist, /bin/cat /etc/exports, /bin/cat /etc/nfs.conf, /bin/cat /etc/fail2ban/jail.local, /bin/cat /etc/rclone-htpasswd, /opt/nas/scripts/backup-config.sh, /opt/nas/scripts/restore-config.sh, /bin/rm -f /data/backups/*, /usr/bin/blkid -s UUID -o value *, /usr/bin/findmnt -n -o TARGET *, /usr/bin/tee /etc/fstab, /usr/bin/tee -a /etc/samba/smb.conf, /bin/chown -R *, /sbin/pvcreate -f *, /sbin/vgcreate -f *, /sbin/lvcreate *, /sbin/vgextend *, /sbin/lvextend *, /sbin/resize2fs *, /sbin/xfs_growfs *, /sbin/pvs --noheadings *, /sbin/vgs --noheadings *, /sbin/lvs --noheadings *, /sbin/pvremove -f *, /sbin/vgremove -f *, /sbin/lvremove -f *, /usr/sbin/wipefs *, /usr/sbin/mdadm *, /usr/sbin/parted *, /bin/ls *" > "$SUDOERS_FILE"
+echo "${NAS_USER} ALL=(ALL) NOPASSWD: /usr/bin/pdbedit, /opt/nas/scripts/add-user.sh, /opt/nas/scripts/remove-user.sh, /usr/sbin/smartctl, /usr/bin/chpasswd, /usr/bin/smbpasswd, /usr/bin/htpasswd, /bin/systemctl start *, /bin/systemctl stop *, /bin/systemctl restart *, /bin/systemctl reset-failed *, /bin/systemctl enable *, /bin/systemctl disable *, /usr/sbin/ufw status, /usr/sbin/ufw allow *, /usr/sbin/ufw deny *, /usr/sbin/exportfs, /usr/sbin/smartctl -H *, /usr/sbin/smartctl -a *, /usr/bin/tee /opt/nas/.env, /usr/bin/tee -a /etc/samba/smb.conf, /usr/bin/tee /etc/samba/smb.conf, /usr/bin/tee /etc/vsftpd.userlist, /usr/bin/tee -a /etc/vsftpd.userlist, /usr/bin/tee /etc/exports, /usr/bin/tee /etc/nfs.conf, /usr/bin/tee /etc/fail2ban/jail.local, /usr/bin/tee /etc/rclone-htpasswd, /usr/bin/journalctl -p err -n * --no-pager --since *, /usr/sbin/pvs --noheadings *, /usr/sbin/vgs --noheadings *, /usr/sbin/lvs --noheadings *, /usr/sbin/fdisk -l, /usr/sbin/mkfs.ext4 -F *, /usr/sbin/mkfs.xfs -f *, /usr/sbin/mkfs.btrfs *, /bin/mount *, /bin/umount *, /bin/mkdir -p /data/*, /bin/mkdir -p /data, /bin/cat /etc/samba/smb.conf, /bin/cat /etc/vsftpd.userlist, /bin/cat /etc/exports, /bin/cat /etc/nfs.conf, /bin/cat /etc/fail2ban/jail.local, /bin/cat /etc/rclone-htpasswd, /opt/nas/scripts/backup-config.sh, /opt/nas/scripts/restore-config.sh, /bin/rm -f /opt/nas/backups/*, /usr/bin/blkid -s UUID -o value *, /usr/bin/findmnt -n -o TARGET *, /usr/bin/tee /etc/fstab, /usr/bin/tee -a /etc/samba/smb.conf, /bin/chown -R *, /sbin/pvcreate -f *, /sbin/vgcreate -f *, /sbin/lvcreate *, /sbin/vgextend *, /sbin/lvextend *, /sbin/resize2fs *, /sbin/xfs_growfs *, /sbin/pvs --noheadings *, /sbin/vgs --noheadings *, /sbin/lvs --noheadings *, /sbin/pvremove -f *, /sbin/vgremove -f *, /sbin/lvremove -f *, /usr/sbin/wipefs *, /usr/sbin/mdadm *, /usr/sbin/parted *, /bin/ls *" > "$SUDOERS_FILE"
 chmod 440 "$SUDOERS_FILE"
 visudo -cf "$SUDOERS_FILE" 2>/dev/null || { echo "  错误: sudoers 语法检查失败"; rm -f "$SUDOERS_FILE"; }
 # 追加改密码需要的命令（filebrowser + sed）
@@ -617,13 +616,13 @@ echo "  用户名: $NAS_USER"
 echo "  密码: $NAS_PASS"
 echo ""
 echo "访问方式:"
-echo "  - Samba:       //NAS_IP/shared (公共共享)"
-echo "  - Samba:       //NAS_IP/$NAS_USER (私有目录)"
-echo "  - NFS:         mount -t nfs NAS_IP:/data/shared /mnt/nas"
+echo "  - Samba:       //NAS_IP/public (公共共享)"
+echo "  - Samba:       //NAS_IP/$NAS_USER (用户主目录)"
+echo "  - NFS:         mount -t nfs NAS_IP:/data/nas1/public /mnt/nas"
 echo "  - FTP:         ftp://NAS_IP/ (用户名: $NAS_USER)"
 echo "  - WebDAV:      http://NAS_IP:8080/ (用户名: $NAS_USER)"
 echo "  - FileBrowser: http://NAS_IP:8081/ (用户名: $NAS_USER)"
-echo "  - S3 API:       http://NAS_IP:9000 (s3cmd --no-ssl --host=NAS_IP:9000 ls s3://shared/)"
+echo "  - S3 API:       http://NAS_IP:9000 (s3cmd --no-ssl --host=NAS_IP:9000 ls s3://public/)"
 echo "  - Web 面板:    http://NAS_IP:8090 (用户名: $NAS_USER)"
 echo ""
 echo "管理脚本:"

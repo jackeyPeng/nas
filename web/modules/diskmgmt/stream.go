@@ -255,7 +255,7 @@ func setupLVMSingleStream(w http.ResponseWriter, dev, mountPoint, nasUser string
 	uuidOut, _ := common.ExecOutput("blkid", "-s", "UUID", "-o", "value", lvPath)
 	writeFstab(strings.TrimSpace(uuidOut), mountPoint, "xfs")
 	common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountPoint)
-	addSambaShare(shareNameFromMount(mountPoint), mountPoint, nasUser)
+	EnsurePoolStructure(mountPoint, nasUser)
 	stepDone("挂载并配置 Samba 共享")
 }
 
@@ -298,7 +298,7 @@ func setupLVMMergeStream(w http.ResponseWriter, devs []string, mountPoint, nasUs
 	uuidOut, _ := common.ExecOutput("blkid", "-s", "UUID", "-o", "value", lvPath)
 	writeFstab(strings.TrimSpace(uuidOut), mountPoint, "xfs")
 	common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountPoint)
-	addSambaShare(shareNameFromMount(mountPoint), mountPoint, nasUser)
+	EnsurePoolStructure(mountPoint, nasUser)
 	stepDone("挂载并配置 Samba 共享")
 }
 
@@ -358,7 +358,7 @@ func setupRAIDStream(w http.ResponseWriter, devs []string, level int, mountPoint
 
 	// 7. Add Samba share
 	stepRunning("配置 Samba 共享")
-	addSambaShare(shareNameFromMount(mountPoint), mountPoint, nasUser)
+	EnsurePoolStructure(mountPoint, nasUser)
 	stepDone("配置 Samba 共享")
 }
 
@@ -418,10 +418,9 @@ func setupSeparateStream(w http.ResponseWriter, devs []string, nasUser string,
 		common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountPoint)
 		stepDone(fmt.Sprintf("磁盘 %d: 挂载到存储空间%d", i+1, i+1))
 
-		shareName := shareNameFromMount(mountPoint)
-		stepRunning(fmt.Sprintf("磁盘 %d: Samba 共享", i+1))
-		addSambaShare(shareName, mountPoint, nasUser)
-		stepDone(fmt.Sprintf("磁盘 %d: Samba 共享 %s", i+1, shareName))
+		stepRunning(fmt.Sprintf("磁盘 %d: public + home", i+1))
+		EnsurePoolStructure(mountPoint, nasUser)
+		stepDone(fmt.Sprintf("磁盘 %d: public + home", i+1))
 	}
 }
 

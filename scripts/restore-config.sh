@@ -14,7 +14,7 @@ BACKUP_FILE="$1"
 
 if [ -z "$BACKUP_FILE" ]; then
     # 交互式选择备份
-    BACKUP_DIR="/data/backups"
+    BACKUP_DIR="/opt/nas/backups"
     echo "可用备份列表:"
     echo ""
     ls -lht "${BACKUP_DIR}"/config-*.tar.gz 2>/dev/null | head -10

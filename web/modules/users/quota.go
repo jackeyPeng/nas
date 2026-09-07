@@ -10,14 +10,14 @@ import (
 
 // privateDirQuota 查询私有目录配额
 func privateDirQuota(username string) (usedGB float64, limitGB int) {
-	// 私有目录在 /data/private/username
+	// 主目录在 /data/nas1/username
 	// 需要找到挂载点
-	mountPoint := findMountPoint("/data/private")
+	mountPoint := findMountPoint("/data/nas1/" + username)
 	if mountPoint == "" {
 		return 0, 0
 	}
 
-	projName := "private_" + username
+	projName := "home_" + username
 	out, err := common.SudoOutput("/usr/sbin/xfs_quota", "-x", "-c", "report -p -N", mountPoint)
 	if err != nil {
 		return 0, 0
@@ -40,7 +40,7 @@ func privateDirQuota(username string) (usedGB float64, limitGB int) {
 
 // setPrivateDirQuota 设置私有目录配额
 func setPrivateDirQuota(username string, quotaGB int) error {
-	privDir := "/data/private/" + username
+	privDir := "/data/nas1/" + username
 	if !dirExists(privDir) {
 		return fmt.Errorf("私有目录 %s 不存在", privDir)
 	}
@@ -50,7 +50,7 @@ func setPrivateDirQuota(username string, quotaGB int) error {
 		return fmt.Errorf("找不到 %s 所在的挂载点", privDir)
 	}
 
-	projName := "private_" + username
+	projName := "home_" + username
 
 	if quotaGB <= 0 {
 		// 移除配额

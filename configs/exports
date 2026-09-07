@@ -1,5 +1,3 @@
-/data/shared    __SUBNET__(rw,sync,no_subtree_check,no_root_squash)
-/data/media     __SUBNET__(ro,sync,no_subtree_check)
-/data/documents __SUBNET__(rw,sync,no_subtree_check,no_root_squash)
-/data/photos    __SUBNET__(rw,sync,no_subtree_check,no_root_squash)
-/data/backups   __SUBNET__(rw,sync,no_subtree_check,no_root_squash)
+# NFS 导出由面板根据 folders.db 元数据统一生成（Z1 托管段）：
+# 仅导出 /data/nas1/public（网段级，全用户读写）。
+# 存储池配置完成后由 storage 向导自动生成，此处保持空。

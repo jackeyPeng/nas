@@ -240,17 +240,15 @@ func handleWizardSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Auto-add Samba share
-	shareName := "nas1"
+	// 创建 public + 用户 home 并生成托管共享（SMB public + home、NFS 仅 public）
 	if mode == "separate" {
 		for i := range unusedDevs {
-			shareName = fmt.Sprintf("nas%d", i+1)
-			addSambaShare(shareName, fmt.Sprintf("/data/nas%d", i+1), nasUser)
+			EnsurePoolStructure(fmt.Sprintf("/data/nas%d", i+1), nasUser)
 		}
 	} else {
-		addSambaShare(shareName, resultMount, nasUser)
+		EnsurePoolStructure(resultMount, nasUser)
 	}
-	steps = append(steps, "添加 Samba 共享")
+	steps = append(steps, "创建 public + 用户 home 并生成托管共享")
 
 	common.JSONResponse(w, map[string]interface{}{
 		"message":  "存储配置完成！",
