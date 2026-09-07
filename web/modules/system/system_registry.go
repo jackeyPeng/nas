@@ -103,8 +103,8 @@ func allRegistryItems() []RegistryItem {
 		{ID: 9, Category: "服务", Name: "nas-panel — 管理面板", Description: "端口 8090，Go 单二进制"},
 
 		// 二、配置文件 (10项)
-		{ID: 10, Category: "配置", Name: "/etc/samba/smb.conf", Description: "Samba 共享配置，不应含 Z1 托管段"},
-		{ID: 11, Category: "配置", Name: "/etc/exports", Description: "NFS 导出配置，不应含 Z1 托管段"},
+		{ID: 10, Category: "配置", Name: "/etc/samba/smb.conf", Description: "Samba 共享配置，应含 Z1 托管段 + public 共享"},
+		{ID: 11, Category: "配置", Name: "/etc/exports", Description: "NFS 导出配置，应导出 /data/nas1/public"},
 		{ID: 12, Category: "配置", Name: "/etc/nfs.conf", Description: "NFS 固定端口 (lockd/mountd/statd)"},
 		{ID: 13, Category: "配置", Name: "/etc/vsftpd.conf", Description: "FTP 配置，本地用户 + 被动端口"},
 		{ID: 14, Category: "配置", Name: "/etc/vsftpd.userlist", Description: "FTP 允许用户列表"},
@@ -112,7 +112,7 @@ func allRegistryItems() []RegistryItem {
 		{ID: 16, Category: "配置", Name: "/etc/rclone-htpasswd", Description: "WebDAV bcrypt 认证"},
 		{ID: 17, Category: "配置", Name: "/etc/rclone/s3-env", Description: "S3 认证密钥"},
 		{ID: 18, Category: "配置", Name: "/etc/sudoers.d/nas-panel", Description: "sudo 免密命令白名单"},
-		{ID: 19, Category: "配置", Name: "/etc/fstab — /data 条目", Description: "不应有数据盘挂载条目"},
+		{ID: 19, Category: "配置", Name: "/etc/fstab — /data/nas1 条目", Description: "应有存储池挂载条目"},
 
 		// 三、systemd 服务文件 (4项)
 		{ID: 20, Category: "systemd", Name: "rclone-webdav.service", Description: "/etc/systemd/system/"},
@@ -131,18 +131,18 @@ func allRegistryItems() []RegistryItem {
 		{ID: 29, Category: "用户", Name: "FileBrowser 用户", Description: "FileBrowser 数据库中的 admin 用户"},
 
 		// 六、面板状态文件 (4项)
-		{ID: 30, Category: "状态", Name: "folders.db — 共享文件夹元数据", Description: "/opt/nas/data/，重置后应删除"},
-		{ID: 31, Category: "状态", Name: ".last_reload — 配置重载时间戳", Description: "/opt/nas/data/，重置后应删除"},
+		{ID: 30, Category: "状态", Name: "folders.db — 共享文件夹元数据", Description: "/opt/nas/data/，应有 public + home 记录"},
+		{ID: 31, Category: "状态", Name: ".last_reload — 配置重载时间戳", Description: "/opt/nas/data/，应存在"},
 		{ID: 32, Category: "状态", Name: "operations.db — 操作日志", Description: "/opt/nas/data/，重置后应删除"},
 		{ID: 33, Category: "状态", Name: "filebrowser.db — FileBrowser 数据库", Description: "/etc/filebrowser/，重置后保留"},
 
 		// 七、存储层 (6项)
-		{ID: 34, Category: "存储", Name: "LVM 卷组 (VG)", Description: "vgs --noheadings，重置后应为空"},
-		{ID: 35, Category: "存储", Name: "LVM 逻辑卷 (LV)", Description: "lvs --noheadings，重置后应为空"},
-		{ID: 36, Category: "存储", Name: "LVM 物理卷 (PV)", Description: "pvs --noheadings，重置后应为空"},
+		{ID: 34, Category: "存储", Name: "LVM 卷组 (VG)", Description: "vgs --noheadings，应存在存储池卷组"},
+		{ID: 35, Category: "存储", Name: "LVM 逻辑卷 (LV)", Description: "lvs --noheadings，应存在存储池逻辑卷"},
+		{ID: 36, Category: "存储", Name: "LVM 物理卷 (PV)", Description: "pvs --noheadings，应存在存储池物理卷"},
 		{ID: 37, Category: "存储", Name: "RAID 阵列 (/dev/md*)", Description: "ls /dev/md*，重置后应为空"},
-		{ID: 38, Category: "存储", Name: "磁盘签名 (wipefs)", Description: "数据盘不应有 LVM/RAID 签名"},
-		{ID: 39, Category: "存储", Name: "/data 数据盘挂载", Description: "df -h，不应有数据盘挂载"},
+		{ID: 38, Category: "存储", Name: "磁盘签名 (wipefs)", Description: "数据盘应有 LVM 签名"},
+		{ID: 39, Category: "存储", Name: "/data/nas1 存储池挂载", Description: "df -h，存储池应已挂载"},
 
 		// 八、防火墙 (1项)
 		{ID: 40, Category: "防火墙", Name: "UFW 防火墙", Description: "应启用，默认 deny 入站"},
@@ -287,10 +287,10 @@ func RefreshRegistry() RegistryReport {
 	checkService(9, "nas-panel")
 
 	// 二、配置文件 (10项)
-	checkFileContent(10, "/etc/samba/smb.conf", "Z1 MANAGED SHARES", false,
-		"不含 Z1 托管段 (已清理)", "仍含 Z1 托管段")
-	checkFileContent(11, "/etc/exports", "Z1 MANAGED SHARES", false,
-		"不含 Z1 托管段 (已清理)", "仍含 Z1 托管段")
+	checkFileContent(10, "/etc/samba/smb.conf", "# === Z1 MANAGED SHARES START ===", true,
+		"含 Z1 托管段", "缺 Z1 托管段 (配置未同步)")
+	checkFileContent(11, "/etc/exports", "/data/nas1/public", true,
+		"已导出 /data/nas1/public", "未导出 /data/nas1/public")
 	checkFileState(12, "/etc/nfs.conf", true, "存在", "不存在")
 	checkFileState(13, "/etc/vsftpd.conf", true, "存在", "不存在")
 	checkFileState(14, "/etc/vsftpd.userlist", true, "存在", "不存在")
@@ -299,20 +299,20 @@ func RefreshRegistry() RegistryReport {
 	checkFileState(17, "/etc/rclone/s3-env", true, "存在", "不存在")
 	checkFileState(18, "/etc/sudoers.d/nas-panel", true, "存在", "不存在")
 
-	// 19. fstab
+	// 19. fstab — 存储池 /data/nas1 挂载条目应存在
 	fstabData, _ := common.SudoOutput("cat", "/etc/fstab")
-	hasDataDisk := false
+	hasPoolMount := false
 	for _, line := range strings.Split(fstabData, "\n") {
 		trimmed := strings.TrimSpace(line)
-		if strings.Contains(trimmed, "/data") && !strings.HasPrefix(trimmed, "#") {
-			hasDataDisk = true
+		if strings.Contains(trimmed, "/data/nas1") && !strings.HasPrefix(trimmed, "#") {
+			hasPoolMount = true
 			break
 		}
 	}
-	if hasDataDisk {
-		updateItem(19, "fail", "存在数据盘挂载条目，应清除")
+	if hasPoolMount {
+		updateItem(19, "pass", "存在 /data/nas1 挂载条目")
 	} else {
-		updateItem(19, "pass", "无数据盘挂载条目")
+		updateItem(19, "fail", "缺 /data/nas1 挂载条目 (存储池未创建)")
 	}
 
 	// 三、systemd 服务文件 (4项)
@@ -370,47 +370,45 @@ func RefreshRegistry() RegistryReport {
 	}
 
 	// 六、面板状态文件 (4项)
-	// 30. folders.db — 应存在但为空（面板自动重建）
+	// 30. folders.db — 应有 public + home 记录
 	if _, err := os.Stat("/opt/nas/data/folders.db"); err == nil {
 		var folderCount int
 		if db, err := sql.Open("sqlite", "/opt/nas/data/folders.db"); err == nil {
 			db.QueryRow("SELECT COUNT(*) FROM folders").Scan(&folderCount)
 			db.Close()
-			if folderCount == 0 {
-				updateItem(30, "pass", "已清空 (0 条记录)")
-			} else {
-				updateItem(30, "fail", fmt.Sprintf("仍有 %d 条记录", folderCount))
-			}
+		}
+		if folderCount > 0 {
+			updateItem(30, "pass", fmt.Sprintf("已就绪 (%d 条记录)", folderCount))
 		} else {
-			updateItem(30, "pass", "数据库不存在")
+			updateItem(30, "fail", "folders.db 无记录 (存储池未初始化)")
 		}
 	} else {
-		updateItem(30, "pass", "数据库不存在")
+		updateItem(30, "fail", "folders.db 不存在")
 	}
-	checkFileState(31, "/opt/nas/data/.last_reload", false, "已清理 (不存在)", "仍存在")
+	checkFileState(31, "/opt/nas/data/.last_reload", true, "存在", "不存在")
 	checkFileState(32, "/opt/nas/data/operations.db", false, "已清理 (不存在)", "仍存在")
 	checkFileState(33, "/etc/filebrowser/filebrowser.db", true, "存在", "不存在")
 
 	// 七、存储层 (6项)
 	vgsOut, _ := common.SudoOutput("/usr/sbin/vgs", "--noheadings")
 	if strings.TrimSpace(vgsOut) == "" {
-		updateItem(34, "pass", "无 VG (已清理)")
+		updateItem(34, "fail", "无 VG (存储池未创建)")
 	} else {
-		updateItem(34, "fail", "存在 VG: "+strings.TrimSpace(vgsOut))
+		updateItem(34, "pass", "存在 VG: "+strings.TrimSpace(vgsOut))
 	}
 
 	lvsOut, _ := common.SudoOutput("/usr/sbin/lvs", "--noheadings")
 	if strings.TrimSpace(lvsOut) == "" {
-		updateItem(35, "pass", "无 LV (已清理)")
+		updateItem(35, "fail", "无 LV (存储池未创建)")
 	} else {
-		updateItem(35, "fail", "存在 LV")
+		updateItem(35, "pass", "存在 LV")
 	}
 
 	pvsOut, _ := common.SudoOutput("/usr/sbin/pvs", "--noheadings")
 	if strings.TrimSpace(pvsOut) == "" {
-		updateItem(36, "pass", "无 PV (已清理)")
+		updateItem(36, "fail", "无 PV (存储池未创建)")
 	} else {
-		updateItem(36, "fail", "存在 PV")
+		updateItem(36, "pass", "存在 PV")
 	}
 
 	mdMatches, _ := filepath.Glob("/dev/md[0-9]*")
@@ -436,26 +434,26 @@ func RefreshRegistry() RegistryReport {
 			break
 		}
 	}
-	if !hasSignatures {
-		updateItem(38, "pass", "数据盘无残留签名")
+	if hasSignatures {
+		updateItem(38, "pass", "数据盘已有 LVM 签名")
 	} else {
-		updateItem(38, "fail", "存在残留磁盘签名")
+		updateItem(38, "fail", "数据盘无 LVM 签名 (存储池未创建)")
 	}
 
 	dataMounts := getDataMounts()
 	dataDiskMounts := 0
 	for _, m := range dataMounts {
 		mp := m["mount"]
-		if mp == "/data" || isDataNasMount(mp) {
+		if isDataNasMount(mp) {
 			if strings.HasPrefix(m["device"], "/dev/") {
 				dataDiskMounts++
 			}
 		}
 	}
-	if dataDiskMounts == 0 {
-		updateItem(39, "pass", "无数据盘挂载")
+	if dataDiskMounts > 0 {
+		updateItem(39, "pass", fmt.Sprintf("存储池已挂载 (%d 个)", dataDiskMounts))
 	} else {
-		updateItem(39, "fail", fmt.Sprintf("存在 %d 个数据盘挂载", dataDiskMounts))
+		updateItem(39, "fail", "存储池 /data/nas1 未挂载")
 	}
 
 	// 八、防火墙 (1项)
