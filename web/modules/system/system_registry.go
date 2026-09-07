@@ -172,6 +172,19 @@ func seedRegistry(db *sql.DB) {
 	}
 }
 
+// syncRegistryMeta keeps name/description aligned with the canonical list in code.
+// Status/detail are preserved so upgraded machines don't lose their last check result,
+// but renamed/redescribed items reflect the current model. New items are inserted as pending.
+func syncRegistryMeta(db *sql.DB) {
+	for _, item := range allRegistryItems() {
+		db.Exec(`INSERT INTO registry (id, category, name, status, detail, description, checked_at)
+			VALUES (?, ?, ?, 'pending', '', ?, '')
+			ON CONFLICT(id) DO UPDATE SET category=excluded.category, name=excluded.name, description=excluded.description`,
+			item.ID, item.Category, item.Name, item.Description,
+		)
+	}
+}
+
 // GetRegistry returns all registry items with current status
 func GetRegistry() RegistryReport {
 	db := initRegistryDB()
@@ -223,6 +236,9 @@ func RefreshRegistry() RegistryReport {
 	if db == nil {
 		return RegistryReport{Summary: "注册表数据库不可用"}
 	}
+
+	// 同步 canonical 名称/描述（升级后旧注册表不会停留在旧模型的文案上）
+	syncRegistryMeta(db)
 
 	now := time.Now().Format("2006-01-02 15:04:05")
 
