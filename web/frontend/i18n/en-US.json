@@ -184,7 +184,9 @@
     "username_placeholder": "Username",
     "password_placeholder": "Password",
     "failed": "Login failed",
-    "network_error": "Network error"
+    "network_error": "Network error",
+    "must_change_pwd": "Set a new password",
+    "must_change_pwd_hint": "You are using the default password. For security, set a new one before continuing."
   },
   "dashboard": {
     "title": "System Status",

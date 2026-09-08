@@ -719,6 +719,20 @@
                         </div>
                     </div>
                 </div>
+
+                <div class="modal" x-show="mustChangePassword" x-cloak>
+                    <div class="modal-box">
+                        <h3 x-text="$t('login.must_change_pwd')"></h3>
+                        <p style="color:#475569;font-size:13px;margin:8px 0 16px" x-text="$t('login.must_change_pwd_hint')"></p>
+                        <div class="form-group">
+                            <label><span x-text="$t('users.new_password_12')"></span></label>
+                            <input type="password" x-model="pwdForm.password" autocomplete="new-password">
+                        </div>
+                        <div class="modal-actions">
+                            <button class="btn btn-primary" @click="changePassword()" x-text="$t('common.confirm')"></button>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- Storage -->

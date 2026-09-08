@@ -111,39 +111,9 @@ if [ -n "${NAS_PASS:-}" ]; then
         exit 1
     fi
 else
-    # 交互式输入需要 TTY；管道/非 TTY 环境（如 CI、nohup）无法读密码，直接给出明确错误
-    if [ ! -t 0 ]; then
-        echo ""
-        echo -e "${RED}错误: 非交互式环境无法输入密码${NC}"
-        echo -e "  请通过环境变量传入（注意用 sudo env 透传）：${NC}"
-        echo ""
-        echo -e "  wget -qO- https://gitee.com/gitdogcat/nas/raw/master/scripts/install.sh | ${CYAN}sudo env NAS_PASS=你的密码${NC} bash"
-        echo ""
-        exit 1
-    fi
-    echo ""
-    echo -e "${BOLD}设置管理密码（至少 ${MIN_PASS_LEN} 位，用于所有服务）${NC}"
-    while true; do
-        printf "密码: "
-        stty -echo
-        read NAS_PASS
-        stty echo
-        echo ""
-        if [ ${#NAS_PASS} -lt $MIN_PASS_LEN ]; then
-            echo -e "${YELLOW}密码太短，至少需要 ${MIN_PASS_LEN} 位${NC}"
-            continue
-        fi
-        printf "确认: "
-        stty -echo
-        read CONFIRM
-        stty echo
-        echo ""
-        if [ "$NAS_PASS" != "$CONFIRM" ]; then
-            echo -e "${YELLOW}两次输入不一致，请重试${NC}"
-            continue
-        fi
-        break
-    done
+    # 未提供密码 → 用出厂默认密码，首次登录面板后强制修改
+    NAS_PASS="Nas-Test-2026"
+    echo -e "  ${YELLOW}未提供 NAS_PASS，使用出厂默认密码（首次登录后强制修改）${NC}"
 fi
 
 # ── 2. 克隆仓库 ────────────────────────────────────────────

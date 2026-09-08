@@ -37,11 +37,17 @@ var (
 	listenAddr = ":8090"
 )
 
+// 出厂默认账号与初始密码（首次登录后强制修改）
+const (
+	defaultUser = "fm"
+	defaultPass = "Nas-Test-2026"
+)
+
 func main() {
 	// Load config
 	nasUser = os.Getenv("NAS_USER")
 	if nasUser == "" {
-		nasUser = "admin"
+		nasUser = defaultUser
 	}
 
 	nasPass := os.Getenv("NAS_PASS")
@@ -51,7 +57,7 @@ func main() {
 		}
 	}
 	if nasPass == "" {
-		log.Fatal("NAS_PASS not set. Set it via env or /opt/nas/.env")
+		nasPass = defaultPass
 	}
 	common.SetNasPass(nasPass)
 
@@ -283,5 +289,7 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	common.JSONResponse(w, map[string]interface{}{
 		"token":    token,
 		"username": username,
+		// 仍是出厂默认密码时，前端强制进入改密流程
+		"must_change_password": subtle.ConstantTimeCompare([]byte(password), []byte(defaultPass)) == 1,
 	})
 }

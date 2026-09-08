@@ -184,7 +184,9 @@
     "username_placeholder": "请输入用户名",
     "password_placeholder": "请输入密码",
     "failed": "登录失败",
-    "network_error": "网络错误"
+    "network_error": "网络错误",
+    "must_change_pwd": "设置新密码",
+    "must_change_pwd_hint": "你正在使用出厂默认密码，为安全起见请先设置一个新密码再继续。"
   },
   "dashboard": {
     "title": "系统状态",

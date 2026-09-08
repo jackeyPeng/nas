@@ -166,6 +166,7 @@ function nasPanel() {
         pwdModal: false,
         pwdUser: '',
         pwdForm: { password: '' },
+        mustChangePassword: false,
         // Users module - new
         userTab: 'list', // list | groups | matrix | logs
         userGroups: [],
@@ -394,7 +395,13 @@ function nasPanel() {
                 if (res.ok) {
                     this.token = data.token;
                     localStorage.setItem('nas_token', this.token);
-                    this.navigate('dashboard');
+                    if (data.must_change_password) {
+                        this.mustChangePassword = true;
+                        this.pwdUser = data.username || this.loginForm.username;
+                        this.pwdForm = { password: '' };
+                    } else {
+                        this.navigate('dashboard');
+                    }
                 } else {
                     this.loginError = data.error || this.t('msg.login_failed');
                 }
@@ -576,6 +583,10 @@ function nasPanel() {
             if (data) {
                 this.showToast(this.t('msg.modify_success'), 'success');
                 this.pwdModal = false;
+                if (this.mustChangePassword) {
+                    this.mustChangePassword = false;
+                    this.navigate('dashboard');
+                }
             }
         },
 
