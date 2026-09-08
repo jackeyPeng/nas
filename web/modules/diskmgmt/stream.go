@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -102,18 +101,13 @@ func handleWizardSetupStream(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	// Determine mount point: find next available /data/nasN
+	// 固定单池挂载 /data/nas1（新模型：整个系统一个存储池）。
+	// 不再自动挑选下一个空闲挂载点——那会把池挂到 nas2/nas3，违背单池设计。
 	mountPoint := "/data/nas1"
-	for i := 1; i <= 9; i++ {
-		testMount := fmt.Sprintf("/data/nas%d", i)
-		// Check if already mounted
-		mntOut, _ := common.ExecOutput("findmnt", "-n", "-o", "TARGET", testMount)
-		if strings.TrimSpace(mntOut) == "" {
-			// Check if directory exists and is non-empty (already a data dir)
-			if entries, err := os.ReadDir(testMount); err != nil || len(entries) == 0 {
-				mountPoint = testMount
-				break
-			}
+	if mode != "separate" {
+		if mntOut, _ := common.ExecOutput("findmnt", "-n", "-o", "TARGET", mountPoint); strings.TrimSpace(mntOut) != "" {
+			sendProgress(w, ProgressEvent{Step: "检查存储池", Status: "error", Detail: "存储池 /data/nas1 已存在，无需重复创建"})
+			return
 		}
 	}
 

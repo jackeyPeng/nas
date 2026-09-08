@@ -303,8 +303,12 @@ func RefreshRegistry() RegistryReport {
 	checkService(9, "nas-panel")
 
 	// 二、配置文件 (10项)
-	checkFileContent(10, "/etc/samba/smb.conf", "# === Z1 MANAGED SHARES START ===", true,
-		"含 Z1 托管段", "缺 Z1 托管段 (配置未同步)")
+	smbData, _ := common.SudoOutput("cat", "/etc/samba/smb.conf")
+	if strings.Contains(smbData, "# === Z1 MANAGED SHARES START ===") {
+		updateItem(10, "pass", "含 Z1 托管段")
+	} else {
+		updateItem(10, "warn", "缺 Z1 托管段 (存储池未配置或未同步)")
+	}
 	checkFileContent(11, "/etc/exports", "/data/nas1/public", true,
 		"已导出 /data/nas1/public", "未导出 /data/nas1/public")
 	checkFileState(12, "/etc/nfs.conf", true, "存在", "不存在")
@@ -328,7 +332,7 @@ func RefreshRegistry() RegistryReport {
 	if hasPoolMount {
 		updateItem(19, "pass", "存在 /data/nas1 挂载条目")
 	} else {
-		updateItem(19, "fail", "缺 /data/nas1 挂载条目 (存储池未创建)")
+		updateItem(19, "warn", "存储池未创建，待配置 /data/nas1 挂载")
 	}
 
 	// 三、systemd 服务文件 (4项)
@@ -396,33 +400,37 @@ func RefreshRegistry() RegistryReport {
 		if folderCount > 0 {
 			updateItem(30, "pass", fmt.Sprintf("已就绪 (%d 条记录)", folderCount))
 		} else {
-			updateItem(30, "fail", "folders.db 无记录 (存储池未初始化)")
+			updateItem(30, "warn", "存储池未初始化，folders.db 无记录")
 		}
 	} else {
-		updateItem(30, "fail", "folders.db 不存在")
+		updateItem(30, "warn", "folders.db 不存在")
 	}
-	checkFileState(31, "/opt/nas/data/.last_reload", true, "存在", "不存在")
+	if _, err := os.Stat("/opt/nas/data/.last_reload"); err == nil {
+		updateItem(31, "pass", "存在")
+	} else {
+		updateItem(31, "warn", "不存在 (首次配置同步后生成)")
+	}
 	checkFileState(32, "/opt/nas/data/operations.db", false, "已清理 (不存在)", "仍存在")
 	checkFileState(33, "/etc/filebrowser/filebrowser.db", true, "存在", "不存在")
 
 	// 七、存储层 (6项)
 	vgsOut, _ := common.SudoOutput("/usr/sbin/vgs", "--noheadings")
 	if strings.TrimSpace(vgsOut) == "" {
-		updateItem(34, "fail", "无 VG (存储池未创建)")
+		updateItem(34, "warn", "无 LVM 卷组 (存储池未创建或非 LVM 模式)")
 	} else {
 		updateItem(34, "pass", "存在 VG: "+strings.TrimSpace(vgsOut))
 	}
 
 	lvsOut, _ := common.SudoOutput("/usr/sbin/lvs", "--noheadings")
 	if strings.TrimSpace(lvsOut) == "" {
-		updateItem(35, "fail", "无 LV (存储池未创建)")
+		updateItem(35, "warn", "无 LVM 逻辑卷 (存储池未创建或非 LVM 模式)")
 	} else {
 		updateItem(35, "pass", "存在 LV")
 	}
 
 	pvsOut, _ := common.SudoOutput("/usr/sbin/pvs", "--noheadings")
 	if strings.TrimSpace(pvsOut) == "" {
-		updateItem(36, "fail", "无 PV (存储池未创建)")
+		updateItem(36, "warn", "无 LVM 物理卷 (存储池未创建或非 LVM 模式)")
 	} else {
 		updateItem(36, "pass", "存在 PV")
 	}
@@ -453,7 +461,7 @@ func RefreshRegistry() RegistryReport {
 	if hasSignatures {
 		updateItem(38, "pass", "数据盘已有 LVM 签名")
 	} else {
-		updateItem(38, "fail", "数据盘无 LVM 签名 (存储池未创建)")
+		updateItem(38, "warn", "数据盘无签名 (存储池未创建)")
 	}
 
 	dataMounts := getDataMounts()
@@ -469,7 +477,7 @@ func RefreshRegistry() RegistryReport {
 	if dataDiskMounts > 0 {
 		updateItem(39, "pass", fmt.Sprintf("存储池已挂载 (%d 个)", dataDiskMounts))
 	} else {
-		updateItem(39, "fail", "存储池 /data/nas1 未挂载")
+		updateItem(39, "warn", "存储池 /data/nas1 未挂载 (待配置)")
 	}
 
 	// 八、防火墙 (1项)
