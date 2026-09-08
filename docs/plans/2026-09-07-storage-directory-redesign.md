@@ -66,7 +66,7 @@
 5. FTP 选「方案 A」：根 = /data/nas1，隔离靠文件系统权限（home 0700、public 2775 公共组 nasusers）。
 6. FileBrowser：本期收口到 public；第二期面板自写文件管理模块（安全边界参考 FileBrowser 源码，不 fork），做完后下线 FileBrowser。
 
-## 6. 迁移清单（在测试机 10.216.10.57 执行）
+## 6. 迁移清单（在测试机执行）
 
 删除（当前内容已核实基本为空）：
 - /data/shared /data/media /data/documents /data/downloads /data/photos /data/system（均空或近空）
@@ -106,7 +106,7 @@
 - 第一期（本次）：目录收敛 + 协议配置 + 迁移 + FileBrowser 收口。
 - 第二期（后续）：面板内置文件管理模块，下线 FileBrowser。
 
-测试（在 10.216.10.57 多轮验证）：
+测试（在测试机多轮验证）：
 1. SMB：public 全用户读写；各 home 仅本人（+授权者）可达；跨目录软链接行为回归。
 2. FTP：登录落在 /data/nas1；本人 home 可读写、他人 home 0700 隔离；public 公共组可写。
 3. NFS：仅 public 可挂载，home 不可达。
