@@ -43,7 +43,6 @@ CONFIG_FILES="
 /etc/vsftpd.userlist
 /etc/fail2ban/jail.local
 /etc/rclone-htpasswd
-/etc/default/minio
 /etc/sudoers.d/nas-panel
 /etc/filebrowser/filebrowser.db
 "
@@ -70,7 +69,7 @@ echo "[2/6] 备份 systemd 服务文件..."
 SERVICE_FILES="
 /etc/systemd/system/rclone-webdav.service
 /etc/systemd/system/filebrowser.service
-/etc/systemd/system/minio.service
+/etc/systemd/system/rclone-s3.service
 /etc/systemd/system/nas-panel.service
 "
 
@@ -173,7 +172,7 @@ echo "[5/6] 记录系统状态快照..."
     df -h
     echo ""
     echo "=== 服务状态 ==="
-    for svc in smbd nmbd nfs-kernel-server vsftpd rclone-webdav filebrowser minio fail2ban nas-panel; do
+    for svc in smbd nmbd nfs-kernel-server vsftpd rclone-webdav filebrowser rclone-s3 fail2ban nas-panel; do
         printf "  %-22s %s\n" "$svc:" "$(systemctl is-active $svc 2>/dev/null)"
     done
     echo ""

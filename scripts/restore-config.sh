@@ -67,7 +67,7 @@ fi
 # 2. 停止所有服务
 # ═══════════════════════════════════════
 echo "[2/7] 停止所有 NAS 服务..."
-SERVICES="nas-panel smbd nmbd nfs-kernel-server vsftpd rclone-webdav filebrowser minio fail2ban"
+SERVICES="nas-panel smbd nmbd nfs-kernel-server vsftpd rclone-webdav filebrowser rclone-s3 fail2ban"
 for svc in $SERVICES; do
     if systemctl is-active --quiet "$svc" 2>/dev/null; then
         systemctl stop "$svc" 2>/dev/null || true
@@ -151,7 +151,7 @@ echo "[7/7] 重启服务..."
 
 systemctl daemon-reload
 
-for svc in smbd nmbd nfs-kernel-server vsftpd rclone-webdav filebrowser minio fail2ban nas-panel; do
+for svc in smbd nmbd nfs-kernel-server vsftpd rclone-webdav filebrowser rclone-s3 fail2ban nas-panel; do
     systemctl enable "$svc" 2>/dev/null || true
     systemctl start "$svc" 2>/dev/null || true
     status=$(systemctl is-active "$svc" 2>/dev/null)

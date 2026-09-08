@@ -1,5 +1,50 @@
 # NAS 项目变更日志
 
+## [2026-09-08] - 出厂默认账号 + 首登强制改密
+
+### 版本 v1.4.0-beta.6
+
+### 1. 默认账号与密码
+
+- 默认账号固定为 `fm`（main.go fallback 由 `admin` 改为 `fm`）
+- 出厂默认密码 `Nas-Test-2026`（install.sh 未传 `NAS_PASS` 时自动使用；原非交互环境直接报错）
+- 发布红线新增第 6 条「出厂默认密码豁免」：`Nas-Test-2026` 是出厂初始值，首登强制修改，非任何生产机真实密码
+
+### 2. 首登强制改密
+
+- 登录接口在密码仍为默认值时返回 `must_change_password` 标志
+- 前端检测到后弹出不可取消的改密框，改完才进入面板
+- 改密复用既有 `PUT /api/users/{name}/password`，自动同步面板 + `.env` + Samba + FTP + WebDAV + FileBrowser + S3
+
+### 3. 验证
+
+- 双机（.48/.57）完整安装实测：无 `NAS_PASS` 一键安装 → 默认密码登录触发强制改密 → 改密全服务同步 → 存储向导建池 → 注册表 46/46
+
+---
+
+## [2026-09-08] - 存储目录架构重设计（单存储池）
+
+### 版本 v1.4.0-beta.5
+
+### 1. 目录模型简化
+
+- 移除 8 个种子共享目录（`/data/shared`、`media`、`documents`、`downloads`、`photos`、`backups`、`system`、`private`）
+- 整机单存储池，固定挂载 `/data/nas1`
+- 用户主目录 `/data/nas1/{user}`（建用户时自动创建，含 `media`/`photos`/`documents`/`downloads` 默认子目录）
+- 公共共享目录 `/data/nas1/public`（建池后自动创建，所有人可读写，作为主入口）
+
+### 2. 协议挂载收口
+
+- SMB / NFS / WebDAV / S3 共享侧统一指向 `public`；支持用户级权限的 SMB 另按用户 home 分权限
+- FTP 仅 chroot 用户私有目录
+- FileBrowser 收口到 `public`
+
+### 3. 验证
+
+- 双机（.48/.57）完整安装实测：存储向导建池 → public + 用户 home 自动创建 → 注册表 46/46
+
+---
+
 ## [2026-09-04] - 权限模型（SMB 按用户粒度）+ 协议诚实标注
 
 ### 版本 v1.4.0-beta.4

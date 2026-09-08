@@ -131,7 +131,7 @@ V1 只有 Local。字段先在内部模型加上（默认 local），USB 挂载�
 **权威数据永远在系统原生配置文件**（smb.conf、exports、fstab、ufw），面板角色是"解析 + 校验 + 回写"。不引入面板自有数据库作为配置源——这样 SSH 进机器手工改配置的人和面板永远看到同一份真相。面板侧只允许缓存和 UI 状态（如 rclone tasks.json 这类系统原生没有的东西才自建存储）。
 
 ### 2.2 OTA 更新与配置迁移
-- 面板更新 = 替换二进制 + systemctl restart（deploy-nas-panel.sh 已实现：备份→替换→重启→验证）。
+- 面板更新 = 替换二进制 + systemctl restart（upgrade.sh 已实现：备份→替换→重启→健康检查→失败回滚）。
 - 二进制内嵌版本号，启动时执行配置迁移钩子（如 rclone tasks.json 加 direction 字段这类 schema 演进，启动时补默认值）。
 - 配置备份恢复走 backup-config.sh / restore-config.sh（已有，cron 每周，保留 3 份）。
 - 版本更新检查与一键升级：TODO #19，联网检查 Gitee Release，预留但不阻塞当前迭代。

@@ -137,7 +137,7 @@ check_disk() {
 
 # 2. 服务状态
 check_services() {
-    local services="smbd nmbd nfs-kernel-server vsftpd rclone-webdav filebrowser minio fail2ban"
+    local services="smbd nmbd nfs-kernel-server vsftpd rclone-webdav filebrowser rclone-s3 fail2ban"
     local down=""
     for svc in $services; do
         if [ "$(systemctl is-active "$svc" 2>/dev/null)" != "active" ]; then

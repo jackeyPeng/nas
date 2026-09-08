@@ -34,14 +34,19 @@ nas-v1.4.0-beta.1-linux-amd64.tar.gz
 ├── scripts/               ← 部署脚本
 │   ├── setup.sh
 │   ├── cleanup.sh
-│   ├── deploy-nas-panel.sh
+│   ├── install.sh
 │   ├── add-user.sh
 │   ├── remove-user.sh
+│   ├── backup-config.sh
+│   ├── restore-config.sh
 │   └── monitor.sh
 ├── configs/               ← 服务配置模板
 │   ├── smb.conf
 │   ├── vsftpd.conf
+│   ├── vsftpd.userlist
 │   ├── nfs.conf
+│   ├── exports
+│   ├── jail.local
 │   └── nas-panel.service
 ├── .env.example           ← 配置模板
 └── VERSION                ← 版本元数据
@@ -141,12 +146,11 @@ bash scripts/release.sh stable
 
 ### 规则
 
-1. **deploy-nas-panel.sh**：目标机器一律通过命令行参数传入（`[user@]host`）。禁止写死 SERVERS 数组、IP→用户映射表、以及 `/home/jacky` 等本机绝对路径（二进制路径用 `$SCRIPT_DIR/../web/nas-panel` 自定位）。
-2. **install-services.sh**：账号密码从环境变量 `NAS_USER`/`NAS_PASS` 或 `/opt/nas/.env` 读取，禁止硬编码。
-3. **一次性内网脚本**（如 deploy-115.sh）不得进仓库。
-4. **文档示例 IP**：统一用 `192.168.1.100` / `192.168.1.0/24` 等通用示例。
-5. **发版前检查**：`grep -rnE "10\.216\.|10\.187\.|192\.168\.213\.|nas123456" scripts/ docs/ configs/` 必须为空。
-6. **出厂默认密码豁免**：`Nas-Test-2026` 是出厂默认密码（账号 fm，首次登录面板后强制修改），允许出现在代码/脚本中。但它是「出厂初始值」而非任何真实生产机的实际密码——发版前必须确认所有生产机密码都已改掉、不是该默认值。
+1. **安装/部署脚本**：账号密码从环境变量 `NAS_USER`/`NAS_PASS` 或 `/opt/nas/.env` 读取，禁止硬编码真实密码。
+2. **一次性内网脚本**（如 deploy-115.sh）不得进仓库。
+3. **文档示例 IP**：统一用 `192.168.1.100` / `192.168.1.0/24` 等通用示例。
+4. **发版前检查**：`grep -rnE "10\.216\.|10\.187\.|192\.168\.213\.|nas123456" scripts/ docs/ configs/` 必须为空。
+5. **出厂默认密码豁免**：`Nas-Test-2026` 是出厂默认密码（账号 fm，首次登录面板后强制修改），允许出现在代码/脚本中。但它是「出厂初始值」而非任何真实生产机的实际密码——发版前必须确认所有生产机密码都已改掉、不是该默认值。
 
 ### 历史教训
 

@@ -79,7 +79,6 @@ CONFIG_FILES="
 /etc/fail2ban/jail.local
 /etc/filebrowser/filebrowser.db
 /etc/rclone-htpasswd
-/etc/default/minio
 /etc/rclone/s3-env
 /etc/sudoers.d/nas-panel
 /var/log/vsftpd.log
@@ -237,7 +236,7 @@ echo "NAS 清除完成!"
 echo "========================================="
 echo ""
 echo "已清除的内容:"
-echo "  - 所有 NAS 服务（Samba、NFS、FTP、WebDAV、FileBrowser、MinIO）"
+echo "  - 所有 NAS 服务（Samba、NFS、FTP、WebDAV、FileBrowser、S3）"
 echo "  - systemd 服务文件"
 echo "  - 配置文件"
 echo "  - 二进制文件（filebrowser、nas-panel）"

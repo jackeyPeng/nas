@@ -3,14 +3,14 @@
 # 用于在新机器上部署完整的 NAS 系统
 # 用法: sudo ./setup.sh
 #
-# 包含服务: Samba, NFS, FTP, WebDAV, FileBrowser, MinIO, NAS Web Panel
+# 包含服务: Samba, NFS, FTP, WebDAV, FileBrowser, S3, NAS Web Panel
 # 安全: Fail2ban, UFW 防火墙, unattended-upgrades
 # 10步部署, 自动检测当前用户
 
 set -e
 
 # ==================== 架构检测 ====================
-# 将 uname -m 映射为 FileBrowser/MinIO 使用的架构名
+# 将 uname -m 映射为 FileBrowser/rclone 使用的架构名
 detect_arch() {
     local arch
     arch=$(uname -m)
