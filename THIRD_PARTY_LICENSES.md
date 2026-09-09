@@ -12,7 +12,7 @@
 rclone 用于 WebDAV 服务 (rclone serve webdav) 和 S3 对象存储服务 (rclone serve s3)。
 
 ```
-Copyright (C) 2012-2024 Nick Craig-Wood
+Copyright (C) 2012 by Nick Craig-Wood http://www.craig-wood.com/nick/
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

@@ -10,7 +10,7 @@
 - [x] FTP 文件传输服务（vsftpd + chroot + 白名单）
 - [x] WebDAV 服务（rclone serve，端口 8080）
 - [x] FileBrowser Web 文件管理器（端口 8081，多源自动下载）
-- [x] MinIO S3 兼容对象存储（端口 9000/9002，多源自动下载）
+- [x] rclone serve s3 兼容对象存储（端口 9000，多源自动下载）
 - [x] UFW 防火墙配置（全端口覆盖）
 - [x] Fail2ban 安全配置（SSH + FTP）
 - [x] unattended-upgrades 自动安全更新
@@ -18,9 +18,9 @@
 - [x] 用户管理脚本（add-user.sh, remove-user.sh）
 - [x] NFS 固定端口 + 防火墙规则
 - [x] setup.sh 多源下载回退机制
-- [x] MinIO systemd 服务文件修复（echo 方式避免 heredoc 合并）
+- [x] rclone-s3 systemd 服务文件（echo 方式避免 heredoc 合并）
 - [x] Git 仓库管理（Gitee 远程同步）
-- [x] 产品技术手册 v1.2（含 MinIO 章节）
+- [x] 产品技术手册 v1.2（含 rclone serve s3 章节）
 - [x] 重装验证：从空白 Debian 13 一键部署成功
 
 ## 待优化

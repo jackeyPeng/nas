@@ -662,7 +662,7 @@
     "backup_desc": "Backup Description",
     "backup_content_label": "Backup Contents:",
     "content_sys": "System config: smb.conf / exports / nfs.conf / vsftpd.conf / jail.local etc.",
-    "content_unit": "systemd unit files: rclone-webdav / filebrowser / minio / nas-panel",
+    "content_unit": "systemd unit files: rclone-webdav / filebrowser / rclone-s3 / nas-panel",
     "content_proj": "NAS project config: .env / configs/ directory",
     "content_user": "User data: Samba user DB / FTP whitelist / system user list",
     "content_cron": "crontab jobs (alert monitor + scheduled backup)",

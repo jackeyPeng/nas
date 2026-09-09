@@ -662,7 +662,7 @@
     "backup_desc": "备份说明",
     "backup_content_label": "备份内容：",
     "content_sys": "系统配置：smb.conf / exports / nfs.conf / vsftpd.conf / jail.local 等",
-    "content_unit": "systemd 服务文件：rclone-webdav / filebrowser / minio / nas-panel",
+    "content_unit": "systemd 服务文件：rclone-webdav / filebrowser / rclone-s3 / nas-panel",
     "content_proj": "NAS 项目配置：.env / configs/ 目录",
     "content_user": "用户数据：Samba 用户数据库 / FTP 白名单 / 系统用户列表",
     "content_cron": "crontab 任务（监控告警 + 定期备份）",
