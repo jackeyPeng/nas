@@ -919,6 +919,8 @@
     "smart_started": "SMART 检测已启动",
     "del_pool_confirm": "⚠️ 确定删除 {0}？\n\n• 所有数据将被永久删除\n• 磁盘将被释放为空闲状态\n• 此操作不可恢复！\n\n输入 \"{0}\" 确认删除：",
     "confirm_prompt": "请输入 \"{0}\" 确认删除：",
+    "confirm_type_delete": "此操作不可恢复，请输入 DELETE 确认：",
+    "confirm_type_device": "此操作将擦除 {0} 的全部数据，请输入设备路径 {0} 确认：",
     "name_mismatch": "名称不匹配，已取消",
     "pool_deleted": "存储池已删除",
     "enter_hostname": "请输入主机名",

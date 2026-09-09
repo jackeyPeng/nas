@@ -339,11 +339,17 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 
 	poolType := r.FormValue("pool_type")
 	poolDevice := r.FormValue("pool_device")
+	poolName := r.FormValue("pool_name")
+	confirmName := r.FormValue("confirm_name")
 	confirm := r.FormValue("confirm")
 	common.LogAudit("system", "删除存储池", "STORAGE", "/api/disk/pool/delete", fmt.Sprintf("type=%s device=%s", poolType, poolDevice), "pending", "")
 
 	if confirm != "yes" {
 		http.Error(w, `{"error":"请加 confirm=yes 确认"}`, http.StatusBadRequest)
+		return
+	}
+	if poolName == "" || confirmName == "" || confirmName != poolName {
+		http.Error(w, `{"error":"确认名不匹配，请输入存储池名称"}`, http.StatusBadRequest)
 		return
 	}
 

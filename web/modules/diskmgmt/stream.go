@@ -428,8 +428,9 @@ func handleWizardResetStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 
 	confirm := r.URL.Query().Get("confirm")
-	if confirm != "yes" {
-		sendProgress(w, ProgressEvent{Step: "需要确认", Status: "error"})
+	confirmToken := r.URL.Query().Get("confirm_token")
+	if confirm != "yes" || confirmToken != "DELETE" {
+		sendProgress(w, ProgressEvent{Step: "需要确认", Status: "error", Detail: "请输入 DELETE 确认（不可恢复）"})
 		return
 	}
 

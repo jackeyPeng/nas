@@ -919,6 +919,8 @@
     "smart_started": "SMART test started",
     "del_pool_confirm": "⚠️ Delete {0}?\n\n• All data will be permanently deleted\n• Disks released to free state\n• Irreversible!\n\nType \"{0}\" to confirm:",
     "confirm_prompt": "Type \"{0}\" to confirm:",
+    "confirm_type_delete": "This is irreversible. Type DELETE to confirm:",
+    "confirm_type_device": "This will erase all data on {0}. Type the device path {0} to confirm:",
     "name_mismatch": "Name mismatch, cancelled",
     "pool_deleted": "Storage pool deleted",
     "enter_hostname": "Enter hostname",

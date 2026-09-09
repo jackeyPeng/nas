@@ -1048,10 +1048,15 @@ function nasPanel() {
         async diskFormat() {
             if (!this.formatForm.device) { this.showToast(this.t('msg.enter_device'), 'error'); return; }
             if (!confirm(this.t('msg.format_confirm', [this.formatForm.device, this.formatForm.fstype]))) return;
+            const confirmToken = prompt(this.t('msg.confirm_type_device', [this.formatForm.device]));
+            if (confirmToken !== this.formatForm.device) {
+                this.showToast(this.t('msg.name_mismatch'), 'error');
+                return;
+            }
             const data = await this.api('/disk/format', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: `device=${encodeURIComponent(this.formatForm.device)}&fstype=${this.formatForm.fstype}&confirm=yes`
+                body: `device=${encodeURIComponent(this.formatForm.device)}&fstype=${this.formatForm.fstype}&confirm=yes&confirm_token=${encodeURIComponent(this.formatForm.device)}`
             });
             if (data) {
                 this.showToast(this.t('msg.format_success'), 'success');
@@ -1563,6 +1568,11 @@ function nasPanel() {
         // Wizard: reset storage (streaming)
         async resetStorage() {
             if (!confirm(this.t('msg.reset_confirm'))) return;
+            const confirmWord = prompt(this.t('msg.confirm_type_delete'));
+            if (confirmWord !== 'DELETE') {
+                this.showToast(this.t('msg.name_mismatch'), 'error');
+                return;
+            }
 
             this.wizardLoading = true;
             this.progressSteps = [];
@@ -1570,7 +1580,7 @@ function nasPanel() {
             this.progressTitle = this.t('msg.reset_progress');
 
             try {
-                const resp = await fetch(`/api/disk/wizard/reset-stream?confirm=yes`, {
+                const resp = await fetch(`/api/disk/wizard/reset-stream?confirm=yes&confirm_token=DELETE`, {
                     headers: { 'Authorization': 'Bearer ' + this.token }
                 });
                 const reader = resp.body.getReader();
@@ -1794,9 +1804,10 @@ function nasPanel() {
             }
 
             const params = new URLSearchParams({
-                pool_name: pool.name,
+                pool_name: poolName,
                 pool_type: pool.type,
                 pool_device: pool.device || '',
+                confirm_name: poolName,
                 confirm: 'yes'
             });
             const data = await this.api('/disk/pool/delete', {
@@ -1922,11 +1933,16 @@ function nasPanel() {
         async resetSystem() {
             if (!confirm(this.t('msg.factory_reset_confirm'))) return;
             if (!confirm(this.t('msg.factory_reset_final'))) return;
+            const confirmWord = prompt(this.t('msg.confirm_type_delete'));
+            if (confirmWord !== 'DELETE') {
+                this.showToast(this.t('msg.name_mismatch'), 'error');
+                return;
+            }
             this.resetMsg = this.t('msg.resetting_wait');
             const data = await this.api('/system/reset', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: 'confirm=yes'
+                body: 'confirm=yes&confirm_token=DELETE'
             });
             if (data) {
                 if (data.error) {

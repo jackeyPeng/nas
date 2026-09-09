@@ -193,10 +193,11 @@ func handleFormat(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error": "不允许格式化系统盘"}`, http.StatusBadRequest)
 		return
 	}
-	// 需要二次确认
+	// 需要二次确认：必须输入设备路径
 	confirm := r.FormValue("confirm")
-	if confirm != "yes" {
-		http.Error(w, `{"error": "请加 confirm=yes 确认格式化操作"}`, http.StatusBadRequest)
+	confirmToken := r.FormValue("confirm_token")
+	if confirm != "yes" || confirmToken != device {
+		http.Error(w, `{"error": "请输入设备路径确认格式化"}`, http.StatusBadRequest)
 		return
 	}
 	out, err := common.SudoExec("mkfs."+fstype, "-F", device)

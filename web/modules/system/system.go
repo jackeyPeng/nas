@@ -643,8 +643,9 @@ func handleReset(w http.ResponseWriter, r *http.Request) {
 	}
 
 	confirm := r.FormValue("confirm")
-	if confirm != "yes" {
-		http.Error(w, `{"error":"请加 confirm=yes 确认重置"}`, http.StatusBadRequest)
+	confirmToken := r.FormValue("confirm_token")
+	if confirm != "yes" || confirmToken != "DELETE" {
+		http.Error(w, `{"error":"请输入 DELETE 确认（不可恢复）"}`, http.StatusBadRequest)
 		return
 	}
 
