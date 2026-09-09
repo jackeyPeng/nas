@@ -232,5 +232,27 @@ func buildNoticeSections() []NoticeSection {
 					Text: "Debian 是 SPI Inc. 的注册商标；其他产品名称归各自所有者，仅表明兼容性，不代表关联。Debian is a registered trademark of SPI Inc.; other names belong to their owners, used for compatibility indication only."},
 			},
 		},
+		{
+			ID: "licenses", Title: "开源许可证", SubTitle: "Open Source Licenses",
+			Items: []NoticeItem{
+				{Label: "Z1 NAS · AGPL-3.0", Text: "本项目 / This project — 完整文本见仓库 LICENSE / Full text: LICENSE"},
+				{Label: "Samba · GPL-3.0", Text: "SMB/CIFS 文件共享 / File sharing"},
+				{Label: "NFS (nfs-kernel-server) · GPL-2.0", Text: "NFS 文件共享 / File sharing"},
+				{Label: "vsftpd · GPL-2.0", Text: "FTP 服务 / FTP server"},
+				{Label: "rclone · MIT", Text: "WebDAV/S3 服务端与远程同步 / WebDAV/S3 server & sync"},
+				{Label: "FileBrowser · Apache-2.0", Text: "Web 文件管理器 / Web file manager"},
+				{Label: "Fail2ban · GPL-2.0", Text: "防暴力破解 / Brute-force protection"},
+				{Label: "UFW · GPL-3.0", Text: "防火墙前端 / Firewall frontend"},
+				{Label: "LVM2 · GPL-2.0 / LGPL-2.1", Text: "逻辑卷管理 / Logical volume management"},
+				{Label: "mdadm · GPL-2.0", Text: "软件 RAID 管理 / Software RAID"},
+				{Label: "xfsprogs · GPL-2.0 / LGPL-2.1", Text: "XFS 文件系统工具 / XFS tools"},
+				{Label: "smartmontools · GPL-2.0", Text: "SMART 磁盘健康监测 / Disk health monitoring"},
+				{Label: "apache2-utils · Apache-2.0", Text: "htpasswd 凭据工具 / Credential utility"},
+				{Label: "parted · GPL-3.0", Text: "分区工具 / Partitioning"},
+				{Label: "unattended-upgrades · GPL-2.0", Text: "自动安全更新 / Automatic security updates"},
+				{Label: "Alpine.js · MIT", Text: "前端响应式框架（本地内嵌） / Frontend framework (embedded)"},
+				{Label: "golang-jwt / modernc SQLite · MIT", Text: "面板运行库 / Panel runtime libraries"},
+			},
+		},
 	}
 }

@@ -4,6 +4,47 @@
 >
 > 完成 19/33 项 (57.6%)，进行中: 移动设备支持；剩余: 性能调优 / 版本更新 / rclone调度器 / AI功能 / 插件系统 / 回收站分散 / 多实例端口 / BT下载(插件) / 多媒体播放(插件) / 关于页面 / 凭证保险箱 / 密码生成
 
+## 🎯 商业化优先级（2026-09-09 评审后修正）
+
+> 依据《Z1 / Abwen NAS 商业化架构与开源许可证审查报告》逐条核对后按 P0→P3 重排。原 33 项大部分已完成，此处只列商业化前剩余缺口与新增项。详见 docs/plans/2026-09-09-commercial-review-decisions.md
+
+### P0 — 商业化前必须（数据安全 / 恢复 / 安全 / 合规）
+
+| # | 事项 | 对应 TODO |
+|---|------|----------|
+| 1 | Pool/Volume 恢复 + 换机 Import Pool（Storage metadata 可从磁盘重扫） | 新增 |
+| 2 | OTA 签名校验（release.sig + SHA256，防供应链攻击） | #19 升级时一并做 |
+| 3 | 2FA / TOTP | 新增 |
+| 4 | 危险操作补强：删池/删卷/格式化加「影响范围展示 + 输入确认词」 | #8 延伸 |
+| 5 | 云凭证 Credential Store 落地（脱离 .env 明文） | #32 |
+| 6 | License 页面 + 源码链接（AGPL §13 网络源码义务） | #22 + 已做 |
+| 7 | 配置 vs 数据备份 UI 明确区分 | #4 延伸 |
+
+### P1 — 产品化
+
+- Health Center（健康中心）
+- Hardware Profile 硬件抽象
+- rclone Cloud Engine 抽象（adapter 层）
+- 事件中心 Event Bus
+- SBOM / THIRD_PARTY_LICENSES 自动生成
+
+### P2 — 暂缓
+
+- Snapshots（已在 Volume 预留能力位）
+- 故障注入测试
+- 多实例服务端口（#29）
+
+### P3 — 不做 / 最后
+
+- Docker 应用管理、AI、HA、Cluster、Kubernetes
+
+### 待拍板（商业决策）
+
+- 硬件定价策略（不依赖订阅填硬件利润）
+- 收费分层 free / Plus / Enterprise
+
+---
+
 ## 📋 待优化清单
 
 ### 🔴 高优先级
