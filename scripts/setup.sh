@@ -410,7 +410,7 @@ RCLONE_VERSION=$(rclone version 2>/dev/null | head -1 | grep -oP 'v\K[0-9]+\.[0-
 if [ -z "$RCLONE_VERSION" ] || [ "$(echo "$RCLONE_VERSION < 1.62" | bc 2>/dev/null || echo 1)" = "1" ]; then
     echo "  升级 rclone..."
     if download_file /tmp/rclone-latest.deb \
-        "https://get.z1.sale/minio/rclone-v1.74.4-linux-amd64.deb" \
+        "https://get.z1.sale/releases/rclone-v1.74.4-linux-amd64.deb" \
         "https://github.com/rclone/rclone/releases/download/v1.74.4/rclone-v1.74.4-linux-amd64.deb" \
         "https://ghfast.top/https://github.com/rclone/rclone/releases/download/v1.74.4/rclone-v1.74.4-linux-amd64.deb"; then
         sudo dpkg -i /tmp/rclone-latest.deb 2>/dev/null || true
