@@ -456,7 +456,7 @@ sudo systemctl start filebrowser
 ```bash
 # 下载并安装 rclone .deb 包（推荐，速度快）
 cd /tmp
-curl -fsSL -o rclone.deb https://file.abwen.com/minio/rclone-v1.74.4-linux-amd64.deb
+curl -fsSL -o rclone.deb https://get.z1.sale/releases/rclone-v1.74.4-linux-amd64.deb
 sudo dpkg -i rclone.deb
 rm rclone.deb
 
@@ -879,7 +879,7 @@ WantedBy=multi-user.target
 # 1. 下载并安装 rclone .deb 包
 # 方式 1：自有文件服务器（推荐，速度快）
 cd /tmp
-curl -fsSL -o rclone.deb https://file.abwen.com/minio/rclone-v1.74.4-linux-amd64.deb
+curl -fsSL -o rclone.deb https://get.z1.sale/releases/rclone-v1.74.4-linux-amd64.deb
 sudo dpkg -i rclone.deb
 rm rclone.deb
 
