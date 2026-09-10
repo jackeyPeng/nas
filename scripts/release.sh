@@ -47,6 +47,9 @@ if [ -f "$R2_ENV" ]; then
     CLOUDFLARE_S3_API=$(grep '^CLOUDFLARE_S3_API=' "$R2_ENV" | cut -d'=' -f2- || true)
 fi
 
+# OTA 签名私钥（ed25519 hex，从 ~/.hermes/.env 读取；未配置则跳过签名，面板会拒升级）
+OTA_SIGN_KEY=$(grep '^OTA_SIGN_KEY=' "$R2_ENV" 2>/dev/null | cut -d'=' -f2- || true)
+
 BUCKET="nas"
 RELEASE_DIR="/tmp/z1-release-$$"
 VERSION_TAG="$VERSION"
@@ -85,6 +88,19 @@ for ARCH in $ARCH_LIST; do
     # strip 进一步减小体积
     strip "${RELEASE_DIR}/nas-panel-${ARCH}" 2>/dev/null || true
     ok "  nas-panel-${ARCH} ($(du -h "${RELEASE_DIR}/nas-panel-${ARCH}" | cut -f1))"
+done
+
+# ── OTA 签名 + 生成 version manifest ───────────────────────────
+for ARCH in $ARCH_LIST; do
+    if [ -n "$OTA_SIGN_KEY" ]; then
+        MANIFEST_URL="https://get.z1.sale/control/nas-panel-${ARCH}.latest"
+        OTA_SIGN_KEY="$OTA_SIGN_KEY" go run scripts/sign.go \
+            "${RELEASE_DIR}/nas-panel-${ARCH}" "${VERSION_TAG}" "${MANIFEST_URL}" \
+            > "${RELEASE_DIR}/latest-${ARCH}.json"
+        ok "  签名 + manifest: latest-${ARCH}.json"
+    else
+        warn "  未配置 OTA_SIGN_KEY，跳过签名（面板升级会因签名校验失败被拒）"
+    fi
 done
 
 # ── 打包 ─────────────────────────────────────────────────────────
@@ -196,6 +212,25 @@ with open('${LOCAL_BIN}', 'rb') as f:
         ContentType='application/octet-stream', CacheControl='no-cache')
 print('  OK: ${CONTROL_KEY}')
 " || warn "control 上传失败: ${CONTROL_KEY}"
+done
+
+# 上传 version manifest（面板 check/upgrade 用）
+for ARCH in $ARCH_LIST; do
+    MANIFEST_FILE="${RELEASE_DIR}/latest-${ARCH}.json"
+    [ -f "$MANIFEST_FILE" ] || continue
+    MANIFEST_KEY="control/latest-${ARCH}.json"
+    python3 -c "
+import boto3
+s3 = boto3.client('s3',
+    endpoint_url='${CLOUDFLARE_S3_API}',
+    aws_access_key_id='${CLOUDFLARE_KEY_ID}',
+    aws_secret_access_key='${CLOUDFLARE_SECRET}',
+    region_name='auto')
+with open('${MANIFEST_FILE}', 'rb') as f:
+    s3.put_object(Bucket='${BUCKET}', Key='${MANIFEST_KEY}', Body=f,
+        ContentType='application/json', CacheControl='no-cache')
+print('  OK: ${MANIFEST_KEY}')
+" || warn "manifest 上传失败: ${MANIFEST_KEY}"
 done
 
 # 通用回退 control/nas-panel.latest = amd64 裸二进制

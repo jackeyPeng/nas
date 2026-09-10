@@ -118,6 +118,9 @@ function nasPanel() {
         vaultItems: [],
         showVaultForm: false,
         vaultForm: { name: '', category: '', secret: '', note: '' },
+        // Panel update
+        panelUpdate: { current: '', latest: '', has_update: false, error: '', detail: '' },
+        panelUpdating: false,
         // Rclone
         rcloneStatus: {},
         rcloneRemotes: [],
@@ -445,7 +448,7 @@ function nasPanel() {
                 case 'diskmgmt': this.loadStorageOverview(); this.loadWizardStatus(); this.loadSharedFolders(); this.loadPendingOps(); this.loadUsers(); this.loadImportablePools(); break;
                 case 'firewall': this.loadFirewall(); break;
                 case 'monitor': this.initMonitorRefresh(); this.loadAlertConfig(); break;
-                case 'system': this.loadSystemOverview(); this.load2FAStatus(); break;
+                case 'system': this.loadSystemOverview(); this.load2FAStatus(); this.checkPanelUpdate(); break;
                 case 'about': this.loadComponents(); break;
                 case 'notice': this.loadNotice(); break;
                 case 'backup': this.loadBackups(); break;
@@ -2174,6 +2177,24 @@ function nasPanel() {
             if (!confirm(this.t('msg.vault_delete_confirm', [v.name]))) return;
             const data = await this.api('/vault/delete', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: `id=${v.id}` });
             if (data) { this.showToast(this.t('msg.vault_deleted'), 'success'); this.loadVault(); }
+        },
+
+        // 面板更新（OTA 签名校验）
+        async checkPanelUpdate() {
+            const data = await this.api('/update/check');
+            if (data) {
+                this.panelUpdate = { current: data.current || '', latest: data.latest || '', has_update: !!data.has_update, error: data.error || '', detail: '' };
+            }
+        },
+        async upgradePanel() {
+            if (!confirm(this.t('msg.panel_upgrade_confirm'))) return;
+            this.panelUpdating = true;
+            const data = await this.api('/update/upgrade', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'confirm=yes' });
+            if (data) {
+                this.showToast(this.t('msg.panel_upgrade_started'), 'success');
+                this.panelUpdate.detail = this.t('msg.panel_upgrade_running');
+            }
+            this.panelUpdating = false;
         },
 
         async restoreBackup(file) {

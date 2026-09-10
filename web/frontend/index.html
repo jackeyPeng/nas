@@ -1870,6 +1870,27 @@
                     </div>
                 </div>
 
+                <!-- 面板更新（OTA 签名校验） -->
+                <div style="background:white;border:1px solid #e0e4e8;border-radius:8px;padding:16px;margin-bottom:12px">
+                    <h3 style="margin-top:0;margin-bottom:12px;font-size:15px">🔄 <span x-text="$t('system.panel_update')"></span></h3>
+                    <div style="display:flex;gap:16px;font-size:14px;margin-bottom:12px">
+                        <div>
+                            <span style="color:#475569"><span x-text="$t('system.current_version')"></span></span>
+                            <strong x-text="panelUpdate.current || '-'"></strong>
+                        </div>
+                        <div x-show="panelUpdate.latest">
+                            <span style="color:#475569"><span x-text="$t('system.latest_version')"></span></span>
+                            <strong x-text="panelUpdate.latest"></strong>
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                        <button class="btn btn-primary" @click="checkPanelUpdate()" x-text="$t('system.check_update')"></button>
+                        <button class="btn" @click="upgradePanel()" :disabled="!panelUpdate.has_update || panelUpdating" style="background:#16a34a;color:white;border:none" x-text="$t('system.upgrade_panel')"></button>
+                        <span x-show="panelUpdate.error" style="font-size:12px;color:#dc2626" x-text="panelUpdate.error"></span>
+                        <span x-show="panelUpdate.detail" style="font-size:12px;color:#475569" x-text="panelUpdate.detail"></span>
+                    </div>
+                </div>
+
                 <!-- 系统更新 -->
                 <div style="background:white;border:1px solid #e0e4e8;border-radius:8px;padding:16px;margin-bottom:12px">
                     <h3 style="margin-top:0;margin-bottom:12px;font-size:15px" x-text="$t('system.updates')"></h3>
