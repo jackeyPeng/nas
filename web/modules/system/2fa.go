@@ -78,9 +78,9 @@ func handle2FASetup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"状态保存失败"}`, http.StatusInternalServerError)
 		return
 	}
-	nasUser, _ := common.ReadEnvFile(common.GetEnvFilePath(), "NAS_USER")
+	nasUser := os.Getenv("NAS_USER")
 	if nasUser == "" {
-		nasUser = "admin"
+		nasUser = "fm"
 	}
 	otpauthURL := "otpauth://totp/Z1-NAS:" + nasUser + "?secret=" + secret + "&issuer=Z1-NAS"
 	common.JSONResponse(w, map[string]interface{}{
