@@ -170,6 +170,7 @@ function nasPanel() {
         needTotp: false,
         twoFA: { enabled: false, pending: false, secret: '', otpauth_url: '' },
         twoFACode: '',
+        importablePools: [],
         // Users module - new
         userTab: 'list', // list | groups | matrix | logs
         userGroups: [],
@@ -435,7 +436,7 @@ function nasPanel() {
                 case 'dashboard': this.loadDashboard(); break;
                 case 'services': this.loadServices(); break;
                 case 'users': this.loadUsers(); this.loadUserGroups(); this.loadPermMatrix(); this.loadLoginLogs(); break;
-                case 'diskmgmt': this.loadStorageOverview(); this.loadWizardStatus(); this.loadSharedFolders(); this.loadPendingOps(); this.loadUsers(); break;
+                case 'diskmgmt': this.loadStorageOverview(); this.loadWizardStatus(); this.loadSharedFolders(); this.loadPendingOps(); this.loadUsers(); this.loadImportablePools(); break;
                 case 'firewall': this.loadFirewall(); break;
                 case 'monitor': this.initMonitorRefresh(); this.loadAlertConfig(); break;
                 case 'system': this.loadSystemOverview(); this.load2FAStatus(); break;
@@ -1877,6 +1878,28 @@ function nasPanel() {
                 this.showToast(this.t('msg.2fa_disabled'), 'success');
                 this.twoFACode = '';
                 this.twoFA = { enabled: false, pending: false, secret: '', otpauth_url: '' };
+            }
+        },
+
+        // 可导入的既有存储池（换机恢复）
+        async loadImportablePools() {
+            const data = await this.api('/disk/import');
+            if (data) this.importablePools = data.pools || [];
+        },
+        async importPool(pool) {
+            if (!pool || !pool.vg_name) return;
+            if (!confirm(this.t('msg.import_pool_confirm', [pool.vg_name]))) return;
+            const data = await this.api('/disk/import/pool', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `vg_name=${encodeURIComponent(pool.vg_name)}&confirm=yes`
+            });
+            if (data) {
+                this.showToast(this.t('msg.import_pool_success'), 'success');
+                this.loadImportablePools();
+                this.loadStorageOverview();
+                this.loadWizardStatus();
+                this.loadSharedFolders();
             }
         },
 

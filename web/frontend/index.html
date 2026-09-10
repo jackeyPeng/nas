@@ -1211,6 +1211,20 @@
                     </div>
                 </div>
 
+                <!-- 可导入存储池横幅 -->
+                <div x-show="importablePools.length > 0" style="background:#ecfdf5;border:1px solid #34d399;border-radius:10px;padding:10px 16px;margin-bottom:14px">
+                    <div style="font-weight:600;color:#065f46;margin-bottom:8px">🔄 <span x-text="$t('storage.import_banner')"></span> (<span x-text="importablePools.length"></span>)</div>
+                    <template x-for="p in importablePools" :key="p.vg_name">
+                        <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-top:1px solid #d1fae5">
+                            <span style="font-size:13px;color:#047857">
+                                <strong x-text="p.vg_name"></strong>
+                                <span x-text="' · ' + (p.pvs?.length||0) + ' ' + $t('storage.disk_unit') + ' · ' + (p.size||'') + ' · ' + (p.fstype||'')"></span>
+                            </span>
+                            <button class="btn btn-sm btn-primary" @click="importPool(p)" x-text="$t('storage.import_btn')"></button>
+                        </div>
+                    </template>
+                </div>
+
                 <!-- ════ Tab 导航 ════ -->
                 <nav style="display:flex;gap:4px;border-bottom:1px solid #e5e7eb;margin-bottom:18px;padding-bottom:0">
                     <button class="tab-btn" :class="{'tab-active':diskmgmtTab==='overview'}" @click="diskmgmtTab='overview'">📊 <span x-text="$t('storage.total')"></span></button>

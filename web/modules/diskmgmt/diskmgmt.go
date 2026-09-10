@@ -38,6 +38,9 @@ func RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/disk/pool/extend", common.AuthMiddleware(handlePoolExtend))
 	mux.HandleFunc("/api/disk/pool/extend-stream", common.AuthMiddleware(handlePoolExtendStream))
 	mux.HandleFunc("/api/disk/pool/delete", common.AuthMiddleware(handlePoolDelete))
+	// Import existing pool (换机恢复)
+	mux.HandleFunc("/api/disk/import", common.AuthMiddleware(handleImportList))
+	mux.HandleFunc("/api/disk/import/pool", common.AuthMiddleware(handleImportPool))
 	// RAID expansion
 	mux.HandleFunc("/api/disk/raid/expand-stream", common.AuthMiddleware(handleRAIDExpandStream))
 	mux.HandleFunc("/api/disk/raid/expand-fs", common.AuthMiddleware(handleRAIDExpandFS))
