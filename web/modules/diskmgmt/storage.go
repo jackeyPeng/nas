@@ -316,7 +316,7 @@ func handleQuickSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	nasUser, _ := common.ReadEnvFile(common.GetEnvFilePath(), "NAS_USER")
+	nasUser := common.GetNASUser()
 	if nasUser == "" {
 		nasUser = "root"
 	}

@@ -112,6 +112,12 @@ function nasPanel() {
         // Backup
         backups: [],
         backupLoading: false,
+        dataBackupTarget: '',
+        dataBackupLoading: false,
+        // Vault
+        vaultItems: [],
+        showVaultForm: false,
+        vaultForm: { name: '', category: '', secret: '', note: '' },
         // Rclone
         rcloneStatus: {},
         rcloneRemotes: [],
@@ -443,6 +449,7 @@ function nasPanel() {
                 case 'about': this.loadComponents(); break;
                 case 'notice': this.loadNotice(); break;
                 case 'backup': this.loadBackups(); break;
+                case 'vault': this.loadVault(); break;
                 case 'rclone': this.loadRcloneStatus(); this.loadRcloneRemotes(); this.loadRcloneTasks(); this.loadRcloneLogs(); this.loadSharedDirs(); break;
                 case 'logs': this.loadAuditLogs(); break;
                 case 'diagnostics': this.loadDiagnostics(); break;
@@ -2121,6 +2128,52 @@ function nasPanel() {
                 this.loadBackups();
             }
             this.backupLoading = false;
+        },
+
+        async runDataBackup() {
+            if (!this.dataBackupTarget) { this.showToast(this.t('msg.enter_backup_target'), 'error'); return; }
+            this.dataBackupLoading = true;
+            const data = await this.api('/backup/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `target=${encodeURIComponent(this.dataBackupTarget)}`
+            });
+            if (data) {
+                this.showToast(this.t('msg.data_backup_done'), 'success');
+            }
+            this.dataBackupLoading = false;
+        },
+
+        // 凭证保险箱
+        async loadVault() {
+            const data = await this.api('/vault');
+            if (data) this.vaultItems = data.items || [];
+        },
+        async createVaultItem() {
+            if (!this.vaultForm.name || !this.vaultForm.secret) { this.showToast(this.t('msg.fill_required'), 'error'); return; }
+            const data = await this.api('/vault/create', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `name=${encodeURIComponent(this.vaultForm.name)}&category=${encodeURIComponent(this.vaultForm.category)}&secret=${encodeURIComponent(this.vaultForm.secret)}&note=${encodeURIComponent(this.vaultForm.note)}`
+            });
+            if (data) {
+                this.showToast(this.t('msg.vault_saved'), 'success');
+                this.vaultForm = { name: '', category: '', secret: '', note: '' };
+                this.showVaultForm = false;
+                this.loadVault();
+            }
+        },
+        async copyVaultItem(v) {
+            const data = await this.api('/vault/reveal', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: `id=${v.id}` });
+            if (data && data.secret) {
+                try { await navigator.clipboard.writeText(data.secret); } catch (e) {}
+                this.showToast(this.t('msg.vault_copied'), 'success');
+            }
+        },
+        async deleteVaultItem(v) {
+            if (!confirm(this.t('msg.vault_delete_confirm', [v.name]))) return;
+            const data = await this.api('/vault/delete', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: `id=${v.id}` });
+            if (data) { this.showToast(this.t('msg.vault_deleted'), 'success'); this.loadVault(); }
         },
 
         async restoreBackup(file) {

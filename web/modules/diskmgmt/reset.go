@@ -125,7 +125,7 @@ func handleWizardReset(w http.ResponseWriter, r *http.Request) {
 
 	// 8. Recreate base /data directory
 	common.SudoExec("mkdir", "-p", "/data")
-	nasUser, _ := common.ReadEnvFile(common.GetEnvFilePath(), "NAS_USER")
+	nasUser := common.GetNASUser()
 	if nasUser == "" {
 		nasUser = "root"
 	}

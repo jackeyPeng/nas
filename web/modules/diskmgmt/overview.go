@@ -399,7 +399,7 @@ func handleStorageOverview(w http.ResponseWriter, r *http.Request) {
 	} else {
 		if os.IsNotExist(err) {
 			common.SudoExec("mkdir", "-p", systemSharePath)
-			nasUser, _ := common.ReadEnvFile(common.GetEnvFilePath(), "NAS_USER")
+			nasUser := common.GetNASUser()
 			if nasUser == "" {
 				nasUser = "root"
 			}

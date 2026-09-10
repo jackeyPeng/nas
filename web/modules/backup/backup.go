@@ -17,6 +17,7 @@ func RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/backup/create", common.AuthMiddleware(handleBackupCreate))
 	mux.HandleFunc("/api/backup/restore", common.AuthMiddleware(handleBackupRestore))
 	mux.HandleFunc("/api/backup/delete", common.AuthMiddleware(handleBackupDelete))
+	mux.HandleFunc("/api/backup/data", common.AuthMiddleware(handleBackupData))
 }
 
 type BackupInfo struct {
@@ -150,4 +151,33 @@ func handleBackupDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	common.JSONResponse(w, map[string]interface{}{"message": "备份已删除"})
+}
+
+// handleBackupData runs a data backup (rsync via backup-data.sh) to the given target
+func handleBackupData(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	target := strings.TrimSpace(r.FormValue("target"))
+	if target == "" {
+		http.Error(w, `{"error":"请指定备份目标路径"}`, http.StatusBadRequest)
+		return
+	}
+	// 安全：拒绝根目录/面板自身路径/伪文件系统
+	if target == "/" || target == "/data" || strings.HasPrefix(target, "/opt/nas") ||
+		strings.HasPrefix(target, "/proc") || strings.HasPrefix(target, "/sys") {
+		http.Error(w, `{"error":"无效的备份目标路径"}`, http.StatusBadRequest)
+		return
+	}
+	out, err := common.SudoExec("/opt/nas/scripts/backup-data.sh", target)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error": %q}`, out), http.StatusInternalServerError)
+		return
+	}
+	common.LogAudit("system", "数据备份", "BACKUP", "/api/backup/data", "target="+target, "success", "")
+	common.JSONResponse(w, map[string]interface{}{
+		"message": "数据备份完成",
+		"output":  out,
+	})
 }

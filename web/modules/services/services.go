@@ -129,7 +129,7 @@ func handleInstallServices(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Read NAS user/pass from .env for WebDAV/S3 auth
-		nasUser, _ := common.ReadEnvFile(common.GetEnvFilePath(), "NAS_USER")
+		nasUser := common.GetNASUser()
 		nasPass, _ := common.ReadEnvFile(common.GetEnvFilePath(), "NAS_PASS")
 
 		// WebDAV with htpasswd auth
@@ -221,7 +221,7 @@ func installSingleService(name string) (string, error) {
 			return "", fmt.Errorf("rclone install failed: %s", out)
 		}
 		// Read NAS user/pass from .env
-		nasUser, _ := common.ReadEnvFile(common.GetEnvFilePath(), "NAS_USER")
+		nasUser := common.GetNASUser()
 		nasPass, _ := common.ReadEnvFile(common.GetEnvFilePath(), "NAS_PASS")
 		common.SudoExec("bash", "-c", fmt.Sprintf("htpasswd -cb /etc/rclone-htpasswd %s %s", nasUser, nasPass))
 		common.SudoExec("sh", "-c", "cat > /etc/systemd/system/rclone-webdav.service << 'UNIT'\n[Unit]\nDescription=Rclone WebDAV Server\nAfter=network.target\n[Service]\nType=simple\nExecStart=/usr/bin/rclone serve webdav /data --addr :8080 --htpasswd /etc/rclone-htpasswd\nRestart=on-failure\n[Install]\nWantedBy=multi-user.target\nUNIT")
@@ -236,7 +236,7 @@ func installSingleService(name string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("rclone install failed: %s", out)
 		}
-		nasUser, _ := common.ReadEnvFile(common.GetEnvFilePath(), "NAS_USER")
+		nasUser := common.GetNASUser()
 		nasPass, _ := common.ReadEnvFile(common.GetEnvFilePath(), "NAS_PASS")
 		common.SudoExec("sh", "-c", fmt.Sprintf("cat > /etc/systemd/system/rclone-s3.service << 'UNIT'\n[Unit]\nDescription=Rclone S3 Server\nAfter=network.target\n[Service]\nType=simple\nExecStart=/usr/bin/rclone serve s3 /data --addr :9000 --auth-key %s,%s\nRestart=on-failure\n[Install]\nWantedBy=multi-user.target\nUNIT", nasUser, nasPass))
 		common.SudoExec("systemctl", "daemon-reload")
@@ -246,7 +246,7 @@ func installSingleService(name string) (string, error) {
 		return "S3 已安装并启动", nil
 
 	case "filebrowser":
-		nasUser, _ := common.ReadEnvFile(common.GetEnvFilePath(), "NAS_USER")
+		nasUser := common.GetNASUser()
 		nasPass, _ := common.ReadEnvFile(common.GetEnvFilePath(), "NAS_PASS")
 		out, _ := common.SudoExec("bash", "-c", `
 			ARCH=$(uname -m | sed "s/x86_64/amd64/;s/aarch64/arm64/")

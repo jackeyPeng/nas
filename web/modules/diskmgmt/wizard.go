@@ -147,7 +147,7 @@ func handleWizardSetup(w http.ResponseWriter, r *http.Request) {
 
 	mode := r.FormValue("mode")
 	confirm := r.FormValue("confirm")
-	nasUser, _ := common.ReadEnvFile(common.GetEnvFilePath(), "NAS_USER")
+	nasUser := common.GetNASUser()
 	if nasUser == "" {
 		nasUser = "root"
 	}

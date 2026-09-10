@@ -348,7 +348,7 @@ func RefreshRegistry() RegistryReport {
 	// 五、系统用户/密码 (4项)
 	nasUser := os.Getenv("NAS_USER")
 	if nasUser == "" {
-		nasUser, _ = common.ReadEnvFile(common.GetEnvFilePath(), "NAS_USER")
+		nasUser = common.GetNASUser()
 	}
 	if nasUser == "" {
 		nasUser = "root"

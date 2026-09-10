@@ -226,7 +226,7 @@ func handlePoolCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 8. chown
-	nasUser, _ := common.ReadEnvFile(common.GetEnvFilePath(), "NAS_USER")
+	nasUser := common.GetNASUser()
 	if nasUser == "" { nasUser = "root" }
 	common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountPoint)
 	steps = append(steps, "设置权限 "+nasUser)

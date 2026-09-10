@@ -582,7 +582,7 @@ func smbShareParams(m FolderMeta, nasUser string) (string, string) {
 
 // getNASUser returns the NAS service account name used for force user/group.
 func getNASUser() string {
-	user, _ := common.ReadEnvFile(common.GetEnvFilePath(), "NAS_USER")
+	user := common.GetNASUser()
 	if user == "" {
 		user = os.Getenv("NAS_USER")
 	}

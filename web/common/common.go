@@ -61,3 +61,14 @@ func GetEnvFilePath() string {
 	}
 	return ""
 }
+
+// GetNASUser returns the panel's configured NAS user.
+// 权威来源是 systemd 的 Environment=NAS_USER（os.Getenv），与 main.go 一致；
+// 兜底 "fm"（main.go 的 defaultUser）。
+// 注意：不要用 ReadEnvFile 读 .env 里的 NAS_USER——.env 只有 NAS_PASS，不含 NAS_USER。
+func GetNASUser() string {
+	if u := os.Getenv("NAS_USER"); u != "" {
+		return u
+	}
+	return "fm"
+}

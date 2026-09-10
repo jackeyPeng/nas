@@ -128,6 +128,9 @@
                         <li :class="{active: page === 'firewall'}" @click="navigate('firewall')">
                             <span style="margin-left:20px">🛡️</span> <span x-text="$t('nav.firewall')"></span>
                         </li>
+                        <li :class="{active: page === 'vault'}" @click="navigate('vault')">
+                            <span style="margin-left:20px">🔑</span> <span x-text="$t('nav.vault')"></span>
+                        </li>
                     </div>
                 </template>
 
@@ -2116,6 +2119,51 @@
                         <span x-text="$t('backup.restore_warning_full')"></span>
                     </p>
                 </div>
+
+                <!-- 数据备份（与配置备份区分） -->
+                <h3 style="margin-top:24px">💾 <span x-text="$t('backup.data_backup_title')"></span></h3>
+                <p style="color:var(--text-light);margin-bottom:12px"><span x-text="$t('backup.data_backup_desc')"></span></p>
+                <div style="display:flex;gap:8px;align-items:center;max-width:640px">
+                    <input type="text" x-model="dataBackupTarget" :placeholder="$t('backup.data_backup_target_ph')" class="port-input" style="flex:1">
+                    <button class="btn btn-primary" @click="runDataBackup()" :disabled="dataBackupLoading" x-text="$t('backup.data_backup_run')"></button>
+                </div>
+                <p style="color:var(--text-light);font-size:12px;margin-top:8px"><span x-text="$t('backup.data_backup_hint')"></span></p>
+            </div>
+
+            <!-- 凭证保险箱 -->
+            <div x-show="page === 'vault'" class="page" x-init="if(page==='vault') loadVault()" x-transition.opacity.duration.300ms">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+                    <h2 style="margin:0">🔑 <span x-text="$t('vault.title')"></span></h2>
+                    <button class="btn btn-primary" @click="showVaultForm = !showVaultForm" x-text="showVaultForm ? $t('vault.cancel') : $t('vault.add')"></button>
+                </div>
+
+                <div x-show="showVaultForm" style="background:white;border:1px solid #e0e4e8;border-radius:8px;padding:16px;margin-bottom:14px">
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                        <div><label style="font-size:13px;color:#475569" x-text="$t('vault.name')"></label><input type="text" x-model="vaultForm.name" class="port-input" style="width:100%"></div>
+                        <div><label style="font-size:13px;color:#475569" x-text="$t('vault.category')"></label><input type="text" x-model="vaultForm.category" class="port-input" style="width:100%" :placeholder="$t('vault.category_ph')"></div>
+                        <div style="grid-column:1/-1"><label style="font-size:13px;color:#475569" x-text="$t('vault.secret')"></label><input type="password" x-model="vaultForm.secret" class="port-input" style="width:100%"></div>
+                        <div style="grid-column:1/-1"><label style="font-size:13px;color:#475569" x-text="$t('vault.note')"></label><input type="text" x-model="vaultForm.note" class="port-input" style="width:100%" :placeholder="$t('vault.note_ph')"></div>
+                    </div>
+                    <button class="btn btn-primary" style="margin-top:12px" @click="createVaultItem()" x-text="$t('common.save')"></button>
+                </div>
+
+                <table class="table">
+                    <thead><tr><th x-text="$t('vault.name')"></th><th x-text="$t('vault.category')"></th><th x-text="$t('vault.note')"></th><th></th></tr></thead>
+                    <tbody>
+                        <template x-for="v in vaultItems" :key="v.id">
+                            <tr>
+                                <td x-text="v.name"></td>
+                                <td x-text="v.category"></td>
+                                <td x-text="v.note" style="font-size:12px;color:#94a3b8"></td>
+                                <td class="actions">
+                                    <button class="btn btn-sm btn-success" @click="copyVaultItem(v)" x-text="$t('vault.copy')"></button>
+                                    <button class="btn btn-sm btn-danger" @click="deleteVaultItem(v)" x-text="$t('vault.delete')"></button>
+                                </td>
+                            </tr>
+                        </template>
+                        <tr x-show="!vaultItems.length"><td colspan="4" style="text-align:center;color:var(--text-light)" x-text="$t('vault.empty')"></td></tr>
+                    </tbody>
+                </table>
             </div>
 
             <!-- Diagnostics -->

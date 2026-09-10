@@ -348,7 +348,7 @@ func handleConfigFile(w http.ResponseWriter, r *http.Request) {
 
 // getNASUser 返回 NAS 管理员用户名（.env > 环境变量 > root）
 func getNASUser() string {
-	user, _ := common.ReadEnvFile(common.GetEnvFilePath(), "NAS_USER")
+	user := common.GetNASUser()
 	if user == "" {
 		user = os.Getenv("NAS_USER")
 	}

@@ -51,7 +51,7 @@ func handleWizardSetupStream(w http.ResponseWriter, r *http.Request) {
 	}
 	common.LogAudit("system", "存储向导配置(流式)", "STORAGE", "/api/disk/wizard/setup-stream", "mode="+mode, "pending", "")
 
-	nasUser, _ := common.ReadEnvFile(common.GetEnvFilePath(), "NAS_USER")
+	nasUser := common.GetNASUser()
 	if nasUser == "" {
 		nasUser = "root"
 	}
@@ -446,7 +446,7 @@ func handleWizardResetStream(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	nasUser, _ := common.ReadEnvFile(common.GetEnvFilePath(), "NAS_USER")
+	nasUser := common.GetNASUser()
 	if nasUser == "" {
 		nasUser = "root"
 	}

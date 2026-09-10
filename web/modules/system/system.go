@@ -815,7 +815,7 @@ func handleReset(w http.ResponseWriter, r *http.Request) {
 
 		// 10. 重建 /data 目录
 		common.SudoExec("mkdir", "-p", "/data")
-		nasUser, _ := common.ReadEnvFile(common.GetEnvFilePath(), "NAS_USER")
+		nasUser := common.GetNASUser()
 		if nasUser == "" {
 			nasUser = os.Getenv("NAS_USER")
 		}
