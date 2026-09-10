@@ -40,33 +40,40 @@ func initConfigDB() *sql.DB {
 			log.Printf("[CONFIG_SYNC] 无法打开元数据库: %v", err)
 			return
 		}
-		configDB.Exec(`CREATE TABLE IF NOT EXISTS folders (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			name TEXT NOT NULL,
-			path TEXT NOT NULL UNIQUE,
-			pool TEXT NOT NULL,
-			permission TEXT NOT NULL DEFAULT 'readwrite',
-			valid_users TEXT NOT NULL DEFAULT '',
-			write_users TEXT NOT NULL DEFAULT '',
-			recycle_bin INTEGER NOT NULL DEFAULT 0,
-			samba_share INTEGER NOT NULL DEFAULT 1,
-			nfs_export INTEGER NOT NULL DEFAULT 0,
-			quota_gb INTEGER NOT NULL DEFAULT 0,
-			created_at TEXT NOT NULL DEFAULT (datetime('now')),
-			updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-		)`)
-		// 迁移：老库补 write_users 列（幂等，检测列是否存在）
-		migrateWriteUsersColumn(configDB)
-		log.Printf("[CONFIG_SYNC] 元数据库已初始化: %s", configDBPath())
-
-		// Seed from existing folders if table is empty
-		var count int
-		configDB.QueryRow("SELECT COUNT(*) FROM folders").Scan(&count)
-		if count == 0 {
-			seedFromFileSystem(configDB)
-		}
 	})
+	if configDB == nil {
+		return nil
+	}
+	ensureFoldersSchema(configDB)
 	return configDB
+}
+
+// ensureFoldersSchema 幂等：每次调用确保 folders 表存在，空表时从文件系统补种。
+// 不依赖 sync.Once，folders.db 若在运行中被删除/损坏，下一次访问自动重建。
+func ensureFoldersSchema(db *sql.DB) {
+	db.Exec(`CREATE TABLE IF NOT EXISTS folders (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL,
+		path TEXT NOT NULL UNIQUE,
+		pool TEXT NOT NULL,
+		permission TEXT NOT NULL DEFAULT 'readwrite',
+		valid_users TEXT NOT NULL DEFAULT '',
+		write_users TEXT NOT NULL DEFAULT '',
+		recycle_bin INTEGER NOT NULL DEFAULT 0,
+		samba_share INTEGER NOT NULL DEFAULT 1,
+		nfs_export INTEGER NOT NULL DEFAULT 0,
+		quota_gb INTEGER NOT NULL DEFAULT 0,
+		created_at TEXT NOT NULL DEFAULT (datetime('now')),
+		updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+	)`)
+	// 迁移：老库补 write_users 列（幂等，检测列是否存在）
+	migrateWriteUsersColumn(db)
+	// 空表时从文件系统补种
+	var count int
+	db.QueryRow("SELECT COUNT(*) FROM folders").Scan(&count)
+	if count == 0 {
+		seedFromFileSystem(db)
+	}
 }
 
 // seedFromFileSystem scans /data for existing folders and populates metadata
