@@ -149,7 +149,7 @@ apt-get update
 DEBIAN_FRONTEND=noninteractive apt-get install -y \
     curl samba nfs-kernel-server vsftpd rclone \
     fail2ban ufw smartmontools unattended-upgrades \
-    smbclient nfs-common xfsprogs mdadm lvm2
+    smbclient nfs-common xfsprogs mdadm lvm2 rsync
 echo "  ✓ 软件包安装完成"
 
 # ==================== [2/9] 创建数据目录结构 ====================

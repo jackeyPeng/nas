@@ -68,6 +68,11 @@ if [[ -z "$TARGET" ]]; then
     exit 1
 fi
 
+# 本地目标先创建目录（远程目标 user@host:path 由 rsync 处理）
+if [[ "$TARGET" != *:* ]]; then
+    mkdir -p "$TARGET"
+fi
+
 # Default sources: all /data/nas* mounts
 if [[ ${#BACKUP_SOURCES[@]} -eq 0 ]]; then
     for mp in /data/nas*; do
