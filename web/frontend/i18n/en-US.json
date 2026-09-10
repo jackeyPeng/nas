@@ -186,7 +186,8 @@
     "failed": "Login failed",
     "network_error": "Network error",
     "must_change_pwd": "Set a new password",
-    "must_change_pwd_hint": "You are using the default password. For security, set a new one before continuing."
+    "must_change_pwd_hint": "You are using the default password. For security, set a new one before continuing.",
+    "2fa_code": "Verification code"
   },
   "dashboard": {
     "title": "System Status",
@@ -525,6 +526,15 @@
   "system": {
     "title": "System Settings",
     "hostname": "Hostname",
+    "2fa": "Two-Factor Authentication (2FA)",
+    "2fa_status": "Status",
+    "2fa_on": "Enabled",
+    "2fa_off": "Disabled",
+    "2fa_enable": "Enable 2FA",
+    "2fa_disable": "Disable 2FA",
+    "2fa_confirm": "Confirm & Enable",
+    "2fa_hint": "In your authenticator app (Google Authenticator / Authy), manually add the secret below, then enter the 6-digit code to confirm:",
+    "2fa_code": "6-digit code",
     "network": "Network",
     "gateway": "Gateway",
     "dns": "DNS",
@@ -814,6 +824,9 @@
   },
   "msg": {
     "login_failed": "Login failed",
+    "2fa_enabled": "Two-factor authentication enabled",
+    "2fa_disabled": "Two-factor authentication disabled",
+    "enter_2fa_code": "Please enter the 6-digit code",
     "network_error": "Network error",
     "install_all_confirm": "Install all NAS services?\n\nIncludes: Samba, NFS, FTP, WebDAV, FileBrowser, S3, Fail2ban\n\nMay take a few minutes.",
     "installing": "Installing...",

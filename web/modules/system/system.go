@@ -31,6 +31,10 @@ func RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/system/https/upload", common.AuthMiddleware(handleHTTPSUpload))
 	mux.HandleFunc("/api/system/https/apply", common.AuthMiddleware(handleHTTPSApply))
 	mux.HandleFunc("/api/system/https/remove", common.AuthMiddleware(handleHTTPSRemove))
+	mux.HandleFunc("/api/2fa/status", common.AuthMiddleware(handle2FAStatus))
+	mux.HandleFunc("/api/2fa/setup", common.AuthMiddleware(handle2FASetup))
+	mux.HandleFunc("/api/2fa/enable", common.AuthMiddleware(handle2FAEnable))
+	mux.HandleFunc("/api/2fa/disable", common.AuthMiddleware(handle2FADisable))
 }
 
 // ═══════════════════════════════════════

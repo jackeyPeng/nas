@@ -62,6 +62,10 @@
                     <label x-text="$t('common.password')"></label>
                     <input type="password" x-model="loginForm.password" :placeholder="$t('common.password')" autocomplete="current-password">
                 </div>
+                <div class="form-group" x-show="needTotp" x-cloak>
+                    <label x-text="$t('login.2fa_code')"></label>
+                    <input type="text" x-model="loginForm.totp" :placeholder="$t('login.2fa_code')" autocomplete="one-time-code" inputmode="numeric" maxlength="6">
+                </div>
                 <button type="submit" class="btn btn-primary btn-block" :disabled="loading">
                     <span x-show="!loading"><span x-text="$t('common.login')"></span></span>
                     <span x-show="loading"><span x-text="$t('common.logging_in')"></span></span>
@@ -1725,6 +1729,36 @@
                         <input type="text" x-model="sysSettings.hostname" :placeholder="$t('system.hostname')" class="port-input" style="max-width:300px">
                         <button class="btn btn-primary" @click="saveHostname()" x-text="$t('common.save')"></button>
                     </div>
+                </div>
+
+                <!-- 两步验证 -->
+                <div style="background:white;border:1px solid #e0e4e8;border-radius:8px;padding:16px;margin-bottom:12px">
+                    <h3 style="margin-top:0;margin-bottom:12px;font-size:15px">🔐 <span x-text="$t('system.2fa')"></span></h3>
+                    <div style="font-size:14px;margin-bottom:10px">
+                        <span x-text="$t('system.2fa_status')"></span>:
+                        <strong :style="twoFA.enabled ? 'color:#16a34a' : 'color:#dc2626'" x-text="twoFA.enabled ? $t('system.2fa_on') : $t('system.2fa_off')"></strong>
+                    </div>
+                    <template x-if="!twoFA.enabled">
+                        <div>
+                            <button class="btn btn-primary" @click="setup2FA()" x-text="$t('system.2fa_enable')"></button>
+                            <template x-if="twoFA.pending">
+                                <div style="margin-top:12px">
+                                    <p style="color:#475569;font-size:13px;margin:0 0 8px" x-text="$t('system.2fa_hint')"></p>
+                                    <p style="font-family:monospace;font-size:16px;background:#f8fafc;padding:8px 12px;border-radius:6px;display:inline-block;letter-spacing:1px" x-text="twoFA.secret"></p>
+                                    <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
+                                        <input type="text" x-model="twoFACode" :placeholder="$t('system.2fa_code')" class="port-input" style="max-width:150px" maxlength="6" inputmode="numeric">
+                                        <button class="btn btn-primary" @click="enable2FA()" x-text="$t('system.2fa_confirm')"></button>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </template>
+                    <template x-if="twoFA.enabled">
+                        <div style="display:flex;gap:8px;align-items:center">
+                            <input type="text" x-model="twoFACode" :placeholder="$t('system.2fa_code')" class="port-input" style="max-width:150px" maxlength="6" inputmode="numeric">
+                            <button class="btn btn-danger" @click="disable2FA()" x-text="$t('system.2fa_disable')"></button>
+                        </div>
+                    </template>
                 </div>
 
                 <!-- 网络信息（只读） -->

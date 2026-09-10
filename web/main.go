@@ -280,6 +280,19 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 两步验证：启用后必须提供 TOTP 验证码
+	if system.TOTPEnabled() {
+		totp := r.FormValue("totp")
+		if totp == "" {
+			common.JSONResponse(w, map[string]interface{}{"2fa_required": true})
+			return
+		}
+		if !system.VerifyLoginTOTP(totp) {
+			http.Error(w, `{"error": "验证码错误"}`, http.StatusUnauthorized)
+			return
+		}
+	}
+
 	token, err := common.CreateToken(username)
 	if err != nil {
 		http.Error(w, `{"error": "token creation failed"}`, http.StatusInternalServerError)

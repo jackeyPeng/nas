@@ -186,7 +186,8 @@
     "failed": "登录失败",
     "network_error": "网络错误",
     "must_change_pwd": "设置新密码",
-    "must_change_pwd_hint": "你正在使用出厂默认密码，为安全起见请先设置一个新密码再继续。"
+    "must_change_pwd_hint": "你正在使用出厂默认密码，为安全起见请先设置一个新密码再继续。",
+    "2fa_code": "验证码"
   },
   "dashboard": {
     "title": "系统状态",
@@ -525,6 +526,15 @@
   "system": {
     "title": "系统设置",
     "hostname": "主机名",
+    "2fa": "两步验证 (2FA)",
+    "2fa_status": "状态",
+    "2fa_on": "已启用",
+    "2fa_off": "未启用",
+    "2fa_enable": "开启两步验证",
+    "2fa_disable": "关闭两步验证",
+    "2fa_confirm": "确认启用",
+    "2fa_hint": "在手机验证器 App（Google Authenticator / Authy 等）中手动输入下方密钥，然后填入 6 位验证码确认：",
+    "2fa_code": "6 位验证码",
     "network": "网络信息",
     "gateway": "网关",
     "dns": "DNS",
@@ -814,6 +824,9 @@
   },
   "msg": {
     "login_failed": "登录失败",
+    "2fa_enabled": "两步验证已启用",
+    "2fa_disabled": "两步验证已关闭",
+    "enter_2fa_code": "请输入 6 位验证码",
     "network_error": "网络错误",
     "install_all_confirm": "确定要安装所有NAS服务？\n\n包括: Samba, NFS, FTP, WebDAV, FileBrowser, S3, Fail2ban\n\n安装过程可能需要几分钟，请耐心等待。",
     "installing": "正在安装...",

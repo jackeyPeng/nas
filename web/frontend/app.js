@@ -5,7 +5,7 @@ function nasPanel() {
         navGroup: 'overview',
         loading: false,
         loginError: '',
-        loginForm: { username: '', password: '' },
+        loginForm: { username: '', password: '', totp: '' },
         dashboard: {},
         dashboardLoaded: false,
         services: [],
@@ -167,6 +167,9 @@ function nasPanel() {
         pwdUser: '',
         pwdForm: { password: '' },
         mustChangePassword: false,
+        needTotp: false,
+        twoFA: { enabled: false, pending: false, secret: '', otpauth_url: '' },
+        twoFACode: '',
         // Users module - new
         userTab: 'list', // list | groups | matrix | logs
         userGroups: [],
@@ -386,15 +389,23 @@ function nasPanel() {
             this.loading = true;
             this.loginError = '';
             try {
+                let body = `username=${encodeURIComponent(this.loginForm.username)}&password=${encodeURIComponent(this.loginForm.password)}`;
+                if (this.loginForm.totp) body += `&totp=${encodeURIComponent(this.loginForm.totp)}`;
                 const res = await fetch('/api/login', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                    body: `username=${encodeURIComponent(this.loginForm.username)}&password=${encodeURIComponent(this.loginForm.password)}`
+                    body: body
                 });
                 const data = await res.json();
                 if (res.ok) {
+                    if (data['2fa_required']) {
+                        this.needTotp = true;
+                        return;
+                    }
                     this.token = data.token;
                     localStorage.setItem('nas_token', this.token);
+                    this.needTotp = false;
+                    this.loginForm.totp = '';
                     if (data.must_change_password) {
                         this.mustChangePassword = true;
                         this.pwdUser = data.username || this.loginForm.username;
@@ -427,7 +438,7 @@ function nasPanel() {
                 case 'diskmgmt': this.loadStorageOverview(); this.loadWizardStatus(); this.loadSharedFolders(); this.loadPendingOps(); this.loadUsers(); break;
                 case 'firewall': this.loadFirewall(); break;
                 case 'monitor': this.initMonitorRefresh(); this.loadAlertConfig(); break;
-                case 'system': this.loadSystemOverview(); break;
+                case 'system': this.loadSystemOverview(); this.load2FAStatus(); break;
                 case 'about': this.loadComponents(); break;
                 case 'notice': this.loadNotice(); break;
                 case 'backup': this.loadBackups(); break;
@@ -1836,6 +1847,36 @@ function nasPanel() {
             const data = await this.api('/system/components');
             if (data && data.components) {
                 this.components = { items: data.components, panel: data.panel };
+            }
+        },
+
+        // 两步验证状态
+        async load2FAStatus() {
+            const data = await this.api('/2fa/status');
+            if (data) this.twoFA = { enabled: !!data.enabled, pending: !!data.pending, secret: this.twoFA.secret, otpauth_url: this.twoFA.otpauth_url };
+        },
+        async setup2FA() {
+            const data = await this.api('/2fa/setup', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: '' });
+            if (data) {
+                this.twoFA = { enabled: false, pending: true, secret: data.secret, otpauth_url: data.otpauth_url };
+            }
+        },
+        async enable2FA() {
+            if (!this.twoFACode) { this.showToast(this.t('msg.enter_2fa_code'), 'error'); return; }
+            const data = await this.api('/2fa/enable', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: `code=${encodeURIComponent(this.twoFACode)}` });
+            if (data && data.enabled) {
+                this.showToast(this.t('msg.2fa_enabled'), 'success');
+                this.twoFACode = '';
+                this.twoFA = { enabled: true, pending: false, secret: '', otpauth_url: '' };
+            }
+        },
+        async disable2FA() {
+            if (!this.twoFACode) { this.showToast(this.t('msg.enter_2fa_code'), 'error'); return; }
+            const data = await this.api('/2fa/disable', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: `code=${encodeURIComponent(this.twoFACode)}` });
+            if (data && !data.enabled) {
+                this.showToast(this.t('msg.2fa_disabled'), 'success');
+                this.twoFACode = '';
+                this.twoFA = { enabled: false, pending: false, secret: '', otpauth_url: '' };
             }
         },
 
