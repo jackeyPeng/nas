@@ -189,10 +189,10 @@ func runUpgrade() {
 		return
 	}
 
-	// 5. 派发分离的 apply 脚本（独立进程，跨重启存活）
+	// 5. 派发分离的 apply 脚本。用 systemd-run 放进独立 transient unit（自己的 cgroup），
+	// 这样 systemctl restart nas-panel 不会把它一起杀掉——健康检查 + 回滚才能正常执行。
 	setStatus("running", "签名校验通过，开始替换并重启...")
-	applyCmd := fmt.Sprintf("nohup bash /opt/nas/scripts/apply-upgrade.sh %s > /tmp/nas-upgrade.log 2>&1 &", tmpFile)
-	if _, err := common.SudoExec("sh", "-c", applyCmd); err != nil {
+	if _, err := common.SudoExec("systemd-run", "--unit=nas-panel-upgrade", "--collect", "bash", "/opt/nas/scripts/apply-upgrade.sh", tmpFile); err != nil {
 		setStatus("failed", "启动升级脚本失败: "+err.Error())
 		return
 	}
