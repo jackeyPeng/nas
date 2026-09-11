@@ -46,7 +46,10 @@ func detectImportablePools() []ImportablePool {
 				continue
 			}
 			lvName, lvPath := f[0], f[1]
-			if mounted[lvPath] {
+			// df --output=source 对 LVM 卷返回 /dev/mapper/vg-lv，而 lv_path 返回 /dev/vg/lv，
+			// 两个字符串不等；归一化成 dm 形式一起比对，否则已挂载的池会被误判为可导入。
+			dmPath := "/dev/mapper/" + strings.ReplaceAll(strings.TrimPrefix(lvPath, "/dev/"), "/", "-")
+			if mounted[lvPath] || mounted[dmPath] {
 				continue
 			}
 			sizeOut, _ := common.SudoOutput("/usr/sbin/lvs", "--noheadings", "--units", "g", "-o", "lv_size", vg+"/"+lvName)

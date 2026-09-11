@@ -3,9 +3,9 @@
   "dataLicense": "CC0-1.0",
   "SPDXID": "SPDXRef-DOCUMENT",
   "name": "Z1-Abwen-NAS",
-  "documentNamespace": "https://z1.sale/spdx/20260911-063741",
+  "documentNamespace": "https://z1.sale/spdx/20260911-095610",
   "creationInfo": {
-    "created": "2026-09-11T06:37:41Z",
+    "created": "2026-09-11T09:56:10Z",
     "creators": [
       "Tool: nas-panel scripts/gen-sbom.py",
       "Organization: Abwen"
