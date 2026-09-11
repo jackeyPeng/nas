@@ -671,7 +671,7 @@ func handleReset(w http.ResponseWriter, r *http.Request) {
 		}()
 
 		// 1. 备份当前配置
-		backupDir := "/data/backups"
+		backupDir := "/opt/nas/backups"
 		common.SudoExec("mkdir", "-p", backupDir)
 		timestamp := time.Now().Format("20060102-150405")
 		for _, f := range []string{"/etc/samba/smb.conf", "/etc/exports", "/etc/nfs.conf", "/etc/vsftpd.conf", "/etc/fstab", "/etc/mdadm/mdadm.conf"} {

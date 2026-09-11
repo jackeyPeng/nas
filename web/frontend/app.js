@@ -1250,7 +1250,8 @@ function nasPanel() {
 
             try {
                 const token = this.token;
-                const resp = await fetch(`/api/disk/wizard/setup-stream?mode=${this.wizMode}&confirm=yes`, {
+                const diskParam = (this.wizDisks && this.wizDisks.length) ? `&disks=${encodeURIComponent(this.wizDisks.join(','))}` : '';
+                const resp = await fetch(`/api/disk/wizard/setup-stream?mode=${this.wizMode}&confirm=yes${diskParam}`, {
                     headers: { 'Authorization': 'Bearer ' + token }
                 });
                 const reader = resp.body.getReader();

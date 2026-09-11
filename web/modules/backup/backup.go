@@ -30,7 +30,7 @@ type BackupInfo struct {
 
 // handleBackupList returns list of available backups
 func handleBackupList(w http.ResponseWriter, r *http.Request) {
-	backupDir := "/data/backups"
+	backupDir := "/opt/nas/backups"
 	entries, err := os.ReadDir(backupDir)
 	if err != nil {
 		common.JSONResponse(w, map[string]interface{}{"backups": []BackupInfo{}, "error": "no backup dir"})
@@ -106,8 +106,8 @@ func handleBackupRestore(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error": "file parameter required"}`, http.StatusBadRequest)
 		return
 	}
-	// Safety: only allow files in /data/backups/
-	if !strings.HasPrefix(backupFile, "/data/backups/") || !strings.HasSuffix(backupFile, ".tar.gz") {
+	// Safety: only allow files in /opt/nas/backups/
+	if !strings.HasPrefix(backupFile, "/opt/nas/backups/") || !strings.HasSuffix(backupFile, ".tar.gz") {
 		http.Error(w, `{"error": "invalid backup file path"}`, http.StatusBadRequest)
 		return
 	}
@@ -142,7 +142,7 @@ func handleBackupDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Safety check
-	if !strings.HasPrefix(file, "/data/backups/") || !strings.HasSuffix(file, ".tar.gz") {
+	if !strings.HasPrefix(file, "/opt/nas/backups/") || !strings.HasSuffix(file, ".tar.gz") {
 		http.Error(w, `{"error": "invalid file path"}`, http.StatusBadRequest)
 		return
 	}

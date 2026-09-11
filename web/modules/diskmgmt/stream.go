@@ -71,6 +71,25 @@ func handleWizardSetupStream(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// 前端向导允许选盘：带 disks 参数（逗号分隔设备路径）时，只对选中的空闲盘操作
+	if sel := strings.TrimSpace(r.URL.Query().Get("disks")); sel != "" {
+		selected := map[string]bool{}
+		for _, dev := range strings.Split(sel, ",") {
+			if dev = strings.TrimSpace(dev); dev != "" {
+				selected[dev] = true
+			}
+		}
+		var filtered []string
+		for _, dev := range unusedDevs {
+			if selected[dev] {
+				filtered = append(filtered, dev)
+			}
+		}
+		if len(filtered) > 0 {
+			unusedDevs = filtered
+		}
+	}
+
 	if len(unusedDevs) == 0 {
 		sendProgress(w, ProgressEvent{Step: "检查磁盘", Status: "error", Detail: "没有可用的空闲磁盘"})
 		return
