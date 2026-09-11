@@ -25,7 +25,7 @@
 
 ### P1 — 产品化
 
-- Health Center（健康中心）
+- Health Center（健康中心）✅ 已落地（web/modules/health + 前端健康中心页）
 - Hardware Profile 硬件抽象
 - rclone Cloud Engine 抽象（adapter 层）
 - 事件中心 Event Bus
