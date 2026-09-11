@@ -3,6 +3,7 @@
     "overview": "Overview",
     "dashboard": "Dashboard",
     "monitor": "Monitoring",
+    "health": "Health Center",
     "storage": "Storage",
     "storage_mgmt": "Storage Mgmt",
     "rclone": "Remote Sync",
@@ -1061,5 +1062,22 @@
     "detail_smart": "SMART disk health monitoring",
     "detail_kernel": "Operating system kernel",
     "detail_os": "Debian GNU/Linux"
+  },
+  "health": {
+    "title": "Health Center",
+    "refresh": "Refresh",
+    "overall_ok": "All systems healthy",
+    "overall_warn": "Some items need attention",
+    "overall_error": "Issues detected",
+    "ok": "Healthy",
+    "info": "Not set",
+    "warn": "Warning",
+    "error": "Error",
+    "system": "System Services",
+    "storage": "Storage",
+    "network": "Network",
+    "backup": "Backup",
+    "security": "Security",
+    "cloud_sync": "Cloud Sync"
   }
 }

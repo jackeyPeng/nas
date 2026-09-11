@@ -19,6 +19,7 @@ import (
 	"nas-panel/modules/diagnostics"
 	"nas-panel/modules/diskmgmt"
 	"nas-panel/modules/firewall"
+	"nas-panel/modules/health"
 	"nas-panel/modules/logs"
 	"nas-panel/modules/monitor"
 	"nas-panel/modules/rclone"
@@ -128,6 +129,7 @@ func main() {
 	logs.RegisterRoutes(mux)
 	diagnostics.RegisterRoutes(mux)
 	vault.RegisterRoutes(mux)
+	health.RegisterRoutes(mux)
 	update.RegisterRoutes(mux)
 
 	// Serve frontend

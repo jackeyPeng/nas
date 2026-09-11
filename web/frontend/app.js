@@ -33,6 +33,8 @@ function nasPanel() {
         monitorShowDetail: false,
         monitorShowAdvanced: false,
         alertConfig: {},
+        health: { overall: 'ok', checks: [] },
+        healthLoaded: false,
         // Config module
         envConfig: {},
         sambaShares: [],
@@ -456,6 +458,7 @@ function nasPanel() {
                 case 'rclone': this.loadRcloneStatus(); this.loadRcloneRemotes(); this.loadRcloneTasks(); this.loadRcloneLogs(); this.loadSharedDirs(); break;
                 case 'logs': this.loadAuditLogs(); break;
                 case 'diagnostics': this.loadDiagnostics(); break;
+                case 'health': this.loadHealth(); break;
             }
         },
 
@@ -470,6 +473,27 @@ function nasPanel() {
             const cdata = await this.api('/disk/config/check');
             if (cdata) this.configIssues = cdata;
             this.dashboardLoaded = true;
+        },
+
+        async loadHealth() {
+            this.healthLoaded = false;
+            const data = await this.api('/health');
+            if (data) this.health = data;
+            this.healthLoaded = true;
+        },
+
+        healthLabel(id, fallback) {
+            const k = 'health.' + id;
+            return window.t(k) !== k ? window.t(k) : (fallback || id);
+        },
+
+        healthStatusColor(status) {
+            return { ok: '#16a34a', info: '#64748b', warn: '#d97706', error: '#dc2626' }[status] || '#64748b';
+        },
+
+        healthStatusText(status) {
+            const k = 'health.' + status;
+            return window.t(k) !== k ? window.t(k) : status;
         },
 
         async loadServices() {

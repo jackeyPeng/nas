@@ -96,6 +96,9 @@
                         <li :class="{active: page === 'monitor'}" @click="navigate('monitor')">
                             <span style="margin-left:20px">📡</span> <span x-text="$t('nav.monitor')"></span>
                         </li>
+                        <li :class="{active: page === 'health'}" @click="navigate('health')">
+                            <span style="margin-left:20px">❤️</span> <span x-text="$t('nav.health')"></span>
+                        </li>
                     </div>
                 </template>
 
@@ -2700,8 +2703,46 @@
                 </div>
             </div>
 
+            <!-- 健康中心 -->
+            <div x-show="page === 'health'" class="page" x-transition.opacity.duration.300ms">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+                    <h2 style="margin:0">❤️ <span x-text="$t('health.title')"></span></h2>
+                    <button class="btn btn-secondary" @click="loadHealth()" style="font-size:13px"><span x-text="$t('health.refresh')"></span></button>
+                </div>
+
+                <div x-show="healthLoaded">
+                    <div style="border-radius:12px;padding:14px 20px;margin-bottom:16px;color:#fff;font-weight:600"
+                         :style="'background:' + healthStatusColor(health.overall)">
+                        <span x-text="health.overall === 'error' ? $t('health.overall_error') : (health.overall === 'warn' ? $t('health.overall_warn') : $t('health.overall_ok'))"></span>
+                        <span style="opacity:.85;font-weight:400;font-size:13px;margin-left:8px" x-text="health.checked_at ? ('· ' + health.checked_at) : ''"></span>
+                    </div>
+
+                    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px">
+                        <template x-for="c in health.checks" :key="c.id">
+                            <div style="border:1px solid #e5e7eb;border-radius:12px;padding:16px;background:#fff"
+                                 :style="'border-left:4px solid ' + healthStatusColor(c.status)">
+                                <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                                    <span style="font-size:20px" x-text="c.icon"></span>
+                                    <strong style="flex:1" x-text="healthLabel(c.id, c.label)"></strong>
+                                    <span style="font-size:12px;font-weight:600;padding:2px 8px;border-radius:9999px;color:#fff"
+                                          :style="'background:' + healthStatusColor(c.status)"
+                                          x-text="healthStatusText(c.status)"></span>
+                                </div>
+                                <div style="font-size:13px;color:#6b7280" x-text="c.detail"></div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <div x-show="!healthLoaded" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px">
+                    <template x-for="i in 6" :key="i">
+                        <div style="height:96px;border-radius:12px;background:#f1f5f9;animation:pulse-skeleton 1.5s ease-in-out infinite"></div>
+                    </template>
+                </div>
+            </div>
+
             <!-- 操作日志 -->
-            <div x-show="page === 'logs'" class="page" x-transition.opacity.duration.300ms>
+            <div x-show="page === 'logs'" class="page" x-transition.opacity.duration.300ms">
                 <h2 x-text="$t('logs.title')"></h2>
                 <p style="font-size:13px;color:#6b7280;margin-bottom:14px"><span x-text="$t('logs.desc')"></span></p>
 

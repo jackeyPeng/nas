@@ -3,6 +3,7 @@
     "overview": "总览",
     "dashboard": "仪表盘",
     "monitor": "监控告警",
+    "health": "健康中心",
     "storage": "存储",
     "storage_mgmt": "存储管理",
     "rclone": "远端同步",
@@ -1061,5 +1062,22 @@
     "detail_smart": "SMART 磁盘健康监测",
     "detail_kernel": "操作系统内核",
     "detail_os": "Debian GNU/Linux"
+  },
+  "health": {
+    "title": "健康中心",
+    "refresh": "刷新",
+    "overall_ok": "所有系统运行正常",
+    "overall_warn": "有项目需要注意",
+    "overall_error": "存在异常，请检查",
+    "ok": "健康",
+    "info": "未配置",
+    "warn": "注意",
+    "error": "异常",
+    "system": "系统服务",
+    "storage": "存储",
+    "network": "网络",
+    "backup": "备份",
+    "security": "安全",
+    "cloud_sync": "云端同步"
   }
 }
