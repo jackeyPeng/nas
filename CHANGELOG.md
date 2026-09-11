@@ -43,6 +43,7 @@
 
 - 备份列表目录不一致（读 `/data/backups` 应为 `/opt/nas/backups`）
 - 存储向导 merge 选盘被忽略（后端不读 disks 参数）
+- Import Pool 检测误报已挂载池为可导入（dm 路径与 lv_path 归一化比对）
 - 文档统一 S3/MinIO 描述 + Go 版本 + rclone 版权行漂移
 
 ### 验证
