@@ -1,0 +1,154 @@
+{
+  "generated_at": "2026-09-11T06:37:41.404349+00:00",
+  "project": "Z1 / Abwen NAS (nas-panel)",
+  "project_license": "AGPL-3.0-only",
+  "components": [
+    {
+      "name": "github.com/dustin/go-humanize",
+      "version": "v1.0.1",
+      "license": "MIT",
+      "type": "go-dependency",
+      "homepage": "https://pkg.go.dev/github.com/dustin/go-humanize"
+    },
+    {
+      "name": "github.com/golang-jwt/jwt/v5",
+      "version": "v5.2.1",
+      "license": "MIT",
+      "type": "go-dependency",
+      "homepage": "https://pkg.go.dev/github.com/golang-jwt/jwt/v5"
+    },
+    {
+      "name": "github.com/google/uuid",
+      "version": "v1.6.0",
+      "license": "BSD-3-Clause",
+      "type": "go-dependency",
+      "homepage": "https://pkg.go.dev/github.com/google/uuid"
+    },
+    {
+      "name": "github.com/remyoudompheng/bigfft",
+      "version": "v0.0.0-20230129092748-24d4a6f8daec",
+      "license": "BSD-3-Clause",
+      "type": "go-dependency",
+      "homepage": "https://pkg.go.dev/github.com/remyoudompheng/bigfft"
+    },
+    {
+      "name": "golang.org/x/exp",
+      "version": "v0.0.0-20230315142452-642cacee5cc0",
+      "license": "BSD-3-Clause",
+      "type": "go-dependency",
+      "homepage": "https://pkg.go.dev/golang.org/x/exp"
+    },
+    {
+      "name": "golang.org/x/sys",
+      "version": "v0.30.0",
+      "license": "BSD-3-Clause",
+      "type": "go-dependency",
+      "homepage": "https://pkg.go.dev/golang.org/x/sys"
+    },
+    {
+      "name": "modernc.org/libc",
+      "version": "v1.61.13",
+      "license": "BSD-3-Clause",
+      "type": "go-dependency",
+      "homepage": "https://pkg.go.dev/modernc.org/libc"
+    },
+    {
+      "name": "modernc.org/mathutil",
+      "version": "v1.7.1",
+      "license": "BSD-3-Clause",
+      "type": "go-dependency",
+      "homepage": "https://pkg.go.dev/modernc.org/mathutil"
+    },
+    {
+      "name": "modernc.org/memory",
+      "version": "v1.8.2",
+      "license": "BSD-3-Clause",
+      "type": "go-dependency",
+      "homepage": "https://pkg.go.dev/modernc.org/memory"
+    },
+    {
+      "name": "modernc.org/sqlite",
+      "version": "v1.36.0",
+      "license": "BSD-3-Clause",
+      "type": "go-dependency",
+      "homepage": "https://pkg.go.dev/modernc.org/sqlite"
+    },
+    {
+      "name": "apache2-utils",
+      "version": "Debian",
+      "license": "Apache-2.0",
+      "type": "system-package",
+      "homepage": "https://httpd.apache.org"
+    },
+    {
+      "name": "fail2ban",
+      "version": "Debian",
+      "license": "GPL-2.0-or-later",
+      "type": "system-package",
+      "homepage": "https://www.fail2ban.org"
+    },
+    {
+      "name": "nfs-kernel-server",
+      "version": "Debian",
+      "license": "GPL-2.0-only",
+      "type": "system-package",
+      "homepage": "https://linux-nfs.org"
+    },
+    {
+      "name": "samba",
+      "version": "4.x",
+      "license": "GPL-3.0-only",
+      "type": "system-package",
+      "homepage": "https://www.samba.org"
+    },
+    {
+      "name": "smartmontools",
+      "version": "Debian",
+      "license": "GPL-2.0-or-later",
+      "type": "system-package",
+      "homepage": "https://www.smartmontools.org"
+    },
+    {
+      "name": "ufw",
+      "version": "Debian",
+      "license": "GPL-3.0-only",
+      "type": "system-package",
+      "homepage": "https://launchpad.net/ufw"
+    },
+    {
+      "name": "unattended-upgrades",
+      "version": "Debian",
+      "license": "GPL-2.0-or-later",
+      "type": "system-package",
+      "homepage": "https://wiki.debian.org/UnattendedUpgrades"
+    },
+    {
+      "name": "vsftpd",
+      "version": "Debian",
+      "license": "GPL-2.0-only",
+      "type": "system-package",
+      "homepage": "https://security.appspot.com/vsftpd.html"
+    },
+    {
+      "name": "Alpine.js",
+      "version": "3.x",
+      "license": "MIT",
+      "type": "third-party-binary",
+      "homepage": "https://alpinejs.dev"
+    },
+    {
+      "name": "FileBrowser",
+      "version": "2.x",
+      "license": "Apache-2.0",
+      "type": "third-party-binary",
+      "homepage": "https://filebrowser.org"
+    },
+    {
+      "name": "rclone",
+      "version": "1.74.4",
+      "license": "MIT",
+      "type": "third-party-binary",
+      "homepage": "https://rclone.org"
+    }
+  ]
+}

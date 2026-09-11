@@ -90,6 +90,10 @@ for ARCH in $ARCH_LIST; do
     ok "  nas-panel-${ARCH} ($(du -h "${RELEASE_DIR}/nas-panel-${ARCH}" | cut -f1))"
 done
 
+# ── 生成 SBOM / 第三方许可证清单 ───────────────────────────────
+info "Generating SBOM (manifest.json + SBOM.spdx.json)..."
+python3 scripts/gen-sbom.py
+
 # ── OTA 签名 + 生成 version manifest ───────────────────────────
 for ARCH in $ARCH_LIST; do
     if [ -n "$OTA_SIGN_KEY" ]; then
@@ -141,6 +145,11 @@ for ARCH in $ARCH_LIST; do
 
     # .env 模板
     cp .env.example "$PKG_DIR/.env.example"
+
+    # 第三方许可证 / SBOM
+    mkdir -p "$PKG_DIR/third_party"
+    cp third_party/manifest.json "$PKG_DIR/third_party/" 2>/dev/null || true
+    cp third_party/SBOM.spdx.json "$PKG_DIR/third_party/" 2>/dev/null || true
 
     # VERSION 文件
     cat > "$PKG_DIR/VERSION" << EOF

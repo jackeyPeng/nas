@@ -1,0 +1,227 @@
+{
+  "spdxVersion": "SPDX-2.3",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "Z1-Abwen-NAS",
+  "documentNamespace": "https://z1.sale/spdx/20260911-063741",
+  "creationInfo": {
+    "created": "2026-09-11T06:37:41Z",
+    "creators": [
+      "Tool: nas-panel scripts/gen-sbom.py",
+      "Organization: Abwen"
+    ]
+  },
+  "packages": [
+    {
+      "name": "github.com/dustin/go-humanize",
+      "SPDXID": "SPDXRef-Package-0",
+      "versionInfo": "v1.0.1",
+      "downloadLocation": "https://pkg.go.dev/github.com/dustin/go-humanize",
+      "filesAnalyzed": false,
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "name": "github.com/golang-jwt/jwt/v5",
+      "SPDXID": "SPDXRef-Package-1",
+      "versionInfo": "v5.2.1",
+      "downloadLocation": "https://pkg.go.dev/github.com/golang-jwt/jwt/v5",
+      "filesAnalyzed": false,
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "name": "github.com/google/uuid",
+      "SPDXID": "SPDXRef-Package-2",
+      "versionInfo": "v1.6.0",
+      "downloadLocation": "https://pkg.go.dev/github.com/google/uuid",
+      "filesAnalyzed": false,
+      "licenseConcluded": "BSD-3-Clause",
+      "licenseDeclared": "BSD-3-Clause",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "name": "github.com/remyoudompheng/bigfft",
+      "SPDXID": "SPDXRef-Package-3",
+      "versionInfo": "v0.0.0-20230129092748-24d4a6f8daec",
+      "downloadLocation": "https://pkg.go.dev/github.com/remyoudompheng/bigfft",
+      "filesAnalyzed": false,
+      "licenseConcluded": "BSD-3-Clause",
+      "licenseDeclared": "BSD-3-Clause",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "name": "golang.org/x/exp",
+      "SPDXID": "SPDXRef-Package-4",
+      "versionInfo": "v0.0.0-20230315142452-642cacee5cc0",
+      "downloadLocation": "https://pkg.go.dev/golang.org/x/exp",
+      "filesAnalyzed": false,
+      "licenseConcluded": "BSD-3-Clause",
+      "licenseDeclared": "BSD-3-Clause",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "name": "golang.org/x/sys",
+      "SPDXID": "SPDXRef-Package-5",
+      "versionInfo": "v0.30.0",
+      "downloadLocation": "https://pkg.go.dev/golang.org/x/sys",
+      "filesAnalyzed": false,
+      "licenseConcluded": "BSD-3-Clause",
+      "licenseDeclared": "BSD-3-Clause",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "name": "modernc.org/libc",
+      "SPDXID": "SPDXRef-Package-6",
+      "versionInfo": "v1.61.13",
+      "downloadLocation": "https://pkg.go.dev/modernc.org/libc",
+      "filesAnalyzed": false,
+      "licenseConcluded": "BSD-3-Clause",
+      "licenseDeclared": "BSD-3-Clause",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "name": "modernc.org/mathutil",
+      "SPDXID": "SPDXRef-Package-7",
+      "versionInfo": "v1.7.1",
+      "downloadLocation": "https://pkg.go.dev/modernc.org/mathutil",
+      "filesAnalyzed": false,
+      "licenseConcluded": "BSD-3-Clause",
+      "licenseDeclared": "BSD-3-Clause",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "name": "modernc.org/memory",
+      "SPDXID": "SPDXRef-Package-8",
+      "versionInfo": "v1.8.2",
+      "downloadLocation": "https://pkg.go.dev/modernc.org/memory",
+      "filesAnalyzed": false,
+      "licenseConcluded": "BSD-3-Clause",
+      "licenseDeclared": "BSD-3-Clause",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "name": "modernc.org/sqlite",
+      "SPDXID": "SPDXRef-Package-9",
+      "versionInfo": "v1.36.0",
+      "downloadLocation": "https://pkg.go.dev/modernc.org/sqlite",
+      "filesAnalyzed": false,
+      "licenseConcluded": "BSD-3-Clause",
+      "licenseDeclared": "BSD-3-Clause",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "name": "apache2-utils",
+      "SPDXID": "SPDXRef-Package-10",
+      "versionInfo": "Debian",
+      "downloadLocation": "https://httpd.apache.org",
+      "filesAnalyzed": false,
+      "licenseConcluded": "Apache-2.0",
+      "licenseDeclared": "Apache-2.0",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "name": "fail2ban",
+      "SPDXID": "SPDXRef-Package-11",
+      "versionInfo": "Debian",
+      "downloadLocation": "https://www.fail2ban.org",
+      "filesAnalyzed": false,
+      "licenseConcluded": "GPL-2.0-or-later",
+      "licenseDeclared": "GPL-2.0-or-later",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "name": "nfs-kernel-server",
+      "SPDXID": "SPDXRef-Package-12",
+      "versionInfo": "Debian",
+      "downloadLocation": "https://linux-nfs.org",
+      "filesAnalyzed": false,
+      "licenseConcluded": "GPL-2.0-only",
+      "licenseDeclared": "GPL-2.0-only",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "name": "samba",
+      "SPDXID": "SPDXRef-Package-13",
+      "versionInfo": "4.x",
+      "downloadLocation": "https://www.samba.org",
+      "filesAnalyzed": false,
+      "licenseConcluded": "GPL-3.0-only",
+      "licenseDeclared": "GPL-3.0-only",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "name": "smartmontools",
+      "SPDXID": "SPDXRef-Package-14",
+      "versionInfo": "Debian",
+      "downloadLocation": "https://www.smartmontools.org",
+      "filesAnalyzed": false,
+      "licenseConcluded": "GPL-2.0-or-later",
+      "licenseDeclared": "GPL-2.0-or-later",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "name": "ufw",
+      "SPDXID": "SPDXRef-Package-15",
+      "versionInfo": "Debian",
+      "downloadLocation": "https://launchpad.net/ufw",
+      "filesAnalyzed": false,
+      "licenseConcluded": "GPL-3.0-only",
+      "licenseDeclared": "GPL-3.0-only",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "name": "unattended-upgrades",
+      "SPDXID": "SPDXRef-Package-16",
+      "versionInfo": "Debian",
+      "downloadLocation": "https://wiki.debian.org/UnattendedUpgrades",
+      "filesAnalyzed": false,
+      "licenseConcluded": "GPL-2.0-or-later",
+      "licenseDeclared": "GPL-2.0-or-later",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "name": "vsftpd",
+      "SPDXID": "SPDXRef-Package-17",
+      "versionInfo": "Debian",
+      "downloadLocation": "https://security.appspot.com/vsftpd.html",
+      "filesAnalyzed": false,
+      "licenseConcluded": "GPL-2.0-only",
+      "licenseDeclared": "GPL-2.0-only",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "name": "Alpine.js",
+      "SPDXID": "SPDXRef-Package-18",
+      "versionInfo": "3.x",
+      "downloadLocation": "https://alpinejs.dev",
+      "filesAnalyzed": false,
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "name": "FileBrowser",
+      "SPDXID": "SPDXRef-Package-19",
+      "versionInfo": "2.x",
+      "downloadLocation": "https://filebrowser.org",
+      "filesAnalyzed": false,
+      "licenseConcluded": "Apache-2.0",
+      "licenseDeclared": "Apache-2.0",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "name": "rclone",
+      "SPDXID": "SPDXRef-Package-20",
+      "versionInfo": "1.74.4",
+      "downloadLocation": "https://rclone.org",
+      "filesAnalyzed": false,
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
+      "copyrightText": "NOASSERTION"
+    }
+  ],
+  "relationships": []
+}
