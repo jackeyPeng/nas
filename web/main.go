@@ -136,6 +136,9 @@ func main() {
 	frontendRoot, _ := fs.Sub(frontendFS, "frontend")
 	mux.Handle("/", http.FileServer(http.FS(frontendRoot)))
 
+	// Start scheduled rclone sync scheduler
+	rclone.StartScheduler()
+
 	// Start
 	fmt.Printf("NAS Web Panel starting on %s\n", listenAddr)
 	fmt.Printf("User: %s\n", nasUser)
