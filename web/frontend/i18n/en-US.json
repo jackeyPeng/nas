@@ -21,6 +21,8 @@
     "logs": "Audit Logs",
     "logout": "Logout",
     "diagnostics": "Diagnostics",
+    "dark_mode": "Dark Mode",
+    "light_mode": "Light Mode",
     "file_manager": "Open File Manager",
     "chinese": "中文"
   },

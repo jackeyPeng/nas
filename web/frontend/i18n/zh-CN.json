@@ -21,6 +21,8 @@
     "logs": "操作日志",
     "logout": "退出登录",
     "diagnostics": "系统诊断",
+    "dark_mode": "暗色模式",
+    "light_mode": "亮色模式",
     "file_manager": "打开文件管理",
     "chinese": "中文"
   },

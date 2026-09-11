@@ -70,6 +70,42 @@
     --transition: all 0.2s ease;
 }
 
+/* ═══ 暗色主题（data-theme="dark"，由 app.js 按 localStorage / 系统偏好设置）═══ */
+[data-theme="dark"] {
+    --bg: #0f1117;              /* 页面底色 */
+    --sidebar-bg: #171a21;
+    --card-bg: #1c2029;
+    --card-bg-alt: #232834;
+    --text: #e6e9f0;
+    --text-secondary: #c3c9d6;
+    --text-light: #9aa3b2;
+    --text-muted: #6b7280;
+    --border: #2c3340;
+    --border-light: #252b36;
+
+    --primary: #3b82f6;
+    --primary-light: #1e3a5f;   /* 暗色下 active 背景用深蓝 */
+    --primary-dark: #60a5fa;
+    --primary-bg: #1e2a3d;
+
+    --success: #4ade80;
+    --success-light: #132a1c;
+    --warn: #fbbf24;
+    --warn-light: #2a1f0d;
+    --danger: #f87171;
+    --danger-light: #2a1416;
+    --info: #38bdf8;
+    --info-light: #0f2430;
+    --purple: #818cf8;
+    --purple-light: #1e1b3a;
+
+    --shadow-xs: 0 1px 2px rgba(0,0,0,0.4);
+    --shadow-sm: 0 1px 3px rgba(0,0,0,0.45), 0 1px 2px rgba(0,0,0,0.35);
+    --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.5), 0 2px 4px -2px rgba(0,0,0,0.4);
+    --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.6), 0 4px 6px -4px rgba(0,0,0,0.5);
+    --shadow-xl: 0 20px 25px -5px rgba(0,0,0,0.7), 0 8px 10px -6px rgba(0,0,0,0.6);
+}
+
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 [x-cloak] { display: none !important; }
@@ -91,7 +127,7 @@ body {
     background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 50%, #6366f1 100%);
 }
 .login-box {
-    background: white; padding: 48px 40px; border-radius: var(--radius-xl);
+    background: var(--card-bg); padding: 48px 40px; border-radius: var(--radius-xl);
     box-shadow: var(--shadow-xl); width: 400px;
 }
 .login-box h1 { text-align: center; margin-bottom: 32px; font-size: var(--fs-xl); }
@@ -143,7 +179,7 @@ body {
 
 /* ═══ Table ═══ */
 .table {
-    width: 100%; border-collapse: collapse; background: white;
+    width: 100%; border-collapse: collapse; background: var(--card-bg);
     border-radius: var(--radius); overflow: hidden;
     box-shadow: var(--shadow-sm); margin-bottom: var(--sp-6);
 }
@@ -165,7 +201,7 @@ body {
 /* ═══ Buttons ═══ */
 .btn {
     padding: 8px 16px; border: 1px solid var(--border); border-radius: var(--radius-sm);
-    background: white; cursor: pointer; font-size: var(--fs-base); font-weight: 500;
+    background: var(--card-bg); cursor: pointer; font-size: var(--fs-base); font-weight: 500;
     transition: var(--transition); color: var(--text);
 }
 .btn:hover { box-shadow: var(--shadow-sm); border-color: var(--text-light); }
@@ -201,6 +237,13 @@ body {
 }
 .error { color: var(--danger); margin-top: var(--sp-3); text-align: center; }
 
+/* 表单控件基础主题色：覆盖浏览器默认白底/黑字，让暗色模式生效 */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+select, textarea {
+    background: var(--card-bg);
+    color: var(--text);
+}
+
 /* ═══ Modal ═══ */
 .modal, .logs-modal {
     position: fixed; top: 0; left: 0; right: 0; bottom: 0;
@@ -208,7 +251,7 @@ body {
     backdrop-filter: blur(2px);
 }
 .modal-box, .logs-box {
-    background: white; border-radius: var(--radius-lg); padding: 32px; width: 420px;
+    background: var(--card-bg); border-radius: var(--radius-lg); padding: 32px; width: 420px;
     box-shadow: var(--shadow-xl);
 }
 .logs-box { width: 80%; max-width: 800px; max-height: 80vh; display: flex; flex-direction: column; }
@@ -255,7 +298,7 @@ body {
 /* ═══ Alert config ═══ */
 .alert-config { display: flex; flex-direction: column; gap: var(--sp-5); }
 .config-section {
-    background: white; border-radius: var(--radius); padding: var(--sp-5);
+    background: var(--card-bg); border-radius: var(--radius); padding: var(--sp-5);
     box-shadow: var(--shadow-sm);
 }
 .form-row { display: flex; gap: var(--sp-3); }
@@ -327,7 +370,7 @@ body {
     bottom: 0;
     width: 280px;
     max-width: 85vw;
-    background: white;
+    background: var(--card-bg);
     overflow-y: auto;
     box-shadow: 4px 0 16px rgba(0,0,0,0.2);
 }
