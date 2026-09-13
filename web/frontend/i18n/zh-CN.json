@@ -1023,7 +1023,6 @@
     "conn_success": "连接成功",
     "conn_failed": "连接失败",
     "dir_created": "目录已创建",
-    "fill_required": "请填写必填项",
     "task_created": "任务已创建",
     "task_updated": "任务已更新",
     "del_task_confirm": "确定删除此同步任务？",
@@ -1081,5 +1080,20 @@
     "backup": "备份",
     "security": "安全",
     "cloud_sync": "云端同步"
+  },
+  "hardware": {
+    "title": "硬件档案",
+    "cpu": "CPU",
+    "cores": "{0} 线程",
+    "memory": "内存",
+    "network": "网络",
+    "temp": "CPU 温度",
+    "disks": "物理磁盘",
+    "virtualized": "虚拟机",
+    "profile_intel_n": "Intel N 系列",
+    "profile_generic_x86": "通用 x86_64",
+    "profile_generic_arm64": "通用 ARM64",
+    "profile_rpi": "树莓派",
+    "profile_vm": "虚拟机"
   }
 }

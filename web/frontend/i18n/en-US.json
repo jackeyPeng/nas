@@ -860,7 +860,7 @@
     "enter_2fa_code": "Please enter the 6-digit code",
     "enter_backup_target": "Please enter the backup target",
     "data_backup_done": "Data backup completed",
-    "fill_required": "Please fill in required fields",
+    "fill_required": "Fill required fields",
     "vault_saved": "Credential saved",
     "vault_copied": "Secret copied to clipboard",
     "vault_deleted": "Credential deleted",
@@ -1023,7 +1023,6 @@
     "conn_success": "Connected",
     "conn_failed": "Connection failed",
     "dir_created": "Directory created",
-    "fill_required": "Fill required fields",
     "task_created": "Task created",
     "task_updated": "Task updated",
     "del_task_confirm": "Delete this sync task?",
@@ -1081,5 +1080,20 @@
     "backup": "Backup",
     "security": "Security",
     "cloud_sync": "Cloud Sync"
+  },
+  "hardware": {
+    "title": "Hardware",
+    "cpu": "CPU",
+    "cores": "{0} threads",
+    "memory": "Memory",
+    "network": "Network",
+    "temp": "CPU Temp",
+    "disks": "Physical Disks",
+    "virtualized": "Virtualized",
+    "profile_intel_n": "Intel N-series",
+    "profile_generic_x86": "Generic x86_64",
+    "profile_generic_arm64": "Generic ARM64",
+    "profile_rpi": "Raspberry Pi",
+    "profile_vm": "Virtual Machine"
   }
 }

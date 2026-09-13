@@ -146,6 +146,8 @@ function nasPanel() {
         components: { items: [], panel: null },
         noticeSections: [],
         componentCategories: ['文件共享', '网页文件管理', '对象存储', '网页管理', '系统防护', '存储管理', '运行环境'],
+        // 硬件档案（系统详情页）
+        hardware: null,
 
         sysSettings: {
             hostname: '',
@@ -471,7 +473,7 @@ function nasPanel() {
                 case 'firewall': this.loadFirewall(); break;
                 case 'monitor': this.initMonitorRefresh(); this.loadAlertConfig(); break;
                 case 'system': this.loadSystemOverview(); this.load2FAStatus(); this.checkPanelUpdate(); break;
-                case 'about': this.loadComponents(); break;
+                case 'about': this.loadComponents(); this.loadHardware(); break;
                 case 'notice': this.loadNotice(); break;
                 case 'backup': this.loadBackups(); break;
                 case 'vault': this.loadVault(); break;
@@ -1904,6 +1906,29 @@ function nasPanel() {
             if (data && data.components) {
                 this.components = { items: data.components, panel: data.panel };
             }
+        },
+
+        // 加载硬件档案（系统详情页）
+        async loadHardware() {
+            const data = await this.api('/hardware/profile');
+            if (data && data.profile) {
+                this.hardware = data;
+            }
+        },
+
+        // 硬件档案平台标识翻译（后端返回稳定标识，中文兜底）
+        hwProfileLabel(id, fallback) {
+            const map = {
+                'intel-n': 'hardware.profile_intel_n',
+                'generic-x86_64': 'hardware.profile_generic_x86',
+                'generic-arm64': 'hardware.profile_generic_arm64',
+                'raspberry-pi': 'hardware.profile_rpi',
+                'vm-intel-n': 'hardware.profile_vm',
+                'vm-generic-x86_64': 'hardware.profile_vm',
+                'vm-generic-arm64': 'hardware.profile_vm',
+                'vm-raspberry-pi': 'hardware.profile_vm',
+            };
+            return map[id] ? this.t(map[id]) : (fallback || id);
         },
 
         // 两步验证状态

@@ -2031,6 +2031,52 @@
                             · <span x-text="components.panel?.version || ''" :title="'完整构建号'"></span>
                         </div>
                     </div>
+                    <div x-show="hardware" style="margin-bottom:16px;padding:14px 16px;background:var(--card-bg-alt);border:1px solid var(--border);border-radius:8px;">
+                        <div style="display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px;">
+                            <span style="font-size:15px;font-weight:700;color:var(--text)">🖥️ <span x-text="$t('hardware.title')"></span></span>
+                            <span style="font-size:12px;background:var(--primary-bg);color:var(--primary);border-radius:10px;padding:2px 10px;font-weight:600" x-text="hwProfileLabel(hardware.profile, hardware.profile_label)"></span>
+                            <span x-show="hardware.virtualized" style="font-size:12px;background:var(--warn-light);color:var(--warn);border-radius:10px;padding:2px 10px;" x-text="$t('hardware.virtualized')"></span>
+                            <span style="font-size:12px;color:var(--text-muted)" x-text="hardware.arch"></span>
+                        </div>
+                        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">
+                            <div>
+                                <div style="font-size:12px;color:var(--text-muted)" x-text="$t('hardware.cpu')"></div>
+                                <div style="font-size:13px;color:var(--text);margin-top:3px;line-height:1.5;word-break:break-all" x-text="hardware.cpu.model || '-'"></div>
+                                <div style="font-size:12px;color:var(--text-secondary);margin-top:2px" x-text="$t('hardware.cores', [hardware.cpu.threads])"></div>
+                            </div>
+                            <div>
+                                <div style="font-size:12px;color:var(--text-muted)" x-text="$t('hardware.memory')"></div>
+                                <div style="font-size:13px;color:var(--text);margin-top:3px" x-text="hardware.memory_human"></div>
+                            </div>
+                            <div>
+                                <div style="font-size:12px;color:var(--text-muted)" x-text="$t('hardware.network')"></div>
+                                <div style="font-size:12px;color:var(--text);margin-top:3px;line-height:1.6">
+                                    <template x-for="n in hardware.network" :key="n.name">
+                                        <div><span x-text="n.name"></span> <span style="color:var(--text-muted)" x-text="n.ip"></span> <span x-show="n.state==='up'" style="color:var(--success);font-size:10px">●</span></div>
+                                    </template>
+                                    <div x-show="!hardware.network.length" style="color:var(--text-muted)">—</div>
+                                </div>
+                            </div>
+                            <div>
+                                <div style="font-size:12px;color:var(--text-muted)" x-text="$t('hardware.temp')"></div>
+                                <div style="font-size:13px;color:var(--text);margin-top:3px">
+                                    <span x-show="hardware.temperature != null" x-text="hardware.temperature + ' ℃'"></span>
+                                    <span x-show="hardware.temperature == null" style="color:var(--text-muted)">—</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border)">
+                            <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px" x-text="$t('hardware.disks')"></div>
+                            <div style="display:flex;flex-wrap:wrap;gap:8px;">
+                                <template x-for="d in hardware.disks" :key="d.name">
+                                    <span style="font-size:12px;background:var(--card-bg);border:1px solid var(--border);border-radius:6px;padding:4px 10px;color:var(--text-secondary)">
+                                        <b style="color:var(--text)" x-text="d.name"></b> <span x-text="d.size_human"></span><span style="color:var(--text-muted)" x-text="d.transport ? ' · ' + d.transport : ''"></span>
+                                    </span>
+                                </template>
+                                <span x-show="!hardware.disks.length" style="color:var(--text-muted);font-size:12px">—</span>
+                            </div>
+                        </div>
+                    </div>
                     <template x-for="cat in componentCategories" :key="cat">
                         <div style="margin-bottom:16px">
                             <div style="font-size:13px;font-weight:600;color: var(--text-secondary);margin-bottom:6px;padding:0 8px" x-text="catLabel(cat)"></div>
