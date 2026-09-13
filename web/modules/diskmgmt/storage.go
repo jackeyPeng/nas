@@ -427,6 +427,27 @@ func isSystemDisk(device string) bool {
 	return false
 }
 
+// isDiskInUse checks if device is already an active pool member (LVM PV or RAID array member).
+// 扩容/替换盘的「新盘」必须是空闲盘；已挂进某个池/阵列的盘若被 wipefs 会造成数据丢失。
+func isDiskInUse(device string) bool {
+	// 1) 已是活跃 LVM PV（在某个 VG 里）
+	pvsOut, _ := common.SudoOutput("/usr/sbin/pvs", "--noheadings", "-o", "pv_name")
+	for _, line := range strings.Split(pvsOut, "\n") {
+		if strings.TrimSpace(line) == device {
+			return true
+		}
+	}
+	// 2) 已是活跃 RAID 数组成员（/proc/mdstat 的成员列表形如 "sdb[0]"）
+	mdOut, _ := common.ExecOutput("cat", "/proc/mdstat")
+	short := strings.TrimPrefix(device, "/dev/")
+	for _, tok := range strings.Fields(mdOut) {
+		if tok == short || strings.HasPrefix(tok, short+"[") {
+			return true
+		}
+	}
+	return false
+}
+
 // handleDiskListFree returns disks that are unused/unformatted
 func handleDiskListFree(w http.ResponseWriter, r *http.Request) {
 	disks := getDiskStatus()

@@ -1494,7 +1494,7 @@
                                 </div>
                                 <div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0">
                                     <button class="btn btn-secondary btn-sm" style="font-size:11px;width:60px" @click="openExtendPool(pool)" x-text="$t('storage.expand')"></button>
-                                    <button class="btn btn-secondary btn-sm" style="font-size:11px;width:60px" @click="openReplaceDisk(pool)"><span x-text="$t('storage.replace_disk_short')"></span></button>
+                                    <button x-show="(pool.type||'').toLowerCase().indexOf('raid') === 0" class="btn btn-secondary btn-sm" style="font-size:11px;width:60px" @click="openReplaceDisk(pool)"><span x-text="$t('storage.replace_disk_short')"></span></button>
                                     <button class="btn btn-secondary btn-sm" style="font-size:11px;width:60px" @click="scrubPool(pool)"><span x-text="$t('storage.scrub_short')"></span></button>
                                     <button class="btn btn-danger btn-sm" style="font-size:11px;width:60px" @click="deletePool(pool)" x-text="$t('backup.delete_backup')"></button>
                                 </div>
@@ -1644,8 +1644,13 @@
                     </div>
                     <div class="form-group">
                         <label><span x-text="$t('storage.new_disk_device')"></span></label>
-                        <input type="text" x-model="poolExtendForm.device" placeholder="/dev/sdc">
-                        <div style="font-size:11px;color: var(--text-light);margin-top:4px"><span x-text="$t('storage.new_disk_hint')"></span></div>
+                        <select x-model="poolExtendForm.device" style="width:100%">
+                            <option value="" x-text="$t('storage.select_new_disk')"></option>
+                            <template x-for="d in storageOverview.free_disks" :key="d.device">
+                                <option :value="d.device" x-text="d.device + ' (' + d.size + ' ' + d.interface + ')'"></option>
+                            </template>
+                        </select>
+                        <div x-show="!(storageOverview.free_disks || []).length" style="font-size:11px;color: var(--warn);margin-top:4px"><span x-text="$t('storage.no_free_disk')"></span></div>
                     </div>
                     <div class="modal-actions">
                         <button class="btn" @click="showExtendPool=false" x-text="$t('common.cancel')"></button>
@@ -1655,19 +1660,40 @@
             </div>
             <!-- ═══════════════ 替换盘弹窗 ═══════════════ -->
             <div class="modal" x-show="showReplaceDisk" x-cloak @click.self="showReplaceDisk=false">
-                <div class="modal-box" style="max-width:420px">
+                <div class="modal-box" style="max-width:440px">
                     <h3 x-text="$t('storage.disk_replace')"></h3>
                     <div class="form-group">
+                        <label><span x-text="$t('storage.pools')"></span> <span style="color:var(--text-muted);font-size:11px">(RAID)</span></label>
+                        <select x-model="replaceDiskForm.pool_name" @change="onReplacePoolChange()" style="width:100%">
+                            <option value="" x-text="$t('storage.select_pool')"></option>
+                            <template x-for="p in raidPools" :key="p.name">
+                                <option :value="p.name" x-text="p.display_name + ' (' + p.type.toUpperCase() + ')'"></option>
+                            </template>
+                        </select>
+                        <div x-show="!raidPools.length" style="font-size:11px;color: var(--warn);margin-top:4px"><span x-text="$t('storage.no_raid_pool')"></span></div>
+                    </div>
+                    <div class="form-group">
                         <label><span x-text="$t('storage.raid_device')"></span></label>
-                        <input type="text" x-model="replaceDiskForm.md_device" placeholder="/dev/md0">
+                        <input type="text" disabled :value="replaceDiskForm.md_device" style="background: var(--card-bg-alt)">
                     </div>
                     <div class="form-group">
                         <label><span x-text="$t('storage.fault_disk')"></span></label>
-                        <input type="text" x-model="replaceDiskForm.old_device" placeholder="/dev/sdb">
+                        <select x-model="replaceDiskForm.old_device" style="width:100%">
+                            <option value="" x-text="$t('storage.select_fault_disk')"></option>
+                            <template x-for="d in replaceMemberDisks" :key="d.device">
+                                <option :value="d.device" x-text="d.device + ' (' + d.size + ')'"></option>
+                            </template>
+                        </select>
                     </div>
                     <div class="form-group">
                         <label><span x-text="$t('storage.new_disk_replace')"></span></label>
-                        <input type="text" x-model="replaceDiskForm.new_device" placeholder="/dev/sdc">
+                        <select x-model="replaceDiskForm.new_device" style="width:100%">
+                            <option value="" x-text="$t('storage.select_new_disk')"></option>
+                            <template x-for="d in storageOverview.free_disks" :key="d.device">
+                                <option :value="d.device" x-text="d.device + ' (' + d.size + ' ' + d.interface + ')'"></option>
+                            </template>
+                        </select>
+                        <div x-show="!(storageOverview.free_disks || []).length" style="font-size:11px;color: var(--warn);margin-top:4px"><span x-text="$t('storage.no_free_disk')"></span></div>
                     </div>
                     <div style="background: var(--warn-light);border:1px solid #f59e0b;border-radius:6px;padding:8px 12px;font-size:12px;margin-bottom:12px">
                         <span x-text="$t('storage.replace_warn')"></span>
@@ -1675,6 +1701,33 @@
                     <div class="modal-actions">
                         <button class="btn" @click="showReplaceDisk=false" x-text="$t('common.cancel')"></button>
                         <button class="btn btn-primary" @click="replaceDisk()"><span x-text="$t('storage.start_replace')"></span></button>
+                    </div>
+                </div>
+            </div>
+            <!-- ═══════════════ RAID 扩容弹窗 ═══════════════ -->
+            <div class="modal" x-show="showRAIDExpand" x-cloak @click.self="showRAIDExpand=false">
+                <div class="modal-box" style="max-width:420px">
+                    <h3><span x-text="$t('storage.expand_pool')"></span> <span style="color:var(--text-muted);font-size:13px" x-text="'(' + raidExpandForm.raidType + ')'"></span></h3>
+                    <div class="form-group">
+                        <label><span x-text="$t('storage.raid_device')"></span></label>
+                        <input type="text" disabled :value="raidExpandForm.mdDevice" style="background: var(--card-bg-alt)">
+                    </div>
+                    <div class="form-group">
+                        <label><span x-text="$t('storage.new_disk_device')"></span></label>
+                        <select x-model="raidExpandForm.device" style="width:100%">
+                            <option value="" x-text="$t('storage.select_new_disk')"></option>
+                            <template x-for="d in storageOverview.free_disks" :key="d.device">
+                                <option :value="d.device" x-text="d.device + ' (' + d.size + ' ' + d.interface + ')'"></option>
+                            </template>
+                        </select>
+                        <div x-show="!(storageOverview.free_disks || []).length" style="font-size:11px;color: var(--warn);margin-top:4px"><span x-text="$t('storage.no_free_disk')"></span></div>
+                    </div>
+                    <div style="background: var(--warn-light);border:1px solid #f59e0b;border-radius:6px;padding:8px 12px;font-size:12px;margin-bottom:12px">
+                        <span x-text="$t('storage.raid_expand_warn')"></span>
+                    </div>
+                    <div class="modal-actions">
+                        <button class="btn" @click="showRAIDExpand=false" x-text="$t('common.cancel')"></button>
+                        <button class="btn btn-primary" @click="expandRAIDStream()"><span x-text="$t('storage.start_expand')"></span></button>
                     </div>
                 </div>
             </div>

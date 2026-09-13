@@ -448,7 +448,13 @@
     "creating_pool": "正在创建存储池...",
     "pool_created": "存储池创建成功",
     "sync_in": "同步中 {0}",
-    "normal": "正常"
+    "normal": "正常",
+    "select_new_disk": "选择新磁盘",
+    "no_free_disk": "没有可用的空闲磁盘",
+    "select_pool": "选择存储池",
+    "no_raid_pool": "没有 RAID 存储池",
+    "select_fault_disk": "选择故障盘",
+    "raid_expand_warn": "RAID 扩容会进行 reshape 数据重建，耗时长，期间请勿断电或拔出磁盘"
   },
   "users": {
     "title": "用户管理",

@@ -57,6 +57,10 @@ func handlePoolExtendStream(w http.ResponseWriter, r *http.Request) {
 		sendPoolExtendProgress(w, PoolExtendEvent{Step: "安全检查", Status: "error", Detail: "不允许使用系统盘"})
 		return
 	}
+	if isDiskInUse(device) {
+		sendPoolExtendProgress(w, PoolExtendEvent{Step: "安全检查", Status: "error", Detail: "该磁盘已在存储池中使用，不能用于扩容"})
+		return
+	}
 
 	totalSteps := 5
 	step := 0

@@ -448,7 +448,13 @@
     "creating_pool": "Creating storage pool...",
     "pool_created": "Storage pool created",
     "sync_in": "Syncing {0}",
-    "normal": "Normal"
+    "normal": "Normal",
+    "select_new_disk": "Select a new disk",
+    "no_free_disk": "No free disk available",
+    "select_pool": "Select a pool",
+    "no_raid_pool": "No RAID pool",
+    "select_fault_disk": "Select the failed disk",
+    "raid_expand_warn": "RAID expansion triggers a data reshape that takes a long time — do not power off or remove disks during it."
   },
   "users": {
     "title": "User Management",

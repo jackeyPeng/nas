@@ -35,6 +35,10 @@ func handleReplaceDisk(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"不允许使用系统盘"}`, http.StatusBadRequest)
 		return
 	}
+	if isDiskInUse(newDevice) {
+		http.Error(w, `{"error":"新盘已在存储池中使用，不能用于替换"}`, http.StatusBadRequest)
+		return
+	}
 
 	var steps []string
 

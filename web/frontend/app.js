@@ -524,6 +524,17 @@ function nasPanel() {
             return { total: svcs.length, down };
         },
 
+        // RAID 类型存储池（替换盘/RAID 扩容只用 mdadm，仅对 RAID 池有效）
+        get raidPools() {
+            return (this.storageOverview.pools || []).filter(p => (p.type || '').toLowerCase().indexOf('raid') === 0);
+        },
+
+        // 替换盘弹窗当前选中池的成员盘（作为「故障盘」候选项）
+        get replaceMemberDisks() {
+            const p = this.raidPools.find(x => x.name === this.replaceDiskForm.pool_name);
+            return p ? (p.disks || []) : [];
+        },
+
         async loadServices() {
             const data = await this.api('/services');
             if (data) this.services = data.services || [];
@@ -1703,6 +1714,11 @@ function nasPanel() {
                 this.showToast(this.t('msg.select_pool_first'), 'error');
                 return;
             }
+            // RAID 池走 RAID 扩容（mdadm），LVM/单盘池走 LVM 扩容
+            if ((pool.type || '').toLowerCase().indexOf('raid') === 0) {
+                this.openRAIDExpand(pool);
+                return;
+            }
             this.poolExtendForm = {
                 device: '',
                 vg_name: pool.name || 'vg_nas',
@@ -1714,12 +1730,19 @@ function nasPanel() {
         // Open replace disk dialog
         openReplaceDisk(pool) {
             this.replaceDiskForm = {
+                pool_name: pool ? pool.name : '',
                 md_device: pool ? pool.device : '',
                 old_device: '',
-                new_device: '',
-                pool_name: pool ? pool.display_name : ''
+                new_device: ''
             };
             this.showReplaceDisk = true;
+        },
+
+        // 替换盘：切换存储池时同步 RAID 设备与故障盘列表
+        onReplacePoolChange() {
+            const p = this.raidPools.find(x => x.name === this.replaceDiskForm.pool_name);
+            this.replaceDiskForm.md_device = p ? p.device : '';
+            this.replaceDiskForm.old_device = '';
         },
 
         // Execute disk replacement
