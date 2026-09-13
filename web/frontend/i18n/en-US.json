@@ -233,7 +233,10 @@
     "cpu_cores_fmt": "{0} cores {1}",
     "cores_fmt": "{0} cores",
     "config_inconsistent_banner": "Configuration inconsistency detected",
-    "items": "items"
+    "items": "items",
+    "services_ok": "{0} services · all healthy",
+    "services_bad": "{0} services · {1} abnormal",
+    "services_detail": "Details in Services"
   },
   "monitor": {
     "title": "Monitoring",

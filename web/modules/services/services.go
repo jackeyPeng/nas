@@ -60,7 +60,7 @@ func handleServiceAction(w http.ResponseWriter, r *http.Request) {
 	action := parts[1]
 
 	switch action {
-	case "start", "stop", "restart":
+	case "start", "stop", "restart", "enable", "disable":
 		output, err := controlService(svcName, action)
 		if err != nil {
 			http.Error(w, fmt.Sprintf(`{"error": %q}`, err.Error()), http.StatusInternalServerError)

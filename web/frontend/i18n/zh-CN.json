@@ -233,7 +233,10 @@
     "cpu_cores_fmt": "{0}核 {1}",
     "cores_fmt": "{0}核",
     "config_inconsistent_banner": "检测到配置不一致",
-    "items": "项"
+    "items": "项",
+    "services_ok": "{0} 个服务 · 全部正常",
+    "services_bad": "{0} 个服务 · {1} 个异常",
+    "services_detail": "明细见服务管理"
   },
   "monitor": {
     "title": "监控告警",

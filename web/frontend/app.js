@@ -518,6 +518,12 @@ function nasPanel() {
             return window.t(k) !== k ? window.t(k) : status;
         },
 
+        get serviceSummary() {
+            const svcs = this.dashboard.services || [];
+            const down = svcs.filter(s => s.active !== 'active').length;
+            return { total: svcs.length, down };
+        },
+
         async loadServices() {
             const data = await this.api('/services');
             if (data) this.services = data.services || [];

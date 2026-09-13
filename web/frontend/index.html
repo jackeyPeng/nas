@@ -278,26 +278,6 @@
                     <div style="flex:1;min-width:300px">
                         <table style="width:100%;font-size:13px;border-collapse:collapse">
                             <tr style="border-bottom:1px solid var(--border)">
-                                <td style="padding:5px 0;color: var(--text-secondary);width:90px" x-text="$t('system.hostname')"></td>
-                                <td style="padding:5px 0;font-weight:600" x-text="dashboard.hostname"></td>
-                            </tr>
-                            <tr style="border-bottom:1px solid var(--border)">
-                                <td style="padding:5px 0;color: var(--info)" x-text="$t('dashboard.ip_addr')"></td>
-                                <td style="padding:5px 0;font-weight:600;font-family:monospace" x-text="dashboard.ip_addr || '—'"></td>
-                            </tr>
-                            <tr style="border-bottom:1px solid var(--border)">
-                                <td style="padding:5px 0;color: var(--text-secondary)" x-text="$t('dashboard.os')"></td>
-                                <td style="padding:5px 0;font-weight:600" x-text="dashboard.os"></td>
-                            </tr>
-                            <tr style="border-bottom:1px solid var(--border)">
-                                <td style="padding:5px 0;color: var(--text-secondary)" x-text="$t('dashboard.kernel')"></td>
-                                <td style="padding:5px 0;font-weight:600;font-family:monospace;font-size:12px" x-text="dashboard.kernel"></td>
-                            </tr>
-                            <tr style="border-bottom:1px solid var(--border)">
-                                <td style="padding:5px 0;color: var(--text-secondary)" x-text="$t('dashboard.uptime')"></td>
-                                <td style="padding:5px 0;font-weight:600" x-text="fmtUptime(dashboard.uptime_seconds)"></td>
-                            </tr>
-                            <tr style="border-bottom:1px solid var(--border)">
                                 <td style="padding:5px 0;color: var(--text-secondary)">CPU</td>
                                 <td style="padding:5px 0;font-weight:600" x-text="$t('dashboard.cpu_cores_fmt', [dashboard.cpu_cores, dashboard.cpu_usage])"></td>
                             </tr>
@@ -315,36 +295,6 @@
                                     <span style="font-size:12px;color: var(--text-secondary)" x-text="dashboard.mem_pct"></span>
                                 </td>
                             </tr>
-                            <tr style="border-bottom:1px solid var(--border)">
-                                <td style="padding:5px 0;color: var(--text-secondary)" x-text="$t('dashboard.system_disk')"></td>
-                                <td style="padding:5px 0">
-                                    <span style="font-weight:600" x-text="dashboard.disk_used + ' / ' + dashboard.disk_total + '  '"></span>
-                                    <span style="display:inline-block;width:80px;height:6px;background-color: var(--border);border-radius:3px;vertical-align:middle;margin:0 4px">
-                                        <span style="display:block;height:100%;background: var(--success);border-radius:3px" :style="'width:' + dashboard.disk_pct"></span>
-                                    </span>
-                                    <span style="font-size:12px;color: var(--text-secondary)" x-text="dashboard.disk_pct"></span>
-                                </td>
-                            </tr>
-                            <tr x-show="storageOverview.total_capacity && storageOverview.total_capacity !== '0M'" style="border-bottom:1px solid var(--border)">
-                                <td style="padding:5px 0;color: var(--primary)"><span x-text="$t('common.storage_total')"></span></td>
-                                <td style="padding:5px 0;font-weight:600;color: var(--primary)" x-text="storageOverview.total_capacity"></td>
-                            </tr>
-                            <tr x-show="storageOverview.total_capacity && storageOverview.total_capacity !== '0M'" style="border-bottom:1px solid var(--border)">
-                                <td style="padding:5px 0;color: var(--success)" x-text="$t('dashboard.used')"></td>
-                                <td style="padding:5px 0;font-weight:600;color: var(--success)" x-text="storageOverview.total_used"></td>
-                            </tr>
-                            <tr x-show="storageOverview.total_capacity && storageOverview.total_capacity !== '0M'" style="border-bottom:1px solid var(--border)">
-                                <td style="padding:5px 0;color: var(--warn)" x-text="$t('dashboard.available')"></td>
-                                <td style="padding:5px 0;font-weight:600;color: var(--warn)" x-text="storageOverview.total_avail"></td>
-                            </tr>
-                            <template x-if="storageOverview.raid_health?.length > 0">
-                                <template x-for="ra in (storageOverview.raid_health||[])" :key="ra.device">
-                                    <tr style="border-bottom:1px solid var(--border)">
-                                        <td style="padding:5px 0;color: var(--text-secondary)">RAID <span x-text="ra.device.replace('/dev/','')"></span></td>
-                                        <td style="padding:5px 0;font-weight:600" :style="ra.state==='active'||ra.state==='clean' ? 'color: var(--success)' : 'color: var(--danger)'" x-text="ra.sync_percent ? $t('storage.sync_in', [ra.sync_percent]) : (ra.state==='active'||ra.state==='clean' ? $t('storage.normal') : ra.state)"></td>
-                                    </tr>
-                                </template>
-                            </template>
                         </table>
                     </div>
                 </div>
@@ -372,24 +322,11 @@
                 </div>
 
                 <h3 x-text="$t('dashboard.service_status')"></h3>
-                <table class="table">
-                    <thead>
-                        <tr><th x-text="$t('dashboard.service')"></th><th x-text="$t('common.port')"></th><th x-text="$t('dashboard.desc')"></th><th x-text="$t('common.status')"></th></tr>
-                    </thead>
-                    <tbody>
-                        <template x-for="svc in (dashboard.services || [])" :key="svc.name">
-                            <tr>
-                                <td x-text="svcDisplay(svc.name, svc.display_name)"></td>
-                                <td x-text="svc.port"></td>
-                                <td x-text="svcDesc(svc.name, svc.description)"></td>
-                                <td>
-                                    <span class="badge" :class="svc.active === 'active' ? 'badge-ok' : 'badge-err'"
-                                          x-text="$t('rclone.running')"></span>
-                                </td>
-                            </tr>
-                        </template>
-                    </tbody>
-                </table>
+                <div style="background: var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:14px 16px;display:flex;align-items:center;gap:10px;margin-bottom:16px">
+                    <span style="width:10px;height:10px;border-radius:50%;flex-shrink:0" :style="serviceSummary.down === 0 ? 'background: var(--success)' : 'background: var(--danger)'"></span>
+                    <span style="font-weight:600;font-size:14px" x-text="serviceSummary.down === 0 ? $t('dashboard.services_ok', [serviceSummary.total]) : $t('dashboard.services_bad', [serviceSummary.total, serviceSummary.down])"></span>
+                    <span style="font-size:12px;color: var(--text-muted)" x-text="$t('dashboard.services_detail')"></span>
+                </div>
             </div>
 
             <!-- Services -->
@@ -412,6 +349,7 @@
                                 <td>
                                     <span class="badge" :class="svc.active === 'active' ? 'badge-ok' : 'badge-err'"
                                           x-text="$t('rclone.running')"></span>
+                                    <span x-show="svc.enabled" class="badge badge-info" style="margin-left:4px" x-text="$t('common.auto_start')"></span>
                                 </td>
                                 <td class="actions">
                                     <template x-if="svc.active === 'not-installed' || svc.active === 'unknown'">
@@ -422,6 +360,8 @@
                                             <button class="btn btn-sm btn-success" @click="svcAction(svc.name, 'start')" x-text="$t('common.start')"></button>
                                             <button class="btn btn-sm btn-warn" @click="svcAction(svc.name, 'stop')" x-text="$t('common.stop')"></button>
                                             <button class="btn btn-sm btn-primary" @click="svcAction(svc.name, 'restart')" x-text="$t('common.restart')"></button>
+                                            <button x-show="!svc.enabled" class="btn btn-sm" @click="svcAction(svc.name, 'enable')" x-text="$t('common.auto_start')"></button>
+                                            <button x-show="svc.enabled" class="btn btn-sm" @click="svcAction(svc.name, 'disable')" x-text="$t('system.cancel_autostart')"></button>
                                             <button class="btn btn-sm" @click="showLogs(svc.name)" x-text="$t('services.log')"></button>
                                         </span>
                                     </template>
@@ -1918,30 +1858,6 @@
                     </div>
                 </div>
 
-                <!-- 服务管理 -->
-                <div style="background: var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:12px">
-                    <h3 style="margin-top:0;margin-bottom:12px;font-size:15px" x-text="$t('services.title')"></h3>
-                    <div style="font-size:14px">
-                        <template x-for="svc in (sysSettings.services||[])" :key="svc.name">
-                            <div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #f0f0f0">
-                                <span style="font-size:16px;min-width:24px" x-text="svc.active ? '🟢' : '🔴'"></span>
-                                <div style="flex:1">
-                                    <strong x-text="svcListDisplay(svc.name, svc.display)"></strong>
-                                    <span style="color: var(--text-muted);font-size:12px;margin-left:8px" x-text="svc.name"></span>
-                                </div>
-                                <span style="font-size:12px;padding:2px 8px;border-radius:3px" :style="svc.enabled ? 'background: var(--success-light);color: var(--success)' : 'background: var(--danger-light);color: var(--danger)'" x-text="$t('common.auto_start')"></span>
-                                <div style="display:flex;gap:4px">
-                                    <button x-show="!svc.active" class="btn btn-sm btn-success" @click="serviceAction(svc.name, 'start')" style="font-size:11px;padding:2px 8px"><span x-text="$t('common.start')"></span></button>
-                                    <button x-show="svc.active" class="btn btn-sm" @click="serviceAction(svc.name, 'restart')" style="font-size:11px;padding:2px 8px"><span x-text="$t('common.restart')"></span></button>
-                                    <button x-show="svc.active" class="btn btn-sm btn-danger" @click="serviceAction(svc.name, 'stop')" style="font-size:11px;padding:2px 8px"><span x-text="$t('common.stop')"></span></button>
-                                    <button x-show="!svc.enabled" class="btn btn-sm" @click="serviceAction(svc.name, 'enable')" style="font-size:11px;padding:2px 8px;border:1px solid #16a34a;color: var(--success)"><span x-text="$t('common.auto_start')"></span></button>
-                                    <button x-show="svc.enabled" class="btn btn-sm" @click="serviceAction(svc.name, 'disable')" style="font-size:11px;padding:2px 8px;border:1px solid #dc2626;color: var(--danger)"><span x-text="$t('system.cancel_autostart')"></span></button>
-                                </div>
-                            </div>
-                        </template>
-                    </div>
-                </div>
-
                 <!-- HTTPS 证书 -->
                 <div style="background: var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:12px">
                     <h3 style="margin-top:0;margin-bottom:8px;font-size:15px" x-text="$t('system.https_title')"></h3>
@@ -2063,6 +1979,28 @@
                                     <span x-show="hardware.temperature != null" x-text="hardware.temperature + ' ℃'"></span>
                                     <span x-show="hardware.temperature == null" style="color:var(--text-muted)">—</span>
                                 </div>
+                            </div>
+                        </div>
+                        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-top:12px">
+                            <div>
+                                <div style="font-size:12px;color:var(--text-muted)" x-text="$t('system.hostname')"></div>
+                                <div style="font-size:13px;color:var(--text);margin-top:3px" x-text="hardware.hostname || '-'"></div>
+                            </div>
+                            <div>
+                                <div style="font-size:12px;color:var(--text-muted)" x-text="$t('dashboard.os')"></div>
+                                <div style="font-size:13px;color:var(--text);margin-top:3px;line-height:1.5" x-text="hardware.os || '-'"></div>
+                            </div>
+                            <div>
+                                <div style="font-size:12px;color:var(--text-muted)" x-text="$t('dashboard.kernel')"></div>
+                                <div style="font-size:12px;color:var(--text);margin-top:3px;font-family:monospace" x-text="hardware.kernel || '-'"></div>
+                            </div>
+                            <div>
+                                <div style="font-size:12px;color:var(--text-muted)" x-text="$t('dashboard.uptime')"></div>
+                                <div style="font-size:13px;color:var(--text);margin-top:3px" x-text="fmtUptime(hardware.uptime_seconds)"></div>
+                            </div>
+                            <div>
+                                <div style="font-size:12px;color:var(--text-muted)" x-text="$t('dashboard.system_disk')"></div>
+                                <div style="font-size:13px;color:var(--text);margin-top:3px" x-text="(hardware.system_disk_used || '—') + ' / ' + (hardware.system_disk_total || '')"></div>
                             </div>
                         </div>
                         <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border)">

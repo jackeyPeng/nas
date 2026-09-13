@@ -113,12 +113,18 @@ func GetServices() []map[string]interface{} {
 				active = "failed" // service exists but not running
 			}
 		}
+		enabled := false
+		if enOut, enErr := common.ExecOutput("systemctl", "is-enabled", svc.Name); enErr == nil {
+			en := strings.TrimSpace(enOut)
+			enabled = en == "enabled" || en == "enabled-runtime" || en == "alias" || en == "static"
+		}
 		result = append(result, map[string]interface{}{
 			"name":         svc.Name,
 			"display_name": svc.DisplayName,
 			"port":         svc.Port,
 			"description":  svc.Description,
 			"active":       active,
+			"enabled":      enabled,
 		})
 	}
 	return result

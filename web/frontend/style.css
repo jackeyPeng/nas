@@ -110,6 +110,8 @@
 
 [x-cloak] { display: none !important; }
 
+:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
 body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     background: var(--bg);
@@ -118,6 +120,7 @@ body {
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    font-variant-numeric: tabular-nums;
 }
 
 /* ═══ Login ═══ */
@@ -165,12 +168,13 @@ body {
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--sp-4); margin-bottom: var(--sp-6); }
 .card {
     background: var(--card-bg); border-radius: var(--radius-md); padding: var(--sp-5);
+    border: 1px solid var(--border-light);
     box-shadow: var(--shadow-sm);
     transition: var(--transition);
 }
-.card:hover { box-shadow: var(--shadow-md); }
+.card:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); border-color: var(--border); }
 .card-title { color: var(--text-light); font-size: var(--fs-sm); margin-bottom: var(--sp-2); }
-.card-value { font-size: var(--fs-xl); font-weight: 700; }
+.card-value { font-size: var(--fs-xl); font-weight: 700; letter-spacing: -0.01em; }
 
 /* ═══ Progress ═══ */
 .progress-bar { height: 8px; background: var(--border-light); border-radius: var(--radius-sm); margin: var(--sp-2) 0 var(--sp-1); overflow: hidden; }
@@ -191,12 +195,15 @@ body {
 }
 .table td { padding: 14px var(--sp-4); border-bottom: 1px solid var(--border-light); font-size: var(--fs-base); }
 .table tr:last-child td { border-bottom: none; }
+.table tbody tr { transition: background 0.15s ease; }
 .table tbody tr:hover { background: var(--card-bg-alt); }
 
 /* ═══ Badge ═══ */
 .badge { padding: 4px 10px; border-radius: var(--radius-sm); font-size: var(--fs-xs); font-weight: 600; }
 .badge-ok { background: var(--success-light); color: var(--success); }
 .badge-err { background: var(--danger-light); color: var(--danger); }
+.badge-warn { background: var(--warn-light); color: var(--warn); }
+.badge-info { background: var(--info-light); color: var(--info); }
 
 /* ═══ Buttons ═══ */
 .btn {
@@ -207,6 +214,7 @@ body {
 .btn:hover { box-shadow: var(--shadow-sm); border-color: var(--text-light); }
 .btn:active { transform: scale(0.98); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .btn-primary { background: var(--primary); color: white; border-color: var(--primary); }
 .btn-primary:hover { background: var(--primary-dark); border-color: var(--primary-dark); }
 .btn-success { background: var(--success); color: white; border-color: var(--success); }

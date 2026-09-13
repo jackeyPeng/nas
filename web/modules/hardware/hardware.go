@@ -67,6 +67,13 @@ type Profile struct {
 	Disks         []DiskDevice       `json:"disks"`
 	Temperature   *float64           `json:"temperature"` // CPU 温度（摄氏度），nil = 不可用
 	TempSource    string             `json:"temp_source"`
+	Hostname      string             `json:"hostname"`
+	OS            string             `json:"os"`
+	Kernel        string             `json:"kernel"`
+	UptimeSeconds int64              `json:"uptime_seconds"`
+	SysDiskUsed   string             `json:"system_disk_used"`
+	SysDiskTotal  string             `json:"system_disk_total"`
+	SysDiskPct    string             `json:"system_disk_pct"`
 	CheckedAt     string             `json:"checked_at"`
 }
 
@@ -112,6 +119,11 @@ func collectProfile() Profile {
 	p.Network = readNetwork()
 	p.Disks = readDisks()
 	p.Temperature, p.TempSource = readCPUTemperature()
+	p.Hostname, _ = os.Hostname()
+	p.OS = readOSName()
+	p.Kernel = readKernel()
+	p.UptimeSeconds = readUptimeSeconds()
+	p.SysDiskUsed, p.SysDiskTotal, p.SysDiskPct = readSystemDisk()
 
 	// 平台识别：虚拟机优先，其次 CPU 型号 / 架构
 	p.Virtualized = detectVirtualized()
@@ -293,6 +305,59 @@ func readCPUTemperature() (*float64, string) {
 		}
 	}
 	return fallback, fallbackSrc
+}
+
+// ── 系统档案 ───────────────────────────────────────────
+
+func readOSName() string {
+	data, err := os.ReadFile("/etc/os-release")
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(line, "PRETTY_NAME=") {
+			return strings.Trim(strings.TrimPrefix(line, "PRETTY_NAME="), "\"")
+		}
+	}
+	return ""
+}
+
+func readKernel() string {
+	out, _ := common.ExecOutput("uname", "-r")
+	return strings.TrimSpace(out)
+}
+
+func readUptimeSeconds() int64 {
+	data, err := os.ReadFile("/proc/uptime")
+	if err != nil {
+		return 0
+	}
+	f := strings.Fields(string(data))
+	if len(f) >= 1 {
+		sec, _ := strconv.ParseFloat(f[0], 64)
+		return int64(sec)
+	}
+	return 0
+}
+
+// readSystemDisk 读取系统盘（根挂载点）容量，返回 used / total / pct。
+func readSystemDisk() (used, total, pct string) {
+	out, err := common.ExecOutput("df", "-k", "/")
+	if err != nil {
+		return "", "", ""
+	}
+	lines := strings.Split(out, "\n")
+	if len(lines) < 2 {
+		return "", "", ""
+	}
+	// Filesystem 1K-blocks Used Available Use% Mounted on
+	f := strings.Fields(lines[1])
+	if len(f) < 5 {
+		return "", "", ""
+	}
+	totalKB, _ := strconv.ParseInt(f[1], 10, 64)
+	usedKB, _ := strconv.ParseInt(f[2], 10, 64)
+	return humanBytes(float64(usedKB * 1024)), humanBytes(float64(totalKB * 1024)), f[4]
 }
 
 // ── 平台识别 ───────────────────────────────────────────
