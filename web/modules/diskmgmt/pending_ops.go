@@ -185,9 +185,8 @@ func ApplyPendingOps() ([]string, error) {
 	// Clear pending queue
 	db.Exec("DELETE FROM pending_ops")
 
-	// Sync configs and reload services
+	// Sync configs and reload services（SyncAllConfigs 内部已含 reloadServices，勿重复调用）
 	SyncAllConfigs()
-	reloadServices()
 
 	return results, nil
 }
@@ -211,13 +210,28 @@ func executeCreateFolder(op PendingOp) error {
 
 	// Create directory
 	common.SudoExec("mkdir", "-p", folderPath)
-	nasUser := getNASUser()
-	common.SudoExec("chown", "-R", nasUser+":"+nasUser, folderPath)
+
+	// 非 public 文件夹：GenerateSambaConfig 用 force user=<文件夹名> 做文件级隔离，
+	// 必须存在同名系统用户/组。public（由 EnsurePoolStructure 创建）走 nasUser。
+	if op.FolderName != "public" {
+		ensureFolderUser(op.FolderName)
+		common.SudoExec("chown", "-R", op.FolderName+":"+op.FolderName, folderPath)
+	} else {
+		nasUser := getNASUser()
+		common.SudoExec("chown", "-R", nasUser+":"+nasUser, folderPath)
+	}
 
 	// Sync metadata
 	SyncFolderMeta(op.FolderName, folderPath, op.Pool, op.Permission, op.ValidUsers, "", op.SambaShare, op.NFSExport, op.RecycleBin, op.QuotaGB)
 
 	return nil
+}
+
+// ensureFolderUser 幂等创建文件夹专属系统用户/组（用于 SMB force user 文件级隔离）。
+// 用户/组已存在时 groupadd -f / useradd 会返回非零，忽略即可。
+func ensureFolderUser(name string) {
+	common.SudoExec("groupadd", "-f", name)
+	common.SudoExec("useradd", "-M", "-s", "/usr/sbin/nologin", "-g", name, name)
 }
 
 // executeUpdateFolder updates permissions

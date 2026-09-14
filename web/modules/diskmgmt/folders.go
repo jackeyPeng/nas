@@ -177,6 +177,10 @@ func handleCreateFolder(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"名称不能包含 / 或 .."}`, http.StatusBadRequest)
 		return
 	}
+	if !isValidFolderName(name) {
+		http.Error(w, `{"error":"文件夹名只能包含小写字母、数字、下划线和短横线，且以小写字母开头（2-32 位）"}`, http.StatusBadRequest)
+		return
+	}
 	if permission == "" {
 		permission = "readwrite"
 	}
@@ -380,4 +384,26 @@ func removeSambaShare(conf, shareName string) string {
 		}
 	}
 	return strings.Join(newLines, "\n")
+}
+
+// isValidFolderName 校验共享文件夹名是否可作为系统用户/组名。
+// GenerateSambaConfig 对非 public 文件夹生成 `force user = <文件夹名>`，
+// 该名称必须能被 groupadd/useradd 接受（Linux 系统用户名规则）。
+func isValidFolderName(name string) bool {
+	if len(name) < 2 || len(name) > 32 {
+		return false
+	}
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		if i == 0 {
+			if c < 'a' || c > 'z' {
+				return false
+			}
+			continue
+		}
+		if !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-') {
+			return false
+		}
+	}
+	return true
 }

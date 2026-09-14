@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"nas-panel/common"
 
@@ -19,6 +20,18 @@ import (
 var (
 	configDB     *sql.DB
 	configDBOnce sync.Once
+)
+
+// rclone restart 去抖：短时间多次 SyncAllConfigs 只对 rclone-s3/webdav 重启一次，
+// 避免 systemctl restart 风暴触发 systemd start-limit（StartLimitBurst=5/10s）。
+var (
+	rcloneReloadMu    sync.Mutex
+	rcloneReloadTm    = map[string]*time.Timer{}
+	rcloneReloadDelay = 2 * time.Second
+	// rcloneRestartCmd 执行实际重启（测试可替换）。
+	rcloneRestartCmd = func(service string) {
+		common.SudoExec("systemctl", "restart", service)
+	}
 )
 
 // configDBPath returns the path to the config metadata database
@@ -405,20 +418,36 @@ func reloadServices() {
 		log.Printf("[CONFIG_SYNC] vsftpd 已重载")
 	}
 
-	// WebDAV: restart (rclone doesn't support reload)
+	// WebDAV/S3: restart（rclone 不支持 reload）。去抖合并：短时间多次配置同步
+	// 只重启一次，避免 systemctl restart 风暴触发 systemd start-limit。
 	if isServiceActive("rclone-webdav") {
-		common.SudoExec("systemctl", "restart", "rclone-webdav")
-		log.Printf("[CONFIG_SYNC] rclone-webdav 已重启")
+		restartRcloneDebounced("rclone-webdav")
 	}
 
-	// S3: restart (rclone doesn't support reload)
 	if isServiceActive("rclone-s3") {
-		common.SudoExec("systemctl", "restart", "rclone-s3")
-		log.Printf("[CONFIG_SYNC] rclone-s3 已重启")
+		restartRcloneDebounced("rclone-s3")
 	}
 
 	// Record reload timestamp
 	markReloaded()
+}
+
+// restartRcloneDebounced 合并短时间内的多次 rclone restart 请求：
+// 每次调用重置计时器，rcloneReloadDelay 内无新请求才执行一次 restart（trailing），
+// 既避免 start-limit 风暴，又保证最终配置生效。
+func restartRcloneDebounced(service string) {
+	rcloneReloadMu.Lock()
+	defer rcloneReloadMu.Unlock()
+	if t, ok := rcloneReloadTm[service]; ok {
+		t.Stop()
+	}
+	rcloneReloadTm[service] = time.AfterFunc(rcloneReloadDelay, func() {
+		rcloneRestartCmd(service)
+		log.Printf("[CONFIG_SYNC] %s 已重启（合并）", service)
+		rcloneReloadMu.Lock()
+		delete(rcloneReloadTm, service)
+		rcloneReloadMu.Unlock()
+	})
 }
 
 // isServiceActive checks if a systemd service is active
