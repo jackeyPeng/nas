@@ -28,6 +28,7 @@
 - Health Center（健康中心）✅ 已落地（web/modules/health + 前端健康中心页）
 - rclone Cloud Engine 抽象 ✅ 现有 rclone 模块即 Cloud Engine；补了定时调度器（scheduler.go，见 #18）
 - SBOM / THIRD_PARTY_LICENSES 自动生成 ✅ 已落地（scripts/gen-sbom.py + release.sh 集成）
+- 亮色主题视觉打磨（统一字阶/间距、卡片/表格/按钮一致性、hover 微交互、聚焦态、空状态）——待规划
 - Hardware Profile 硬件抽象
 - 事件中心 Event Bus
 
