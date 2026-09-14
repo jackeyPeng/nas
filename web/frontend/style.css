@@ -70,42 +70,6 @@
     --transition: all 0.2s ease;
 }
 
-/* ═══ 暗色主题（data-theme="dark"，由 app.js 按 localStorage / 系统偏好设置）═══ */
-[data-theme="dark"] {
-    --bg: #0f1117;              /* 页面底色 */
-    --sidebar-bg: #171a21;
-    --card-bg: #1c2029;
-    --card-bg-alt: #232834;
-    --text: #e6e9f0;
-    --text-secondary: #c3c9d6;
-    --text-light: #9aa3b2;
-    --text-muted: #6b7280;
-    --border: #2c3340;
-    --border-light: #252b36;
-
-    --primary: #3b82f6;
-    --primary-light: #1e3a5f;   /* 暗色下 active 背景用深蓝 */
-    --primary-dark: #60a5fa;
-    --primary-bg: #1e2a3d;
-
-    --success: #4ade80;
-    --success-light: #132a1c;
-    --warn: #fbbf24;
-    --warn-light: #2a1f0d;
-    --danger: #f87171;
-    --danger-light: #2a1416;
-    --info: #38bdf8;
-    --info-light: #0f2430;
-    --purple: #818cf8;
-    --purple-light: #1e1b3a;
-
-    --shadow-xs: 0 1px 2px rgba(0,0,0,0.4);
-    --shadow-sm: 0 1px 3px rgba(0,0,0,0.45), 0 1px 2px rgba(0,0,0,0.35);
-    --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.5), 0 2px 4px -2px rgba(0,0,0,0.4);
-    --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.6), 0 4px 6px -4px rgba(0,0,0,0.5);
-    --shadow-xl: 0 20px 25px -5px rgba(0,0,0,0.7), 0 8px 10px -6px rgba(0,0,0,0.6);
-}
-
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 [x-cloak] { display: none !important; }
