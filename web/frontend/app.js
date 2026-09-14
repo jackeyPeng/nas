@@ -3,7 +3,6 @@ function nasPanel() {
         token: localStorage.getItem('nas_token') || '',
         page: 'dashboard',
         navGroup: 'overview',
-        theme: localStorage.getItem('nas_theme') || '',
         loading: false,
         loginError: '',
         loginForm: { username: '', password: '', totp: '' },
@@ -205,7 +204,6 @@ function nasPanel() {
         toast: { show: false, msg: '', type: 'success' },
 
         init() {
-            this.initTheme();
             if (this.token) {
                 this.navigate('dashboard');
             }
@@ -213,24 +211,6 @@ function nasPanel() {
             window.addEventListener('i18n:changed', (e) => {
                 this.lang = e.detail.lang;
             });
-        },
-
-        initTheme() {
-            let t = this.theme;
-            if (!t) {
-                t = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-            }
-            this.applyTheme(t);
-        },
-
-        applyTheme(t) {
-            this.theme = t;
-            document.documentElement.setAttribute('data-theme', t);
-            localStorage.setItem('nas_theme', t);
-        },
-
-        toggleTheme() {
-            this.applyTheme(this.theme === 'dark' ? 'light' : 'dark');
         },
 
         async switchLang(lang) {

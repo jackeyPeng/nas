@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
@@ -185,9 +185,6 @@
                         <option value="en-US" :selected="lang === 'en-US'">🇺🇸 English</option>
                     </select>
                 </div>
-                <button class="btn btn-sm" @click="toggleTheme()" style="width:100%;margin-bottom:8px">
-                    <span x-text="theme === 'dark' ? '☀️ ' + $t('nav.light_mode') : '🌙 ' + $t('nav.dark_mode')"></span>
-                </button>
                 <button class="btn btn-sm" @click="logout()" x-text="$t('nav.logout')"></button>
             </div>
         </nav>
