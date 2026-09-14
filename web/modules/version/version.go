@@ -18,9 +18,10 @@ var (
 	// DisplayVersion 是对外展示的系统大版本号（如 v1.3.0），取最近的 git tag
 	DisplayVersion = "dev"
 	// Version 是完整构建版本号（含提交数/commit/dirty 等信息）
-	Version   = "dev"
-	BuildTime = "unknown"
-	GitCommit = "unknown"
+	Version = "dev"
+	// BuildTime/GitCommit 未注入 ldflags 时的兜底值：显示构建者签名，而非 "unknown"
+	BuildTime = "Jacky.P"
+	GitCommit = "Jacky.P"
 )
 
 // VersionInfo represents the version response
