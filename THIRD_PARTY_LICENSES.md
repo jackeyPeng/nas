@@ -127,6 +127,10 @@ Source: https://github.com/golang-jwt/jwt
 | vsftpd | GNU GPL v2 |
 | Fail2ban | GNU GPL v2+ |
 | UFW | GNU GPL v3 |
+| LVM2 | GNU GPL v2 / LGPL v2.1 |
+| mdadm | GNU GPL v2 |
+| xfsprogs | GNU GPL v2 / LGPL v2.1 |
+| parted | GNU GPL v3 |
 | smartmontools | GNU GPL v2+ |
 | unattended-upgrades | GNU GPL v2+ |
 | Apache2-Utils (htpasswd) | Apache License 2.0 |
