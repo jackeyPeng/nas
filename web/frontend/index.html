@@ -28,14 +28,14 @@
                 <strong>Z1 NAS</strong>
                 <button @click="mobileMenu = false" style="background:none;border:none;font-size:20px;cursor:pointer">✕</button>
             </div>
-            <a href="#" @click.prevent="navigate('dashboard'); mobileMenu=false" style="display:block;padding:12px 16px;border-bottom:1px solid #f0f0f0;text-decoration:none;color: var(--text-secondary)">📈 <span x-text="$t('nav.dashboard')"></span></a>
-            <a href="#" @click.prevent="navigate('services'); mobileMenu=false" style="display:block;padding:12px 16px;border-bottom:1px solid #f0f0f0;text-decoration:none;color: var(--text-secondary)">🔧 <span x-text="$t('nav.services')"></span></a>
-            <a href="#" @click.prevent="navigate('diskmgmt'); mobileMenu=false" style="display:block;padding:12px 16px;border-bottom:1px solid #f0f0f0;text-decoration:none;color: var(--text-secondary)">💽 <span x-text="$t('nav.storage_mgmt')"></span></a>
-            <a href="#" @click.prevent="navigate('users'); mobileMenu=false" style="display:block;padding:12px 16px;border-bottom:1px solid #f0f0f0;text-decoration:none;color: var(--text-secondary)">👥 <span x-text="$t('nav.users')"></span></a>
-            <a href="#" @click.prevent="navigate('system'); mobileMenu=false" style="display:block;padding:12px 16px;border-bottom:1px solid #f0f0f0;text-decoration:none;color: var(--text-secondary)">🖥️ <span x-text="$t('nav.settings')"></span></a>
-            <a href="#" @click.prevent="navigate('diagnostics'); mobileMenu=false" style="display:block;padding:12px 16px;border-bottom:1px solid #f0f0f0;text-decoration:none;color: var(--text-secondary)">🔬 <span x-text="$t('nav.diagnostics')"></span></a>
-            <a href="#" @click.prevent="navigate('backup'); mobileMenu=false" style="display:block;padding:12px 16px;border-bottom:1px solid #f0f0f0;text-decoration:none;color: var(--text-secondary)">📦 <span x-text="$t('nav.backup')"></span></a>
-            <a href="#" @click.prevent="navigate('rclone'); mobileMenu=false" style="display:block;padding:12px 16px;border-bottom:1px solid #f0f0f0;text-decoration:none;color: var(--text-secondary)">☁️ <span x-text="$t('nav.rclone')"></span></a>
+            <a href="#" @click.prevent="navigate('dashboard'); mobileMenu=false" style="display:block;padding:12px 16px;border-bottom:1px solid var(--border-light);text-decoration:none;color: var(--text-secondary)">📈 <span x-text="$t('nav.dashboard')"></span></a>
+            <a href="#" @click.prevent="navigate('services'); mobileMenu=false" style="display:block;padding:12px 16px;border-bottom:1px solid var(--border-light);text-decoration:none;color: var(--text-secondary)">🔧 <span x-text="$t('nav.services')"></span></a>
+            <a href="#" @click.prevent="navigate('diskmgmt'); mobileMenu=false" style="display:block;padding:12px 16px;border-bottom:1px solid var(--border-light);text-decoration:none;color: var(--text-secondary)">💽 <span x-text="$t('nav.storage_mgmt')"></span></a>
+            <a href="#" @click.prevent="navigate('users'); mobileMenu=false" style="display:block;padding:12px 16px;border-bottom:1px solid var(--border-light);text-decoration:none;color: var(--text-secondary)">👥 <span x-text="$t('nav.users')"></span></a>
+            <a href="#" @click.prevent="navigate('system'); mobileMenu=false" style="display:block;padding:12px 16px;border-bottom:1px solid var(--border-light);text-decoration:none;color: var(--text-secondary)">🖥️ <span x-text="$t('nav.settings')"></span></a>
+            <a href="#" @click.prevent="navigate('diagnostics'); mobileMenu=false" style="display:block;padding:12px 16px;border-bottom:1px solid var(--border-light);text-decoration:none;color: var(--text-secondary)">🔬 <span x-text="$t('nav.diagnostics')"></span></a>
+            <a href="#" @click.prevent="navigate('backup'); mobileMenu=false" style="display:block;padding:12px 16px;border-bottom:1px solid var(--border-light);text-decoration:none;color: var(--text-secondary)">📦 <span x-text="$t('nav.backup')"></span></a>
+            <a href="#" @click.prevent="navigate('rclone'); mobileMenu=false" style="display:block;padding:12px 16px;border-bottom:1px solid var(--border-light);text-decoration:none;color: var(--text-secondary)">☁️ <span x-text="$t('nav.rclone')"></span></a>
             <div style="padding:12px 16px">
                 <a :href="'http://'+location.hostname+':8081'" target="_blank" style="display:block;padding:10px;background: var(--primary);color:white;text-align:center;border-radius:6px;text-decoration:none;font-weight:600">📁 <span x-text="$t('nav.file_manager')"></span></a>
             </div>
@@ -287,7 +287,7 @@
                                 <td style="padding:5px 0">
                                     <span style="font-weight:600" x-text="dashboard.mem_used + ' / ' + dashboard.mem_total + '  '"></span>
                                     <span style="display:inline-block;width:80px;height:6px;background-color: var(--border);border-radius:3px;vertical-align:middle;margin:0 4px">
-                                        <span style="display:block;height:100%;background:#4a9eff;border-radius:3px" :style="'width:' + dashboard.mem_pct"></span>
+                                        <span style="display:block;height:100%;background:var(--primary);border-radius:3px" :style="'width:' + dashboard.mem_pct"></span>
                                     </span>
                                     <span style="font-size:12px;color: var(--text-secondary)" x-text="dashboard.mem_pct"></span>
                                 </td>
@@ -312,7 +312,7 @@
                                 <span style="font-size:13px;font-weight:600" x-text="pool.used + ' / ' + pool.size"></span>
                             </div>
                             <div style="width:100%;background-color: var(--border);border-radius:4px;height:6px;overflow:hidden;margin-top:4px">
-                                <div :style="'width:' + parseFloat(pool.percent||'0') + '%'" style="background:#4a9eff;height:100%;border-radius:4px"></div>
+                                <div :style="'width:' + parseFloat(pool.percent||'0') + '%'" style="background:var(--primary);height:100%;border-radius:4px"></div>
                             </div>
                         </div>
                     </template>
@@ -416,9 +416,9 @@
                                     <td style="font-family:monospace;font-weight:600" x-text="user.username"></td>
                                     <td>
                                         <div style="display:flex;gap:4px;flex-wrap:wrap">
-                                            <span class="badge" :style="user.services.samba ? 'background: var(--info);color:#fff' : 'background:#94a3b8;color:#fff'" style="font-size:11px;padding:2px 6px;border-radius:4px">Samba</span>
-                                            <span class="badge" :style="user.services.ftp ? 'background: var(--info);color:#fff' : 'background:#94a3b8;color:#fff'" style="font-size:11px;padding:2px 6px;border-radius:4px">FTP</span>
-                                            <span class="badge" :style="user.services.webdav ? 'background: var(--info);color:#fff' : 'background:#94a3b8;color:#fff'" style="font-size:11px;padding:2px 6px;border-radius:4px">WebDAV</span>
+                                            <span class="badge" :style="user.services.samba ? 'background: var(--info);color:#fff' : 'background:var(--text-muted);color:#fff'" style="font-size:11px;padding:2px 6px;border-radius:4px">Samba</span>
+                                            <span class="badge" :style="user.services.ftp ? 'background: var(--info);color:#fff' : 'background:var(--text-muted);color:#fff'" style="font-size:11px;padding:2px 6px;border-radius:4px">FTP</span>
+                                            <span class="badge" :style="user.services.webdav ? 'background: var(--info);color:#fff' : 'background:var(--text-muted);color:#fff'" style="font-size:11px;padding:2px 6px;border-radius:4px">WebDAV</span>
                                         </div>
                                     </td>
                                     <td style="font-family:monospace;font-size:12px" x-text="user.private_dir || '-'"></td>
@@ -706,7 +706,7 @@
                         <div>
                             <div style="font-size:12px;color: var(--text-light);margin-bottom:4px" x-text="$t('firewall.status')"></div>
                             <div style="display:flex;align-items:center;gap:6px">
-                                <span :style="'width:10px;height:10px;border-radius:50%;display:inline-block;background:' + (firewall.active ? '#16a34a' : '#cbd5e1')"></span>
+                                <span :style="'width:10px;height:10px;border-radius:50%;display:inline-block;background:' + (firewall.active ? 'var(--success)' : 'var(--text-muted)')"></span>
                                 <span style="font-weight:700;font-size:15px" :style="'color:' + (firewall.active ? 'var(--success)' : 'var(--text-muted)')" x-text="$t('common.enabled')"></span>
                             </div>
                         </div>
@@ -930,7 +930,7 @@
                     <h3 style="margin:0 0 12px;font-size:16px"><span x-text="$t('common.network_interface')"></span></h3>
                     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">
                         <template x-for="net in (monitor.network||[])" :key="net.interface">
-                            <div style="border:1px solid #f0f0f0;border-radius:8px;padding:12px">
+                            <div style="border:1px solid var(--border-light);border-radius:8px;padding:12px">
                                 <div style="font-weight:600;font-size:14px;margin-bottom:8px;font-family:monospace" x-text="net.interface"></div>
                                 <div style="display:flex;gap:16px;font-size:13px">
                                     <div>
@@ -1183,7 +1183,7 @@
                 <!-- ═══════════════ Tab 1: 存储总览 ═══════════════ -->
                 <div x-show="diskmgmtTab==='overview'" x-transition.opacity.duration.250ms>
                     <!-- 统计卡片 -->
-                    <div x-show="storageOverview.stats"><div style="display:flex;gap:12px;margin-bottom:14px;max-width:65%"><div style="flex:1;min-width:0;background: var(--card-bg);border-radius:10px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.06);text-align:center"><div style="font-size:22px;font-weight:700;color: var(--success)" x-text="storageOverview.stats?.total_disks ?? 0"></div><div style="font-size:11px;color: var(--text-light);margin-top:4px" x-text="$t('storage.disks')"></div></div><div style="flex:1;min-width:0;background: var(--card-bg);border-radius:10px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.06);text-align:center"><div style="font-size:22px;font-weight:700;color: var(--primary)" x-text="storageOverview.stats?.total_pools ?? 0"></div><div style="font-size:11px;color: var(--text-light);margin-top:4px" x-text="$t('storage.pools')"></div></div><div style="flex:1;min-width:0;background: var(--card-bg);border-radius:10px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.06);text-align:center"><div style="font-size:22px;font-weight:700;color:#8b5cf6" x-text="storageOverview.stats?.total_volumes ?? 0"></div><div style="font-size:11px;color: var(--text-light);margin-top:4px"><span x-text="$t('storage.logical_volume')"></span></div></div><div style="flex:1;min-width:0;background: var(--card-bg);border-radius:10px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.06);text-align:center"><div style="font-size:22px;font-weight:700;color: var(--text-light)" x-text="storageOverview.stats?.total_shares ?? 0"></div><div style="font-size:11px;color: var(--text-light);margin-top:4px"><span x-text="$t('storage.shared_folder')"></span></div></div></div></div>
+                    <div x-show="storageOverview.stats"><div style="display:flex;gap:12px;margin-bottom:14px;max-width:65%"><div style="flex:1;min-width:0;background: var(--card-bg);border-radius:10px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.06);text-align:center"><div style="font-size:22px;font-weight:700;color: var(--success)" x-text="storageOverview.stats?.total_disks ?? 0"></div><div style="font-size:11px;color: var(--text-light);margin-top:4px" x-text="$t('storage.disks')"></div></div><div style="flex:1;min-width:0;background: var(--card-bg);border-radius:10px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.06);text-align:center"><div style="font-size:22px;font-weight:700;color: var(--primary)" x-text="storageOverview.stats?.total_pools ?? 0"></div><div style="font-size:11px;color: var(--text-light);margin-top:4px" x-text="$t('storage.pools')"></div></div><div style="flex:1;min-width:0;background: var(--card-bg);border-radius:10px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.06);text-align:center"><div style="font-size:22px;font-weight:700;color:var(--purple)" x-text="storageOverview.stats?.total_volumes ?? 0"></div><div style="font-size:11px;color: var(--text-light);margin-top:4px"><span x-text="$t('storage.logical_volume')"></span></div></div><div style="flex:1;min-width:0;background: var(--card-bg);border-radius:10px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.06);text-align:center"><div style="font-size:22px;font-weight:700;color: var(--text-light)" x-text="storageOverview.stats?.total_shares ?? 0"></div><div style="font-size:11px;color: var(--text-light);margin-top:4px"><span x-text="$t('storage.shared_folder')"></span></div></div></div></div>
                     <!-- 告警栏 -->
                     <template x-for="alert in (storageOverview.alerts||[])">
                         <div style="background: var(--warn-light);border:1px solid #f59e0b;border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:12px;color: var(--warn);display:flex;align-items:center;gap:8px">
@@ -1219,8 +1219,8 @@
                                                 <span class="badge" style="background-color: var(--purple-light);color: var(--purple);font-size:11px" x-text="'·'+(vol.fstype||'')+'·'+$t('storage.snapshot')+':'+(vol.snapshot_count>0?$t('common.on'):$t('common.off'))"></span>
                                                 <span style="margin-left:auto;display:flex;gap:6px">
                                                     <span class="badge" :style="vol.folders?.some(function(f){return f.samba_share})?'background: var(--primary-light);color: var(--primary)':'background: var(--card-bg-alt);color: var(--text-secondary)'" style="font-size:11px;padding:3px 7px" :title="$t('storage.proto_per_user')" x-text="'SMB'+(vol.folders?.some(function(f){return f.samba_share})?'✓':'✗')"></span>
-                                                    <span class="badge" :style="vol.folders?.some(function(f){return f.nfs_export})?'background: var(--card-bg-alt);color: var(--text-light)':'background: var(--card-bg-alt);color:#cbd5e1'" style="font-size:11px;padding:3px 7px" :title="$t('storage.proto_network')" x-text="'NFS'+(vol.folders?.some(function(f){return f.nfs_export})?'✓':'✗')"></span>
-                                                    <span class="badge" :style="vol.folders?.some(function(f){return f.s3_access})?'background: var(--warn-light);color: var(--warn)':'background: var(--card-bg-alt);color:#cbd5e1'" style="font-size:11px;padding:3px 7px" :title="$t('storage.proto_global')" x-text="'S3'+(vol.folders?.some(function(f){return f.s3_access})?'✓':'✗')"></span>
+                                                    <span class="badge" :style="vol.folders?.some(function(f){return f.nfs_export})?'background: var(--card-bg-alt);color: var(--text-light)':'background: var(--card-bg-alt);color:var(--text-muted)'" style="font-size:11px;padding:3px 7px" :title="$t('storage.proto_network')" x-text="'NFS'+(vol.folders?.some(function(f){return f.nfs_export})?'✓':'✗')"></span>
+                                                    <span class="badge" :style="vol.folders?.some(function(f){return f.s3_access})?'background: var(--warn-light);color: var(--warn)':'background: var(--card-bg-alt);color:var(--text-muted)'" style="font-size:11px;padding:3px 7px" :title="$t('storage.proto_global')" x-text="'S3'+(vol.folders?.some(function(f){return f.s3_access})?'✓':'✗')"></span>
                                                 </span>
                                             </div>
                                             <div style="margin-left:16px">
@@ -1236,9 +1236,9 @@
                                                             <span style="font-size:13px;color: var(--text-light)" x-text="$t('common.readwrite')"></span>
                                                             <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
                                                                 <span class="badge" :style="f.samba_share?'background: var(--primary-light);color: var(--primary)':'background: var(--card-bg-alt);color: var(--text-secondary)'" style="font-size:11px;padding:3px 7px" :title="$t('storage.proto_per_user')" x-text="'SMB'+(f.samba_share?'✓':'✗')"></span>
-                                                                <span class="badge" :style="f.nfs_export?'background: var(--card-bg-alt);color: var(--text-light)':'background: var(--card-bg-alt);color:#cbd5e1'" style="font-size:11px;padding:3px 7px" :title="$t('storage.proto_network')" x-text="'NFS'+(f.nfs_export?'✓':'✗')"></span>
-                                                                <span class="badge" :style="f.webdav_access?'background: var(--warn-light);color: var(--warn)':'background: var(--card-bg-alt);color:#cbd5e1'" style="font-size:11px;padding:3px 7px" :title="$t('storage.proto_global')" x-text="'DAV'+(f.webdav_access?'✓':'✗')"></span>
-                                                                <span class="badge" :style="f.s3_access?'background: var(--warn-light);color: var(--warn)':'background: var(--card-bg-alt);color:#cbd5e1'" style="font-size:11px;padding:3px 7px" :title="$t('storage.proto_global')" x-text="'S3'+(f.s3_access?'✓':'✗')"></span>
+                                                                <span class="badge" :style="f.nfs_export?'background: var(--card-bg-alt);color: var(--text-light)':'background: var(--card-bg-alt);color:var(--text-muted)'" style="font-size:11px;padding:3px 7px" :title="$t('storage.proto_network')" x-text="'NFS'+(f.nfs_export?'✓':'✗')"></span>
+                                                                <span class="badge" :style="f.webdav_access?'background: var(--warn-light);color: var(--warn)':'background: var(--card-bg-alt);color:var(--text-muted)'" style="font-size:11px;padding:3px 7px" :title="$t('storage.proto_global')" x-text="'DAV'+(f.webdav_access?'✓':'✗')"></span>
+                                                                <span class="badge" :style="f.s3_access?'background: var(--warn-light);color: var(--warn)':'background: var(--card-bg-alt);color:var(--text-muted)'" style="font-size:11px;padding:3px 7px" :title="$t('storage.proto_global')" x-text="'S3'+(f.s3_access?'✓':'✗')"></span>
                                                                 <button class="btn btn-sm" @click.stop="editFolderPermission(f)" style="font-size:12px;padding:3px 6px" title="编辑">✏️</button>
                                                                 <button class="btn btn-sm btn-danger" @click.stop="deleteFolder(f)" style="font-size:12px;padding:3px 6px" title="删除">🗑️</button>
                                                             </span>
@@ -1258,7 +1258,7 @@
                                                                 <code style="font-size:12px;color: var(--text-secondary);user-select:all">http://<span x-text="dashboard.ip_addr||'IP'"></span>:8080/<span x-text="f.name"></span></code>
                                                             </div>
                                                             <div x-show="f.s3_access" style="display:flex;align-items:center;gap:6px;font-size:12px;color: var(--text-secondary)">
-                                                                <span style="font-weight:600;color:#e67e22">S3</span>
+                                                                <span style="font-weight:600;color:var(--warn)">S3</span>
                                                                 <code style="font-size:12px;color: var(--text-secondary);user-select:all">http://<span x-text="dashboard.ip_addr||'IP'"></span>:9000/<span x-text="f.path.split('/')[2]||'nas1'"></span>/<span x-text="f.name"></span></code>
                                                             </div>
                                                         </div>
@@ -1313,7 +1313,7 @@
                                 </div>
                                 <div x-show="showUserDropdown" @click.outside="showUserDropdown=false" style="position:absolute;top:100%;left:0;right:0;z-index:50;background: var(--card-bg);border:1px solid var(--border);border-radius:6px;margin-top:2px;max-height:200px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,0.1)">
                                     <template x-for="u in users" :key="u.username">
-                                        <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid #f3f4f6"
+                                        <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border-light)"
                                             :style="folderForm.valid_users.includes(u.username) ? 'background: var(--primary-bg)' : ''">
                                             <input type="checkbox" :value="u.username" x-model="folderForm.valid_users" style="accent-color: var(--primary)">
                                             <span x-text="u.username"></span>
@@ -1376,7 +1376,7 @@
                                 </div>
                                 <div x-show="showUserDropdown" @click.outside="showUserDropdown=false" style="position:absolute;top:100%;left:0;right:0;z-index:50;background: var(--card-bg);border:1px solid var(--border);border-radius:6px;margin-top:2px;max-height:200px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,0.1)">
                                     <template x-for="u in users" :key="u.username">
-                                        <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid #f3f4f6"
+                                        <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border-light)"
                                             :style="(folderPermForm.valid_users||'').split(',').map(function(x){return x.trim()}).includes(u.username) ? 'background: var(--primary-bg)' : ''">
                                             <input type="checkbox" :checked="(folderPermForm.valid_users||'').split(',').map(function(x){return x.trim()}).includes(u.username)"
                                                 @change="if($event.target.checked){var a=(folderPermForm.valid_users||'').split(',').filter(function(x){return x});a.push(u.username);folderPermForm.valid_users=a.join(',')}else{folderPermForm.valid_users=(folderPermForm.valid_users||'').split(',').filter(function(x){return x.trim()!==u.username}).join(',')}"
@@ -1409,7 +1409,7 @@
                     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:16px">
                         <template x-for="d in (storageOverview.system_disks||[])" :key="d.device">
                             <div @click="selectedDisk=d;selectedDiskDevice=d.device;showDiskDetail=true" tabindex="0"
-                                :style="'border:2px solid '+(selectedDiskDevice===d.device?'#3b82f6':'#22c55e')+';border-radius:10px;padding:12px;cursor:pointer;transition:all 0.15s;background: var(--card-bg)'+(selectedDiskDevice===d.device?';box-shadow:0 0 0 3px rgba(59,130,246,0.3)':'')">
+                                :style="'border:2px solid '+(selectedDiskDevice===d.device?'var(--primary)':'var(--border)')+';border-radius:10px;padding:12px;cursor:pointer;transition:all 0.15s;background: var(--card-bg)'+(selectedDiskDevice===d.device?';box-shadow:0 0 0 3px rgba(59,130,246,0.3)':'')">
                                 <div style="text-align:center;font-size:28px;margin-bottom:6px">💽</div>
                                 <div style="font-size:13px;font-weight:600;text-align:center;font-family:monospace" x-text="d.device"></div>
                                 <div style="text-align:center;margin:4px 0"><span class="badge" style="background: var(--success-light);color: var(--success)" x-text="$t('dashboard.os')"></span></div>
@@ -1421,7 +1421,7 @@
                         </template>
                         <template x-for="d in (storageOverview.pools||[]).reduce(function(arr,p){return arr.concat((p.disks||[]).map(function(dk){return Object.assign({_pool: p.name}, dk)}))},[])" :key="d.device">
                             <div @click="selectedDisk=d;selectedDiskDevice=d.device;showDiskDetail=true" tabindex="0"
-                                :style="'border:2px solid '+(selectedDiskDevice===d.device?'#2563eb':'#3b82f6')+';border-radius:10px;padding:12px;cursor:pointer;transition:all 0.15s;background: var(--card-bg)'+(selectedDiskDevice===d.device?';box-shadow:0 0 0 3px rgba(59,130,246,0.3)':'')">
+                                :style="'border:2px solid '+(selectedDiskDevice===d.device?'var(--primary)':'var(--border)')+';border-radius:10px;padding:12px;cursor:pointer;transition:all 0.15s;background: var(--card-bg)'+(selectedDiskDevice===d.device?';box-shadow:0 0 0 3px rgba(59,130,246,0.3)':'')">
                                 <div style="text-align:center;font-size:28px;margin-bottom:6px">💽</div>
                                 <div style="font-size:13px;font-weight:600;text-align:center;font-family:monospace" x-text="d.device"></div>
                                 <div style="text-align:center;margin:4px 0"><span class="badge" style="background: var(--primary-light);color: var(--primary)"><span x-text="$t('storage.data')"></span></span></div>
@@ -1433,7 +1433,7 @@
                         </template>
                         <template x-for="d in (storageOverview.free_disks||[])" :key="d.device">
                             <div @click="selectedDisk=d;selectedDiskDevice=d.device;showDiskDetail=true" tabindex="0"
-                                :style="'border:2px dashed '+(selectedDiskDevice===d.device?'#3b82f6':'var(--border)')+';border-radius:10px;padding:12px;cursor:pointer;transition:all 0.15s;background: var(--card-bg);opacity:'+(selectedDiskDevice===d.device?'1':'0.7')+(selectedDiskDevice===d.device?';box-shadow:0 0 0 3px rgba(59,130,246,0.3)':'')">
+                                :style="'border:2px dashed '+(selectedDiskDevice===d.device?'var(--primary)':'var(--border)')+';border-radius:10px;padding:12px;cursor:pointer;transition:all 0.15s;background: var(--card-bg);opacity:'+(selectedDiskDevice===d.device?'1':'0.7')+(selectedDiskDevice===d.device?';box-shadow:0 0 0 3px rgba(59,130,246,0.3)':'')">
                                 <div style="text-align:center;font-size:28px;margin-bottom:6px">➕</div>
                                 <div style="font-size:13px;font-weight:600;text-align:center;font-family:monospace" x-text="d.device"></div>
                                 <div style="text-align:center;margin:4px 0"><span class="badge" style="background: var(--card-bg-alt);color: var(--text-secondary)" x-text="$t('dashboard.free')"></span></div>
@@ -1521,7 +1521,7 @@
                             <div style="font-size:14px;font-weight:600;color: var(--text-secondary);margin-bottom:12px"><span x-text="$t('storage.select_disks')"></span></div>
                             <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin-bottom:16px">
                                 <template x-for="d in (wizardStatus.available_disks||[])" :key="d.device">
-                                    <div @click="wizDisks.includes(d.device) ? wizDisks=wizDisks.filter(function(x){return x!==d.device}) : wizDisks.push(d.device)" :style="wizDisks.includes(d.device)?'border:2px solid #3b82f6;background: var(--primary-bg)':'border:2px solid var(--border)'" style="border-radius:10px;padding:16px;text-align:center;cursor:pointer;transition:all 0.15s;background: var(--card-bg)">
+                                    <div @click="wizDisks.includes(d.device) ? wizDisks=wizDisks.filter(function(x){return x!==d.device}) : wizDisks.push(d.device)" :style="wizDisks.includes(d.device)?'border:2px solid var(--primary);background: var(--primary-bg)':'border:2px solid var(--border)'" style="border-radius:10px;padding:16px;text-align:center;cursor:pointer;transition:all 0.15s;background: var(--card-bg)">
                                         <div style="font-size:24px;margin-bottom:4px">💽</div>
                                         <div style="font-size:13px;font-weight:600;font-family:monospace" x-text="d.device"></div>
                                         <div style="font-size:11px;color: var(--text-light)" x-text="d.model||'—'"></div>
@@ -1538,10 +1538,10 @@
                         <div x-show="wizStep===2" x-transition.opacity.duration.200ms>
                             <div style="font-size:14px;font-weight:600;color: var(--text-secondary);margin-bottom:12px"><span x-text="$t('storage.wizard_goal_q')"></span></div>
                             <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:16px">
-                                <div @click="wizGoal='safety'" :style="wizGoal==='safety'?'border:2px solid #3b82f6;background: var(--primary-bg)':'border:2px solid var(--border)'" style="border-radius:10px;padding:16px;text-align:center;cursor:pointer;transition:all 0.15s;background: var(--card-bg)"><div style="font-size:28px;margin-bottom:6px">🛡️</div><div style="font-size:14px;font-weight:600" x-text="$t('storage.safety')"></div><div style="font-size:12px;color: var(--text-light);margin-top:4px;line-height:1.5"><span x-text="$t('storage.goal_safety')"></span></div><div style="font-size:11px;color: var(--text-light);margin-top:6px"><span x-text="$t('storage.goal_safety_rec')"></span></div></div>
-                                <div @click="wizGoal='capacity'" :style="wizGoal==='capacity'?'border:2px solid #3b82f6;background: var(--primary-bg)':'border:2px solid var(--border)'" style="border-radius:10px;padding:16px;text-align:center;cursor:pointer;transition:all 0.15s;background: var(--card-bg)"><div style="font-size:28px;margin-bottom:6px">💾</div><div style="font-size:14px;font-weight:600" x-text="$t('storage.capacity')"></div><div style="font-size:12px;color: var(--text-light);margin-top:4px;line-height:1.5"><span x-text="$t('storage.goal_capacity')"></span></div><div style="font-size:11px;color: var(--text-light);margin-top:6px"><span x-text="$t('storage.goal_capacity_rec')"></span></div></div>
-                                <div @click="wizGoal='performance'" :style="wizGoal==='performance'?'border:2px solid #3b82f6;background: var(--primary-bg)':'border:2px solid var(--border)'" style="border-radius:10px;padding:16px;text-align:center;cursor:pointer;transition:all 0.15s;background: var(--card-bg)"><div style="font-size:28px;margin-bottom:6px">⚡</div><div style="font-size:14px;font-weight:600"><span x-text="$t('storage.goal_perf')"></span></div><div style="font-size:12px;color: var(--text-light);margin-top:4px;line-height:1.5"><span x-text="$t('storage.goal_perf_desc')"></span></div><div style="font-size:11px;color: var(--text-light);margin-top:6px"><span x-text="$t('storage.goal_perf_rec')"></span></div></div>
-                                <div @click="wizGoal='balance'" :style="wizGoal==='balance'?'border:2px solid #3b82f6;background: var(--primary-bg)':'border:2px solid var(--border)'" style="border-radius:10px;padding:16px;text-align:center;cursor:pointer;transition:all 0.15s;background: var(--card-bg)"><div style="font-size:28px;margin-bottom:6px">⚖️</div><div style="font-size:14px;font-weight:600" x-text="$t('storage.balance')"></div><div style="font-size:12px;color: var(--text-light);margin-top:4px;line-height:1.5"><span x-text="$t('storage.goal_balance')"></span></div><div style="font-size:11px;color: var(--text-light);margin-top:6px"><span x-text="$t('storage.goal_balance_rec')"></span></div></div>
+                                <div @click="wizGoal='safety'" :style="wizGoal==='safety'?'border:2px solid var(--primary);background: var(--primary-bg)':'border:2px solid var(--border)'" style="border-radius:10px;padding:16px;text-align:center;cursor:pointer;transition:all 0.15s;background: var(--card-bg)"><div style="font-size:28px;margin-bottom:6px">🛡️</div><div style="font-size:14px;font-weight:600" x-text="$t('storage.safety')"></div><div style="font-size:12px;color: var(--text-light);margin-top:4px;line-height:1.5"><span x-text="$t('storage.goal_safety')"></span></div><div style="font-size:11px;color: var(--text-light);margin-top:6px"><span x-text="$t('storage.goal_safety_rec')"></span></div></div>
+                                <div @click="wizGoal='capacity'" :style="wizGoal==='capacity'?'border:2px solid var(--primary);background: var(--primary-bg)':'border:2px solid var(--border)'" style="border-radius:10px;padding:16px;text-align:center;cursor:pointer;transition:all 0.15s;background: var(--card-bg)"><div style="font-size:28px;margin-bottom:6px">💾</div><div style="font-size:14px;font-weight:600" x-text="$t('storage.capacity')"></div><div style="font-size:12px;color: var(--text-light);margin-top:4px;line-height:1.5"><span x-text="$t('storage.goal_capacity')"></span></div><div style="font-size:11px;color: var(--text-light);margin-top:6px"><span x-text="$t('storage.goal_capacity_rec')"></span></div></div>
+                                <div @click="wizGoal='performance'" :style="wizGoal==='performance'?'border:2px solid var(--primary);background: var(--primary-bg)':'border:2px solid var(--border)'" style="border-radius:10px;padding:16px;text-align:center;cursor:pointer;transition:all 0.15s;background: var(--card-bg)"><div style="font-size:28px;margin-bottom:6px">⚡</div><div style="font-size:14px;font-weight:600"><span x-text="$t('storage.goal_perf')"></span></div><div style="font-size:12px;color: var(--text-light);margin-top:4px;line-height:1.5"><span x-text="$t('storage.goal_perf_desc')"></span></div><div style="font-size:11px;color: var(--text-light);margin-top:6px"><span x-text="$t('storage.goal_perf_rec')"></span></div></div>
+                                <div @click="wizGoal='balance'" :style="wizGoal==='balance'?'border:2px solid var(--primary);background: var(--primary-bg)':'border:2px solid var(--border)'" style="border-radius:10px;padding:16px;text-align:center;cursor:pointer;transition:all 0.15s;background: var(--card-bg)"><div style="font-size:28px;margin-bottom:6px">⚖️</div><div style="font-size:14px;font-weight:600" x-text="$t('storage.balance')"></div><div style="font-size:12px;color: var(--text-light);margin-top:4px;line-height:1.5"><span x-text="$t('storage.goal_balance')"></span></div><div style="font-size:11px;color: var(--text-light);margin-top:6px"><span x-text="$t('storage.goal_balance_rec')"></span></div></div>
                             </div>
                             <div style="display:flex;justify-content:space-between">
                                 <button class="btn btn-secondary" @click="wizStep=1" style="font-size:13px">← <span x-text="$t('storage.prev_step')"></span></button>
@@ -1552,7 +1552,7 @@
                             <div style="font-size:14px;font-weight:600;color: var(--text-secondary);margin-bottom:12px"><span x-text="$t('storage.select_plan')"></span></div>
                             <div style="display:grid;gap:12px;margin-bottom:16px">
                                 <template x-for="opt in wizardFilteredOptions" :key="opt.id">
-                                    <div @click="wizMode=opt.id" :style="wizMode===opt.id?'border:2px solid #3b82f6;background: var(--primary-bg)':'border:2px solid var(--border)'" style="border-radius:10px;padding:16px;cursor:pointer;transition:all 0.15s;background: var(--card-bg)">
+                                    <div @click="wizMode=opt.id" :style="wizMode===opt.id?'border:2px solid var(--primary);background: var(--primary-bg)':'border:2px solid var(--border)'" style="border-radius:10px;padding:16px;cursor:pointer;transition:all 0.15s;background: var(--card-bg)">
                                         <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
                                             <span style="font-size:22px" x-text="opt.icon"></span>
                                             <span style="font-size:15px;font-weight:700" x-text="raidName(opt.id, opt.name)"></span>
@@ -1621,7 +1621,7 @@
                     <div style="font-size:14px;font-weight:600;color: var(--text-secondary);margin-bottom:10px" x-text="$t('logs.title')"></div>
                     <div style="background: var(--card-bg);border:1px solid var(--border);border-radius:12px;padding:12px;max-height:400px;overflow-y:auto">
                         <template x-for="op in (operationsLog||[])" :key="op.time">
-                            <div style="display:flex;align-items:flex-start;gap:12px;padding:8px 0;border-bottom:1px solid #f3f4f6;font-size:13px">
+                            <div style="display:flex;align-items:flex-start;gap:12px;padding:8px 0;border-bottom:1px solid var(--border-light);font-size:13px">
                                 <span style="font-size:14px;color: var(--text-light);white-space:nowrap;min-width:130px" x-text="op.time?.substring(0,16)"></span>
                                 <span class="badge" :style="op.action==='error'?'background: var(--danger-light);color: var(--danger)':op.action==='warning'?'background: var(--warn-light);color: var(--warn)':'background: var(--success-light);color: var(--success)'" style="min-width:50px;text-align:center;font-size:11px" x-text="$t('common.failed')"></span>
                                 <span style="color: var(--text-secondary);flex:1" x-text="op.message"></span>
@@ -1856,7 +1856,7 @@
                     <h3 style="margin-top:0;margin-bottom:12px;font-size:15px" x-text="$t('system.kernel_params')"></h3>
                     <div style="font-size:14px">
                         <template x-for="param in (sysSettings.sysctl||[])" :key="param.key">
-                            <div style="display:flex;align-items:center;gap:12px;padding:6px 0;border-bottom:1px solid #f0f0f0">
+                            <div style="display:flex;align-items:center;gap:12px;padding:6px 0;border-bottom:1px solid var(--border-light)">
                                 <span style="color: var(--text-secondary);min-width:200px;font-family:monospace;font-size:13px" x-text="param.key"></span>
                                 <input type="text" x-model="param.value" class="port-input" style="width:120px;font-family:monospace">
                                 <span style="color: var(--text-muted);font-size:12px;flex:1" x-text="sysctlDesc(param.key, param.description)"></span>
@@ -1982,7 +1982,7 @@
             <!-- 系统详情（独立页） -->
             <div x-show="page === 'about'" class="page" x-init="if(page==='about') loadComponents()" x-transition.opacity.duration.300ms>
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-                    <h2 style="margin:0">📦 <span x-text="$t('system.about_title_full')"></span></h2>
+                    <h2 style="margin:0"><span x-text="$t('system.about_title_full')"></span></h2>
                     <button class="btn btn-sm btn-primary" @click="loadComponents()" style="font-size:12px" x-text="$t('common.refresh')"></button>
                 </div>
                 <div style="background: var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:16px">
@@ -2253,7 +2253,7 @@
                                 </div>
                                 <!-- 进度条 -->
                                 <div x-show="item.running" style="margin-top:8px;width:100%;background-color: var(--border);border-radius:4px;height:6px;overflow:hidden">
-                                    <div :style="'width:' + item.progress + '%'" style="background:#4a9eff;height:100%;border-radius:4px;transition:width 0.5s"></div>
+                                    <div :style="'width:' + item.progress + '%'" style="background:var(--primary);height:100%;border-radius:4px;transition:width 0.5s"></div>
                                 </div>
                             </div>
                             <div style="display:flex;flex-direction:column;align-items:end;gap:8px">
@@ -2754,26 +2754,28 @@
                         <span style="opacity:.85;font-weight:400;font-size:13px;margin-left:8px" x-text="health.checked_at ? ('· ' + health.checked_at) : ''"></span>
                     </div>
 
-                    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px">
+                    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:16px">
                         <template x-for="c in health.checks" :key="c.id">
-                            <div style="border:1px solid var(--border);border-radius:12px;padding:16px;background: var(--card-bg)"
-                                 :style="'border-left:4px solid ' + healthStatusColor(c.status)">
-                                <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-                                    <span style="font-size:20px" x-text="c.icon"></span>
-                                    <strong style="flex:1" x-text="healthLabel(c.id, c.label)"></strong>
-                                    <span style="font-size:12px;font-weight:600;padding:2px 8px;border-radius:9999px;color:#fff"
-                                          :style="'background:' + healthStatusColor(c.status)"
+                            <div style="background: var(--card-bg);border:1px solid var(--border);border-radius:12px;padding:18px;box-shadow: var(--shadow-sm)">
+                                <div style="display:flex;align-items:center;gap:12px">
+                                    <span :style="'width:42px;height:42px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border-radius:10px;font-size:21px;background:' + healthStatusColor(c.status) + '1a'">
+                                        <span x-text="c.icon"></span>
+                                    </span>
+                                    <div style="flex:1;min-width:0">
+                                        <div style="font-size:15px;font-weight:600;color: var(--text)" x-text="healthLabel(c.id, c.label)"></div>
+                                        <div style="font-size:13px;color: var(--text-light);margin-top:2px" x-text="c.detail"></div>
+                                    </div>
+                                    <span :style="'font-size:12px;font-weight:600;padding:3px 10px;border-radius:9999px;color:#fff;flex-shrink:0;background:' + healthStatusColor(c.status)"
                                           x-text="healthStatusText(c.status)"></span>
                                 </div>
-                                <div style="font-size:13px;color: var(--text-light)" x-text="c.detail"></div>
                             </div>
                         </template>
                     </div>
                 </div>
 
-                <div x-show="!healthLoaded" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px">
+                <div x-show="!healthLoaded" style="display:grid;grid-template-columns:repeat(2,1fr);gap:16px">
                     <template x-for="i in 6" :key="i">
-                        <div style="height:96px;border-radius:12px;background-color: var(--card-bg-alt);animation:pulse-skeleton 1.5s ease-in-out infinite"></div>
+                        <div style="height:80px;border-radius:12px;background-color: var(--card-bg-alt);animation:pulse-skeleton 1.5s ease-in-out infinite"></div>
                     </template>
                 </div>
             </div>
