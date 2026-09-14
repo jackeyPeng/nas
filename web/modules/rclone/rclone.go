@@ -33,14 +33,14 @@ type Remote struct {
 type SyncTask struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
-	Direction   string `json:"direction"`    // upload(本地→远端) | download(远端→本地)，默认 upload
-	Source      string `json:"source"`       // 本地路径，如 /data/nas1/docs
-	Remote      string `json:"remote"`       // 远端名称
-	DestPath    string `json:"dest_path"`    // 远端路径，如 backup/docs
-	Mode        string `json:"mode"`         // sync | copy | bisync
-	Schedule    string `json:"schedule"`     // cron 表达式，空表示手动
-	Bandwidth   int    `json:"bandwidth"`    // KB/s，0=不限
-	Transfers   int    `json:"transfers"`    // 并发数，默认 4
+	Direction   string `json:"direction"` // upload(本地→远端) | download(远端→本地)，默认 upload
+	Source      string `json:"source"`    // 本地路径，如 /data/nas1/docs
+	Remote      string `json:"remote"`    // 远端名称
+	DestPath    string `json:"dest_path"` // 远端路径，如 backup/docs
+	Mode        string `json:"mode"`      // sync | copy | bisync
+	Schedule    string `json:"schedule"`  // cron 表达式，空表示手动
+	Bandwidth   int    `json:"bandwidth"` // KB/s，0=不限
+	Transfers   int    `json:"transfers"` // 并发数，默认 4
 	Enabled     bool   `json:"enabled"`
 	LastRun     string `json:"last_run,omitempty"`
 	LastResult  string `json:"last_result,omitempty"` // success | failed | running
@@ -211,6 +211,7 @@ func handleListRemotes(w http.ResponseWriter, r *http.Request) {
 		common.JSONResponse(w, map[string]interface{}{"remotes": []Remote{}})
 		return
 	}
+	localTargets := aliasRemoteTargets()
 	var remotes []Remote
 	for _, line := range strings.Split(string(out), "\n") {
 		line = strings.TrimSpace(line)
@@ -224,6 +225,10 @@ func handleListRemotes(w http.ResponseWriter, r *http.Request) {
 		}
 		name := strings.TrimSpace(parts[0])
 		rtype := strings.TrimSpace(parts[1])
+		// alias 指向本地路径的，展示为 local
+		if rtype == "alias" && strings.HasPrefix(localTargets[name], localRemotePrefix) {
+			rtype = "local"
+		}
 		remotes = append(remotes, Remote{
 			Name:      name,
 			Type:      rtype,
@@ -234,6 +239,61 @@ func handleListRemotes(w http.ResponseWriter, r *http.Request) {
 }
 
 var validRemoteName = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+
+// localRemotePrefix 是 alias backend 指向本地路径的前缀（:local:<绝对路径>）。
+const localRemotePrefix = ":local:"
+
+// toBackendRemote 将前端类型+配置转换为 rclone 实际 backend。
+// rclone 的 local backend 不支持 root/local_path 配置项（其根路径由路径本身表达，
+// config create 传入的路径参数会被静默忽略，导致 remote 指向 $HOME）。
+// 因此 local 类型改用 alias backend 指向本地绝对路径（:local:<path>）。
+// 返回 (实际类型, 实际配置, error)；local 但缺 local_path 时返回 error。
+func toBackendRemote(rtype string, config map[string]string) (string, map[string]string, error) {
+	if rtype != "local" {
+		return rtype, config, nil
+	}
+	p := strings.TrimSpace(config["local_path"])
+	if p == "" {
+		return "", nil, fmt.Errorf("local 类型需要 local_path")
+	}
+	return "alias", map[string]string{"remote": localRemotePrefix + p}, nil
+}
+
+// toFrontendRemote 将 rclone 实际 backend 映射回前端类型+配置。
+// alias 且 remote 以 :local: 开头 → 前端 "local"，local_path = 去掉前缀的路径。
+func toFrontendRemote(rtype string, config map[string]string) (string, map[string]string) {
+	if rtype == "alias" && strings.HasPrefix(config["remote"], localRemotePrefix) {
+		return "local", map[string]string{"local_path": strings.TrimPrefix(config["remote"], localRemotePrefix)}
+	}
+	return rtype, config
+}
+
+// aliasRemoteTargets 解析 config 里 alias 类型 remote 的 remote 字段（name → target）。
+// 用于 list 时把「指向本地路径的 alias」显示为 local 类型。
+func aliasRemoteTargets() map[string]string {
+	conf := getRcloneConf()
+	data, err := common.SudoOutput("cat", conf)
+	if err != nil {
+		return nil
+	}
+	targets := map[string]string{}
+	var cur string
+	for _, line := range strings.Split(data, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+			cur = strings.Trim(trimmed, "[]")
+			continue
+		}
+		if cur == "" || !strings.Contains(trimmed, "=") {
+			continue
+		}
+		parts := strings.SplitN(trimmed, "=", 2)
+		if strings.TrimSpace(parts[0]) == "remote" {
+			targets[cur] = strings.TrimSpace(parts[1])
+		}
+	}
+	return targets
+}
 
 func handleCreateRemote(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -258,6 +318,14 @@ func handleCreateRemote(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(key, "rc_") && len(vals) > 0 {
 			config[strings.TrimPrefix(key, "rc_")] = vals[0]
 		}
+	}
+
+	// local 类型 → alias backend 转换（rclone local backend 不支持路径配置项）
+	var cerr error
+	rtype, config, cerr = toBackendRemote(rtype, config)
+	if cerr != nil {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, cerr.Error()), http.StatusBadRequest)
+		return
 	}
 
 	// 构建 rclone config create 命令
@@ -335,6 +403,8 @@ func handleGetRemote(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"远端不存在"}`, http.StatusNotFound)
 		return
 	}
+	// alias 指向本地路径的映射回前端 "local" 类型
+	rtype, cfg = toFrontendRemote(rtype, cfg)
 	common.JSONResponse(w, map[string]interface{}{
 		"name":   name,
 		"type":   rtype,
@@ -362,7 +432,12 @@ func handleUpdateRemote(w http.ResponseWriter, r *http.Request) {
 		if v == "" || v == "********" {
 			continue
 		}
-		args = append(args, k+"="+v)
+		// local 类型：local_path 转成 alias backend 的 remote 字段
+		if k == "local_path" {
+			args = append(args, "remote="+localRemotePrefix+v)
+		} else {
+			args = append(args, k+"="+v)
+		}
 		count++
 	}
 	if count == 0 {
