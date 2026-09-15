@@ -312,6 +312,12 @@ func setSharePermission(username, folder, perm string) error {
 	writeUsers := target.WriteUsers
 	permission := target.Permission
 
+	// 开放共享物化：valid_users 为空 = 任何可认证用户可连（如 public）。
+	// 首次按用户编辑时展开为全部现有用户，避免给一个人设权限把其他人静默锁出共享
+	if strings.TrimSpace(validUsers) == "" {
+		validUsers = strings.Join(listAllUsers(), ",")
+	}
+
 	validUsers, writeUsers, permission = applyPermissionChange(validUsers, writeUsers, permission, username, perm)
 
 	diskmgmt.SyncFolderMeta(target.Name, target.Path, target.Pool, permission, validUsers, writeUsers,

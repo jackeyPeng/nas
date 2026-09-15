@@ -172,9 +172,18 @@ func getUserFolderPermission(smbConf, username, folder string) string {
 		}
 	}
 
-	// 检查用户是否在 valid users 里
+	// valid users 为空 = 开放共享（Samba 语义：任何可认证用户都能连），
+	// 按 read only / write list 判定读写；默认（read only 缺省 no）为读写
 	if validUsers == "" {
-		return "noaccess"
+		for _, u := range strings.Split(writeList, ",") {
+			if strings.TrimSpace(u) == username {
+				return "readwrite"
+			}
+		}
+		if readOnly == "yes" {
+			return "readonly"
+		}
+		return "readwrite"
 	}
 
 	userInList := false
