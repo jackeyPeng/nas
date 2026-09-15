@@ -28,7 +28,7 @@
 - Health Center（健康中心）✅ 已落地（web/modules/health + 前端健康中心页）
 - rclone Cloud Engine 抽象 ✅ 现有 rclone 模块即 Cloud Engine；补了定时调度器（scheduler.go，见 #18）
 - SBOM / THIRD_PARTY_LICENSES 自动生成 ✅ 已落地（scripts/gen-sbom.py + release.sh 集成）
-- 亮色主题视觉打磨（统一字阶/间距、卡片/表格/按钮一致性、hover 微交互、聚焦态、空状态）——进行中。首轮已做：内联残留色→CSS 变量（37 处）、物理磁盘卡片选中态边框统一（系统盘绿框/数据盘恒蓝框 已修为 selected=primary / 未选中=border）；待做：字阶/间距 token 化（约 440 处 font-size + 250 处 padding 内联）、内联卡片 hover 微交互、离阶字号归一（11px/14px/10px/20px 等）
+- 亮色主题视觉打磨（统一字阶/间距、卡片/表格/按钮一致性、hover 微交互、聚焦态、空状态）——进行中。首轮：内联残留色→CSS 变量（37 处）、磁盘卡片选中态统一。第二轮（2026-09-15）：字阶/间距 token 化完成——font-size 归一 432 处（10/11/12→fs-xs、13/13.5→fs-sm、14/15→fs-base、16→fs-md、18→fs-lg、22→fs-xl、28→fs-2xl，离阶 20px 标题→fs-lg、24px 大数值→fs-2xl；emoji 图标尺寸 20/21/24/30/48px 故意保留）、padding/gap/margin 约 560 组件 token 化+离阶归一（10/14/18px→sp-3/4/5，新增 sp-10/sp-12）、border-radius token 化 117 处、14 处内联可点卡片挂 .clickable-card（hover 阴影+上浮、focus-visible 聚焦环、cursor:pointer 进类——:style 动态绑定会覆盖内联 cursor）；浏览器计算样式扫描 11 页全部字号落在 token 阶梯、0 未解析变量。待做：徽章类微距（2/3/5/6px padding）评估、空状态统一、表格密度分级
 - Hardware Profile 硬件抽象
 - 事件中心 Event Bus
 

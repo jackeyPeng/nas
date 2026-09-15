@@ -51,6 +51,8 @@
     --sp-5: 20px;
     --sp-6: 24px;
     --sp-8: 32px;
+    --sp-10: 40px;
+    --sp-12: 48px;
 
     /* — 圆角 — */
     --radius-sm: 6px;
@@ -137,6 +139,11 @@ body {
     transition: var(--transition);
 }
 .card:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); border-color: var(--border); }
+
+/* 内联可点卡片（磁盘卡片/向导目标卡/维护操作卡）hover 微交互 */
+.clickable-card { cursor: pointer; }
+.clickable-card:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
+.clickable-card:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .card-title { color: var(--text-light); font-size: var(--fs-sm); margin-bottom: var(--sp-2); }
 .card-value { font-size: var(--fs-xl); font-weight: 700; letter-spacing: -0.01em; }
 
