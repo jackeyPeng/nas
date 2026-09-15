@@ -123,7 +123,7 @@
 ### 4. 验证
 
 - 单元测试：SMB 生成 4 场景 + 列表辅助 3 用例 + 权限变更物化 3 用例
-- 真机端到端（10.216.10.57，空白 Debian 13 从零部署）：LVM 池 → 共享文件夹 team → alice/bob/charlie 三用户，smbclient 实测读写/只读/禁止三态全部正确
+- 真机端到端（测试机，空白 Debian 13 从零部署）：LVM 池 → 共享文件夹 team → alice/bob/charlie 三用户，smbclient 实测读写/只读/禁止三态全部正确
 
 ---
 
