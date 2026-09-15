@@ -109,6 +109,9 @@ body {
 }
 .sidebar-header { padding: var(--sp-5); border-bottom: 1px solid var(--border); }
 .sidebar-header h2 { font-size: var(--fs-md); }
+/* 品牌 logo（logo.svg 横向字标，200×60） */
+.brand-logo { display: block; width: 150px; height: auto; }
+.login-box h1 .brand-logo { width: 200px; margin: 0 auto var(--sp-3); }
 .nav { list-style: none; flex: 1; padding: var(--sp-2) 0; }
 .nav li {
     padding: 12px var(--sp-5); cursor: pointer; transition: var(--transition);

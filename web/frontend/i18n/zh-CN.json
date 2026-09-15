@@ -182,7 +182,7 @@
     "page_num": "第 {0} 页"
   },
   "login": {
-    "title": "🗄️ NAS 管理面板",
+    "title": "NAS 管理面板",
     "username_placeholder": "请输入用户名",
     "password_placeholder": "请输入密码",
     "failed": "登录失败",

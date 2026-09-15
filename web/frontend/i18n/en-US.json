@@ -182,7 +182,7 @@
     "page_num": "Page {0}"
   },
   "login": {
-    "title": "🗄️ NAS Management Panel",
+    "title": "NAS Management Panel",
     "username_placeholder": "Username",
     "password_placeholder": "Password",
     "failed": "Login failed",

@@ -7,6 +7,8 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="favicon.ico">
     <title>Z1 NAS</title>
     <link rel="stylesheet" href="style.css">
     <script src="i18n.js"></script>
@@ -52,7 +54,7 @@
     <!-- Login -->
     <div class="login-page" x-show="!token" x-cloak>
         <div class="login-box">
-            <h1>🗄️ <span x-text="$t('login.title')"></span></h1>
+            <h1><img src="logo.svg" alt="Z1 NAS" class="brand-logo"><span x-text="$t('login.title')"></span></h1>
             <form @submit.prevent="login()">
                 <div class="form-group">
                     <label x-text="$t('common.username')"></label>
@@ -80,7 +82,7 @@
         <!-- Sidebar -->
         <nav class="sidebar">
             <div class="sidebar-header">
-                <h2>🗄️ NAS</h2>
+                <img src="logo.svg" alt="Z1 NAS" class="brand-logo">
             </div>
             <ul class="nav">
                 <!-- 总览 -->

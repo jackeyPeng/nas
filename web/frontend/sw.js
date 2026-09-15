@@ -1,5 +1,5 @@
 // Z1 NAS Service Worker — PWA offline shell
-const CACHE = 'z1-nas-v1';
+const CACHE = 'z1-nas-v2';
 const SHELL = [
   '/',
   '/style.css',
@@ -7,7 +7,9 @@ const SHELL = [
   '/i18n.js',
   '/i18n/zh-CN.json',
   '/i18n/en-US.json',
-  '/manifest.json'
+  '/manifest.json',
+  '/favicon.ico',
+  '/logo.svg'
 ];
 
 self.addEventListener('install', e => {
