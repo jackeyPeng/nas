@@ -334,17 +334,21 @@ func changePassword(username, password string) error {
 
 	common.SudoExec("htpasswd", "-b", "/etc/rclone-htpasswd", username, password)
 
-	// Update .env NAS_PASS (read by panel on startup)
-	common.SudoExec("sed", "-i", fmt.Sprintf("s/^NAS_PASS=.*/NAS_PASS=%s/", password),
-		common.GetEnvFilePath())
+	// 仅面板登录用户（NAS_USER）的密码才是 NAS_PASS：改其他用户的密码
+	// 绝不能改写 .env 的 NAS_PASS 或内存面板密码，否则管理员会被顶下线
+	if username == common.GetNASUser() {
+		// Update .env NAS_PASS (read by panel on startup)
+		common.SudoExec("sed", "-i", fmt.Sprintf("s/^NAS_PASS=.*/NAS_PASS=%s/", password),
+			common.GetEnvFilePath())
 
-	// Update FileBrowser password
-	common.SudoExec("filebrowser", "users", "update", username,
-		"--password", password,
-		"--database", "/etc/filebrowser/filebrowser.db")
+		// Update FileBrowser password
+		common.SudoExec("filebrowser", "users", "update", username,
+			"--password", password,
+			"--database", "/etc/filebrowser/filebrowser.db")
 
-	// Update in-memory panel password (takes effect immediately, no restart)
-	common.UpdateNasPass(password)
+		// Update in-memory panel password (takes effect immediately, no restart)
+		common.UpdateNasPass(password)
+	}
 
 	return nil
 }

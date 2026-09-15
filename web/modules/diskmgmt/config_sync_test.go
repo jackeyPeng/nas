@@ -80,3 +80,32 @@ func containsStr(haystack, needle string) bool {
 		return false
 	})()
 }
+
+func TestSmbManagedLines(t *testing.T) {
+	cases := []struct {
+		name      string
+		meta      FolderMeta
+		wantMode  string
+		wantList  bool // 期望有 write list 行
+		wantValid bool // 期望有 valid users 行
+	}{
+		{"public 无按用户元数据=开放共享", FolderMeta{Name: "public", Permission: "readwrite"}, "writable = yes", false, false},
+		{"public 被按用户编辑后走按用户粒度", FolderMeta{Name: "public", Permission: "readwrite", ValidUsers: "fm,alice", WriteUsers: "fm"}, "read only = yes", true, true},
+		{"home 共享默认", FolderMeta{Name: "fm", Permission: "readwrite", ValidUsers: "fm"}, "writable = yes", false, true},
+		{"home 只读", FolderMeta{Name: "fm", Permission: "readonly", ValidUsers: "fm"}, "read only = yes", false, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			mode, list, valid := smbManagedLines(tc.meta, "fm")
+			if mode != tc.wantMode {
+				t.Errorf("writeMode = %q, want %q", mode, tc.wantMode)
+			}
+			if (list != "") != tc.wantList {
+				t.Errorf("writeList 存在 = %v, want %v (%q)", list != "", tc.wantList, list)
+			}
+			if (valid != "") != tc.wantValid {
+				t.Errorf("validLine 存在 = %v, want %v (%q)", valid != "", tc.wantValid, valid)
+			}
+		})
+	}
+}

@@ -282,19 +282,7 @@ func GenerateSambaConfig() error {
 			mask = "0700"
 		}
 
-		writeMode := "writable = yes"
-		writeList := ""
-		validLine := ""
-		if isPublic {
-			// public：不设 valid users（所有认证用户可读写）
-		} else {
-			users := m.ValidUsers
-			if users == "" {
-				users = m.Name
-			}
-			validLine = fmt.Sprintf("   valid users = %s\n", users)
-			writeMode, writeList = smbShareParams(m, nasUser)
-		}
+		writeMode, writeList, validLine := smbManagedLines(m, nasUser)
 
 		sb.WriteString(fmt.Sprintf(`
 [%s]
@@ -607,6 +595,24 @@ func smbShareParams(m FolderMeta, nasUser string) (string, string) {
 		writeMode = "read only = yes"
 	}
 	return writeMode, writeList
+}
+
+// smbManagedLines 决定托管共享段的写模式/write list/valid users 三行。
+// public 且无按用户元数据 → 开放共享（不设 valid users，所有认证用户可读写）；
+// 其余（含 public 被按用户编辑后）→ valid users + smbShareParams 按用户粒度。
+func smbManagedLines(m FolderMeta, nasUser string) (writeMode, writeList, validLine string) {
+	writeMode = "writable = yes"
+	hasPerUser := strings.TrimSpace(m.ValidUsers) != "" || strings.TrimSpace(m.WriteUsers) != ""
+	if m.Name == "public" && !hasPerUser {
+		return writeMode, "", ""
+	}
+	users := m.ValidUsers
+	if users == "" {
+		users = m.Name
+	}
+	validLine = fmt.Sprintf("   valid users = %s\n", users)
+	writeMode, writeList = smbShareParams(m, nasUser)
+	return writeMode, writeList, validLine
 }
 
 // getNASUser returns the NAS service account name used for force user/group.
