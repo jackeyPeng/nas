@@ -193,7 +193,8 @@ echo "$NAS_USER:$NAS_PASS" | chpasswd
 (echo "$NAS_PASS"; echo "$NAS_PASS") | smbpasswd -a "$NAS_USER" -s
 smbpasswd -e "$NAS_USER"
 systemctl enable smbd nmbd
-systemctl reset-failed smbd nmbd 2>/dev/null; systemctl restart smbd nmbd
+systemctl reset-failed smbd nmbd 2>/dev/null
+timeout 60 systemctl restart smbd nmbd || echo "  ⚠ smbd nmbd 重启失败（结尾注册表会标记，可稍后手动 restart）"
 echo "  ✓ Samba 配置完成"
 
 # ==================== [4/9] 配置 NFS ====================
@@ -231,15 +232,34 @@ else
 EXPEOF
 fi
 
-# 追加 Z1 托管 NFS 导出
+# 追加 Z1 托管 NFS 导出（过滤掉路径已不存在的旧导出：reset/换机后 /data 可能还没建，
+# 留着会让 exportfs -a 非零退出，set -e 下整个安装中断在 [4/9]）
 if [ -n "$Z1_NFS_EXPORTS" ]; then
-    echo "" >> /etc/exports
-    echo "$Z1_NFS_EXPORTS" >> /etc/exports
-    echo "  ✓ 已保留 Z1 托管 NFS 导出"
+    KEPT=""
+    while IFS= read -r line; do
+        case "$line" in
+            "#"*|"") continue ;;
+        esac
+        exp_path=$(echo "$line" | awk '{print $1}')
+        if [ -d "$exp_path" ]; then
+            KEPT="${KEPT}${line}
+"
+        else
+            echo "   跳过不存在的旧 NFS 导出: $exp_path"
+        fi
+    done << EXPEOF
+$Z1_NFS_EXPORTS
+EXPEOF
+    if [ -n "$KEPT" ]; then
+        echo "" >> /etc/exports
+        printf '%s' "$KEPT" >> /etc/exports
+        echo "  ✓ 已保留 Z1 托管 NFS 导出"
+    fi
 fi
-exportfs -a
+exportfs -a 2>/dev/null || echo "  ⚠ exportfs -a 有告警（存储池未建时属正常，建池后面板会重生成导出）"
 systemctl enable nfs-kernel-server
-systemctl reset-failed nfs-kernel-server 2>/dev/null; systemctl restart nfs-kernel-server
+systemctl reset-failed nfs-kernel-server 2>/dev/null
+timeout 60 systemctl restart nfs-kernel-server || echo "  ⚠ nfs-kernel-server 重启超时/失败（结尾注册表会标记，可稍后 systemctl restart）"
 echo "  ✓ NFS 配置完成"
 
 # ==================== [5/9] 配置 FTP ====================
@@ -275,7 +295,8 @@ echo "$NAS_USER" > /etc/vsftpd.userlist
 touch /var/log/vsftpd.log
 chmod 640 /var/log/vsftpd.log
 systemctl enable vsftpd
-systemctl reset-failed vsftpd 2>/dev/null; systemctl restart vsftpd
+systemctl reset-failed vsftpd 2>/dev/null
+timeout 60 systemctl restart vsftpd || echo "  ⚠ vsftpd 重启失败（结尾注册表会标记，可稍后手动 restart）"
 echo "  ✓ FTP 配置完成"
 
 # ==================== [6/9] 配置 WebDAV ====================
@@ -304,7 +325,8 @@ WantedBy=multi-user.target
 WDEOF
 systemctl daemon-reload
 systemctl enable rclone-webdav
-systemctl reset-failed rclone-webdav 2>/dev/null; systemctl restart rclone-webdav
+systemctl reset-failed rclone-webdav 2>/dev/null
+timeout 60 systemctl restart rclone-webdav || echo "  ⚠ rclone-webdav 重启失败（结尾注册表会标记，可稍后手动 restart）"
 echo "  ✓ WebDAV 配置完成"
 
 # ==================== [7/9] 安装 FileBrowser ====================
@@ -388,7 +410,8 @@ WantedBy=multi-user.target
 FBEOF
 systemctl daemon-reload
 systemctl enable filebrowser
-systemctl reset-failed filebrowser 2>/dev/null; systemctl restart filebrowser
+systemctl reset-failed filebrowser 2>/dev/null
+timeout 60 systemctl restart filebrowser || echo "  ⚠ filebrowser 重启失败（结尾注册表会标记，可稍后手动 restart）"
 
 # 验证 FileBrowser 端口确已生效（防 config set 静默失败）
 sleep 3
@@ -448,7 +471,8 @@ S3SVC
 
 systemctl daemon-reload
 systemctl enable rclone-s3
-systemctl reset-failed rclone-s3 2>/dev/null; systemctl restart rclone-s3
+systemctl reset-failed rclone-s3 2>/dev/null
+timeout 60 systemctl restart rclone-s3 || echo "  ⚠ rclone-s3 重启失败（结尾注册表会标记，可稍后手动 restart）"
 echo "  ✓ S3 对象存储配置完成 (rclone serve s3, 端口 9000)"
 echo "    bucket 列表: public 目录自动成为一个 bucket"
 echo "    访问方式: s3cmd --no-ssl --host=NAS_IP:9000 ls s3://public/"
@@ -481,7 +505,8 @@ maxretry = 5
 JEOF
 fi
 systemctl enable fail2ban
-systemctl reset-failed fail2ban 2>/dev/null; systemctl restart fail2ban
+systemctl reset-failed fail2ban 2>/dev/null
+timeout 60 systemctl restart fail2ban || echo "  ⚠ fail2ban 重启失败（结尾注册表会标记，可稍后手动 restart）"
 
 ufw --force reset
 ufw default deny incoming
@@ -537,7 +562,8 @@ if [ -f "$NAS_DIR/configs/nas-panel.service" ]; then
 fi
 systemctl daemon-reload
 systemctl enable nas-panel
-systemctl reset-failed nas-panel 2>/dev/null; systemctl restart nas-panel
+systemctl reset-failed nas-panel 2>/dev/null
+timeout 60 systemctl restart nas-panel || echo "  ⚠ nas-panel 重启失败（结尾注册表会标记，可稍后手动 restart）"
 
 # 配置 sudo 免密权限（nas-panel 需要执行系统管理命令）
 SUDOERS_FILE="/etc/sudoers.d/nas-panel"

@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 主要变化 |
 |------|------|---------|
+| v1.4.0-beta.8 | 2026-09-15 | 亮色主题视觉打磨（字阶/间距/圆角 token 化）+ 品牌图标（logo/favicon/PWA）+ Hardware Profile + SMB 新建共享修复 + 仓库发布红线清洗 |
 | v1.4.0-beta.7 | 2026-09-11 | 商业化 P0 全落地（Import Pool / OTA 签名 / 2FA / 危险操作确认 / 凭证保险箱 / License）+ 健康中心 + rclone 调度器 + SBOM |
 | v1.4.0-beta.6 | 2026-09-08 | 出厂默认账号 fm + 默认密码 `Nas-Test-2026` + 首登强制改密 |
 | v1.4.0-beta.5 | 2026-09-08 | 单存储池 `/data/nas1` + public 公共目录 + 用户主目录（移除 8 个种子目录） |
@@ -16,6 +17,44 @@
 | v1.0.0 | 2026-07-08 | 安全清洗 + 用户名通用化 |
 
 > 逐日详细记录见下方（按日期倒序）。
+
+---
+
+## [2026-09-15] - 亮色主题打磨 + 品牌图标 + Hardware Profile + 发布红线清洗
+
+### 版本 v1.4.0-beta.8
+
+### UI 视觉打磨（亮色主题第二轮）
+
+- 字阶 token 化 432 处：10/11/12→fs-xs、13/13.5→fs-sm、14/15→fs-base、16→fs-md、18→fs-lg、22→fs-xl、28→fs-2xl；离阶特判 20px 标题→fs-lg、24px 大数值→fs-2xl
+- 间距 token 化约 560 组件（padding/gap/margin 归一到 4px 网格，新增 --sp-10/--sp-12）；border-radius token 化 117 处
+- 14 处内联可点卡片挂 .clickable-card：hover 阴影+上浮、focus-visible 聚焦环；修复 :style 动态绑定吞掉内联 cursor:pointer 的既有 bug
+- 浏览器计算样式扫描 11 页：全部字号落在 token 阶梯、0 未解析 CSS 变量
+
+### 品牌图标
+
+- logo.svg / favicon.ico 接入（移入 web/frontend/ 由现有 embed 服务，main.go 零改动）；此前 /favicon.ico 404
+- 侧栏 header 与登录页品牌位 🗄️ emoji 换成 logo.svg；存储池功能图标保留
+- 修登录页双 emoji 既有 bug（字面 emoji + i18n login.title 自带 emoji）
+- PWA 图标 icon-192/512 用 logo 的 Z 方块重生成；sw.js 缓存版本 v1→v2
+
+### 功能与修复
+
+- Hardware Profile 硬件抽象层（/api/hardware/profile，关于页硬件档案卡）
+- 新建共享文件夹 SMB 不可访问修复（P0）+ rclone 重启风暴修复
+- rclone local 类型 remote root 失效修复（改用 alias backend）
+- 扩容/替换盘改下拉框选盘（free_disks），杜绝手误设备路径毁盘
+- 消除跨页重复内容（服务状态/系统信息/服务启停单一权威页）
+- 安装健壮性：setup.sh 在 set -e 下，`exportfs -a` 遇旧 NFS 导出路径不存在会非零退出、整条安装中断在 [4/9]（reset/换机重装的机器必踩）；现保留旧导出前过滤不存在路径、exportfs 非致命，且 8 处服务 restart 加 timeout+非致命保护，单服务失败不再中断安装
+
+### 发布安全
+
+- 清除仓库内真实内网 IP（CHANGELOG / docs/COLLAB.md），产品文件与 docs 红线 grep 复跑通过
+- 补全系统组件许可证（LVM2/mdadm/xfsprogs/parted）+ SBOM 重新生成
+
+### 验收
+
+- 两台测试机 factory reset 后完整验收：全新安装 9 服务 active + 注册表 46/46、建池、SMB 跨用户隔离、NFS 只导 public、WebDAV/S3/FileBrowser root=public、vault roundtrip、健康中心、危险操作拒绝、Import Pool 换机恢复
 
 ---
 
