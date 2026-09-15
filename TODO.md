@@ -1,8 +1,8 @@
 # NAS 项目优化路线图
 
-> 最后更新: 2026-09-10
+> 最后更新: 2026-09-15
 >
-> 商业化 P0 已全部完成（7/7）；原 33 项 TODO 完成 20/33。
+> 商业化 P0 已全部完成（7/7）；原 33 项 TODO 完成 21/33。
 
 ## 🎯 商业化优先级（2026-09-09 评审后修正 · 2026-09-10 P0 全部落地）
 
@@ -741,29 +741,25 @@ NAS 里的视频/音乐/照片直接在浏览器播放，带媒体库海报墙�
 ---
 
 #### 30. 用户与目录权限模型统一（按用户 × 按文件夹 × 按协议）
-**状态**: ⏳ 待规划  
+**状态**: ✅ SMB 核心已落地（2026-09-04 commit 0fcb362 / a84ff76 / 19dff10；2026-09-15 端到端复测通过）  
 **优先级**: 中  
 **描述**:  
-当前权限模型是「文件夹级」：一个共享文件夹有一个 `valid_users` 白名单 + 一个 `permission`（readwrite/readonly/noaccess），Samba 的 `read only` 是共享级开关，无法表达「用户 A 读写、用户 B 只读」这种按用户粒度。权限矩阵（用户管理 → 权限矩阵）UI 提供了按用户×按文件夹的三级选择，但后端只能把「只读」落地成整个共享的 `read only = yes`，一个用户设只读会把整组人变成只读。
+原缺陷：权限是「文件夹级」，`read only` 是共享级开关，一个用户设只读会把整组变只读，权限矩阵 UI 的按用户三级选择无法真实落地。
 
-**现状（各协议）**:
-- **SMB**：唯一有按用户白名单的协议。`valid users` 控制谁能连，`read only` 控制整组读写，缺按用户读写分离（需 Samba `read list` / `write list`）。
-- **NFS**：网段级导出，无按用户控制（协议本质）。
-- **FTP**：vsftpd chroot 到 `/data/private/$USER`，共享文件夹根本不可达；要按用户+按目录需换 proftpd（mod_auth_file）或上虚拟用户（但 vsftpd 单 root 限制仍在）。
-- **WebDAV / S3**：`rclone serve webdav/s3 /data` 单一全局凭据，不认每文件夹权限；需每文件夹独立实例（依赖 #29）或换服务。
+**已完成（SMB 按用户读写粒度）**:
+- ✅ `folders` 表加 `write_users` 列（幂等迁移，`PRAGMA table_info` 检测 + `ALTER TABLE`）
+- ✅ 最小模型：`read only = yes`（默认）+ `write list`（写者覆盖只读）——单字段，不引入 read/write 双列表漂移。判定自洽：write_users 内→读写；valid_users 内但不在 write_users→只读；不在 valid_users→禁止
+- ✅ `smbShareParams()` 纯函数生成；write_users 为空时兼容旧文件夹级 permission（旧数据行为不变，直到首次按用户编辑）
+- ✅ `applyPermissionChange()`：deny 同时清 valid_users + write_users；不变式 write_users ⊆ valid_users
+- ✅ `getUserFolderPermission()` 解析 write list（优先级覆盖 read only），矩阵回显正确
+- ✅ 协议 tag 诚实标注（commit 19dff10）：SMB=按用户(蓝)、NFS=网段级(灰)、DAV/S3=全局(黄)，FTP 从共享文件夹协议开关移除
+- ✅ 单元测试（`config_sync_test.go` 4 场景 + `create_test.go` 列表辅助）
+- ✅ **2026-09-15 .57 端到端复测**：fmnas 上 alice=readwrite/bob=readonly/charlie=noaccess，smbclient 实测 alice mkdir 成功、bob mkdir 被 NT_STATUS_ACCESS_DENIED 拒（但 ls 正常）、charlie tree connect failed；folders.db / smb.conf / 矩阵 API 三处一致。测试数据已还原
 
-**目标模型**:
-- 元数据从「文件夹级 permission」扩展为「用户×文件夹 权限矩阵」存 SQLite
-- SMB 用 `read list`/`write list`（或 ACL）落地按用户读写
-- FTP/WebDAV/S3 按各自可达性实现按用户/按文件夹授权（或明确标注为「全局服务」不夸大覆盖）
-
-**待办**:
-- [ ] 元数据 schema 扩展：用户×文件夹 权限表
-- [ ] SMB `read list`/`write list` 生成
-- [ ] 权限矩阵前端与后端模型对齐（去掉「只读」被整组化的误导）
-- [ ] FTP 方案选型（proftpd mod_auth_file vs 虚拟用户）
-- [ ] WebDAV/S3 按文件夹实例（依赖 #29）
-- [ ] 协议徽标按实际可达性显示，不再以「服务在跑」冒充「该文件夹已按用户授权」
+**剩余（明确不做 / 外部依赖，详见 docs/plans/2026-09-04-permission-model-smb-per-user.md §八）**:
+- NFS 按用户（协议不支持，网段级是上限）
+- FTP 共享文件夹矩阵（vsftpd 单 root chroot 架构限制；换 proftpd 是独立项目）
+- WebDAV/S3 按文件夹隔离（需多实例，依赖 #29）
 
 ---
 
@@ -837,11 +833,11 @@ NAS 里的视频/音乐/照片直接在浏览器播放，带媒体库海报墙�
 | 类别 | 总数 | 已完成 | 进行中 | 待办 |
 |------|------|--------|--------|------|
 | 高优先级 | 3 | 3 | 0 | 0 |
-| 中优先级 | 16 | 11 | 1 | 4 |
+| 中优先级 | 16 | 12 | 1 | 3 |
 | 低优先级 | 14 | 6 | 0 | 8 |
-| **合计** | **33** | **20** | **1** | **12** |
+| **合计** | **33** | **21** | **1** | **11** |
 
-**完成率**: 60.6%（20/33）
+**完成率**: 63.6%（21/33）
 
 > 注：#10 HTTPS 证书配置已完成；#13 多语言 i18n 已完成（970 keys 全站）；#28 系统定期诊断已完成；#11 官网已部署上线；#26 存储四层模型重构已完成；#27 一键安装流程已完成；#12 移动设备支持 PWA + 响应式已落地（进行中）；#23 BT下载、#24 多媒体播放规划为插件（依赖 #21 插件系统）。
 
