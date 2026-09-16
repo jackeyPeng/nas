@@ -234,10 +234,77 @@ func ensureFolderUser(name string) {
 	common.SudoExec("useradd", "-M", "-s", "/usr/sbin/nologin", "-g", name, name)
 }
 
-// executeUpdateFolder updates permissions
+// executeUpdateFolder updates permissions.
+// 文件夹级更新路径（存储页对话框）不携带 write_users：必须从 DB 读现有
+// 按用户元数据并合并保留，否则会把矩阵配置的 write_users 抹掉，
+// 回退文件夹级 writable=yes，只读用户静默获得写权限。
 func executeUpdateFolder(op PendingOp) error {
-	SyncFolderMeta(op.FolderName, op.FolderPath, op.Pool, op.Permission, op.ValidUsers, "", op.SambaShare, op.NFSExport, op.RecycleBin, op.QuotaGB)
+	perm, valid, write := mergeFolderUpdate(findFolderMeta(op.FolderPath, op.FolderName), op)
+	SyncFolderMeta(op.FolderName, op.FolderPath, op.Pool, perm, valid, write, op.SambaShare, op.NFSExport, op.RecycleBin, op.QuotaGB)
 	return nil
+}
+
+// findFolderMeta 按 path（事实源主键）优先、name 兜底查找现有元数据。
+func findFolderMeta(path, name string) *FolderMeta {
+	metas := GetAllFolderMeta()
+	for i := range metas {
+		if path != "" && metas[i].Path == path {
+			return &metas[i]
+		}
+	}
+	for i := range metas {
+		if name != "" && metas[i].Name == name {
+			return &metas[i]
+		}
+	}
+	return nil
+}
+
+// mergeFolderUpdate 合并文件夹级更新与现有按用户元数据。纯函数，便于单测。
+// 规则：
+//   - op.ValidUsers 空 → 保留现有 valid_users（对话框未编辑用户列表时不清空）
+//   - write_users 始终继承现有值，并裁剪保持 write ⊆ valid 不变式
+//   - valid 为空时 write 一并清空（模型自洽：无 valid 即开放共享或禁用）
+//   - write 非空且 perm != noaccess → perm 反向同步为 readwrite（与矩阵路径一致）
+func mergeFolderUpdate(existing *FolderMeta, op PendingOp) (perm, valid, write string) {
+	perm = op.Permission
+	valid = strings.TrimSpace(op.ValidUsers)
+	if existing == nil {
+		return perm, valid, ""
+	}
+	if valid == "" {
+		valid = strings.TrimSpace(existing.ValidUsers)
+	}
+	write = strings.TrimSpace(existing.WriteUsers)
+	if valid == "" {
+		return perm, valid, ""
+	}
+	write = intersectUserList(write, valid)
+	if write != "" && perm != "noaccess" {
+		perm = "readwrite"
+	}
+	return perm, valid, write
+}
+
+// intersectUserList 返回 keep 中仍存在于 allowed 的用户（保序、去重）。
+func intersectUserList(keep, allowed string) string {
+	allowSet := make(map[string]bool)
+	for _, u := range strings.Split(allowed, ",") {
+		if u = strings.TrimSpace(u); u != "" {
+			allowSet[u] = true
+		}
+	}
+	seen := make(map[string]bool)
+	var out []string
+	for _, u := range strings.Split(keep, ",") {
+		u = strings.TrimSpace(u)
+		if u == "" || seen[u] || !allowSet[u] {
+			continue
+		}
+		seen[u] = true
+		out = append(out, u)
+	}
+	return strings.Join(out, ",")
 }
 
 // executeDeleteFolder deletes a folder
