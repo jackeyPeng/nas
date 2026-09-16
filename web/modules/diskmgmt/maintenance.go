@@ -75,9 +75,9 @@ func handleReplaceDisk(w http.ResponseWriter, r *http.Request) {
 	steps = append(steps, fmt.Sprintf("添加 %s 到 %s", newDevice, mdDevice))
 
 	common.JSONResponse(w, map[string]interface{}{
-		"message":  "替换盘操作完成",
-		"steps":    steps,
-		"rebuild":  rebuildInfo,
+		"message": "替换盘操作完成",
+		"steps":   steps,
+		"rebuild": rebuildInfo,
 	})
 }
 
@@ -235,6 +235,17 @@ func handleSMARTScan(w http.ResponseWriter, r *http.Request) {
 	testType := r.FormValue("type")
 	if testType == "" {
 		testType = "short" // short or long
+	}
+	// 白名单校验：testType 只允许 short/long，device 若非空必须过块设备白名单（加固轮1 #1）
+	if testType != "short" && testType != "long" {
+		http.Error(w, `{"error":"type 只允许 short 或 long"}`, http.StatusBadRequest)
+		return
+	}
+	if device != "" {
+		if err := common.ValidateBlockDevice(device); err != nil {
+			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
+			return
+		}
 	}
 	confirm := r.FormValue("confirm")
 	if confirm != "yes" {

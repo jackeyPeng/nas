@@ -12,24 +12,24 @@ import (
 
 // PoolStatus represents storage pool overview
 type PoolStatus struct {
-	VGName    string         `json:"vg_name"`
-	VGSize    string         `json:"vg_size"`
-	VGFree    string         `json:"vg_free"`
-	TotalGB   string         `json:"total_gb"`
-	UsedGB    string         `json:"used_gb"`
-	FreeGB    string         `json:"free_gb"`
-	UsePercent string        `json:"use_percent"`
-	PVs       []PVInfo       `json:"pvs"`
-	LVs       []LVInfo       `json:"lvs"`
-	Exists    bool           `json:"exists"`
+	VGName     string   `json:"vg_name"`
+	VGSize     string   `json:"vg_size"`
+	VGFree     string   `json:"vg_free"`
+	TotalGB    string   `json:"total_gb"`
+	UsedGB     string   `json:"used_gb"`
+	FreeGB     string   `json:"free_gb"`
+	UsePercent string   `json:"use_percent"`
+	PVs        []PVInfo `json:"pvs"`
+	LVs        []LVInfo `json:"lvs"`
+	Exists     bool     `json:"exists"`
 }
 
 type PVInfo struct {
-	Name   string `json:"name"`
-	VG     string `json:"vg"`
-	Size   string `json:"size"`
-	Free   string `json:"free"`
-	Disk   string `json:"disk"`
+	Name string `json:"name"`
+	VG   string `json:"vg"`
+	Size string `json:"size"`
+	Free string `json:"free"`
+	Disk string `json:"disk"`
 }
 
 type LVInfo struct {
@@ -69,10 +69,18 @@ func handlePoolStatus(w http.ResponseWriter, r *http.Request) {
 		}
 		fields := strings.Fields(line)
 		pv := PVInfo{}
-		if len(fields) >= 1 { pv.Name = fields[0] }
-		if len(fields) >= 2 { pv.VG = fields[1] }
-		if len(fields) >= 3 { pv.Size = fields[2] }
-		if len(fields) >= 4 { pv.Free = fields[3] }
+		if len(fields) >= 1 {
+			pv.Name = fields[0]
+		}
+		if len(fields) >= 2 {
+			pv.VG = fields[1]
+		}
+		if len(fields) >= 3 {
+			pv.Size = fields[2]
+		}
+		if len(fields) >= 4 {
+			pv.Free = fields[3]
+		}
 		// Extract disk name from PV path
 		if strings.HasPrefix(pv.Name, "/dev/") {
 			disk := pv.Name[5:]
@@ -92,16 +100,28 @@ func handlePoolStatus(w http.ResponseWriter, r *http.Request) {
 		}
 		fields := strings.Fields(line)
 		lv := LVInfo{}
-		if len(fields) >= 1 { lv.Name = fields[0] }
-		if len(fields) >= 2 { lv.VG = fields[1] }
-		if len(fields) >= 3 { lv.Size = fields[2] }
-		if len(fields) >= 4 { lv.Path = fields[3] }
+		if len(fields) >= 1 {
+			lv.Name = fields[0]
+		}
+		if len(fields) >= 2 {
+			lv.VG = fields[1]
+		}
+		if len(fields) >= 3 {
+			lv.Size = fields[2]
+		}
+		if len(fields) >= 4 {
+			lv.Path = fields[3]
+		}
 		// Get mount and fstype from findmnt
 		if lv.Path != "" {
 			mntOut, _ := common.ExecOutput("findmnt", "-n", "-o", "TARGET,FSTYPE", "--source", lv.Path)
 			mntFields := strings.Fields(mntOut)
-			if len(mntFields) >= 1 { lv.Mount = mntFields[0] }
-			if len(mntFields) >= 2 { lv.FSType = mntFields[1] }
+			if len(mntFields) >= 1 {
+				lv.Mount = mntFields[0]
+			}
+			if len(mntFields) >= 2 {
+				lv.FSType = mntFields[1]
+			}
 		}
 		pool.LVs = append(pool.LVs, lv)
 	}
@@ -131,18 +151,41 @@ func handlePoolCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	vgName := r.FormValue("vg_name")
-	if vgName == "" { vgName = "vg_nas" }
+	if vgName == "" {
+		vgName = "vg_nas"
+	}
 	lvName := r.FormValue("lv_name")
-	if lvName == "" { lvName = "data" }
+	if lvName == "" {
+		lvName = "data"
+	}
 	mountPoint := r.FormValue("mountpoint")
-	if mountPoint == "" { mountPoint = "/data" }
+	if mountPoint == "" {
+		mountPoint = "/data"
+	}
 	fstype := r.FormValue("fstype")
-	if fstype == "" { fstype = "ext4" }
+	if fstype == "" {
+		fstype = "ext4"
+	}
 	devicesStr := r.FormValue("devices")
 	confirm := r.FormValue("confirm")
 
 	if devicesStr == "" {
 		http.Error(w, `{"error":"请选择至少一块磁盘"}`, http.StatusBadRequest)
+		return
+	}
+	// 白名单校验：设备列表逐个过 /dev/ 块设备白名单（加固轮1 #1）
+	devices, err := common.ValidateBlockDeviceList(devicesStr)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
+		return
+	}
+	// VG/LV 名只允许 LVM 命名字符，防止拼进 lvPath/命令
+	if vgName != "" && !common.IsValidLVMName(vgName) {
+		http.Error(w, `{"error":"非法 VG 名称"}`, http.StatusBadRequest)
+		return
+	}
+	if lvName != "" && !common.IsValidLVMName(lvName) {
+		http.Error(w, `{"error":"非法 LV 名称"}`, http.StatusBadRequest)
 		return
 	}
 	if confirm != "yes" {
@@ -154,7 +197,6 @@ func handlePoolCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	devices := strings.Split(devicesStr, ",")
 	var steps []string
 
 	// 1. pvcreate
@@ -193,7 +235,9 @@ func handlePoolCreate(w http.ResponseWriter, r *http.Request) {
 	// 4. format
 	mkfsCmd := "mkfs." + fstype
 	mkfsArgs := []string{"-F"}
-	if fstype == "xfs" { mkfsArgs = []string{"-f"} }
+	if fstype == "xfs" {
+		mkfsArgs = []string{"-f"}
+	}
 	mkfsArgs = append(mkfsArgs, lvPath)
 	out, err = common.SudoExec(mkfsCmd, mkfsArgs...)
 	if err != nil {
@@ -219,7 +263,9 @@ func handlePoolCreate(w http.ResponseWriter, r *http.Request) {
 		fstabLine := fmt.Sprintf("UUID=%s %s %s defaults 0 2", uuid, mountPoint, fstype)
 		fstabData, _ := os.ReadFile("/etc/fstab")
 		content := string(fstabData)
-		if !strings.HasSuffix(content, "\n") { content += "\n" }
+		if !strings.HasSuffix(content, "\n") {
+			content += "\n"
+		}
 		content += fstabLine + "\n"
 		common.SafeWriteFile("/etc/fstab", content)
 		steps = append(steps, "写入 fstab (UUID="+uuid+")")
@@ -227,17 +273,19 @@ func handlePoolCreate(w http.ResponseWriter, r *http.Request) {
 
 	// 8. chown
 	nasUser := common.GetNASUser()
-	if nasUser == "" { nasUser = "root" }
+	if nasUser == "" {
+		nasUser = "root"
+	}
 	common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountPoint)
 	steps = append(steps, "设置权限 "+nasUser)
 
 	common.JSONResponse(w, map[string]interface{}{
-		"message": "存储池创建完成",
-		"steps":   steps,
-		"vg_name": vgName,
-		"lv_name": lvName,
+		"message":    "存储池创建完成",
+		"steps":      steps,
+		"vg_name":    vgName,
+		"lv_name":    lvName,
 		"mountpoint": mountPoint,
-		"total":   "已合并 " + fmt.Sprintf("%d", len(devices)) + " 块盘",
+		"total":      "已合并 " + fmt.Sprintf("%d", len(devices)) + " 块盘",
 	})
 }
 
@@ -252,14 +300,31 @@ func handlePoolExtend(w http.ResponseWriter, r *http.Request) {
 	defer diskOpMutex.Unlock()
 
 	vgName := r.FormValue("vg_name")
-	if vgName == "" { vgName = "vg_nas" }
+	if vgName == "" {
+		vgName = "vg_nas"
+	}
 	device := r.FormValue("device")
 	lvName := r.FormValue("lv_name")
-	if lvName == "" { lvName = "data" }
+	if lvName == "" {
+		lvName = "data"
+	}
 	confirm := r.FormValue("confirm")
 
 	if device == "" {
 		http.Error(w, `{"error":"请选择磁盘"}`, http.StatusBadRequest)
+		return
+	}
+	// 白名单校验（加固轮1 #1）
+	if err := common.ValidateBlockDevice(device); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
+		return
+	}
+	if vgName != "" && !common.IsValidLVMName(vgName) {
+		http.Error(w, `{"error":"非法 VG 名称"}`, http.StatusBadRequest)
+		return
+	}
+	if lvName != "" && !common.IsValidLVMName(lvName) {
+		http.Error(w, `{"error":"非法 LV 名称"}`, http.StatusBadRequest)
 		return
 	}
 	if confirm != "yes" {

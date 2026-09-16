@@ -503,7 +503,11 @@
     "change_pwd_title": "修改密码 -",
     "new_password_12": "新密码（至少12位）",
     "recent_login": "最近 50 条登录记录",
-    "matrix_header": "用户 \\ 资源"
+    "matrix_header": "用户 \\ 资源",
+    "quota_unsupported": "配额不可用",
+    "quota_query_error": "配额查询失败",
+    "quota_no_dir": "无私有目录",
+    "quota_unsupported_hint": "文件系统不支持 project quota（需 xfs + prjquota），配额不会生效"
   },
   "firewall": {
     "title": "防火墙",

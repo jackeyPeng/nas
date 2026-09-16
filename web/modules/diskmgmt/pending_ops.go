@@ -313,9 +313,12 @@ func executeDeleteFolder(op PendingOp) error {
 	if path == "" {
 		return fmt.Errorf("路径为空")
 	}
-	if !strings.HasPrefix(path, "/data/") {
-		return fmt.Errorf("只允许删除 /data/ 下的文件夹")
+	// 防御纵深：即使入队前已校验，执行 rm -rf 前再次 Clean + 白名单（加固轮1 #1）
+	cleaned, err := common.ValidateDataPath(path, false)
+	if err != nil {
+		return err
 	}
+	path = cleaned
 
 	// Remove Samba share
 	smbConf, _ := common.SudoOutput("cat", "/etc/samba/smb.conf")

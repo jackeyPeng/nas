@@ -425,13 +425,23 @@
                                     </td>
                                     <td style="font-family:monospace;font-size:var(--fs-xs)" x-text="user.private_dir || '-'"></td>
                                     <td>
-                                        <template x-if="user.quota_gb > 0">
-                                            <span :style="parseFloat(user.quota_used) / user.quota_gb > 0.8 ? 'color: var(--warn);font-weight:600' : 'color: var(--text-secondary)'">
-                                                <span x-text="user.quota_used"></span> / <span x-text="user.quota_gb + 'G'"></span>
-                                            </span>
+                                        <template x-if="user.quota_status === 'unsupported'">
+                                            <span style="color: var(--warn);font-size:var(--fs-xs)" :title="user.quota_reason || $t('users.quota_unsupported_hint')" x-text="$t('users.quota_unsupported')"></span>
                                         </template>
-                                        <template x-if="!user.quota_gb">
-                                            <span style="color: var(--text-muted)" x-text="$t('users.unlimited')"></span>
+                                        <template x-if="user.quota_status === 'error'">
+                                            <span style="color: var(--danger);font-size:var(--fs-xs)" :title="user.quota_reason" x-text="$t('users.quota_query_error')"></span>
+                                        </template>
+                                        <template x-if="user.quota_status !== 'unsupported' && user.quota_status !== 'error'">
+                                            <span>
+                                                <template x-if="user.quota_gb > 0">
+                                                    <span :style="parseFloat(user.quota_used) / user.quota_gb > 0.8 ? 'color: var(--warn);font-weight:600' : 'color: var(--text-secondary)'">
+                                                        <span x-text="user.quota_used"></span> / <span x-text="user.quota_gb + 'G'"></span>
+                                                    </span>
+                                                </template>
+                                                <template x-if="!user.quota_gb">
+                                                    <span style="color: var(--text-muted)" x-text="$t('users.unlimited')"></span>
+                                                </template>
+                                            </span>
                                         </template>
                                     </td>
                                     <td x-text="$t('common.share_unit', [user.share_count])"></td>

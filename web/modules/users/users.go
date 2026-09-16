@@ -11,15 +11,17 @@ import (
 
 // NASUser 用户完整信息（列表 API 返回）
 type NASUser struct {
-	Username   string            `json:"username"`
-	Services   map[string]bool   `json:"services"`    // samba/ftp/webdav/nfs
-	PrivateDir string            `json:"private_dir"` // /data/nas1/xxx（用户主目录）
-	PrivateUsed string           `json:"private_used"` // 已用容量，如 "1.2G"
-	QuotaGB    int               `json:"quota_gb"`    // 私有目录配额，0=无限制
-	QuotaUsed  string            `json:"quota_used"`  // 配额已用
-	ShareCount int               `json:"share_count"` // 有权限的共享文件夹数
-	Groups     []string          `json:"groups"`      // 所属组
-	CreatedAt  string            `json:"created_at"`  // 创建时间（私有目录 ctime）
+	Username    string          `json:"username"`
+	Services    map[string]bool `json:"services"`               // samba/ftp/webdav/nfs
+	PrivateDir  string          `json:"private_dir"`            // /data/nas1/xxx（用户主目录）
+	PrivateUsed string          `json:"private_used"`           // 已用容量，如 "1.2G"
+	QuotaGB     int             `json:"quota_gb"`               // 私有目录配额，0=无限制
+	QuotaUsed   string          `json:"quota_used"`             // 配额已用
+	QuotaStatus string          `json:"quota_status,omitempty"` // ok/unsupported/error/none（加固轮1 #4）
+	QuotaReason string          `json:"quota_reason,omitempty"` // 非 ok 时的原因
+	ShareCount  int             `json:"share_count"`            // 有权限的共享文件夹数
+	Groups      []string        `json:"groups"`                 // 所属组
+	CreatedAt   string          `json:"created_at"`             // 创建时间（私有目录 ctime）
 }
 
 // getUsers 返回增强版用户列表：系统用户 ∩ NAS 服务用户
@@ -104,8 +106,10 @@ func getUsers() []NASUser {
 			u.CreatedAt = dirCtime(privDir)
 		}
 		// 配额（查私有目录的 project quota）
-		usedGB, limitGB := privateDirQuota(name)
+		usedGB, limitGB, qStatus, qReason := privateDirQuota(name)
 		u.QuotaGB = limitGB
+		u.QuotaStatus = qStatus
+		u.QuotaReason = qReason
 		if limitGB > 0 {
 			u.QuotaUsed = fmt.Sprintf("%.1fG", usedGB)
 		}
@@ -270,11 +274,13 @@ func handleUserAction(w http.ResponseWriter, r *http.Request) {
 	// GET/PUT /api/users/{name}/quota — 私有目录配额
 	if len(parts) >= 2 && parts[1] == "quota" {
 		if r.Method == http.MethodGet {
-			usedGB, limitGB := privateDirQuota(username)
+			usedGB, limitGB, qStatus, qReason := privateDirQuota(username)
 			common.JSONResponse(w, map[string]interface{}{
-				"username": username,
-				"used_gb":  usedGB,
-				"limit_gb": limitGB,
+				"username":     username,
+				"used_gb":      usedGB,
+				"limit_gb":     limitGB,
+				"quota_status": qStatus,
+				"reason":       qReason,
 			})
 			return
 		}

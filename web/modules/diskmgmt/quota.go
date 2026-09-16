@@ -66,6 +66,11 @@ func setFolderQuota(mountPoint, folderPath, poolName, folderName string, quotaGB
 		return nil
 	}
 
+	// 能力探测：文件系统不支持 project quota 时明确报错，不静默失效（加固轮1 #4）
+	if st := common.MountQuotaSupport(mountPoint); !st.Supported {
+		return fmt.Errorf("配额不可用: %s", st.Reason)
+	}
+
 	// Find or create project ID
 	projID := findProjectID(projName)
 	if projID < 0 {
@@ -216,20 +221,29 @@ func handleFolderQuota(w http.ResponseWriter, r *http.Request) {
 
 		usedGB, limitGB, err := getFolderQuota(mountPoint, poolName, folderName)
 		if err != nil {
+			// 查询失败不再伪装成"无限制"（加固轮1 #4）
+			if st := common.MountQuotaSupport(mountPoint); !st.Supported {
+				common.JSONResponse(w, map[string]interface{}{
+					"folder":       folderName,
+					"quota_status": "unsupported",
+					"reason":       st.Reason,
+				})
+				return
+			}
 			common.JSONResponse(w, map[string]interface{}{
-				"folder":    folderName,
-				"used_gb":   0,
-				"limit_gb":  0,
-				"unlimited": true,
+				"folder":       folderName,
+				"quota_status": "error",
+				"reason":       err.Error(),
 			})
 			return
 		}
 
 		common.JSONResponse(w, map[string]interface{}{
-			"folder":    folderName,
-			"used_gb":   fmt.Sprintf("%.1f", usedGB),
-			"limit_gb":  limitGB,
-			"unlimited": limitGB == 0,
+			"folder":       folderName,
+			"used_gb":      fmt.Sprintf("%.1f", usedGB),
+			"limit_gb":     limitGB,
+			"unlimited":    limitGB == 0,
+			"quota_status": "ok",
 		})
 		return
 	}

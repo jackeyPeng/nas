@@ -242,10 +242,13 @@ func handleDeleteFolder(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"path 必填"}`, http.StatusBadRequest)
 		return
 	}
-	if !strings.HasPrefix(path, "/data/") {
-		http.Error(w, `{"error":"只允许删除 /data/ 下的文件夹"}`, http.StatusBadRequest)
+	// Clean 后仍须在 /data/ 下（加固轮1 #1，阻断 /data/../etc 穿越）
+	cleanedPath, err := common.ValidateDataPath(path, false)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
 		return
 	}
+	path = cleanedPath
 	if confirm != "yes" {
 		http.Error(w, `{"error":"请加 confirm=yes 确认删除"}`, http.StatusBadRequest)
 		return
@@ -275,6 +278,13 @@ func handleFolderPermission(w http.ResponseWriter, r *http.Request) {
 	if path == "" {
 		http.Error(w, `{"error":"path 必填"}`, http.StatusBadRequest)
 		return
+	}
+	// Clean 后仍须在 /data/ 下（加固轮1 #1）
+	if cleanedPath, err := common.ValidateDataPath(path, false); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
+		return
+	} else {
+		path = cleanedPath
 	}
 	if permission == "" {
 		permission = "readwrite"

@@ -14,15 +14,15 @@ import (
 
 // DiskStatus represents a single disk device
 type DiskStatus struct {
-	Device     string       `json:"device"`         // /dev/sdb
-	Name       string       `json:"name"`           // sdb
-	Size       string       `json:"size"`           // 50G
-	Type       string       `json:"type"`           // system, data, unused, pool_member
-	FSType     string       `json:"fstype"`         // xfs, ext4, btrfs, ""
+	Device     string       `json:"device"` // /dev/sdb
+	Name       string       `json:"name"`   // sdb
+	Size       string       `json:"size"`   // 50G
+	Type       string       `json:"type"`   // system, data, unused, pool_member
+	FSType     string       `json:"fstype"` // xfs, ext4, btrfs, ""
 	Mountpoint string       `json:"mountpoint"`
 	Model      string       `json:"model"`
-	Interface  string       `json:"interface"`     // SATA, NVMe, VirtIO, USB
-	Rotational string       `json:"rotational"`    // 0=SSD, 1=HDD
+	Interface  string       `json:"interface"`       // SATA, NVMe, VirtIO, USB
+	Rotational string       `json:"rotational"`      // 0=SSD, 1=HDD
 	Temp       string       `json:"temp,omitempty"`  // 35°C
 	Smart      string       `json:"smart,omitempty"` // PASSED/FAILED/unknown
 	Serial     string       `json:"serial,omitempty"`
@@ -303,16 +303,23 @@ func handleQuickSetup(w http.ResponseWriter, r *http.Request) {
 	if fstype == "" {
 		fstype = "xfs"
 	}
+	// 白名单校验：设备 + 挂载点（加固轮1 #1）
+	if err := common.ValidateBlockDevice(device); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error": %q}`, err.Error()), http.StatusBadRequest)
+		return
+	}
+	if cleaned, err := common.ValidateDataPath(mountpoint, true); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error": %q}`, err.Error()), http.StatusBadRequest)
+		return
+	} else {
+		mountpoint = cleaned
+	}
 	if confirm != "yes" {
 		http.Error(w, `{"error": "请加 confirm=yes 确认操作"}`, http.StatusBadRequest)
 		return
 	}
 	if isSystemDisk(device) {
 		http.Error(w, `{"error": "不允许操作系统盘"}`, http.StatusBadRequest)
-		return
-	}
-	if !strings.HasPrefix(mountpoint, "/data/") && mountpoint != "/data" {
-		http.Error(w, `{"error": "挂载点必须在 /data/ 下"}`, http.StatusBadRequest)
 		return
 	}
 
@@ -374,12 +381,12 @@ func handleQuickSetup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	common.JSONResponse(w, map[string]interface{}{
-		"message":   "快速配置完成",
-		"steps":     steps,
-		"device":    device,
+		"message":    "快速配置完成",
+		"steps":      steps,
+		"device":     device,
 		"mountpoint": mountpoint,
-		"fstype":    fstype,
-		"uuid":      uuid,
+		"fstype":     fstype,
+		"uuid":       uuid,
 	})
 }
 
