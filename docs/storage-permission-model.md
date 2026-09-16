@@ -90,7 +90,7 @@ UI tag 诚实标注：SMB 蓝（按用户）、NFS 灰（网段）、DAV/S3 黄�
 
 ## 八、已知问题（待修，按风险排序）
 
-1. **P1 — 文件夹权限对话框会清空 write_users**：`handleFolderPermission` / `executeUpdateFolder` 调 `SyncFolderMeta(..., writeUsers="")`。已按用户配置的文件夹，从存储页改权限/回收站会把 write_users 抹掉 → 回退文件夹级 readwrite → **只读用户静默获得写权限**。矩阵路径（setSharePermission）正确保留，两条路径不一致。
+1. ~~**P1 — 文件夹权限对话框会清空 write_users**~~ ✅ 已修（2026-09-15 commit 6ddb75b）：`executeUpdateFolder` 先读 DB 现有元数据，`mergeFolderUpdate` 合并保留 write_users（裁剪保持 write⊆valid），op.ValidUsers 空时继承现有值。
 2. **P1 — 全局协议旁路 SMB 权限**：任何拿到 WebDAV/S3/FTP 凭据的用户可见/可写整个 /data（含他人 home 目录、noaccess 文件夹）。UI tag 已诚实标注，但产品文档未强调"开全局协议 ≈ 放弃文件夹权限"。
 3. **P2 — NFS `no_root_squash`**：局域网内任意 root 客户端对 rw 导出拥有 root 权限。家用场景或可接受，应作为显式选项而非默认。
 4. **P2 — 矩阵回显解析 smb.conf 而非事实源**：smb.conf 是生成物，SyncAllConfigs 失败/滞后时矩阵显示与 DB 漂移（现有 configCheck 能发现部分，但不阻断展示）。
