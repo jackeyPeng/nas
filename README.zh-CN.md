@@ -128,17 +128,17 @@ nas/
 ### 一行命令安装（推荐）
 
 ```bash
-# 交互式（提示输入密码）
-curl -fsSL https://get.z1.sale/install.sh | bash
+# 默认安装（未设置 NAS_PASS 时使用出厂默认密码，首次登录面板强制修改）
+curl -fsSL https://get.z1.sale/install.sh | sudo bash
 
-# 或通过环境变量传入密码（无人值守/CI）
-NAS_PASS=mySecurePass123 curl -fsSL https://get.z1.sale/install.sh | bash
+# 自定义密码安装（注意: sudo 会清空环境变量，必须用 sudo env 透传）
+curl -fsSL https://get.z1.sale/install.sh | sudo env NAS_PASS=mySecurePass123 bash
 ```
 
 安装脚本会自动：
 1. 检测网络（国外用 GitHub，国内用 Gitee）
 2. 克隆仓库（没装 git 时自动下载 tar 包）
-3. 交互式输入 NAS 密码（至少 12 位，不回显）
+3. 设置 NAS 密码（未提供 NAS_PASS 时使用出厂默认密码 Nas-Test-2026，首次登录面板后强制修改）
 4. 自动生成 `.env`
 5. 执行 `setup.sh`（10 步部署）
 6. 完成后显示访问地址
