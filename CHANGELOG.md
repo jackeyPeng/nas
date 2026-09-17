@@ -4,7 +4,7 @@
 
 | 版本 | 日期 | 主要变化 |
 |------|------|---------|
-| v1.4.0-beta.8 | 2026-09-15 | 亮色主题视觉打磨（字阶/间距/圆角 token 化）+ 品牌图标（logo/favicon/PWA）+ Hardware Profile + SMB 新建共享修复 + 仓库发布红线清洗 |
+| v1.4.0-beta.8 | 2026-09-15 | 权限模型系列修复 + 高风险操作白名单校验 + 安装免交互默认密码（curl\|bash 死循环修复）+ 亮色主题打磨 + 品牌图标 + Hardware Profile + 发布红线清洗 |
 | v1.4.0-beta.7 | 2026-09-11 | 商业化 P0 全落地（Import Pool / OTA 签名 / 2FA / 危险操作确认 / 凭证保险箱 / License）+ 健康中心 + rclone 调度器 + SBOM |
 | v1.4.0-beta.6 | 2026-09-08 | 出厂默认账号 fm + 默认密码 `Nas-Test-2026` + 首登强制改密 |
 | v1.4.0-beta.5 | 2026-09-08 | 单存储池 `/data/nas1` + public 公共目录 + 用户主目录（移除 8 个种子目录） |
@@ -40,6 +40,9 @@
 
 ### 功能与修复
 
+- 权限模型系列修复：public 开放共享不再误显 noaccess/被静默锁人；public 按用户编辑走粒度权限；改密不再误动 NAS_PASS；存储页文件夹更新不再清空 write_users（只读用户不被静默提权）
+- 安全加固：高风险操作输入白名单校验（设备路径/LVM 命名/数据路径/mount 点，拒绝注入与穿越）+ 配额能力探测不静默失效（prjquota 未启用时明确报 unsupported+原因）
+- 安装体验：`curl | bash` 安装不再交互死循环（stdin 即脚本流，read 读到的是代码）——未提供 NAS_PASS 时用出厂默认密码 + 首登强制改密；对外命令统一为 `curl -fsSL https://get.z1.sale/install.sh | sudo bash`（http 301 坑），README/官网中英文档同步
 - Hardware Profile 硬件抽象层（/api/hardware/profile，关于页硬件档案卡）
 - 新建共享文件夹 SMB 不可访问修复（P0）+ rclone 重启风暴修复
 - rclone local 类型 remote root 失效修复（改用 alias backend）
