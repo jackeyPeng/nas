@@ -56,9 +56,9 @@ type CPUInfo struct {
 
 // Profile 是完整的硬件档案。
 type Profile struct {
-	Profile       string             `json:"profile"`        // 稳定标识，前端据此 i18n
-	ProfileLabel  string             `json:"profile_label"`  // 中文兜底文案
-	Arch          string             `json:"arch"`           // runtime.GOARCH
+	Profile       string             `json:"profile"`       // 稳定标识，前端据此 i18n
+	ProfileLabel  string             `json:"profile_label"` // 中文兜底文案
+	Arch          string             `json:"arch"`          // runtime.GOARCH
 	Virtualized   bool               `json:"virtualized"`
 	CPU           CPUInfo            `json:"cpu"`
 	MemoryBytes   int64              `json:"memory_bytes"`
@@ -78,10 +78,10 @@ type Profile struct {
 }
 
 var (
-	cacheMu     sync.Mutex
-	cachedPro   *Profile
-	cachedAt    time.Time
-	cacheTTL    = 30 * time.Second
+	cacheMu   sync.Mutex
+	cachedPro *Profile
+	cachedAt  time.Time
+	cacheTTL  = 30 * time.Second
 )
 
 func RegisterRoutes(mux *http.ServeMux) {
@@ -251,7 +251,11 @@ func readDisks() []DiskDevice {
 		return out
 	}
 	for _, bd := range parsed.Blockdevices {
-		if bd.Type == "rom" || strings.HasPrefix(bd.Name, "loop") || strings.HasPrefix(bd.Name, "ram") {
+		// 只收物理盘：TYPE 必须是 disk（排除 rom/zram 等），再排除虚拟块设备前缀
+		if bd.Type != "disk" ||
+			strings.HasPrefix(bd.Name, "loop") ||
+			strings.HasPrefix(bd.Name, "ram") ||
+			strings.HasPrefix(bd.Name, "zram") {
 			continue
 		}
 		d := DiskDevice{
