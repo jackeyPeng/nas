@@ -50,21 +50,5 @@ func TestModuleInterface(t *testing.T) {
 	var _ Module = (*mockModule)(nil)
 }
 
-// TestLoggingMiddleware 验证中间件不阻塞请求
-func TestLoggingMiddleware(t *testing.T) {
-	handler := LoggingMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("ok"))
-	}))
-
-	req := httptest.NewRequest("GET", "/", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Errorf("LoggingMiddleware status = %d, want 200", rec.Code)
-	}
-	if rec.Body.String() != "ok" {
-		t.Errorf("LoggingMiddleware body = %q, want %q", rec.Body.String(), "ok")
-	}
-}
+// 注: TestLoggingMiddleware 已移除 — LoggingMiddleware 在 5ae1011 中迁移为
+// main.go 的 loggingMiddleware（包内私有），common 包不再有此导出函数。

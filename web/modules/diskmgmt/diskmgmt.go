@@ -191,6 +191,11 @@ func handleFormat(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error": "device required (e.g. /dev/sdb1)"}`, http.StatusBadRequest)
 		return
 	}
+	// 白名单校验：只允许 /dev/ 下真实存在的块设备（加固轮1 #1）
+	if err := common.ValidateBlockDevice(device); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error": %q}`, err.Error()), http.StatusBadRequest)
+		return
+	}
 	// 安全检查：不允许格式化系统盘
 	if isSystemDisk(device) {
 		http.Error(w, `{"error": "不允许格式化系统盘"}`, http.StatusBadRequest)
@@ -223,6 +228,17 @@ func handleMount(w http.ResponseWriter, r *http.Request) {
 	if device == "" || mountPoint == "" {
 		http.Error(w, `{"error": "device and mountpoint required"}`, http.StatusBadRequest)
 		return
+	}
+	// 白名单校验：设备 + 挂载点（加固轮1 #1）
+	if err := common.ValidateBlockDevice(device); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error": %q}`, err.Error()), http.StatusBadRequest)
+		return
+	}
+	if cleaned, err := common.ValidateMountPoint(mountPoint); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error": %q}`, err.Error()), http.StatusBadRequest)
+		return
+	} else {
+		mountPoint = cleaned
 	}
 	// 创建挂载点
 	common.SudoExec("mkdir", "-p", mountPoint)
@@ -271,11 +287,13 @@ func handleMkdir(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error": "path required"}`, http.StatusBadRequest)
 		return
 	}
-	// 安全检查：只允许在 /data 下创建
-	if !strings.HasPrefix(path, "/data/") && path != "/data" {
-		http.Error(w, `{"error": "只允许在 /data/ 下创建目录"}`, http.StatusBadRequest)
+	// 安全检查：Clean 后仍须在 /data 下（加固轮1 #1，阻断 /data/../etc 穿越）
+	cleanedPath, err := common.ValidateDataPath(path, true)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error": %q}`, err.Error()), http.StatusBadRequest)
 		return
 	}
+	path = cleanedPath
 	out, err := common.SudoExec("mkdir", "-p", path)
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error": %q}`, out+": "+err.Error()), http.StatusInternalServerError)

@@ -99,9 +99,8 @@ for bucket in buckets:
 }
 
 echo ""
-echo "[DONE] install.sh uploaded to R2 bucket: $BUCKET"
+echo "[DONE] install.sh uploaded to R2 buckets: nas + www-z1-sale"
 echo ""
-Public URL: https://file.abwen.com/install.sh
-Test:        curl -fsSL https://file.abwen.com/install.sh | bash
-
-(To use https://get.z1.sale/install.sh, configure DNS redirect to file.abwen.com/install.sh)
+echo "Public URL: https://file.abwen.com/install.sh"
+echo "Public URL: https://get.z1.sale/install.sh"
+echo "Test:       curl -fsSL https://get.z1.sale/install.sh | bash"

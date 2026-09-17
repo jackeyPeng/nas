@@ -83,17 +83,17 @@ Pick "Data Safety" or "Max Capacity" — the system recommends the best option. 
 ### One-line install (recommended)
 
 ```bash
-# Interactive (prompts for password)
-curl -fsSL https://get.z1.sale/install.sh | bash
+# Default install (uses factory password when NAS_PASS is not set; forced change on first panel login)
+curl -fsSL https://get.z1.sale/install.sh | sudo bash
 
-# Or with password pre-set (unattended/CI)
-NAS_PASS=mySecurePass123 curl -fsSL https://get.z1.sale/install.sh | bash
+# Custom password (note: sudo clears env vars, pass NAS_PASS via `sudo env`)
+curl -fsSL https://get.z1.sale/install.sh | sudo env NAS_PASS=mySecurePass123 bash
 ```
 
 The installer will:
 1. Auto-detect network (GitHub for international, Gitee for China)
 2. Clone the repo (or download tar if git not installed)
-3. Prompt for NAS password (min 12 chars)
+3. Set the NAS password (falls back to factory default Nas-Test-2026 when NAS_PASS is unset; forced change on first panel login)
 4. Generate `.env` automatically
 5. Run `setup.sh` (10-step deployment)
 6. Print access URLs when done

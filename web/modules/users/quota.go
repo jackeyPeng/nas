@@ -8,19 +8,26 @@ import (
 	"nas-panel/common"
 )
 
-// privateDirQuota 查询私有目录配额
-func privateDirQuota(username string) (usedGB float64, limitGB int) {
+// privateDirQuota 查询私有目录配额。
+// status: "ok" / "unsupported"(文件系统不支持 project quota) / "error"(查询失败) / "none"(无私有目录)
+// 加固轮1 #4：查询失败不再伪装成"无限制"，由调用方按 status 呈现。
+func privateDirQuota(username string) (usedGB float64, limitGB int, status, reason string) {
 	// 主目录在 /data/nas1/username
 	// 需要找到挂载点
 	mountPoint := findMountPoint("/data/nas1/" + username)
 	if mountPoint == "" {
-		return 0, 0
+		return 0, 0, "none", "找不到私有目录挂载点"
+	}
+
+	// 能力探测：ext4 或没开 prjquota 的 xfs 上配额根本不生效
+	if st := common.MountQuotaSupport(mountPoint); !st.Supported {
+		return 0, 0, "unsupported", st.Reason
 	}
 
 	projName := "home_" + username
 	out, err := common.SudoOutput("/usr/sbin/xfs_quota", "-x", "-c", "report -p -N", mountPoint)
 	if err != nil {
-		return 0, 0
+		return 0, 0, "error", fmt.Sprintf("xfs_quota report 失败: %v", err)
 	}
 
 	for _, line := range strings.Split(out, "\n") {
@@ -32,10 +39,10 @@ func privateDirQuota(username string) (usedGB float64, limitGB int) {
 			if hard, err := strconv.Atoi(fields[3]); err == nil {
 				limitGB = hard / 1024 / 1024
 			}
-			return usedGB, limitGB
+			return usedGB, limitGB, "ok", ""
 		}
 	}
-	return 0, 0
+	return 0, 0, "ok", "" // 无该 project = 未设配额（真·无限制）
 }
 
 // setPrivateDirQuota 设置私有目录配额
@@ -58,6 +65,11 @@ func setPrivateDirQuota(username string, quotaGB int) error {
 		common.SudoExec("/usr/sbin/xfs_quota", "-x", "-c",
 			fmt.Sprintf("project -C %s", projName), mountPoint)
 		return nil
+	}
+
+	// 能力探测：文件系统不支持 project quota 时明确报错，不静默失效（加固轮1 #4）
+	if st := common.MountQuotaSupport(mountPoint); !st.Supported {
+		return fmt.Errorf("配额不可用: %s", st.Reason)
 	}
 
 	// 查找或创建 project ID

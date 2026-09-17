@@ -503,7 +503,11 @@
     "change_pwd_title": "Change Password -",
     "new_password_12": "New password (min 12 chars)",
     "recent_login": "Last 50 login records",
-    "matrix_header": "User \\ Resource"
+    "matrix_header": "User \\ Resource",
+    "quota_unsupported": "Quota unsupported",
+    "quota_query_error": "Quota query failed",
+    "quota_no_dir": "No private dir",
+    "quota_unsupported_hint": "Filesystem does not support project quota (requires xfs + prjquota); quotas are NOT enforced"
   },
   "firewall": {
     "title": "Firewall",
