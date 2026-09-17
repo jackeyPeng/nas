@@ -101,6 +101,82 @@ function nasPanel() {
         auditLogTotal: 0,
         auditLogPage: 0,
         auditLogFilter: { action: '', days: 7 },
+
+        // ═══ 事件中心 ═══
+        eventList: [],
+        eventTotal: 0,
+        eventPage: 0,
+        eventFilter: { source: '', type: '', days: 7 },
+        eventStats: { info: 0, success: 0, warn: 0, error: 0, total: 0 },
+        recentAlerts: [],
+
+        async loadRecentAlerts() {
+            const data = await this.api('/events?limit=5&days=7&type=error');
+            const warns = await this.api('/events?limit=5&days=7&type=warn');
+            const all = [...(data && data.events ? data.events : []),
+                         ...(warns && warns.events ? warns.events : [])];
+            all.sort((a, b) => (b.time || '').localeCompare(a.time || ''));
+            this.recentAlerts = all.slice(0, 5);
+        },
+
+        async loadEvents() {
+            const params = new URLSearchParams({
+                limit: '50',
+                offset: String(this.eventPage * 50),
+                days: String(this.eventFilter.days || 7)
+            });
+            if (this.eventFilter.source) params.set('source', this.eventFilter.source);
+            if (this.eventFilter.type) params.set('type', this.eventFilter.type);
+            const data = await this.api('/events?' + params.toString());
+            if (data) {
+                this.eventList = data.events || [];
+                this.eventTotal = data.total || 0;
+            }
+        },
+
+        async loadEventStats() {
+            const data = await this.api('/events/stats?days=' + (this.eventFilter.days || 7));
+            if (data) this.eventStats = data;
+        },
+
+        // 事件文案:优先 events.<code> i18n 键（支持命名占位符插值），缺失时兜底 code 本身
+        eventText(ev) {
+            window.Alpine.store('i18n').lang; // reactive dependency
+            const params = this.eventParams(ev);
+            if (window.hasKey && window.hasKey('events.' + ev.code)) {
+                return window.t('events.' + ev.code, params);
+            }
+            return ev.code;
+        },
+
+        // 解析事件 params JSON 为对象（坏数据兜底空对象）
+        eventParams(ev) {
+            try {
+                const p = ev.params ? JSON.parse(ev.params) : {};
+                return (p && typeof p === 'object') ? p : {};
+            } catch (e) { return {}; }
+        },
+
+        eventTypeStyle(type) {
+            const m = {
+                error:   'background:var(--danger-light);color:var(--danger)',
+                warn:    'background:var(--warn-light);color:var(--warn)',
+                success: 'background:var(--success-light);color:var(--success)',
+                info:    'background:var(--info-light);color:var(--info)'
+            };
+            return m[type] || m.info;
+        },
+
+        eventTypeText(type) {
+            window.Alpine.store('i18n').lang; // reactive dependency
+            return window.t('events.type_' + type) || type;
+        },
+
+        fmtEventTime(ts) {
+            if (!ts) return '';
+            return ts.replace('T', ' ').substring(0, 16);
+        },
+
         folderForm: { pool: '', name: '', permission: 'readwrite', valid_users: [], recycle_bin: false, nfs: false, quota_gb: 0 },
         showFolderPerm: false,
         folderPermForm: { name: '', path: '', pool: '', permission: 'readwrite', valid_users: '', recycle_bin: false },
@@ -459,6 +535,7 @@ function nasPanel() {
                 case 'vault': this.loadVault(); break;
                 case 'rclone': this.loadRcloneStatus(); this.loadRcloneRemotes(); this.loadRcloneTasks(); this.loadRcloneLogs(); this.loadSharedDirs(); break;
                 case 'logs': this.loadAuditLogs(); break;
+                case 'events': this.loadEvents(); this.loadEventStats(); break;
                 case 'diagnostics': this.loadDiagnostics(); break;
                 case 'health': this.loadHealth(); break;
             }
@@ -474,6 +551,8 @@ function nasPanel() {
             // Check config consistency
             const cdata = await this.api('/disk/config/check');
             if (cdata) this.configIssues = cdata;
+            // 最近告警摘要（失败静默，不阻塞面板）
+            this.loadRecentAlerts().catch(() => {});
             this.dashboardLoaded = true;
         },
 

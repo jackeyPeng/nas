@@ -177,6 +177,9 @@
                         <li :class="{active: page === 'logs'}" @click="navigate('logs')">
                             <span style="margin-left:var(--sp-5)">📋</span> <span x-text="$t('nav.logs')"></span>
                         </li>
+                        <li :class="{active: page === 'events'}" @click="navigate('events')">
+                            <span style="margin-left:var(--sp-5)">🔔</span> <span x-text="$t('nav.events')"></span>
+                        </li>
                     </div>
                 </template>
             </ul>
@@ -207,6 +210,20 @@
                             <div x-text="issue"></div>
                         </template>
                     </div>
+                </div>
+                <!-- 最近告警(事件中心摘要) -->
+                <div x-show="recentAlerts.length" class="card" style="padding:var(--sp-4);margin-bottom:var(--sp-4)">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--sp-2)">
+                        <span style="font-weight:600;font-size:var(--fs-md)">🔔 <span x-text="$t('events.recent_alerts')"></span></span>
+                        <button class="btn btn-sm" @click="navigate('events')" x-text="$t('events.view_all')"></button>
+                    </div>
+                    <template x-for="ev in recentAlerts" :key="ev.id">
+                        <div style="display:flex;gap:var(--sp-2);align-items:baseline;padding:var(--sp-1) 0;border-top:1px solid var(--border-light);font-size:var(--fs-sm)">
+                            <span class="badge-xs" :style="eventTypeStyle(ev.type)" x-text="eventTypeText(ev.type)"></span>
+                            <span style="color:var(--text-light);white-space:nowrap;font-size:var(--fs-xs)" x-text="fmtEventTime(ev.time)"></span>
+                            <span x-text="eventText(ev)"></span>
+                        </div>
+                    </template>
                 </div>
                 <div style="display:flex;gap:var(--sp-12);flex-wrap:wrap;margin-bottom:var(--sp-5)">
                     <!-- 左：盘位图 -->
@@ -305,7 +322,7 @@
                             :style="pool.healthy ? 'background:linear-gradient(135deg,var(--primary-bg),var(--primary-light))' : 'background:linear-gradient(135deg,var(--danger-light),var(--card-bg))'">
                             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
                                 <span style="font-size:var(--fs-base);font-weight:700" x-text="poolLabel(pool.display_name)"></span>
-                                <span style="font-size:var(--fs-xs);padding:1px 6px;border-radius:3px"
+                                <span class="badge-xs" 
                                     :style="pool.healthy ? 'background: var(--success-light);color: var(--success)' : 'background: var(--danger-light);color: var(--danger)'"
                                     x-text="$t('common.normal')"></span>
                             </div>
@@ -418,9 +435,9 @@
                                     <td style="font-family:monospace;font-weight:600" x-text="user.username"></td>
                                     <td>
                                         <div style="display:flex;gap:var(--sp-1);flex-wrap:wrap">
-                                            <span class="badge" :style="user.services.samba ? 'background: var(--info);color:#fff' : 'background:var(--text-muted);color:#fff'" style="font-size:var(--fs-xs);padding:2px 6px;border-radius:4px">Samba</span>
-                                            <span class="badge" :style="user.services.ftp ? 'background: var(--info);color:#fff' : 'background:var(--text-muted);color:#fff'" style="font-size:var(--fs-xs);padding:2px 6px;border-radius:4px">FTP</span>
-                                            <span class="badge" :style="user.services.webdav ? 'background: var(--info);color:#fff' : 'background:var(--text-muted);color:#fff'" style="font-size:var(--fs-xs);padding:2px 6px;border-radius:4px">WebDAV</span>
+                                            <span class="badge badge-xs" :style="user.services.samba ? 'background: var(--info);color:#fff' : 'background:var(--text-muted);color:#fff'" >Samba</span>
+                                            <span class="badge badge-xs" :style="user.services.ftp ? 'background: var(--info);color:#fff' : 'background:var(--text-muted);color:#fff'" >FTP</span>
+                                            <span class="badge badge-xs" :style="user.services.webdav ? 'background: var(--info);color:#fff' : 'background:var(--text-muted);color:#fff'" >WebDAV</span>
                                         </div>
                                     </td>
                                     <td style="font-family:monospace;font-size:var(--fs-xs)" x-text="user.private_dir || '-'"></td>
@@ -507,7 +524,7 @@
                                             <td style="text-align:center">
                                                 <select :value="permMatrix.matrix[username]?.[folder] || 'noaccess'"
                                                     @change="setMatrixPerm(username, folder, $event.target.value)"
-                                                    style="font-size:var(--fs-xs);padding:2px var(--sp-1);border:1px solid var(--border);border-radius:4px"
+                                                    style="border:1px solid var(--border)"
                                                     :style="permMatrix.matrix[username]?.[folder] === 'readwrite' ? 'color: var(--info);font-weight:600' : (permMatrix.matrix[username]?.[folder] === 'readonly' ? 'color: var(--warn)' : 'color: var(--text-muted)')">
                                                     <option value="readwrite" x-text="$t('common.readwrite')"></option>
                                                     <option value="readonly" x-text="$t('common.readonly')"></option>
@@ -529,7 +546,7 @@
                         <button class="btn btn-sm btn-primary" @click="loadLoginLogs()" x-text="$t('common.refresh')"></button>
                     </div>
                     <div x-show="loginLogsLoading" style="text-align:center;padding:var(--sp-5);color: var(--text-muted)"><span x-text="$t('common.loading')"></span></div>
-                    <table class="table" x-show="!loginLogsLoading">
+                    <table class="table table-dense" x-show="!loginLogsLoading">
                         <thead>
                             <tr>
                                 <th x-text="$t('logs.log_time')"></th>
@@ -555,7 +572,7 @@
                                 </tr>
                             </template>
                             <tr x-show="!loginLogs.length">
-                                <td colspan="6" style="text-align:center;color: var(--text-muted)" x-text="$t('users.no_login_logs')"></td>
+                                <td colspan="6" class="empty-cell"><div class="empty-state empty-state--inline"><span class="empty-state__icon">🕐</span><span class="empty-state__title" x-text="$t('users.no_login_logs')"></span></div></td>
                             </tr>
                         </tbody>
                     </table>
@@ -634,7 +651,7 @@
                                     </select>
                                 </div>
                             </template>
-                            <p x-show="!userWizardShares.length" style="color: var(--text-muted);font-size:var(--fs-sm)"><span x-text="$t('users.no_shares')"></span></p>
+                            <div class="empty-state empty-state--inline" x-show="!userWizardShares.length"><span class="empty-state__icon">📁</span><span class="empty-state__title" x-text="$t('users.no_shares')"></span></div>
                         </div>
 
                         <!-- 按钮 -->
@@ -746,7 +763,7 @@
                     <div style="display:flex;gap:var(--sp-2);margin-bottom:var(--sp-3);flex-wrap:wrap">
                         <span style="font-size:var(--fs-xs);color: var(--text-light);align-self:center"><span x-text="$t('firewall.common_shortcut')"></span></span>
                         <template x-for="p in firewallPresets" :key="p.port">
-                            <button class="btn btn-sm" style="font-size:var(--fs-xs);padding:3px 10px" @click="applyPreset(p)" x-text="p.labelKey ? $t(p.labelKey) : p.label"></button>
+                            <button class="btn btn-sm btn-xs"  @click="applyPreset(p)" x-text="p.labelKey ? $t(p.labelKey) : p.label"></button>
                         </template>
                     </div>
                     <div style="display:grid;grid-template-columns:1.2fr 0.8fr 0.8fr 1.4fr 1.4fr auto;gap:var(--sp-3);align-items:end">
@@ -784,8 +801,8 @@
                 <!-- 规则列表 -->
                 <div style="background: var(--card-bg);border:1px solid var(--border);border-radius:var(--radius-lg);padding:var(--sp-5)">
                     <h3 style="margin:0 0 var(--sp-4);font-size:var(--fs-base)"><span x-text="$t('firewall.rule_list')"></span> <span style="color: var(--text-light);font-weight:400;font-size:var(--fs-sm)" x-text="'(' + $t('common.rule_unit', [firewall.rules.length]) + ')'"></span></h3>
-                    <div x-show="!firewall.rules.length" style="text-align:center;padding:var(--sp-6);color: var(--text-muted)"><span x-text="$t('common.no_rules')"></span></div>
-                    <table class="table" x-show="firewall.rules.length">
+                    <div class="empty-state" x-show="!firewall.rules.length"><span class="empty-state__icon">🛡️</span><span class="empty-state__title" x-text="$t('common.no_rules')"></span></div>
+                    <table class="table table-dense" x-show="firewall.rules.length">
                         <thead>
                             <tr>
                                 <th style="width:50px">#</th>
@@ -801,16 +818,16 @@
                                     <td style="color: var(--text-light);font-family:monospace;font-size:var(--fs-xs)" x-text="rule.num"></td>
                                     <td style="font-family:monospace;font-size:var(--fs-sm)">
                                         <span x-text="rule.proto === 'any' ? rule.port : rule.port + '/' + rule.proto"></span>
-                                        <span x-show="rule.v6" style="margin-left:6px;padding:1px 6px;border-radius:var(--radius);font-size:var(--fs-xs);background-color: var(--purple-light);color: var(--purple)">v6</span>
+                                        <span class="badge-xs" x-show="rule.v6" style="margin-left:var(--sp-2);background-color: var(--purple-light);color: var(--purple)">v6</span>
                                     </td>
                                     <td>
-                                        <span style="padding:2px 10px;border-radius:var(--radius-md);font-size:var(--fs-xs);font-weight:600"
+                                        <span class="badge-xs" style="font-weight:600"
                                             :style="rule.action === 'allow' ? 'background: var(--success-light);color: var(--success)' : 'background: var(--danger-light);color: var(--danger)'"
                                             x-text="$t('common.allow')"></span>
                                     </td>
                                     <td style="font-family:monospace;font-size:var(--fs-xs)" x-text="rule.from === 'Anywhere' ? $t('firewall.anywhere') : rule.from"></td>
                                     <td>
-                                        <button class="btn btn-sm btn-danger" @click="deleteFirewallRule(rule)" style="font-size:var(--fs-xs);padding:2px var(--sp-2)" x-text="$t('backup.delete_backup')"></button>
+                                        <button class="btn btn-sm btn-danger badge-xs" @click="deleteFirewallRule(rule)"  x-text="$t('backup.delete_backup')"></button>
                                     </td>
                                 </tr>
                             </template>
@@ -995,7 +1012,7 @@
                                 <template x-for="u in (monitor.logged_in_users||[])" :key="u.user+u.tty">
                                     <tr><td x-text="u.user"></td><td x-text="u.tty"></td><td x-text="u.from||'-'"></td><td x-text="u.date"></td></tr>
                                 </template>
-                                <tr x-show="!(monitor.logged_in_users||[]).length"><td colspan="4" style="text-align:center;color: var(--text-muted)"><span x-text="$t('monitor.no_users_logged')"></span></td></tr>
+                                <tr x-show="!(monitor.logged_in_users||[]).length"><td colspan="4" class="empty-cell"><div class="empty-state empty-state--inline"><span class="empty-state__icon">👤</span><span class="empty-state__title" x-text="$t('monitor.no_users_logged')"></span></div></td></tr>
                             </tbody>
                         </table>
 
@@ -1030,7 +1047,7 @@
                                         </td>
                                     </tr>
                                 </template>
-                                <tr x-show="!(monitor.disk_partitions||[]).length"><td colspan="6" style="text-align:center;color: var(--text-muted);padding:var(--sp-3)"><span x-text="$t('monitor.no_partitions')"></span></td></tr>
+                                <tr x-show="!(monitor.disk_partitions||[]).length"><td colspan="6" class="empty-cell"><div class="empty-state empty-state--inline"><span class="empty-state__icon">💽</span><span class="empty-state__title" x-text="$t('monitor.no_partitions')"></span></div></td></tr>
                             </tbody>
                         </table>
 
@@ -1230,9 +1247,9 @@
                                                 <span style="font-size:var(--fs-sm);color: var(--text-light)" x-text="vol.size?(vol.used+'/'+vol.size):''"></span>
                                                 <span class="badge" style="background-color: var(--purple-light);color: var(--purple);font-size:var(--fs-xs)" x-text="'·'+(vol.fstype||'')+'·'+$t('storage.snapshot')+':'+(vol.snapshot_count>0?$t('common.on'):$t('common.off'))"></span>
                                                 <span style="margin-left:auto;display:flex;gap:6px">
-                                                    <span class="badge" :style="vol.folders?.some(function(f){return f.samba_share})?'background: var(--primary-light);color: var(--primary)':'background: var(--card-bg-alt);color: var(--text-secondary)'" style="font-size:var(--fs-xs);padding:3px 7px" :title="$t('storage.proto_per_user')" x-text="'SMB'+(vol.folders?.some(function(f){return f.samba_share})?'✓':'✗')"></span>
-                                                    <span class="badge" :style="vol.folders?.some(function(f){return f.nfs_export})?'background: var(--card-bg-alt);color: var(--text-light)':'background: var(--card-bg-alt);color:var(--text-muted)'" style="font-size:var(--fs-xs);padding:3px 7px" :title="$t('storage.proto_network')" x-text="'NFS'+(vol.folders?.some(function(f){return f.nfs_export})?'✓':'✗')"></span>
-                                                    <span class="badge" :style="vol.folders?.some(function(f){return f.s3_access})?'background: var(--warn-light);color: var(--warn)':'background: var(--card-bg-alt);color:var(--text-muted)'" style="font-size:var(--fs-xs);padding:3px 7px" :title="$t('storage.proto_global')" x-text="'S3'+(vol.folders?.some(function(f){return f.s3_access})?'✓':'✗')"></span>
+                                                    <span class="badge badge-sm" :style="vol.folders?.some(function(f){return f.samba_share})?'background: var(--primary-light);color: var(--primary)':'background: var(--card-bg-alt);color: var(--text-secondary)'"  :title="$t('storage.proto_per_user')" x-text="'SMB'+(vol.folders?.some(function(f){return f.samba_share})?'✓':'✗')"></span>
+                                                    <span class="badge badge-sm" :style="vol.folders?.some(function(f){return f.nfs_export})?'background: var(--card-bg-alt);color: var(--text-light)':'background: var(--card-bg-alt);color:var(--text-muted)'"  :title="$t('storage.proto_network')" x-text="'NFS'+(vol.folders?.some(function(f){return f.nfs_export})?'✓':'✗')"></span>
+                                                    <span class="badge badge-sm" :style="vol.folders?.some(function(f){return f.s3_access})?'background: var(--warn-light);color: var(--warn)':'background: var(--card-bg-alt);color:var(--text-muted)'"  :title="$t('storage.proto_global')" x-text="'S3'+(vol.folders?.some(function(f){return f.s3_access})?'✓':'✗')"></span>
                                                 </span>
                                             </div>
                                             <div style="margin-left:var(--sp-4)">
@@ -1247,12 +1264,12 @@
                                                             <span style="font-size:var(--fs-sm);color: var(--text-light)" x-text="f.size||'-'"></span>
                                                             <span style="font-size:var(--fs-sm);color: var(--text-light)" x-text="$t('common.readwrite')"></span>
                                                             <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
-                                                                <span class="badge" :style="f.samba_share?'background: var(--primary-light);color: var(--primary)':'background: var(--card-bg-alt);color: var(--text-secondary)'" style="font-size:var(--fs-xs);padding:3px 7px" :title="$t('storage.proto_per_user')" x-text="'SMB'+(f.samba_share?'✓':'✗')"></span>
-                                                                <span class="badge" :style="f.nfs_export?'background: var(--card-bg-alt);color: var(--text-light)':'background: var(--card-bg-alt);color:var(--text-muted)'" style="font-size:var(--fs-xs);padding:3px 7px" :title="$t('storage.proto_network')" x-text="'NFS'+(f.nfs_export?'✓':'✗')"></span>
-                                                                <span class="badge" :style="f.webdav_access?'background: var(--warn-light);color: var(--warn)':'background: var(--card-bg-alt);color:var(--text-muted)'" style="font-size:var(--fs-xs);padding:3px 7px" :title="$t('storage.proto_global')" x-text="'DAV'+(f.webdav_access?'✓':'✗')"></span>
-                                                                <span class="badge" :style="f.s3_access?'background: var(--warn-light);color: var(--warn)':'background: var(--card-bg-alt);color:var(--text-muted)'" style="font-size:var(--fs-xs);padding:3px 7px" :title="$t('storage.proto_global')" x-text="'S3'+(f.s3_access?'✓':'✗')"></span>
-                                                                <button class="btn btn-sm" @click.stop="editFolderPermission(f)" style="font-size:var(--fs-xs);padding:3px 6px" title="编辑">✏️</button>
-                                                                <button class="btn btn-sm btn-danger" @click.stop="deleteFolder(f)" style="font-size:var(--fs-xs);padding:3px 6px" title="删除">🗑️</button>
+                                                                <span class="badge badge-sm" :style="f.samba_share?'background: var(--primary-light);color: var(--primary)':'background: var(--card-bg-alt);color: var(--text-secondary)'"  :title="$t('storage.proto_per_user')" x-text="'SMB'+(f.samba_share?'✓':'✗')"></span>
+                                                                <span class="badge badge-sm" :style="f.nfs_export?'background: var(--card-bg-alt);color: var(--text-light)':'background: var(--card-bg-alt);color:var(--text-muted)'"  :title="$t('storage.proto_network')" x-text="'NFS'+(f.nfs_export?'✓':'✗')"></span>
+                                                                <span class="badge badge-sm" :style="f.webdav_access?'background: var(--warn-light);color: var(--warn)':'background: var(--card-bg-alt);color:var(--text-muted)'"  :title="$t('storage.proto_global')" x-text="'DAV'+(f.webdav_access?'✓':'✗')"></span>
+                                                                <span class="badge badge-sm" :style="f.s3_access?'background: var(--warn-light);color: var(--warn)':'background: var(--card-bg-alt);color:var(--text-muted)'"  :title="$t('storage.proto_global')" x-text="'S3'+(f.s3_access?'✓':'✗')"></span>
+                                                                <button class="btn btn-sm btn-xs" @click.stop="editFolderPermission(f)"  title="编辑">✏️</button>
+                                                                <button class="btn btn-sm btn-danger btn-xs" @click.stop="deleteFolder(f)"  title="删除">🗑️</button>
                                                             </span>
                                                         </div>
                                                         <!-- 第二行：访问方式 -->
@@ -1282,7 +1299,7 @@
                                 </template>
                             </div>
                         </template>
-                        <div x-show="!storageOverview.pools||storageOverview.pools.length===0" style="text-align:center;color: var(--text-light);padding:var(--sp-5);font-size:var(--fs-sm)"><span x-text="$t('storage.no_pools')"></span></div>
+                        <div class="empty-state" x-show="!storageOverview.pools||storageOverview.pools.length===0"><span class="empty-state__icon">🗄️</span><span class="empty-state__title" x-text="$t('storage.no_pools')"></span></div>
                     </div>
                 </div>
                 <!-- 创建共享文件夹弹窗 -->
@@ -1316,7 +1333,7 @@
                             <div style="position:relative">
                                 <div @click="showUserDropdown=!showUserDropdown" style="width:100%;padding:var(--sp-2) var(--sp-3);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:var(--fs-sm);cursor:pointer;min-height:36px;display:flex;align-items:center;flex-wrap:wrap;gap:var(--sp-1);background: var(--card-bg)">
                                     <template x-for="u in folderForm.valid_users" :key="u">
-                                        <span style="background: var(--primary-bg);color: var(--primary);padding:2px var(--sp-2);border-radius:4px;font-size:var(--fs-xs);display:flex;align-items:center;gap:var(--sp-1)">
+                                        <span class="badge-xs" style="background: var(--primary-bg);color: var(--primary);display:flex;align-items:center;gap:var(--sp-1)">
                                             <span x-text="u"></span>
                                             <span @click.stop="folderForm.valid_users = folderForm.valid_users.filter(function(x){return x!==u}); showUserDropdown=true" style="cursor:pointer;font-weight:bold">&times;</span>
                                         </span>
@@ -1331,7 +1348,7 @@
                                             <span x-text="u.username"></span>
                                         </label>
                                     </template>
-                                    <div x-show="!users.length" style="padding:var(--sp-3);text-align:center;color: var(--text-muted);font-size:var(--fs-sm)"><span x-text="$t('common.no_users')"></span></div>
+                                    <div class="empty-state" x-show="!users.length"><span class="empty-state__icon">👤</span><span class="empty-state__title" x-text="$t('common.no_users')"></span></div>
                                 </div>
                             </div>
                         </div>
@@ -1379,7 +1396,7 @@
                             <div style="position:relative">
                                 <div @click="showUserDropdown=!showUserDropdown" style="width:100%;padding:var(--sp-2) var(--sp-3);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:var(--fs-sm);cursor:pointer;min-height:36px;display:flex;align-items:center;flex-wrap:wrap;gap:var(--sp-1);background: var(--card-bg)">
                                     <template x-for="u in (folderPermForm.valid_users||'').split(',').filter(function(x){return x})" :key="u">
-                                        <span style="background: var(--primary-bg);color: var(--primary);padding:2px var(--sp-2);border-radius:4px;font-size:var(--fs-xs);display:flex;align-items:center;gap:var(--sp-1)">
+                                        <span class="badge-xs" style="background: var(--primary-bg);color: var(--primary);display:flex;align-items:center;gap:var(--sp-1)">
                                             <span x-text="u.trim()"></span>
                                             <span @click.stop="folderPermForm.valid_users = folderPermForm.valid_users.split(',').filter(function(x){return x.trim()!==u.trim()}).join(','); showUserDropdown=true" style="cursor:pointer;font-weight:bold">&times;</span>
                                         </span>
@@ -1396,7 +1413,7 @@
                                             <span x-text="u.username"></span>
                                         </label>
                                     </template>
-                                    <div x-show="!users.length" style="padding:var(--sp-3);text-align:center;color: var(--text-muted);font-size:var(--fs-sm)"><span x-text="$t('common.no_users')"></span></div>
+                                    <div class="empty-state" x-show="!users.length"><span class="empty-state__icon">👤</span><span class="empty-state__title" x-text="$t('common.no_users')"></span></div>
                                 </div>
                             </div>
                         </div>
@@ -1514,7 +1531,7 @@
                             </div>
                         </div>
                     </template>
-                    <div x-show="!storageOverview.pools||storageOverview.pools.length===0" style="text-align:center;color: var(--text-light);padding:var(--sp-8);font-size:var(--fs-base)"><span x-text="$t('storage.no_pools')"></span></div>
+                    <div class="empty-state" x-show="!storageOverview.pools||storageOverview.pools.length===0"><span class="empty-state__icon">🗄️</span><span class="empty-state__title" x-text="$t('storage.no_pools')"></span></div>
                 </div>
 
                 <!-- ═══════════════ Tab 4: 创建向导 ═══════════════ -->
@@ -1617,7 +1634,7 @@
                             </div>
                         </div>
                     </div>
-                    <div x-show="!(wizardStatus && wizardStatus.available_disks?.length)" style="text-align:center;color: var(--text-light);padding:var(--sp-8);font-size:var(--fs-base)"><span x-text="$t('storage.no_free_disks_full')"></span></div>
+                    <div class="empty-state" x-show="!(wizardStatus && wizardStatus.available_disks?.length)"><span class="empty-state__icon">💿</span><span class="empty-state__title" x-text="$t('storage.no_free_disks_full')"></span></div>
                 </div>
 
                 <!-- ═══════════════ Tab 5: 维护 ═══════════════ -->
@@ -1872,7 +1889,7 @@
                                 <span style="color: var(--text-secondary);min-width:200px;font-family:monospace;font-size:var(--fs-sm)" x-text="param.key"></span>
                                 <input type="text" x-model="param.value" class="port-input" style="width:120px;font-family:monospace">
                                 <span style="color: var(--text-muted);font-size:var(--fs-xs);flex:1" x-text="sysctlDesc(param.key, param.description)"></span>
-                                <button class="btn btn-sm btn-primary" @click="saveSysctl(param)" style="font-size:var(--fs-xs);padding:2px var(--sp-2)" x-text="$t('common.save')"></button>
+                                <button class="btn btn-sm btn-primary badge-xs" @click="saveSysctl(param)"  x-text="$t('common.save')"></button>
                             </div>
                         </template>
                     </div>
@@ -1939,7 +1956,7 @@
                         </div>
                         <div style="margin-top:var(--sp-2)">
                             <template x-for="svc in httpsStatus.services" :key="svc.name">
-                                <span style="display:inline-block;margin-right:var(--sp-2);padding:2px var(--sp-2);border-radius:4px;font-size:var(--fs-xs)" :style="svc.https ? 'background: var(--success-light);color: var(--success)' : 'background: var(--danger-light);color: var(--danger)'" x-text="svc.name + ' :' + svc.port + (svc.https ? ' (HTTPS)' : ' (HTTP)')"></span>
+                                <span class="badge-xs" style="display:inline-block;margin-right:var(--sp-2)" :style="svc.https ? 'background: var(--success-light);color: var(--success)' : 'background: var(--danger-light);color: var(--danger)'" x-text="svc.name + ' :' + svc.port + (svc.https ? ' (HTTPS)' : ' (HTTP)')"></span>
                             </template>
                         </div>
                         <div style="margin-top:var(--sp-3);display:flex;gap:var(--sp-2)">
@@ -2012,8 +2029,8 @@
                     <div x-show="hardware" style="margin-bottom:var(--sp-4);padding:var(--sp-4);background:var(--card-bg-alt);border:1px solid var(--border);border-radius:var(--radius);">
                         <div style="display:flex;align-items:center;flex-wrap:wrap;gap:var(--sp-3);margin-bottom:var(--sp-3);">
                             <span style="font-size:var(--fs-base);font-weight:700;color:var(--text)">🖥️ <span x-text="$t('hardware.title')"></span></span>
-                            <span style="font-size:var(--fs-xs);background:var(--primary-bg);color:var(--primary);border-radius:var(--radius-md);padding:2px 10px;font-weight:600" x-text="hwProfileLabel(hardware.profile, hardware.profile_label)"></span>
-                            <span x-show="hardware.virtualized" style="font-size:var(--fs-xs);background:var(--warn-light);color:var(--warn);border-radius:var(--radius-md);padding:2px 10px;" x-text="$t('hardware.virtualized')"></span>
+                            <span class="badge-xs" style="background:var(--primary-bg);color:var(--primary);font-weight:600" x-text="hwProfileLabel(hardware.profile, hardware.profile_label)"></span>
+                            <span class="badge-xs" x-show="hardware.virtualized" style="background:var(--warn-light);color:var(--warn)" x-text="$t('hardware.virtualized')"></span>
                             <span style="font-size:var(--fs-xs);color:var(--text-muted)" x-text="hardware.arch"></span>
                         </div>
                         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:var(--sp-3);">
@@ -2166,7 +2183,7 @@
                             </tr>
                         </template>
                         <tr x-show="!backups.length">
-                            <td colspan="4" style="text-align:center;color:var(--text-light)" x-text="$t('backup.no_backups')"></td>
+                            <td colspan="4" class="empty-cell"><div class="empty-state empty-state--inline"><span class="empty-state__icon">🗂️</span><span class="empty-state__title" x-text="$t('backup.no_backups')"></span></div></td>
                         </tr>
                     </tbody>
                 </table>
@@ -2234,7 +2251,7 @@
                                 </td>
                             </tr>
                         </template>
-                        <tr x-show="!vaultItems.length"><td colspan="4" style="text-align:center;color:var(--text-light)" x-text="$t('vault.empty')"></td></tr>
+                        <tr x-show="!vaultItems.length"><td colspan="4" class="empty-cell"><div class="empty-state empty-state--inline"><span class="empty-state__icon">🔐</span><span class="empty-state__title" x-text="$t('vault.empty')"></span></div></td></tr>
                     </tbody>
                 </table>
             </div>
@@ -2253,7 +2270,7 @@
                             <div style="flex:1">
                                 <div style="display:flex;align-items:center;gap:var(--sp-2);margin-bottom:var(--sp-1)">
                                     <strong style="font-size:var(--fs-base)" x-text="diagName(item.id, item.name)"></strong>
-                                    <span style="font-size:var(--fs-xs);padding:2px var(--sp-2);border-radius:var(--radius-md)"
+                                    <span class="badge-xs" 
                                         :style="item.last_result === 'pass' ? 'background: var(--success-light);color: var(--success)' : item.last_result === 'fail' ? 'background: var(--danger-light);color: var(--danger)' : item.last_result === 'warn' ? 'background: var(--warn-light);color: var(--warn)' : item.last_result === 'running' ? 'background: var(--primary-light);color: var(--primary)' : 'background: var(--card-bg-alt);color: var(--text-muted)'"
                                         x-text="item.last_result === 'pass' ? '✅ ' + $t('diagnostics.result_pass') : item.last_result === 'fail' ? '❌ ' + $t('diagnostics.result_fail') : item.last_result === 'warn' ? '⚠️ ' + $t('diagnostics.result_warn') : item.last_result === 'running' ? '⏳ 运行中' : '--'"></span>
                                 </div>
@@ -2278,7 +2295,7 @@
                                         <input type="checkbox" :checked="item.enabled" @change="toggleDiagItem(item.id, $event.target.checked)">
                                         <span x-text="item.enabled ? $t('common.enabled') : $t('common.disabled')"></span>
                                     </label>
-                                    <select :value="item.schedule" @change="setDiagSchedule(item.id, $event.target.value)" style="font-size:var(--fs-xs);padding:2px 6px;border:1px solid var(--border);border-radius:4px">
+                                    <select class="badge-xs" :value="item.schedule" @change="setDiagSchedule(item.id, $event.target.value)" style="border:1px solid var(--border)">
                                         <option value="manual"><span x-text="$t('common.manual')"></span></option>
                                         <option value="daily"><span x-text="$t('diagnostics.daily')"></span></option>
                                         <option value="weekly"><span x-text="$t('diagnostics.weekly')"></span></option>
@@ -2325,7 +2342,7 @@
                 <!-- 历史记录 -->
                 <div style="background: var(--card-bg);border:1px solid var(--border);border-radius:var(--radius);padding:var(--sp-4)">
                     <h3 style="margin-top:0;margin-bottom:var(--sp-3);font-size:var(--fs-base)">📋 <span x-text="$t('diagnostics.history')"></span></h3>
-                    <table class="table">
+                    <table class="table table-dense">
                         <thead>
                             <tr><th><span x-text="$t('diagnostics.item')"></span></th><th><span x-text="$t('diagnostics.start_time')"></span></th><th><span x-text="$t('users.login_result')"></span></th><th><span x-text="$t('common.detail')"></span></th></tr>
                         </thead>
@@ -2335,7 +2352,7 @@
                                     <td x-text="diagName(h.item_id, h.item_name)"></td>
                                     <td style="font-size:var(--fs-xs)" x-text="h.start_time"></td>
                                     <td>
-                                        <span style="padding:2px var(--sp-2);border-radius:var(--radius-md);font-size:var(--fs-xs)"
+                                        <span class="badge-xs" 
                                             :style="h.result === 'pass' ? 'background: var(--success-light);color: var(--success)' : h.result === 'fail' ? 'background: var(--danger-light);color: var(--danger)' : 'background: var(--warn-light);color: var(--warn)'"
                                             x-text="h.result === 'pass' ? $t('diagnostics.result_pass') : h.result === 'fail' ? $t('diagnostics.result_fail') : $t('diagnostics.result_warn')"></span>
                                     </td>
@@ -2343,7 +2360,7 @@
                                 </tr>
                             </template>
                             <tr x-show="!diagHistory.length">
-                                <td colspan="4" style="text-align:center;color: var(--text-muted)"><span x-text="$t('diagnostics.no_history')"></span></td>
+                                <td colspan="4" class="empty-cell"><div class="empty-state empty-state--inline"><span class="empty-state__icon">🩺</span><span class="empty-state__title" x-text="$t('diagnostics.no_history')"></span></div></td>
                             </tr>
                         </tbody>
                     </table>
@@ -2366,7 +2383,7 @@
                 </div>
                 <div style="background-color: var(--danger-light);border:1px solid #fecaca;border-radius:var(--radius-lg);padding:var(--sp-5);margin-bottom:var(--sp-6)" x-show="!rcloneStatus.installed">
                     <div style="font-size:var(--fs-base);font-weight:600;color: var(--danger);margin-bottom:var(--sp-2)"><span x-text="$t('rclone.not_installed_warn')"></span></div>
-                    <p style="font-size:var(--fs-sm);color: var(--danger);margin:0"><span x-text="$t('rclone.install_hint2')"></span> <code style="background: var(--danger-light);padding:2px 6px;border-radius:4px">curl https://rclone.org/install.sh | sudo bash</code></p>
+                    <p style="font-size:var(--fs-sm);color: var(--danger);margin:0"><span x-text="$t('rclone.install_hint2')"></span> <code class="badge-xs" style="background: var(--danger-light)">curl https://rclone.org/install.sh | sudo bash</code></p>
                 </div>
 
                 <!-- ═══ 远端存储配置 ═══ -->
@@ -2376,9 +2393,7 @@
                         <button class="btn btn-primary btn-sm" @click="openAddRemote()" x-text="$t('rclone.add_remote')"></button>
                     </div>
 
-                    <div x-show="!rcloneRemotes.length" style="text-align:center;padding:var(--sp-6);color: var(--text-muted)">
-                        <span x-text="$t('rclone.no_remotes_hint')"></span>
-                    </div>
+                    <div class="empty-state" x-show="!rcloneRemotes.length"><span class="empty-state__icon">☁️</span><span class="empty-state__title" x-text="$t('rclone.no_remotes')"></span><span class="empty-state__hint" x-text="$t('rclone.no_remotes_hint')"></span></div>
 
                     <div x-show="rcloneRemotes.length" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:var(--sp-3)">
                         <template x-for="remote in rcloneRemotes" :key="remote.name">
@@ -2388,7 +2403,7 @@
                                         <div style="font-weight:600;font-size:var(--fs-base)" x-text="remote.name"></div>
                                         <div style="font-size:var(--fs-xs);color: var(--text-light);margin-top:2px" x-text="remote.type"></div>
                                     </div>
-                                    <span style="padding:2px var(--sp-2);border-radius:var(--radius-md);font-size:var(--fs-xs);background: var(--primary-light);color: var(--primary)" x-text="$t('rclone.configured')"></span>
+                                    <span class="badge-xs" style="background: var(--primary-light);color: var(--primary)" x-text="$t('rclone.configured')"></span>
                                 </div>
                                 <div style="display:flex;gap:var(--sp-2);margin-top:var(--sp-3)">
                                     <button class="btn btn-sm" @click="testRemote(remote.name)" :disabled="remoteTesting === remote.name" style="font-size:var(--fs-xs)">
@@ -2410,12 +2425,13 @@
                         <button class="btn btn-primary btn-sm" @click="openAddTask()" :disabled="!rcloneRemotes.length" x-text="$t('rclone.new_task')"></button>
                     </div>
 
-                    <div x-show="!rcloneTasks.length" style="text-align:center;padding:var(--sp-6);color: var(--text-muted)">
+                    <div class="empty-state" x-show="!rcloneTasks.length">
+                        <span class="empty-state__icon">🔄</span>
                         <template x-if="!rcloneRemotes.length">
-                            <span x-text="$t('rclone.add_remote_first')"></span>
+                            <span class="empty-state__title" x-text="$t('rclone.add_remote_first')"></span>
                         </template>
                         <template x-if="rcloneRemotes.length">
-                            <span x-text="$t('rclone.no_tasks')"></span>
+                            <span class="empty-state__title" x-text="$t('rclone.no_tasks')"></span>
                         </template>
                     </div>
 
@@ -2439,24 +2455,24 @@
                                     <tr>
                                         <td style="font-weight:600" x-text="task.name"></td>
                                         <td>
-                                            <span style="padding:2px var(--sp-2);border-radius:var(--radius-md);font-size:var(--fs-xs)"
+                                            <span class="badge-xs" 
                                                 :style="task.direction === 'download' ? 'background-color: var(--purple-light);color: var(--purple)' : 'background: var(--info-light);color: var(--info)'"
                                                 x-text="$t('rclone.download_sync')"></span>
                                         </td>
                                         <td style="font-family:monospace;font-size:var(--fs-xs)" x-text="task.direction === 'download' ? task.remote + ':' + task.dest_path : task.source"></td>
                                         <td style="font-family:monospace;font-size:var(--fs-xs)" x-text="task.direction === 'download' ? task.source : task.remote + ':' + task.dest_path"></td>
                                         <td>
-                                            <span style="padding:2px var(--sp-2);border-radius:var(--radius-md);font-size:var(--fs-xs)"
+                                            <span class="badge-xs" 
                                                 :style="task.mode === 'sync' ? 'background: var(--primary-light);color: var(--primary)' : task.mode === 'copy' ? 'background: var(--success-light);color: var(--success)' : 'background: var(--warn-light);color: var(--warn)'"
                                                 x-text="$t('rclone.sync')"></span>
                                         </td>
                                         <td style="font-size:var(--fs-xs);font-family:monospace" x-text="$t('rclone.manual_trigger')"></td>
                                         <td>
-                                            <span style="padding:2px var(--sp-2);border-radius:var(--radius-md);font-size:var(--fs-xs)"
+                                            <span class="badge-xs" 
                                                 :style="task.enabled ? 'background: var(--success-light);color: var(--success)' : 'background: var(--card-bg-alt);color: var(--text-light)'"
                                                 x-text="$t('common.enable')"></span>
                                             <template x-if="task.last_result === 'running'">
-                                                <span style="padding:2px var(--sp-2);border-radius:var(--radius-md);font-size:var(--fs-xs);background: var(--warn-light);color: var(--warn);margin-left:var(--sp-1)" x-text="$t('rclone.running')"></span>
+                                                <span class="badge-xs" style="background: var(--warn-light);color: var(--warn);margin-left:var(--sp-1)" x-text="$t('rclone.running')"></span>
                                             </template>
                                         </td>
                                         <td style="font-size:var(--fs-xs)">
@@ -2466,11 +2482,11 @@
                                                 x-text="$t('common.success')"></div>
                                         </td>
                                         <td class="actions" style="white-space:nowrap">
-                                            <button class="btn btn-sm btn-success" @click="runTask(task.id)" :disabled="task.last_result === 'running'" style="font-size:var(--fs-xs);padding:2px var(--sp-2)" x-text="$t('common.run')"></button>
-                                            <button class="btn btn-sm" @click="editTask(task)" style="font-size:var(--fs-xs);padding:2px var(--sp-2)" x-text="$t('common.edit')"></button>
-                                            <button class="btn btn-sm" @click="toggleTask(task.id)" style="font-size:var(--fs-xs);padding:2px var(--sp-2)"
+                                            <button class="btn btn-sm btn-success badge-xs" @click="runTask(task.id)" :disabled="task.last_result === 'running'"  x-text="$t('common.run')"></button>
+                                            <button class="btn btn-sm badge-xs" @click="editTask(task)"  x-text="$t('common.edit')"></button>
+                                            <button class="btn btn-sm badge-xs" @click="toggleTask(task.id)" 
                                                 x-text="$t('common.disable')"></button>
-                                            <button class="btn btn-sm btn-danger" @click="deleteTask(task.id)" style="font-size:var(--fs-xs);padding:2px var(--sp-2)" x-text="$t('backup.delete_backup')"></button>
+                                            <button class="btn btn-sm btn-danger badge-xs" @click="deleteTask(task.id)"  x-text="$t('backup.delete_backup')"></button>
                                         </td>
                                     </tr>
                                 </template>
@@ -2501,7 +2517,7 @@
                                         <span style="font-weight:600" x-text="log.task_name"></span>
                                         <span style="font-size:var(--fs-xs);color: var(--text-light);margin-left:var(--sp-2)" x-text="log.start_time"></span>
                                     </div>
-                                    <span style="padding:2px var(--sp-2);border-radius:var(--radius-md);font-size:var(--fs-xs)"
+                                    <span class="badge-xs" 
                                         :style="log.result === 'success' ? 'background: var(--success-light);color: var(--success)' : 'background: var(--danger-light);color: var(--danger)'"
                                         x-text="$t('common.success')"></span>
                                 </div>
@@ -2777,7 +2793,7 @@
                                         <div style="font-size:var(--fs-base);font-weight:600;color: var(--text)" x-text="healthLabel(c.id, c.label)"></div>
                                         <div style="font-size:var(--fs-sm);color: var(--text-light);margin-top:2px" x-text="c.detail"></div>
                                     </div>
-                                    <span :style="'font-size:var(--fs-xs);font-weight:600;padding:3px 10px;border-radius:9999px;color:#fff;flex-shrink:0;background:' + healthStatusColor(c.status)"
+                                    <span class="badge-sm pill" :style="'font-weight:600;color:#fff;flex-shrink:0;background:' + healthStatusColor(c.status)"
                                           x-text="healthStatusText(c.status)"></span>
                                 </div>
                             </div>
@@ -2821,7 +2837,7 @@
                 </div>
 
                 <div style="background: var(--card-bg);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden">
-                    <table class="table" style="margin-bottom:0">
+                    <table class="table table-dense" style="margin-bottom:0">
                         <thead>
                             <tr>
                                 <th style="width:140px" x-text="$t('logs.log_time')"></th>
@@ -2845,7 +2861,7 @@
                                 </tr>
                             </template>
                             <tr x-show="!auditLogs.length">
-                                <td colspan="5" style="text-align:center;color: var(--text-muted);padding:var(--sp-5)"><span x-text="$t('logs.no_records')"></span></td>
+                                <td colspan="5" class="empty-cell"><div class="empty-state empty-state--inline"><span class="empty-state__icon">📋</span><span class="empty-state__title" x-text="$t('logs.no_records')"></span></div></td>
                             </tr>
                         </tbody>
                     </table>
@@ -2854,6 +2870,100 @@
                     <button class="btn btn-sm" @click="auditLogPage=Math.max(0,auditLogPage-1);loadAuditLogs()" :disabled="auditLogPage===0" x-text="$t('logs.prev_page')"></button>
                     <span style="font-size:var(--fs-xs);color: var(--text-light);padding:var(--sp-1) var(--sp-2)" x-text="$t('common.page_num', [(auditLogPage+1)])"></span>
                     <button class="btn btn-sm" @click="auditLogPage++;loadAuditLogs()" :disabled="(auditLogPage+1)*50 >= auditLogTotal"><span x-text="$t('logs.next_page')"></span></button>
+                </div>
+            </div>
+
+            <!-- 事件中心 -->
+            <div x-show="page === 'events'" class="page" x-transition.opacity.duration.300ms>
+                <h2 x-text="$t('events.title')"></h2>
+                <p style="font-size:var(--fs-sm);color: var(--text-light);margin-bottom:var(--sp-4)"><span x-text="$t('events.desc')"></span></p>
+
+                <!-- 概览统计卡 -->
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:var(--sp-3);margin-bottom:var(--sp-4)">
+                    <div class="card clickable-card" style="padding:var(--sp-4);text-align:center" @click="eventFilter.type='';eventPage=0;loadEvents()">
+                        <div style="font-size:var(--fs-2xl);font-weight:700" x-text="eventStats.total"></div>
+                        <div style="font-size:var(--fs-sm);color:var(--text-light)" x-text="$t('events.total')"></div>
+                    </div>
+                    <div class="card clickable-card" style="padding:var(--sp-4);text-align:center" @click="eventFilter.type='error';eventPage=0;loadEvents()">
+                        <div style="font-size:var(--fs-2xl);font-weight:700;color:var(--danger)" x-text="eventStats.error"></div>
+                        <div style="font-size:var(--fs-sm);color:var(--text-light)" x-text="$t('events.type_error')"></div>
+                    </div>
+                    <div class="card clickable-card" style="padding:var(--sp-4);text-align:center" @click="eventFilter.type='warn';eventPage=0;loadEvents()">
+                        <div style="font-size:var(--fs-2xl);font-weight:700;color:var(--warn)" x-text="eventStats.warn"></div>
+                        <div style="font-size:var(--fs-sm);color:var(--text-light)" x-text="$t('events.type_warn')"></div>
+                    </div>
+                    <div class="card clickable-card" style="padding:var(--sp-4);text-align:center" @click="eventFilter.type='success';eventPage=0;loadEvents()">
+                        <div style="font-size:var(--fs-2xl);font-weight:700;color:var(--success)" x-text="eventStats.success"></div>
+                        <div style="font-size:var(--fs-sm);color:var(--text-light)" x-text="$t('events.type_success')"></div>
+                    </div>
+                    <div class="card clickable-card" style="padding:var(--sp-4);text-align:center" @click="eventFilter.type='info';eventPage=0;loadEvents()">
+                        <div style="font-size:var(--fs-2xl);font-weight:700;color:var(--info)" x-text="eventStats.info"></div>
+                        <div style="font-size:var(--fs-sm);color:var(--text-light)" x-text="$t('events.type_info')"></div>
+                    </div>
+                </div>
+
+                <!-- 筛选 -->
+                <div style="display:flex;gap:var(--sp-3);margin-bottom:var(--sp-4);align-items:center;flex-wrap:wrap">
+                    <select x-model="eventFilter.source" @change="eventPage=0;loadEvents()" style="padding:6px var(--sp-3);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:var(--fs-sm)">
+                        <option value="" x-text="$t('events.all_sources')"></option>
+                        <option value="health">🩺 health</option>
+                        <option value="diskmgmt">💽 diskmgmt</option>
+                        <option value="storage">🗄️ storage</option>
+                        <option value="update">⬆️ update</option>
+                        <option value="rclone">☁️ rclone</option>
+                        <option value="firewall">🛡️ firewall</option>
+                        <option value="backup">📦 backup</option>
+                    </select>
+                    <select x-model="eventFilter.type" @change="eventPage=0;loadEvents()" style="padding:6px var(--sp-3);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:var(--fs-sm)">
+                        <option value="" x-text="$t('events.all_types')"></option>
+                        <option value="error" x-text="$t('events.type_error')"></option>
+                        <option value="warn" x-text="$t('events.type_warn')"></option>
+                        <option value="success" x-text="$t('events.type_success')"></option>
+                        <option value="info" x-text="$t('events.type_info')"></option>
+                    </select>
+                    <select x-model="eventFilter.days" @change="eventPage=0;loadEvents()" style="padding:6px var(--sp-3);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:var(--fs-sm)">
+                        <option value="1" x-text="$t('logs.today')"></option>
+                        <option value="7" x-text="$t('logs.days_7')"></option>
+                        <option value="30" x-text="$t('logs.days_30')"></option>
+                        <option value="90" x-text="$t('logs.days_90')"></option>
+                    </select>
+                    <button class="btn btn-sm" @click="loadEvents();loadEventStats()" x-text="$t('common.refresh')"></button>
+                    <span style="font-size:var(--fs-xs);color: var(--text-light);margin-left:auto" x-text="$t('common.records_count', [eventTotal])"></span>
+                </div>
+
+                <!-- 事件列表 -->
+                <div style="background: var(--card-bg);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden">
+                    <table class="table table-dense" style="margin-bottom:0">
+                        <thead>
+                            <tr>
+                                <th style="width:140px" x-text="$t('events.col_time')"></th>
+                                <th style="width:90px" x-text="$t('events.col_source')"></th>
+                                <th style="width:80px" x-text="$t('events.col_type')"></th>
+                                <th x-text="$t('events.col_detail')"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template x-for="ev in eventList" :key="ev.id">
+                                <tr>
+                                    <td style="color:var(--text-light);white-space:nowrap" x-text="fmtEventTime(ev.time)"></td>
+                                    <td><span class="badge-xs" style="background:var(--primary-bg);color:var(--primary)" x-text="ev.source"></span></td>
+                                    <td><span class="badge-xs" :style="eventTypeStyle(ev.type)" x-text="eventTypeText(ev.type)"></span></td>
+                                    <td>
+                                        <div style="font-weight:600" x-text="eventText(ev)"></div>
+                                        <div style="color:var(--text-light);margin-top:2px" x-show="ev.detail" x-text="ev.detail"></div>
+                                    </td>
+                                </tr>
+                            </template>
+                            <tr x-show="!eventList.length">
+                                <td colspan="4" class="empty-cell"><div class="empty-state empty-state--inline"><span class="empty-state__icon">🔔</span><span class="empty-state__title" x-text="$t('events.empty')"></span></div></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div x-show="eventTotal > 50" style="display:flex;justify-content:center;gap:var(--sp-2);margin-top:var(--sp-3)">
+                    <button class="btn btn-sm" @click="eventPage=Math.max(0,eventPage-1);loadEvents()" :disabled="eventPage===0" x-text="$t('logs.prev_page')"></button>
+                    <span style="font-size:var(--fs-xs);color: var(--text-light);padding:var(--sp-1) var(--sp-2)" x-text="$t('common.page_num', [(eventPage+1)])"></span>
+                    <button class="btn btn-sm" @click="eventPage++;loadEvents()" :disabled="(eventPage+1)*50 >= eventTotal"><span x-text="$t('logs.next_page')"></span></button>
                 </div>
             </div>
 

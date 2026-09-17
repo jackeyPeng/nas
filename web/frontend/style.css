@@ -171,13 +171,37 @@ body {
 .table tr:last-child td { border-bottom: none; }
 .table tbody tr { transition: background 0.15s ease; }
 .table tbody tr:hover { background: var(--card-bg-alt); }
+/* 密度分级:高行数表格(日志/规则/历史)用 dense,行距减半、字号降一档 */
+.table-dense th { padding: var(--sp-2) var(--sp-3); }
+.table-dense td { padding: var(--sp-2) var(--sp-3); font-size: var(--fs-sm); }
 
 /* ═══ Badge ═══ */
 .badge { padding: 4px 10px; border-radius: var(--radius-sm); font-size: var(--fs-xs); font-weight: 600; }
+/* 徽章密度分级:xs 表格内联小徽章 / sm 常规强调徽章 */
+.badge-xs { padding: 2px var(--sp-2); border-radius: var(--radius-sm); font-size: var(--fs-xs); line-height: 1.5; }
+.badge-sm { padding: 3px 7px; border-radius: var(--radius-sm); font-size: var(--fs-xs); font-weight: 600; line-height: 1.5; }
+.badge-sm.pill { border-radius: 9999px; padding: 3px 10px; }
+.btn-xs { font-size: var(--fs-xs); padding: 3px 6px; }
 .badge-ok { background: var(--success-light); color: var(--success); }
 .badge-err { background: var(--danger-light); color: var(--danger); }
 .badge-warn { background: var(--warn-light); color: var(--warn); }
 .badge-info { background: var(--info-light); color: var(--info); }
+
+/* ═══ Empty State 空状态统一组件 ═══ */
+.empty-state {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; gap: var(--sp-2);
+    padding: var(--sp-10) var(--sp-5); color: var(--text-muted);
+}
+.empty-state__icon { font-size: 30px; line-height: 1; opacity: 0.45; }
+.empty-state__title { font-size: var(--fs-base); color: var(--text-secondary); }
+.empty-state__hint { font-size: var(--fs-sm); color: var(--text-light); max-width: 420px; }
+.empty-state__action { margin-top: var(--sp-2); }
+/* 紧凑变体:表格单元格 / 侧栏小列表内用 */
+.empty-state--inline { padding: var(--sp-5) var(--sp-3); gap: var(--sp-1); }
+.empty-state--inline .empty-state__icon { font-size: 20px; }
+.empty-state--inline .empty-state__title { font-size: var(--fs-sm); }
+td .empty-state { padding: var(--sp-6) var(--sp-3); }
 
 /* ═══ Buttons ═══ */
 .btn {

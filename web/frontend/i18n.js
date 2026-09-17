@@ -67,8 +67,15 @@
             return key.split('.').pop(); // return last segment as hint
         }
         if (params && typeof val === 'string') {
-            for (let i = 0; i < params.length; i++) {
-                val = val.replace('{' + i + '}', params[i]);
+            if (Array.isArray(params)) {
+                for (let i = 0; i < params.length; i++) {
+                    val = val.replace('{' + i + '}', params[i]);
+                }
+            } else if (typeof params === 'object') {
+                // 命名占位符:{disk}、{task} 等（事件中心 params 用）
+                for (const [k, v] of Object.entries(params)) {
+                    val = val.split('{' + k + '}').join(v);
+                }
             }
         }
         return val;
@@ -77,6 +84,12 @@
     // Plain (non-reactive) translator for imperative JS use
     function t(key, params) {
         return translateWith(translations, key, params);
+    }
+
+    // hasKey reports whether a translation key exists (for graceful fallback)
+    function hasKey(key) {
+        return getNested(translations, key) != null ||
+            (fallbackTranslations && getNested(fallbackTranslations, key) != null);
     }
 
     // Switch language. Updates the closure state AND the reactive Alpine store.
@@ -114,6 +127,7 @@
         // Expose globally (t for JS, $t for non-Alpine templates)
         window.t = t;
         window.$t = t;
+        window.hasKey = hasKey;
         window.switchLang = switchLang;
         window.currentLang = currentLang;
         window.availableLangs = ['zh-CN', 'en-US'];
