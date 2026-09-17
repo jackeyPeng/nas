@@ -132,6 +132,10 @@ func setStatus(status, detail string) {
 	updateStatus = status
 	updateDetail = detail
 	updateMu.Unlock()
+	// 升级失败统一走 setStatus("failed", ...)，在漏斗处上报事件
+	if status == "failed" {
+		common.EmitEvent("update", common.EventError, "update.failed", nil, detail)
+	}
 }
 
 // runUpgrade 在面板进程内完成「下载 + 校验签名」，通过后派发分离的 apply 脚本执行
@@ -198,6 +202,8 @@ func runUpgrade() {
 	}
 
 	common.LogAudit("system", "面板升级", "UPDATE", "/api/update/upgrade", "→ "+m.Version, "pending", "")
+	common.EmitEvent("update", common.EventInfo, "update.dispatched",
+		map[string]interface{}{"version": m.Version}, "签名校验通过，升级脚本已派发")
 	// 状态交给 apply-upgrade.sh 完成（它写 /tmp/nas-upgrade.log，前端轮询 /api/update/status）
 	// 但 apply 脚本完成后面板已重启，状态会被新进程重置为 idle；这里先标记 running，由前端按需刷新。
 }

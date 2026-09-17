@@ -178,6 +178,8 @@ func handleBackupData(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	common.LogAudit("system", "数据备份", "BACKUP", "/api/backup/data", "target="+target, "success", "")
+	common.EmitEvent("backup", common.EventSuccess, "backup.data_done",
+		map[string]interface{}{"target": target}, "")
 	common.JSONResponse(w, map[string]interface{}{
 		"message": "数据备份完成",
 		"output":  out,

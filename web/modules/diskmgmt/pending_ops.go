@@ -180,6 +180,11 @@ func ApplyPendingOps() ([]string, error) {
 			auditDetail += " 失败: " + err.Error()
 		}
 		common.LogAudit("system", "存储变更", "APPLY", "/api/disk/pending/apply", auditDetail, result, "")
+		if result == "success" {
+			common.EmitEvent("storage", common.EventSuccess, "storage.pending_applied", nil, auditDetail)
+		} else {
+			common.EmitEvent("storage", common.EventError, "storage.pending_failed", nil, auditDetail)
+		}
 	}
 
 	// Clear pending queue

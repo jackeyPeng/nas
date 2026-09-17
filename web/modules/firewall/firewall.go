@@ -77,7 +77,8 @@ func getStatus() FirewallStatus {
 
 // parseRules 解析 ufw status numbered 输出
 // 行格式: [ 1] 22/tcp                     ALLOW IN    Anywhere
-//         [18] 22/tcp (v6)               ALLOW IN    Anywhere (v6)
+//
+//	[18] 22/tcp (v6)               ALLOW IN    Anywhere (v6)
 var ruleRe = regexp.MustCompile(`^\[\s*(\d+)\]\s+(\S+?)(?:\s+\(v6\))?\s+(ALLOW|DENY|LIMIT|REJECT)\s+(?:IN|OUT)\s+(.+?)(?:\s+\(v6\))?\s*(?:#.*)?$`)
 
 func parseRules(out string) []FirewallRule {
@@ -176,6 +177,9 @@ func handleAddRule(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf(`{"error":%q}`, strings.TrimSpace(out)), http.StatusInternalServerError)
 		return
 	}
+	common.EmitEvent("firewall", common.EventWarn, "firewall.rule_added",
+		map[string]interface{}{"action": action, "port": port, "proto": proto, "from": from},
+		comment)
 	common.JSONResponse(w, map[string]interface{}{
 		"message": fmt.Sprintf("规则已添加: %s %s/%s", map[string]string{"allow": "允许", "deny": "拒绝"}[action], port, proto),
 	})
@@ -193,6 +197,8 @@ func handleDeleteRule(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf(`{"error":%q}`, strings.TrimSpace(out)), http.StatusInternalServerError)
 		return
 	}
+	common.EmitEvent("firewall", common.EventWarn, "firewall.rule_deleted",
+		map[string]interface{}{"num": num}, "")
 	common.JSONResponse(w, map[string]interface{}{"message": fmt.Sprintf("规则 #%d 已删除", num)})
 }
 
@@ -205,6 +211,7 @@ func handleEnable(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf(`{"error":%q}`, strings.TrimSpace(out)), http.StatusInternalServerError)
 		return
 	}
+	common.EmitEvent("firewall", common.EventInfo, "firewall.enabled", nil, "")
 	common.JSONResponse(w, map[string]interface{}{"message": "防火墙已启用（已自动放行 SSH 22 和面板 8090）"})
 }
 
@@ -214,5 +221,6 @@ func handleDisable(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf(`{"error":%q}`, strings.TrimSpace(out)), http.StatusInternalServerError)
 		return
 	}
+	common.EmitEvent("firewall", common.EventWarn, "firewall.disabled", nil, "防火墙已禁用，所有端口对外开放")
 	common.JSONResponse(w, map[string]interface{}{"message": "防火墙已禁用"})
 }

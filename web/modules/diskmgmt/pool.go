@@ -408,6 +408,8 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 	confirmName := r.FormValue("confirm_name")
 	confirm := r.FormValue("confirm")
 	common.LogAudit("system", "删除存储池", "STORAGE", "/api/disk/pool/delete", fmt.Sprintf("type=%s device=%s", poolType, poolDevice), "pending", "")
+	common.EmitEvent("storage", common.EventWarn, "storage.pool_deleted",
+		map[string]interface{}{"type": poolType, "device": poolDevice}, "")
 
 	if confirm != "yes" {
 		http.Error(w, `{"error":"请加 confirm=yes 确认"}`, http.StatusBadRequest)

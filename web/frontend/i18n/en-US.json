@@ -22,7 +22,8 @@
     "logout": "Logout",
     "diagnostics": "Diagnostics",
     "file_manager": "Open File Manager",
-    "chinese": "中文"
+    "chinese": "中文",
+    "events": "Event Center"
   },
   "common": {
     "save": "Save",
@@ -747,7 +748,7 @@
     "view_output": "View Output",
     "not_installed_warn": "⚠️ rclone not installed",
     "install_hint2": "Install rclone first:",
-    "no_remotes_hint": "No remotes yet — click \"Add Remote\" to configure S3/OSS/cloud drives",
+    "no_remotes_hint": "Click \"Add Remote\" to configure S3/OSS/cloud drives",
     "name_rule": "Only letters, digits, hyphens, underscores",
     "name_locked": "Name cannot be changed",
     "select_type": "Select Storage Type",
@@ -1106,5 +1107,61 @@
     "profile_generic_arm64": "Generic ARM64",
     "profile_rpi": "Raspberry Pi",
     "profile_vm": "Virtual Machine"
+  },
+  "events": {
+    "title": "Event Center",
+    "desc": "Unified system events: health changes, disk events, storage changes, upgrades, sync and firewall operations. Kept for 90 days.",
+    "total": "Total",
+    "type_error": "Error",
+    "type_warn": "Warning",
+    "type_success": "Success",
+    "type_info": "Info",
+    "all_sources": "All sources",
+    "all_types": "All types",
+    "col_time": "Time",
+    "col_source": "Source",
+    "col_type": "Type",
+    "col_detail": "Event",
+    "empty": "No events yet",
+    "recent_alerts": "Recent alerts",
+    "view_all": "View all",
+    "health": {
+      "system": "System health changed: {status}",
+      "storage": "Storage health changed: {status}",
+      "network": "Network health changed: {status}",
+      "backup": "Backup health changed: {status}",
+      "security": "Security health changed: {status}",
+      "cloud_sync": "Cloud sync health changed: {status}"
+    },
+    "disk": {
+      "replaced": "RAID disk replaced: {old} → {new} in {md_device}",
+      "offline": "Disk offline: {disk}"
+    },
+    "storage": {
+      "pool_deleted": "Storage pool deleted ({type} {device})",
+      "pool_imported": "Storage pool imported: {vg}",
+      "reset": "Storage reset",
+      "pending_applied": "Storage changes applied",
+      "pending_failed": "Storage changes failed to apply",
+      "folder_created": "Share folder created: {name}",
+      "folder_deleted": "Share folder deleted: {name}"
+    },
+    "update": {
+      "dispatched": "Panel upgrade dispatched: → {version}",
+      "failed": "Panel upgrade failed"
+    },
+    "rclone": {
+      "sync_ok": "Sync task completed: {task} ({remote})",
+      "sync_failed": "Sync task failed: {task} ({remote})"
+    },
+    "firewall": {
+      "rule_added": "Firewall rule added: {action} {port}/{proto}",
+      "rule_deleted": "Firewall rule deleted: #{num}",
+      "enabled": "Firewall enabled",
+      "disabled": "Firewall disabled"
+    },
+    "backup": {
+      "data_done": "Data backup completed → {target}"
+    }
   }
 }

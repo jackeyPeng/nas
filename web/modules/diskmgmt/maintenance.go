@@ -74,6 +74,10 @@ func handleReplaceDisk(w http.ResponseWriter, r *http.Request) {
 	rebuildInfo := getRebuildStatus(mdDevice)
 	steps = append(steps, fmt.Sprintf("添加 %s 到 %s", newDevice, mdDevice))
 
+	common.EmitEvent("diskmgmt", common.EventWarn, "disk.replaced",
+		map[string]interface{}{"md_device": mdDevice, "old": oldDevice, "new": newDevice},
+		strings.Join(steps, "；"))
+
 	common.JSONResponse(w, map[string]interface{}{
 		"message": "替换盘操作完成",
 		"steps":   steps,

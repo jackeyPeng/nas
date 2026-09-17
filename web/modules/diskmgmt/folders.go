@@ -226,6 +226,8 @@ func handleCreateFolder(w http.ResponseWriter, r *http.Request) {
 		"pool":    pool,
 	})
 	common.LogAudit("system", "创建共享文件夹", "STORAGE", "/api/disk/folders/create", fmt.Sprintf("%s -> %s (perm=%s)", name, folderPath, permission), "success", "")
+	common.EmitEvent("storage", common.EventInfo, "storage.folder_created",
+		map[string]interface{}{"name": name, "path": folderPath, "perm": permission}, "")
 }
 
 // handleDeleteFolder deletes a shared folder (deferred to pending queue)
@@ -261,6 +263,8 @@ func handleDeleteFolder(w http.ResponseWriter, r *http.Request) {
 
 	AddPendingOp("delete", filepath.Base(path), path, filepath.Dir(path), "", "", true, false, false, 0)
 	common.LogAudit("system", "删除共享文件夹", "STORAGE", "/api/disk/folders/delete", fmt.Sprintf("%s -> %s", filepath.Base(path), path), "pending", "")
+	common.EmitEvent("storage", common.EventWarn, "storage.folder_deleted",
+		map[string]interface{}{"name": filepath.Base(path), "path": path}, "")
 }
 
 // handleFolderPermission updates folder permissions (deferred to pending queue)

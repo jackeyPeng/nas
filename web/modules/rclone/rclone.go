@@ -882,11 +882,17 @@ func executeTask(task SyncTask) {
 				tasks[i].LastMessage = err.Error()
 				logEntry.Result = "failed"
 				logEntry.Message = err.Error()
+				common.EmitEvent("rclone", common.EventError, "rclone.sync_failed",
+					map[string]interface{}{"task": task.Name, "remote": task.Remote, "direction": task.Direction},
+					err.Error())
 			} else {
 				tasks[i].LastResult = "success"
 				tasks[i].LastMessage = "同步完成"
 				logEntry.Result = "success"
 				logEntry.Message = "同步完成"
+				common.EmitEvent("rclone", common.EventSuccess, "rclone.sync_ok",
+					map[string]interface{}{"task": task.Name, "remote": task.Remote, "direction": task.Direction},
+					"")
 			}
 			saveTasks(tasks)
 			break

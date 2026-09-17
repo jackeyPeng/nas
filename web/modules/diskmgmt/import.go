@@ -144,6 +144,8 @@ func handleImportPool(w http.ResponseWriter, r *http.Request) {
 	SyncAllConfigs()
 
 	common.LogAudit("system", "导入存储池", "STORAGE", "/api/disk/import/pool", "vg="+vgName, "success", "")
+	common.EmitEvent("storage", common.EventSuccess, "storage.pool_imported",
+		map[string]interface{}{"vg": vgName}, "")
 	common.JSONResponse(w, map[string]interface{}{
 		"message":    "存储池已导入并挂载到 " + mountPoint,
 		"vg_name":    vgName,

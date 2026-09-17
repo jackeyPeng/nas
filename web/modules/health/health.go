@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"nas-panel/common"
@@ -60,6 +61,47 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 		"checks":     checks,
 		"checked_at": time.Now().Format("2006-01-02 15:04:05"),
 	})
+
+	emitHealthTransitions(checks)
+}
+
+// lastHealthStatus 记录每个检查项上次上报到事件中心的状态，
+// 只在「状态迁移」时发事件（ok→warn、warn→error、error→ok 等），
+// 避免前端轮询 /api/health 时重复刷事件。
+var lastHealthStatus sync.Map // checkID -> status
+
+// emitHealthTransitions 对比上次状态，状态变化时上报事件。
+func emitHealthTransitions(checks []Check) {
+	for _, c := range checks {
+		prev, loaded := lastHealthStatus.Load(c.ID)
+		lastHealthStatus.Store(c.ID, c.Status)
+		if !loaded {
+			// 首次观察：只记录 warn/error，不为 ok 刷事件
+			if c.Status == "warn" || c.Status == "error" {
+				emitHealthEvent(c)
+			}
+			continue
+		}
+		if prev == c.Status {
+			continue
+		}
+		emitHealthEvent(c)
+	}
+}
+
+func emitHealthEvent(c Check) {
+	typ := common.EventInfo
+	switch c.Status {
+	case "error":
+		typ = common.EventError
+	case "warn":
+		typ = common.EventWarn
+	case "ok":
+		typ = common.EventSuccess
+	}
+	common.EmitEvent("health", typ, "health."+c.ID,
+		map[string]interface{}{"check": c.ID, "status": c.Status},
+		c.Detail)
 }
 
 // checkSystem：核心服务运行状态。

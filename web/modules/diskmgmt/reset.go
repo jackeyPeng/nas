@@ -22,6 +22,7 @@ func handleWizardReset(w http.ResponseWriter, r *http.Request) {
 	confirm := r.FormValue("confirm")
 	confirmToken := r.FormValue("confirm_token")
 	common.LogAudit("system", "存储重置", "STORAGE", "/api/disk/wizard/reset", "清空所有存储池配置", "pending", "")
+	common.EmitEvent("storage", common.EventWarn, "storage.reset", nil, "清空所有存储池配置")
 	if confirm != "yes" || confirmToken != "DELETE" {
 		http.Error(w, `{"error":"请输入 DELETE 确认（不可恢复）"}`, http.StatusBadRequest)
 		return

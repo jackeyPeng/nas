@@ -22,7 +22,8 @@
     "logout": "退出登录",
     "diagnostics": "系统诊断",
     "file_manager": "打开文件管理",
-    "chinese": "中文"
+    "chinese": "中文",
+    "events": "事件中心"
   },
   "common": {
     "save": "保存",
@@ -747,7 +748,7 @@
     "view_output": "查看输出",
     "not_installed_warn": "⚠️ rclone 未安装",
     "install_hint2": "请先安装 rclone:",
-    "no_remotes_hint": "暂无远端存储，点击\"添加远端\"配置 S3/OSS/网盘等",
+    "no_remotes_hint": "点击\"添加远端\"配置 S3/OSS/网盘等",
     "name_rule": "只能包含字母、数字、横线和下划线",
     "name_locked": "名称不可修改",
     "select_type": "选择存储类型",
@@ -1106,5 +1107,61 @@
     "profile_generic_arm64": "通用 ARM64",
     "profile_rpi": "树莓派",
     "profile_vm": "虚拟机"
+  },
+  "events": {
+    "title": "事件中心",
+    "desc": "系统事件统一收集：健康异常、磁盘事件、存储变更、升级、同步与防火墙操作。保留 90 天。",
+    "total": "全部",
+    "type_error": "错误",
+    "type_warn": "警告",
+    "type_success": "成功",
+    "type_info": "信息",
+    "all_sources": "全部来源",
+    "all_types": "全部类型",
+    "col_time": "时间",
+    "col_source": "来源",
+    "col_type": "类型",
+    "col_detail": "事件",
+    "empty": "暂无事件",
+    "recent_alerts": "最近告警",
+    "view_all": "查看全部",
+    "health": {
+      "system": "系统健康状态变化：{status}",
+      "storage": "存储健康状态变化：{status}",
+      "network": "网络健康状态变化：{status}",
+      "backup": "备份健康状态变化：{status}",
+      "security": "安全健康状态变化：{status}",
+      "cloud_sync": "云同步健康状态变化：{status}"
+    },
+    "disk": {
+      "replaced": "RAID 换盘：{md_device} 上 {old} → {new}",
+      "offline": "磁盘离线：{disk}"
+    },
+    "storage": {
+      "pool_deleted": "存储池已删除（{type} {device}）",
+      "pool_imported": "存储池已导入：{vg}",
+      "reset": "存储已重置",
+      "pending_applied": "存储变更已应用",
+      "pending_failed": "存储变更应用失败",
+      "folder_created": "共享文件夹已创建：{name}",
+      "folder_deleted": "共享文件夹已删除：{name}"
+    },
+    "update": {
+      "dispatched": "面板升级已派发：→ {version}",
+      "failed": "面板升级失败"
+    },
+    "rclone": {
+      "sync_ok": "同步任务完成：{task}（{remote}）",
+      "sync_failed": "同步任务失败：{task}（{remote}）"
+    },
+    "firewall": {
+      "rule_added": "防火墙规则已添加：{action} {port}/{proto}",
+      "rule_deleted": "防火墙规则已删除：#{num}",
+      "enabled": "防火墙已启用",
+      "disabled": "防火墙已禁用"
+    },
+    "backup": {
+      "data_done": "数据备份完成 → {target}"
+    }
   }
 }
