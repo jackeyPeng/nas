@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 主要变化 |
 |------|------|---------|
+| v1.4.0-beta.9 | 2026-09-17 | 事件中心 Event Bus（pub/sub + events.db + 查询 API + 前端事件页/dashboard 告警卡）+ 视觉打磨收尾（徽章微距/空状态统一/表格密度分级）+ hardware zram 过滤修复 |
 | v1.4.0-beta.8 | 2026-09-15 | 权限模型系列修复 + 高风险操作白名单校验 + 安装免交互默认密码（curl\|bash 死循环修复）+ 亮色主题打磨 + 品牌图标 + Hardware Profile + 发布红线清洗 |
 | v1.4.0-beta.7 | 2026-09-11 | 商业化 P0 全落地（Import Pool / OTA 签名 / 2FA / 危险操作确认 / 凭证保险箱 / License）+ 健康中心 + rclone 调度器 + SBOM |
 | v1.4.0-beta.6 | 2026-09-08 | 出厂默认账号 fm + 默认密码 `Nas-Test-2026` + 首登强制改密 |
@@ -17,6 +18,31 @@
 | v1.0.0 | 2026-07-08 | 安全清洗 + 用户名通用化 |
 
 > 逐日详细记录见下方（按日期倒序）。
+
+---
+
+## [2026-09-17] - 事件中心 Event Bus + 视觉打磨收尾
+
+### 版本 v1.4.0-beta.9
+
+### 事件中心 Event Bus（新功能）
+
+- `common/eventbus.go`：进程内 pub/sub（Subscribe/Unsubscribe，订阅者缓冲 64）+ `events.db` SQLite 持久化（WAL，独立于 audit.db——audit 记「谁通过 API 做了什么」，event 记「系统发生了什么」）；EmitEvent 非阻塞投递（满则丢不卡业务），后台单 writer 串行落库，90 天自动清理
+- `modules/events`：`GET /api/events`（分页 + source/type/days 过滤，非法 type 400）+ `GET /api/events/stats`（近 N 天各类型计数）
+- 生产方接入 7 个模块：health（状态迁移去抖，只在 ok↔warn↔error 变化时发事件，前端轮询不刷重复）、diskmgmt（RAID 换盘）、storage（删池/重置/导入/pending 应用/共享夹增删）、update（升级失败漏斗 + 派发）、rclone（同步成败）、firewall（规则增删/启停，禁用发警告提示全端口开放）、backup（数据备份完成）
+- 前端：侧栏「维护」组新增事件中心页（5 张统计卡即点即筛 + 来源/类型/时间窗筛选 + dense 表格 + 分页）；dashboard 新增「最近告警」摘要卡（近 7 天 error+warn 前 5 条）
+- i18n：命名占位符插值 `{disk}`/`{task}`/`{status}`（i18n.js 扩展 + hasKey 兜底），中英双语 1111 键对齐
+- 单测：eventbus 6 个（emit/query/filter/stats/subscribe/params）+ events handler 5 个，全绿
+
+### 视觉打磨收尾（亮色主题第三轮）
+
+- 徽章微距 token 化：39 处内联小 padding（1/2/3/5/6px）归入 `.badge-xs`(2px 8px)/`.badge-sm`(3px 7px)/`.badge-sm.pill`/`.btn-xs` 四档类；浏览器计算样式扫描 0 内联微距残留、0 未解析变量
+- 空状态统一：新增 `.empty-state` 组件（图标+标题+hint+action 插槽，`--inline` 表格紧凑变体），替换 19 处各自为政的「暂无数据」
+- 表格密度分级：`.table-dense`（8px 行距 + fs-sm）应用于登录日志/防火墙规则/操作日志/诊断历史/事件中心 5 张高行数表格
+
+### 修复
+
+- hardware：物理盘列表过滤 zram/虚拟块设备（lsblk TYPE 必须为 disk），修复 zram0 混入 `/api/hardware/profile` disks 列表
 
 ---
 
