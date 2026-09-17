@@ -14,12 +14,12 @@ import (
 
 // WizardDisk represents a disk with friendly name
 type WizardDisk struct {
-	ID       int    `json:"id"`        // 1, 2, 3...
-	Device   string `json:"device"`    // /dev/sdb
-	Friendly string `json:"friendly"`  // 磁盘 1
-	Size     string `json:"size"`      // 50G
+	ID       int    `json:"id"`       // 1, 2, 3...
+	Device   string `json:"device"`   // /dev/sdb
+	Friendly string `json:"friendly"` // 磁盘 1
+	Size     string `json:"size"`     // 50G
 	Model    string `json:"model"`
-	Type     string `json:"type"`  // system/unused/data
+	Type     string `json:"type"` // system/unused/data
 }
 
 // WizardStatus returns current storage state + available disks
@@ -75,12 +75,12 @@ func handleWizardStatus(w http.ResponseWriter, r *http.Request) {
 	raidOptions := getRaidOptions(len(unused), minSize)
 
 	common.JSONResponse(w, map[string]interface{}{
-		"unused_disks":     unused,
-		"unused_count":     len(unused),
-		"pool":             pool,
-		"existing_mounts":  existingMounts,
-		"has_storage":       len(existingMounts) > 0 || pool["exists"] == true,
-		"raid_options":      raidOptions,
+		"unused_disks":    unused,
+		"unused_count":    len(unused),
+		"pool":            pool,
+		"existing_mounts": existingMounts,
+		"has_storage":     len(existingMounts) > 0 || pool["exists"] == true,
+		"raid_options":    raidOptions,
 	})
 }
 
@@ -99,12 +99,12 @@ func getPoolStatusSimple() map[string]interface{} {
 				pct = (used / total) * 100
 			}
 			pool = map[string]interface{}{
-				"exists":      true,
-				"vg_name":     fields[0],
-				"total_gb":    fmt.Sprintf("%.0f", total),
-				"used_gb":     fmt.Sprintf("%.1f", used),
-				"free_gb":     fmt.Sprintf("%.0f", free),
-				"percent":     fmt.Sprintf("%.0f", pct),
+				"exists":   true,
+				"vg_name":  fields[0],
+				"total_gb": fmt.Sprintf("%.0f", total),
+				"used_gb":  fmt.Sprintf("%.1f", used),
+				"free_gb":  fmt.Sprintf("%.0f", free),
+				"percent":  fmt.Sprintf("%.0f", pct),
 			}
 		}
 	}
@@ -251,11 +251,11 @@ func handleWizardSetup(w http.ResponseWriter, r *http.Request) {
 	steps = append(steps, "创建 public + 用户 home 并生成托管共享")
 
 	common.JSONResponse(w, map[string]interface{}{
-		"message":  "存储配置完成！",
-		"mode":     mode,
-		"steps":    steps,
-		"disks":    len(unusedDevs),
-		"mount":    resultMount,
+		"message": "存储配置完成！",
+		"mode":    mode,
+		"steps":   steps,
+		"disks":   len(unusedDevs),
+		"mount":   resultMount,
 	})
 }
 

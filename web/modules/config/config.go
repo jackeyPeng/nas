@@ -301,12 +301,12 @@ func handleServiceToggle(w http.ResponseWriter, r *http.Request) {
 // ═══════════════════════════════════════
 
 var allowedConfigFiles = map[string]string{
-	"smb.conf":      "/etc/samba/smb.conf",
-	"vsftpd.conf":   "/etc/vsftpd.conf",
-	"exports":       "/etc/exports",
-	"nfs.conf":      "/etc/nfs.conf",
-	"jail.local":    "/etc/fail2ban/jail.local",
-	"env":           "/opt/nas/.env",
+	"smb.conf":        "/etc/samba/smb.conf",
+	"vsftpd.conf":     "/etc/vsftpd.conf",
+	"exports":         "/etc/exports",
+	"nfs.conf":        "/etc/nfs.conf",
+	"jail.local":      "/etc/fail2ban/jail.local",
+	"env":             "/opt/nas/.env",
 	"rclone-htpasswd": "/etc/rclone-htpasswd",
 }
 

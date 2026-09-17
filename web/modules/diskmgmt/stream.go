@@ -236,35 +236,47 @@ func setupLVMSingleStream(w http.ResponseWriter, dev, mountPoint, nasUser string
 
 	stepRunning("清除磁盘签名")
 	out, err := common.SudoExec("/usr/sbin/wipefs", "-a", dev)
-	if checkExecError(w, "清除磁盘签名", out, err) { return }
+	if checkExecError(w, "清除磁盘签名", out, err) {
+		return
+	}
 	stepDone("清除磁盘签名")
 
 	stepRunning("创建物理卷 (pvcreate)")
 	out, err = common.SudoExec("/usr/sbin/pvcreate", "-f", dev)
-	if checkExecError(w, "创建物理卷", out, err) { return }
+	if checkExecError(w, "创建物理卷", out, err) {
+		return
+	}
 	stepDone("创建物理卷")
 
 	stepRunning("创建卷组 (vgcreate)")
 	vgName := "vg_nas"
 	out, err = common.SudoExec("/usr/sbin/vgcreate", "-f", vgName, dev)
-	if checkExecError(w, "创建卷组", out, err) { return }
+	if checkExecError(w, "创建卷组", out, err) {
+		return
+	}
 	stepDone("创建卷组 vg_nas")
 
 	stepRunning("创建逻辑卷 (lvcreate)")
 	out, err = common.SudoExec("/usr/sbin/lvcreate", "-y", "-l", "100%FREE", "-n", "data", vgName)
-	if checkExecError(w, "创建逻辑卷", out, err) { return }
+	if checkExecError(w, "创建逻辑卷", out, err) {
+		return
+	}
 	lvPath := "/dev/" + vgName + "/data"
 	stepDone("创建逻辑卷 data")
 
 	stepRunning("格式化 (xfs)")
 	out, err = common.SudoExec("mkfs.xfs", "-f", lvPath)
-	if checkExecError(w, "格式化", out, err) { return }
+	if checkExecError(w, "格式化", out, err) {
+		return
+	}
 	stepDone("格式化 xfs")
 
 	stepRunning("挂载并配置")
 	common.SudoExec("mkdir", "-p", mountPoint)
 	out, err = common.SudoExec("mount", lvPath, mountPoint)
-	if checkExecError(w, "挂载", out, err) { return }
+	if checkExecError(w, "挂载", out, err) {
+		return
+	}
 	uuidOut, _ := common.ExecOutput("blkid", "-s", "UUID", "-o", "value", lvPath)
 	writeFstab(strings.TrimSpace(uuidOut), mountPoint, "xfs")
 	common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountPoint)
@@ -280,9 +292,13 @@ func setupLVMMergeStream(w http.ResponseWriter, devs []string, mountPoint, nasUs
 	for i, dev := range devs {
 		stepRunning(fmt.Sprintf("清除并初始化磁盘 %d/%d", i+1, len(devs)))
 		out, err := common.SudoExec("/usr/sbin/wipefs", "-a", dev)
-		if checkExecError(w, fmt.Sprintf("清除磁盘 %d", i+1), out, err) { return }
+		if checkExecError(w, fmt.Sprintf("清除磁盘 %d", i+1), out, err) {
+			return
+		}
 		out, err = common.SudoExec("/usr/sbin/pvcreate", "-f", dev)
-		if checkExecError(w, fmt.Sprintf("初始化磁盘 %d", i+1), out, err) { return }
+		if checkExecError(w, fmt.Sprintf("初始化磁盘 %d", i+1), out, err) {
+			return
+		}
 		stepDone(fmt.Sprintf("初始化磁盘 %d/%d", i+1, len(devs)))
 	}
 
@@ -290,24 +306,32 @@ func setupLVMMergeStream(w http.ResponseWriter, devs []string, mountPoint, nasUs
 	vgName := "vg_nas"
 	vgArgs := append([]string{"-f", vgName}, devs...)
 	out, err := common.SudoExec("/usr/sbin/vgcreate", vgArgs...)
-	if checkExecError(w, "创建卷组", out, err) { return }
+	if checkExecError(w, "创建卷组", out, err) {
+		return
+	}
 	stepDone("创建卷组 vg_nas")
 
 	stepRunning("创建逻辑卷 (lvcreate)")
 	out, err = common.SudoExec("/usr/sbin/lvcreate", "-y", "-l", "100%FREE", "-n", "data", vgName)
-	if checkExecError(w, "创建逻辑卷", out, err) { return }
+	if checkExecError(w, "创建逻辑卷", out, err) {
+		return
+	}
 	lvPath := "/dev/" + vgName + "/data"
 	stepDone("创建逻辑卷 data")
 
 	stepRunning("格式化 (xfs)")
 	out, err = common.SudoExec("mkfs.xfs", "-f", lvPath)
-	if checkExecError(w, "格式化", out, err) { return }
+	if checkExecError(w, "格式化", out, err) {
+		return
+	}
 	stepDone("格式化 xfs")
 
 	stepRunning("挂载并配置")
 	common.SudoExec("mkdir", "-p", mountPoint)
 	out, err = common.SudoExec("mount", lvPath, mountPoint)
-	if checkExecError(w, "挂载", out, err) { return }
+	if checkExecError(w, "挂载", out, err) {
+		return
+	}
 	uuidOut, _ := common.ExecOutput("blkid", "-s", "UUID", "-o", "value", lvPath)
 	writeFstab(strings.TrimSpace(uuidOut), mountPoint, "xfs")
 	common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountPoint)
@@ -323,7 +347,9 @@ func setupRAIDStream(w http.ResponseWriter, devs []string, level int, mountPoint
 	stepRunning(fmt.Sprintf("清除 %d 块磁盘签名", len(devs)))
 	for _, dev := range devs {
 		out, err := common.SudoExec("/usr/sbin/wipefs", "-a", dev)
-		if checkExecError(w, "清除磁盘签名", out, err) { return }
+		if checkExecError(w, "清除磁盘签名", out, err) {
+			return
+		}
 	}
 	stepDone("清除磁盘签名")
 
@@ -333,7 +359,9 @@ func setupRAIDStream(w http.ResponseWriter, devs []string, level int, mountPoint
 	args := []string{"--create", mdDev, "--level=" + fmt.Sprintf("%d", level), "--raid-devices=" + fmt.Sprintf("%d", len(devs)), "--run"}
 	args = append(args, devs...)
 	out, err := common.SudoExec("/usr/sbin/mdadm", args...)
-	if checkExecError(w, "创建RAID", out, err) { return }
+	if checkExecError(w, "创建RAID", out, err) {
+		return
+	}
 	stepDone(fmt.Sprintf("创建 RAID%d 阵列 (%s)", level, mdDev))
 
 	// 3. Wait for md device
@@ -344,14 +372,18 @@ func setupRAIDStream(w http.ResponseWriter, devs []string, level int, mountPoint
 	// 4. Format
 	stepRunning("格式化 (xfs)")
 	out, err = common.SudoExec("mkfs.xfs", "-f", mdDev)
-	if checkExecError(w, "格式化", out, err) { return }
+	if checkExecError(w, "格式化", out, err) {
+		return
+	}
 	stepDone("格式化 xfs")
 
 	// 5. Mount + fstab
 	stepRunning("挂载并配置")
 	common.SudoExec("mkdir", "-p", mountPoint)
 	out, err = common.SudoExec("mount", mdDev, mountPoint)
-	if checkExecError(w, "挂载", out, err) { return }
+	if checkExecError(w, "挂载", out, err) {
+		return
+	}
 	uuidOut, _ := common.ExecOutput("blkid", "-s", "UUID", "-o", "value", mdDev)
 	writeFstab(strings.TrimSpace(uuidOut), mountPoint, "xfs")
 	common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountPoint)
@@ -407,25 +439,33 @@ func setupSeparateStream(w http.ResponseWriter, devs []string, nasUser string,
 
 		stepRunning(fmt.Sprintf("磁盘 %d: 清除签名", i+1))
 		out, err := common.SudoExec("/usr/sbin/wipefs", "-a", dev)
-		if checkExecError(w, fmt.Sprintf("磁盘%d清除", i+1), out, err) { return }
+		if checkExecError(w, fmt.Sprintf("磁盘%d清除", i+1), out, err) {
+			return
+		}
 		stepDone(fmt.Sprintf("磁盘 %d: 清除签名", i+1))
 
 		stepRunning(fmt.Sprintf("磁盘 %d: 创建分区", i+1))
 		out, err = common.SudoExec("/usr/sbin/parted", "-s", dev, "mklabel", "gpt", "mkpart", "primary", "xfs", "0%", "100%")
-		if checkExecError(w, fmt.Sprintf("磁盘%d分区", i+1), out, err) { return }
+		if checkExecError(w, fmt.Sprintf("磁盘%d分区", i+1), out, err) {
+			return
+		}
 		time.Sleep(500 * time.Millisecond)
 		partDev := dev + "1"
 		stepDone(fmt.Sprintf("磁盘 %d: 创建分区", i+1))
 
 		stepRunning(fmt.Sprintf("磁盘 %d: 格式化", i+1))
 		out, err = common.SudoExec("mkfs.xfs", "-f", partDev)
-		if checkExecError(w, fmt.Sprintf("磁盘%d格式化", i+1), out, err) { return }
+		if checkExecError(w, fmt.Sprintf("磁盘%d格式化", i+1), out, err) {
+			return
+		}
 		stepDone(fmt.Sprintf("磁盘 %d: 格式化", i+1))
 
 		stepRunning(fmt.Sprintf("磁盘 %d: 挂载", i+1))
 		common.SudoExec("mkdir", "-p", mountPoint)
 		out, err = common.SudoExec("mount", partDev, mountPoint)
-		if checkExecError(w, fmt.Sprintf("磁盘%d挂载", i+1), out, err) { return }
+		if checkExecError(w, fmt.Sprintf("磁盘%d挂载", i+1), out, err) {
+			return
+		}
 		uuidOut, _ := common.ExecOutput("blkid", "-s", "UUID", "-o", "value", partDev)
 		writeFstab(strings.TrimSpace(uuidOut), mountPoint, "xfs")
 		common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountPoint)

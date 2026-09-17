@@ -42,9 +42,9 @@ type DiagnosticItem struct {
 type Config struct {
 	TimeWindowStart string `json:"time_window_start"` // "02:00"
 	TimeWindowEnd   string `json:"time_window_end"`   // "06:00"
-	TempLimit       int    `json:"temp_limit"`         // 55
-	IOLimit         int    `json:"io_limit"`           // 70
-	ScrubSpeedMax   int    `json:"scrub_speed_max"`    // 100000 KB/s
+	TempLimit       int    `json:"temp_limit"`        // 55
+	IOLimit         int    `json:"io_limit"`          // 70
+	ScrubSpeedMax   int    `json:"scrub_speed_max"`   // 100000 KB/s
 }
 
 // HistoryEntry is a record of a diagnostic run
@@ -64,17 +64,17 @@ func DefaultItems() []DiagnosticItem {
 		{
 			ID: "smart_short", Name: "SMART 短检",
 			Description: "磁盘固件内置快速自检，检测 imminent failure 风险",
-			Duration: "~2分钟", Enabled: true, Schedule: "weekly",
+			Duration:    "~2分钟", Enabled: true, Schedule: "weekly",
 		},
 		{
 			ID: "smart_long", Name: "SMART 长检",
 			Description: "全盘表面读取扫描，检测坏道和弱扇区",
-			Duration: "~4小时", Enabled: false, Schedule: "monthly",
+			Duration:    "~4小时", Enabled: false, Schedule: "monthly",
 		},
 		{
 			ID: "raid_scrub", Name: "RAID 数据清理",
 			Description: "校验 RAID 阵列所有数据的完整性，自动修复静默损坏",
-			Duration: "~2小时", Enabled: false, Schedule: "monthly",
+			Duration:    "~2小时", Enabled: false, Schedule: "monthly",
 		},
 	}
 }

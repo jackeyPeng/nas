@@ -11,9 +11,10 @@ import (
 )
 
 // Build-time values injected via ldflags:
-//   -X nas-panel/modules/version.Version=v1.3.0
-//   -X nas-panel/modules/version.BuildTime=2026-08-13T15:00:00Z
-//   -X nas-panel/modules/version.GitCommit=abc1234
+//
+//	-X nas-panel/modules/version.Version=v1.3.0
+//	-X nas-panel/modules/version.BuildTime=2026-08-13T15:00:00Z
+//	-X nas-panel/modules/version.GitCommit=abc1234
 var (
 	// DisplayVersion 是对外展示的系统大版本号（如 v1.3.0），取最近的 git tag
 	DisplayVersion = "dev"
@@ -55,11 +56,11 @@ func handleVersion(w http.ResponseWriter, r *http.Request) {
 	info := VersionInfo{
 		DisplayVersion: DisplayVersion,
 		Version:        Version,
-		BuildTime: BuildTime,
-		GitCommit: GitCommit,
-		GoVersion: runtime.Version(),
-		OS:        runtime.GOOS,
-		Arch:      runtime.GOARCH,
+		BuildTime:      BuildTime,
+		GitCommit:      GitCommit,
+		GoVersion:      runtime.Version(),
+		OS:             runtime.GOOS,
+		Arch:           runtime.GOARCH,
 	}
 	common.JSONResponse(w, info)
 }
@@ -161,6 +162,7 @@ func handleComponents(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 }
+
 // dpkgVersion returns the installed version of a deb package
 func dpkgVersion(pkg string) string {
 	out, _ := common.ExecOutput("sh", "-c", "dpkg-query -W -f='${Version}' "+pkg+" 2>/dev/null")
@@ -176,10 +178,10 @@ var noticeFS []byte
 
 // NoticeSection is one section of the legal/privacy statement
 type NoticeSection struct {
-	ID       string        `json:"id"`
-	Title    string        `json:"title"`    // 中英双语标题
-	SubTitle string        `json:"subtitle"` // English subtitle
-	Items    []NoticeItem  `json:"items"`
+	ID       string       `json:"id"`
+	Title    string       `json:"title"`    // 中英双语标题
+	SubTitle string       `json:"subtitle"` // English subtitle
+	Items    []NoticeItem `json:"items"`
 }
 
 // NoticeItem is one bullet or key-value item within a section

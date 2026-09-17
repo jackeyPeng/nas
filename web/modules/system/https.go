@@ -12,20 +12,20 @@ import (
 
 // CertStatus represents the current HTTPS certificate state
 type CertStatus struct {
-	Enabled  bool   `json:"enabled"`
-	Type     string `json:"type"` // "none", "self-signed", "custom"
-	Domain   string `json:"domain"`
-	IssuedTo string `json:"issued_to"`
-	Expires  string `json:"expires"`
-	DaysLeft int    `json:"days_left"`
+	Enabled  bool          `json:"enabled"`
+	Type     string        `json:"type"` // "none", "self-signed", "custom"
+	Domain   string        `json:"domain"`
+	IssuedTo string        `json:"issued_to"`
+	Expires  string        `json:"expires"`
+	DaysLeft int           `json:"days_left"`
 	Services []CertService `json:"services"`
 }
 
 // CertService shows which services have HTTPS enabled
 type CertService struct {
-	Name    string `json:"name"`
-	Port    string `json:"port"`
-	HTTPS   bool   `json:"https"`
+	Name  string `json:"name"`
+	Port  string `json:"port"`
+	HTTPS bool   `json:"https"`
 }
 
 const (

@@ -34,8 +34,8 @@ func handleRAIDExpandStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
-	mdDev := r.URL.Query().Get("md_device")   // e.g. /dev/md0
-	device := r.URL.Query().Get("device")     // new disk, e.g. /dev/sdd
+	mdDev := r.URL.Query().Get("md_device") // e.g. /dev/md0
+	device := r.URL.Query().Get("device")   // new disk, e.g. /dev/sdd
 	confirm := r.URL.Query().Get("confirm")
 
 	// ── 参数检查 ──
@@ -239,7 +239,7 @@ func handleRAIDReshapeStatus(w http.ResponseWriter, r *http.Request) {
 	mdstat, _ := os.ReadFile("/proc/mdstat")
 
 	status := map[string]interface{}{
-		"device":   mdDev,
+		"device":    mdDev,
 		"reshaping": false,
 		"progress":  "",
 		"speed":     "",

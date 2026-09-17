@@ -5,9 +5,9 @@ import "testing"
 // 开放共享（无 valid users）回显：Samba 语义任何可认证用户可连
 func TestGetUserFolderPermissionOpenShare(t *testing.T) {
 	cases := []struct {
-		name    string
-		conf    string
-		want    string
+		name string
+		conf string
+		want string
 	}{
 		{
 			name: "开放共享默认读写",

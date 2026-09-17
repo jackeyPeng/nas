@@ -16,10 +16,10 @@ type RaidOption struct {
 	UsableRatio string `json:"usable_ratio"` // 100%, 50%, (n-1)/n, (n-2)/n
 	UsableSize  string `json:"usable_size"`  // 100G, 50G
 	Description string `json:"description"`
-	Warning     string `json:"warning"`      // 注意事项
-	Recommended bool   `json:"recommended"`  // 是否推荐
-	MinDisks    int    `json:"min_disks"`    // 最少磁盘数
-	MaxDisks    int    `json:"max_disks"`    // 0=无限制
+	Warning     string `json:"warning"`     // 注意事项
+	Recommended bool   `json:"recommended"` // 是否推荐
+	MinDisks    int    `json:"min_disks"`   // 最少磁盘数
+	MaxDisks    int    `json:"max_disks"`   // 0=无限制
 }
 
 // getRaidOptions calculates available RAID options based on disk count and sizes
