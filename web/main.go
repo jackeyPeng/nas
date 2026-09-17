@@ -18,6 +18,7 @@ import (
 	"nas-panel/modules/dashboard"
 	"nas-panel/modules/diagnostics"
 	"nas-panel/modules/diskmgmt"
+	"nas-panel/modules/events"
 	"nas-panel/modules/firewall"
 	"nas-panel/modules/hardware"
 	"nas-panel/modules/health"
@@ -103,6 +104,7 @@ func main() {
 		dataDir = d
 	}
 	common.InitAuditLog(dataDir)
+	common.InitEventBus(dataDir)
 
 	if addr := os.Getenv("LISTEN_ADDR"); addr != "" {
 		listenAddr = addr
@@ -133,6 +135,7 @@ func main() {
 	health.RegisterRoutes(mux)
 	update.RegisterRoutes(mux)
 	hardware.RegisterRoutes(mux)
+	events.RegisterRoutes(mux)
 
 	// Serve frontend
 	frontendRoot, _ := fs.Sub(frontendFS, "frontend")
