@@ -15,6 +15,7 @@ import (
 
 func RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/monitor", common.AuthMiddleware(handleMonitor))
+	mux.HandleFunc("/api/monitor/connections", common.AuthMiddleware(handleConnections))
 	mux.HandleFunc("/api/alert-config", common.AuthMiddleware(handleAlertConfig))
 }
 
