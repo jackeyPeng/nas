@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -337,7 +336,7 @@ func GenerateNFSConfig() error {
 
 	var sb strings.Builder
 	sb.WriteString(managedStart + "\n")
-	subnet := detectLANSubnet()
+	// 所有服务对所有网段开放：NFS 导出用 *（不再限制本机网段）
 	for _, m := range metas {
 		if !m.NFSExport {
 			continue
@@ -346,7 +345,7 @@ func GenerateNFSConfig() error {
 		if m.Permission == "readonly" {
 			opts = "ro,sync,no_subtree_check"
 		}
-		sb.WriteString(fmt.Sprintf("%s %s(%s)\n", m.Path, subnet, opts))
+		sb.WriteString(fmt.Sprintf("%s *(%s)\n", m.Path, opts))
 	}
 	sb.WriteString(managedEnd + "\n")
 
@@ -632,31 +631,7 @@ func getNASUser() string {
 	return user
 }
 
-// detectLANSubnet 返回主网卡的局域网网段（CIDR 形式，如 192.168.1.0/24）
-// 用于 NFS 导出，替代原来硬编码的 192.168.0.0/16
-func detectLANSubnet() string {
-	addrs, err := net.InterfaceAddrs()
-	if err != nil {
-		return "192.168.0.0/16"
-	}
-	for _, a := range addrs {
-		ipnet, ok := a.(*net.IPNet)
-		if !ok || ipnet.IP.IsLoopback() {
-			continue
-		}
-		ip4 := ipnet.IP.To4()
-		if ip4 == nil {
-			continue
-		}
-		ones, bits := ipnet.Mask.Size()
-		if bits != 32 {
-			continue
-		}
-		network := ip4.Mask(ipnet.Mask)
-		return fmt.Sprintf("%s/%d", network.String(), ones)
-	}
-	return "192.168.0.0/16"
-}
+// detectLANSubnet 已移除：NFS 导出改为 *（所有网段开放），不再检测本机网段
 
 // replaceManagedBlock replaces or inserts the managed block in config content.
 // Strips any existing managed block (everything between the first START marker and

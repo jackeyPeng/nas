@@ -329,7 +329,7 @@
     "nfs_export": "NFS Export",
     "authorized_users": "Authorized Users",
     "proto_per_user": "Per-user",
-    "proto_network": "Network",
+    "proto_network": "NFS export (all networks)",
     "proto_global": "Global",
     "volume": "Volume",
     "expand": "Expand",

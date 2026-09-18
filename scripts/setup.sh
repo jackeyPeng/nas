@@ -204,20 +204,7 @@ if [ -f "$NAS_DIR/configs/nfs.conf" ]; then
     cp "$NAS_DIR/configs/nfs.conf" /etc/nfs.conf
 fi
 
-# 自动检测本机内网段
-DETECT_SUBNET=""
-PRIMARY_IP=$(ip -4 -o addr show scope global | grep -v 'docker\|virbr\|lo' | head -1 | awk '{print $4}')
-if [ -n "$PRIMARY_IP" ]; then
-    # 提取 /24 子网: 192.168.1.100/24 → 192.168.1.0/24
-    DETECT_SUBNET=$(echo "$PRIMARY_IP" | sed -E 's/\.[0-9]+\/[0-9]+$/.0\/24/' 2>/dev/null)
-    if [ -z "$DETECT_SUBNET" ] || [ "$DETECT_SUBNET" = "$PRIMARY_IP" ]; then
-        DETECT_SUBNET="192.168.0.0/24"  # fallback
-    fi
-else
-    DETECT_SUBNET="192.168.0.0/24"  # fallback
-fi
-echo "  检测到内网段: ${DETECT_SUBNET}"
-
+# NFS 对所有网段开放（不再检测/限制本机网段）
 # 提取旧的 Z1 托管 NFS 导出（如果存在）
 Z1_NFS_EXPORTS=""
 if [ -f /etc/exports ]; then
@@ -225,7 +212,7 @@ if [ -f /etc/exports ]; then
 fi
 
 if [ -f "$NAS_DIR/configs/exports" ]; then
-    sed "s|__SUBNET__|${DETECT_SUBNET}|g" "$NAS_DIR/configs/exports" > /etc/exports
+    cp "$NAS_DIR/configs/exports" /etc/exports
 else
     cat > /etc/exports << EXPEOF
 # NFS 导出由面板托管段生成（仅 /data/nas1/public），此处保持空
@@ -233,7 +220,8 @@ EXPEOF
 fi
 
 # 追加 Z1 托管 NFS 导出（过滤掉路径已不存在的旧导出：reset/换机后 /data 可能还没建，
-# 留着会让 exportfs -a 非零退出，set -e 下整个安装中断在 [4/10]）
+# 留着会让 exportfs -a 非零退出，set -e 下整个安装中断在 [4/10]；
+# 旧版按网段导出的行统一归一为 *，与面板新生成的托管段一致）
 if [ -n "$Z1_NFS_EXPORTS" ]; then
     KEPT=""
     while IFS= read -r line; do
@@ -242,7 +230,9 @@ if [ -n "$Z1_NFS_EXPORTS" ]; then
         esac
         exp_path=$(echo "$line" | awk '{print $1}')
         if [ -d "$exp_path" ]; then
-            KEPT="${KEPT}${line}
+            exp_opts=$(echo "$line" | awk '{print $3}')
+            [ -z "$exp_opts" ] && exp_opts="(rw,sync,no_subtree_check,no_root_squash)"
+            KEPT="${KEPT}${exp_path} *${exp_opts}
 "
         else
             echo "   跳过不存在的旧 NFS 导出: $exp_path"
