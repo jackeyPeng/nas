@@ -699,19 +699,6 @@
                     </div>
                 </div>
 
-                <div class="modal" x-show="mustChangePassword" x-cloak>
-                    <div class="modal-box">
-                        <h3 x-text="$t('login.must_change_pwd')"></h3>
-                        <p style="color: var(--text-secondary);font-size:var(--fs-sm);margin:var(--sp-2) 0 var(--sp-4)" x-text="$t('login.must_change_pwd_hint')"></p>
-                        <div class="form-group">
-                            <label><span x-text="$t('users.new_password_12')"></span></label>
-                            <input type="password" x-model="pwdForm.password" autocomplete="new-password">
-                        </div>
-                        <div class="modal-actions">
-                            <button class="btn btn-primary" @click="changePassword()" x-text="$t('common.confirm')"></button>
-                        </div>
-                    </div>
-                </div>
             </div>
 
             <!-- Storage -->
@@ -2972,6 +2959,21 @@
 
     <!-- Toast -->
     <div class="toast" x-show="toast.show" x-cloak :class="toast.type" x-text="toast.msg"></div>
+
+        <!-- 强制改密弹窗（全局层：任何页面下都必须显示，不能嵌在单个 page 容器里） -->
+        <div class="modal" x-show="mustChangePassword" x-cloak style="z-index:10000">
+            <div class="modal-box">
+                <h3 x-text="$t('login.must_change_pwd')"></h3>
+                <p style="color: var(--text-secondary);font-size:var(--fs-sm);margin:var(--sp-2) 0 var(--sp-4)" x-text="$t('login.must_change_pwd_hint')"></p>
+                <div class="form-group">
+                    <label><span x-text="$t('users.new_password_12')"></span></label>
+                    <input type="password" x-model="pwdForm.password" autocomplete="new-password">
+                </div>
+                <div class="modal-actions">
+                    <button class="btn btn-primary" @click="changePassword()" x-text="$t('common.confirm')"></button>
+                </div>
+            </div>
+        </div>
 </div>
 <script src="app.js"></script>
 </body>

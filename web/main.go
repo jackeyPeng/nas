@@ -45,7 +45,7 @@ var (
 // 出厂默认账号与初始密码（首次登录后强制修改）
 const (
 	defaultUser = "fm"
-	defaultPass = "Nas-Test-2026"
+	defaultPass = common.DefaultPass
 )
 
 func main() {

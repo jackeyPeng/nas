@@ -161,6 +161,9 @@ func handleDashboard(w http.ResponseWriter, r *http.Request) {
 		"services":       services,
 		"active_count":   activeCount,
 		"total_services": len(services),
+		// 前端据此在刷新/恢复会话后也弹出强制改密（不依赖登录响应）
+		"must_change_password": common.IsDefaultPass(),
+		"username":             common.GetNASUser(),
 	}
 
 	common.JSONResponse(w, response)

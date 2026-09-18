@@ -1,6 +1,7 @@
 package common
 
 import (
+	"crypto/subtle"
 	"fmt"
 	"net/http"
 	"strings"
@@ -30,6 +31,14 @@ func GetNasPass() string {
 // UpdateNasPass updates the password at runtime (called after password change)
 func UpdateNasPass(pass string) {
 	nasPass = pass
+}
+
+// DefaultPass 出厂默认密码（首次登录后强制修改）
+const DefaultPass = "Nas-Test-2026"
+
+// IsDefaultPass 当前面板密码是否仍是出厂默认密码
+func IsDefaultPass() bool {
+	return subtle.ConstantTimeCompare([]byte(nasPass), []byte(DefaultPass)) == 1
 }
 
 // CreateToken creates a JWT token for a user

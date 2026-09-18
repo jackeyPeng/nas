@@ -545,6 +545,11 @@ function nasPanel() {
             this.dashboardLoaded = false;
             const data = await this.api('/dashboard');
             if (data) this.dashboard = data;
+            // 刷新/恢复会话后仍强制改密（登录响应只在登录那一次带 must_change_password）
+            if (data && data.must_change_password) {
+                this.mustChangePassword = true;
+                if (!this.pwdUser) this.pwdUser = data.username || this.loginForm.username || '';
+            }
             // Also load storage overview for disk bay diagram
             const sdata = await this.api('/disk/overview');
             if (sdata && sdata.overview) this.storageOverview = sdata.overview;
