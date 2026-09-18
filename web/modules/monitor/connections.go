@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 
 	"nas-panel/common"
@@ -95,49 +96,48 @@ func getSMBConnections() []Connection {
 	return parseSMBStatusJSON(out)
 }
 
-// parseSMBStatusJSON 纯函数：解析 smbstatus --json 输出为连接列表（便于单测）
+// parseSMBStatusJSON 纯函数：解析 smbstatus --json 输出为连接列表（便于单测）。
+// 实测 schema（Samba 4.22）：sessions 键为 session_id，字段 username/remote_machine/hostname/auth_time；
+// tcons 带 session_id 可直接关联共享列表，不用按 machine 猜。
 func parseSMBStatusJSON(out string) []Connection {
 	var data struct {
 		Sessions map[string]struct {
-			User        string `json:"user"`
-			Machine     string `json:"machine"`
-			Address     string `json:"address"`
-			ConnectedAt string `json:"connected_at"`
+			Username      string `json:"username"`
+			RemoteMachine string `json:"remote_machine"`
+			Hostname      string `json:"hostname"`
+			AuthTime      string `json:"auth_time"`
 		} `json:"sessions"`
 		Tcons map[string]struct {
 			Service     string `json:"service"`
-			Machine     string `json:"machine"`
+			SessionID   string `json:"session_id"`
 			ConnectedAt string `json:"connected_at"`
 		} `json:"tcons"`
 	}
 	if err := json.Unmarshal([]byte(out), &data); err != nil {
 		return nil
 	}
-	// 每个 session 聚合其共享列表（tcons 按 machine 关联）
-	sharesByMachine := map[string][]string{}
+	// tcons 按 session_id 聚合共享列表
+	sharesBySession := map[string][]string{}
 	for _, t := range data.Tcons {
-		m := normalizeMachine(t.Machine)
-		sharesByMachine[m] = append(sharesByMachine[m], t.Service)
+		sharesBySession[t.SessionID] = append(sharesBySession[t.SessionID], t.Service)
 	}
 	conns := make([]Connection, 0, len(data.Sessions))
-	for _, s := range data.Sessions {
-		ip := extractIP(s.Address)
+	for sid, s := range data.Sessions {
+		ip := normalizeClientIP(s.RemoteMachine)
 		if ip == "" {
-			ip = extractIP(s.Machine)
+			ip = normalizeClientIP(s.Hostname)
 		}
-		machine := normalizeMachine(s.Machine)
-		shares := sharesByMachine[machine]
-		// 若 machine 不是 IP 形式，尝试用 session address 匹配 tcons
-		if len(shares) == 0 && ip != "" {
-			shares = sharesByMachine[ip]
+		if ip == "127.0.0.1" || ip == "::1" {
+			continue // 本机回环不算客户端连接（与 ss 路径一致）
 		}
+		shares := sharesBySession[sid]
 		sort.Strings(shares)
 		conns = append(conns, Connection{
 			Protocol:    "smb",
-			User:        s.User,
+			User:        s.Username,
 			IP:          ip,
 			Detail:      strings.Join(shares, ", "),
-			ConnectedAt: s.ConnectedAt,
+			ConnectedAt: s.AuthTime,
 		})
 	}
 	return conns
@@ -167,9 +167,7 @@ func getTCPConnections() []Connection {
 		}
 		// IPv4-mapped IPv6（::ffff:1.2.3.4）归一为纯 IPv4
 		if ip := net.ParseIP(peerIP); ip != nil {
-			if v4 := ip.To4(); v4 != nil {
-				peerIP = v4.String()
-			}
+			peerIP = canonicalIP(ip)
 		}
 		if peerIP == "127.0.0.1" || peerIP == "::1" {
 			continue // 本机回环不算客户端连接
@@ -196,6 +194,45 @@ func extractIP(addr string) string {
 		return addr
 	}
 	return ""
+}
+
+// normalizeClientIP 提取客户端 IP 并做 IPv4-mapped 归一。
+// 覆盖 smbstatus 实测形态："::1"、"ipv6:::1:54770"（=host ::1 + port 54770，
+// 剥前缀后整串还能被 ParseIP 误认成合法 IPv6，必须先剥末尾 :port）、
+// "ipv4:10.1.2.3:54770"、"10.1.2.3"、主机名（返回 ""）。
+func normalizeClientIP(addr string) string {
+	addr = strings.TrimSpace(addr)
+	addr = strings.TrimPrefix(addr, "ipv4:")
+	addr = strings.TrimPrefix(addr, "ipv6:")
+	// 直接是 IP
+	if ip := net.ParseIP(addr); ip != nil {
+		return canonicalIP(ip)
+	}
+	// host:port（IPv4 或 [IPv6]:port）
+	if h, _, err := net.SplitHostPort(addr); err == nil {
+		if ip := net.ParseIP(h); ip != nil {
+			return canonicalIP(ip)
+		}
+		return ""
+	}
+	// IPv6 带端口但无方括号（smbstatus ipv6: 前缀剥离后的形态）：
+	// 剥掉最后一个冒号段（若为纯数字端口）再试
+	if i := strings.LastIndex(addr, ":"); i > 0 {
+		if _, err := strconv.Atoi(addr[i+1:]); err == nil {
+			if ip := net.ParseIP(addr[:i]); ip != nil {
+				return canonicalIP(ip)
+			}
+		}
+	}
+	return ""
+}
+
+// canonicalIP IPv4-mapped IPv6（::ffff:1.2.3.4）归一为纯 IPv4
+func canonicalIP(ip net.IP) string {
+	if v4 := ip.To4(); v4 != nil {
+		return v4.String()
+	}
+	return ip.String()
 }
 
 // normalizeMachine machine 字段可能是 "ipv4:10.1.2.3:56789" 或主机名，统一成可匹配 key
