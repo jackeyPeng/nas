@@ -98,7 +98,7 @@ func seedFromFileSystem(db *sql.DB) {
 			continue
 		}
 		for _, entry := range entries {
-			if !entry.IsDir() || entry.Name() == "#recycle" {
+			if !entry.IsDir() || entry.Name() == "#recycle" || entry.Name() == ".recycle" {
 				continue
 			}
 			path := filepath.Join(m["mount"], entry.Name())
@@ -296,11 +296,16 @@ func GenerateSambaConfig() error {
 `, m.Name, m.Path, writeMode, validLine, writeList, mask, mask, forceUser, forceGroup))
 
 		if m.RecycleBin {
+			// per-share 回收站（TODO #25 / Architecture v1.0 第十条）：
+			// .recycle/<user>/ 存于共享目录内，删除=rename（跨设备移动不再 copy+delete），
+			// 恢复=rename 回原路径，保留目录树上下文。hide files 对 SMB 客户端隐藏。
 			sb.WriteString(`   vfs objects = recycle
-   recycle:repository = #recycle
+   recycle:repository = .recycle/%U
    recycle:keeptree = yes
    recycle:versions = yes
    recycle:touch = yes
+   recycle:directory_mode = 0700
+   hide files = /.recycle/
 `)
 		}
 	}
@@ -512,7 +517,7 @@ func CheckConfigConsistency() ConfigIssues {
 			metaMap[m.Path] = true
 		}
 		for _, entry := range entries {
-			if !entry.IsDir() || entry.Name() == "#recycle" {
+			if !entry.IsDir() || entry.Name() == "#recycle" || entry.Name() == ".recycle" {
 				continue
 			}
 			fullPath := filepath.Join(mountPoint, entry.Name())

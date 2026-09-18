@@ -79,6 +79,8 @@ func RegisterRoutes(mux *http.ServeMux) {
 	// Stream (progressive setup/reset)
 	mux.HandleFunc("/api/disk/wizard/setup-stream", common.AuthMiddleware(handleWizardSetupStream))
 	mux.HandleFunc("/api/disk/wizard/reset-stream", common.AuthMiddleware(handleWizardResetStream))
+	// Per-share recycle bin (TODO #25)
+	RegisterRecycleRoutes(mux)
 }
 
 // ═══════════════════════════════════════

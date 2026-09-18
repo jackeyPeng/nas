@@ -93,7 +93,7 @@ section "回收站"
 RECYCLE_FOUND=false
 for mp in /data/nas*; do
     if [[ -d "$mp" ]]; then
-        for recycle_dir in "$mp"/*/\#recycle "$mp"/\#recycle; do
+        for recycle_dir in "$mp"/*/\#recycle "$mp"/\#recycle "$mp"/*/.recycle "$mp"/.recycle; do
             if [[ -d "$recycle_dir" ]]; then
                 SIZE=$(get_size "$recycle_dir")
                 if [[ $SIZE -gt 0 ]]; then

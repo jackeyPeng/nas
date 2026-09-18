@@ -253,7 +253,7 @@ func handleStorageOverview(w http.ResponseWriter, r *http.Request) {
 				out, _ := common.SudoOutput("ls", "-1", mountPoint)
 				for _, name := range strings.Split(out, "\n") {
 					name = strings.TrimSpace(name)
-					if name == "" || name == "#recycle" {
+					if name == "" || name == "#recycle" || name == ".recycle" {
 						continue
 					}
 					folderMap[mountPoint] = append(folderMap[mountPoint], SharedFolder{
@@ -264,7 +264,7 @@ func handleStorageOverview(w http.ResponseWriter, r *http.Request) {
 				}
 			} else {
 				for _, entry := range entries {
-					if !entry.IsDir() || entry.Name() == "#recycle" {
+					if !entry.IsDir() || entry.Name() == "#recycle" || entry.Name() == ".recycle" {
 						continue
 					}
 					folderPath := filepath.Join(mountPoint, entry.Name())
@@ -414,7 +414,7 @@ func handleStorageOverview(w http.ResponseWriter, r *http.Request) {
 		entries, err := os.ReadDir(systemSharePath)
 		if err == nil {
 			for _, entry := range entries {
-				if !entry.IsDir() || entry.Name() == "#recycle" {
+				if !entry.IsDir() || entry.Name() == "#recycle" || entry.Name() == ".recycle" {
 					continue
 				}
 				folderPath := filepath.Join(systemSharePath, entry.Name())

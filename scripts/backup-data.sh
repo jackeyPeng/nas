@@ -18,6 +18,7 @@ BOLD='\033[1m'
 BACKUP_SOURCES=()
 EXCLUDES=(
     "#recycle"
+    ".recycle"
     ".Trash*"
     "lost+found"
     "*.tmp"

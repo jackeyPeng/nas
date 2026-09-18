@@ -60,7 +60,7 @@ for mp in /data/nas*; do
             [[ -d "$dir" ]] || continue
             dirname=$(basename "$dir")
             # Skip system folders
-            [[ "$dirname" == "lost+found" || "$dirname" == "#recycle" ]] && continue
+            [[ "$dirname" == "lost+found" || "$dirname" == "#recycle" || "$dirname" == ".recycle" ]] && continue
             OWNER=$(stat -c '%U' "$dir" 2>/dev/null || echo "?")
             SIZE=$(du -sh "$dir" 2>/dev/null | awk '{print $1}' || echo "?")
             echo -e "  $mp/$dirname  所有者:${BOLD}$OWNER${NC}  大小:$SIZE"

@@ -62,7 +62,7 @@ func handleListFolders(w http.ResponseWriter, r *http.Request) {
 		}
 
 		for _, entry := range entries {
-			if !entry.IsDir() || entry.Name() == "#recycle" {
+			if !entry.IsDir() || entry.Name() == "#recycle" || entry.Name() == ".recycle" {
 				continue
 			}
 			folderPath := filepath.Join(mountPoint, entry.Name())
