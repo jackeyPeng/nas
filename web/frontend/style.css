@@ -470,3 +470,8 @@ select, textarea {
     /* Hide complex elements on mobile */
     .disk-slot-template { display: none; }
 }
+
+/* Tab 层叠容器：子 tab 全部落在同一 grid 单元格，
+   切换时离开的 tab 淡出期间不再把新内容顶到下方（修存储页 tab 跳动） */
+.tab-stack { display: grid; }
+.tab-stack > div { grid-area: 1 / 1; min-width: 0; }

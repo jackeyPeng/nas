@@ -29,6 +29,10 @@ function nasPanel() {
         firewallForm: { port: '', proto: 'tcp', action: 'allow', from: '', comment: '' },
         firewallSaving: false,
         monitor: {},
+        connections: [],
+        recycleItems: [],
+        recycleShares: {},
+        recycleShareFilter: '',
         monitorTimer: null,
         monitorShowDetail: false,
         monitorShowAdvanced: false,
@@ -986,6 +990,109 @@ function nasPanel() {
         async loadMonitor() {
             const data = await this.api('/monitor');
             if (data) this.monitor = data;
+            this.loadConnections();
+        },
+
+        async loadConnections() {
+            const data = await this.api('/monitor/connections');
+            if (data) this.connections = data.connections || [];
+        },
+
+        // ═══ 回收站（per-share，TODO #25）═══
+        async loadRecycleBin() {
+            const q = this.recycleShareFilter ? '?share=' + encodeURIComponent(this.recycleShareFilter) : '';
+            const data = await this.api('/disk/recycle' + q);
+            if (data) {
+                this.recycleItems = data.items || [];
+                this.recycleShares = data.shares || {};
+            }
+        },
+
+        async restoreRecycleItem(it) {
+            const params = new URLSearchParams({ share: it.share, rel_path: it.rel_path, user: it.user || '' });
+            if (it.legacy) params.append('legacy', 'yes');
+            const data = await this.api('/disk/recycle/restore', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: params.toString()
+            });
+            if (data && !data.error) {
+                this.showToast(this.t('msg.op_success'), 'success');
+                this.loadRecycleBin();
+                this.loadSharedFolders();
+                this.loadStorageOverview();
+            }
+        },
+
+        async deleteRecycleItem(it) {
+            if (!confirm(this.t('storage.recycle_delete_confirm', [it.rel_path]))) return;
+            const params = new URLSearchParams({ share: it.share, rel_path: it.rel_path, user: it.user || '', confirm: 'yes' });
+            if (it.legacy) params.append('legacy', 'yes');
+            const data = await this.api('/disk/recycle/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: params.toString()
+            });
+            if (data && !data.error) {
+                this.showToast(this.t('msg.del_success'), 'success');
+                this.loadRecycleBin();
+            }
+        },
+
+        async clearRecycleBin() {
+            const share = this.recycleShareFilter;
+            if (!share) return;
+            const typed = prompt(this.t('storage.recycle_clear_confirm', [share]));
+            if (typed !== share) {
+                if (typed !== null) this.showToast(this.t('msg.name_mismatch'), 'error');
+                return;
+            }
+            const params = new URLSearchParams({ share, confirm_name: share });
+            const data = await this.api('/disk/recycle/clear', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: params.toString()
+            });
+            if (data && !data.error) {
+                this.showToast(this.t('msg.del_success'), 'success');
+                this.loadRecycleBin();
+            }
+        },
+
+        formatSize(bytes) {
+            if (bytes === undefined || bytes === null) return '-';
+            if (bytes < 1024) return bytes + ' B';
+            const units = ['KB', 'MB', 'GB', 'TB'];
+            let v = bytes, i = -1;
+            do { v /= 1024; i++; } while (v >= 1024 && i < units.length - 1);
+            return v.toFixed(v >= 100 ? 0 : 1) + ' ' + units[i];
+        },
+
+        connProtoStyle(p) {
+            window.Alpine.store('i18n').lang; // reactive dep
+            const map = {
+                smb: 'background:var(--primary-light);color:var(--primary)',
+                ssh: 'background:var(--success-light);color:var(--success)',
+                nfs: 'background:var(--card-bg-alt);color:var(--text-light)',
+                ftp: 'background:var(--warn-light);color:var(--warn)',
+                webdav: 'background:var(--warn-light);color:var(--warn)',
+                s3: 'background:var(--warn-light);color:var(--warn)',
+                web: 'background:var(--card-bg-alt);color:var(--text-secondary)'
+            };
+            return map[p] || 'background:var(--card-bg-alt);color:var(--text-secondary)';
+        },
+
+        fmtConnTime(iso) {
+            if (!iso) return '-';
+            try {
+                const d = new Date(iso);
+                if (isNaN(d.getTime())) return iso;
+                const diff = Math.floor((Date.now() - d.getTime()) / 1000);
+                if (diff < 60) return this.t('monitor.conn_just_now');
+                if (diff < 3600) return this.t('monitor.conn_minutes', [Math.floor(diff / 60)]);
+                if (diff < 86400) return this.t('monitor.conn_hours', [Math.floor(diff / 3600)]);
+                return this.t('monitor.conn_days', [Math.floor(diff / 86400)]);
+            } catch (e) { return iso; }
         },
 
         initMonitorRefresh() {

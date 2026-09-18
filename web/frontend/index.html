@@ -966,6 +966,29 @@
                     </div>
                 </div>
 
+                <!-- ═══ 当前连接 ═══ -->
+                <div style="background: var(--card-bg);border:1px solid var(--border);border-radius:var(--radius-lg);padding:var(--sp-5);margin-bottom:var(--sp-6)">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--sp-4)">
+                        <h3 style="margin:0;font-size:var(--fs-md)">🔗 <span x-text="$t('monitor.connections')"></span> <span class="badge badge-sm" style="background:var(--card-bg-alt);color:var(--text-secondary)" x-text="(connections||[]).length"></span></h3>
+                        <button class="btn btn-sm" @click="loadConnections()" style="font-size:var(--fs-xs)" x-text="$t('common.refresh')"></button>
+                    </div>
+                    <table class="table table-dense">
+                        <thead><tr><th x-text="$t('monitor.conn_protocol')"></th><th x-text="$t('logs.log_user')"></th><th>IP</th><th x-text="$t('monitor.conn_detail')"></th><th x-text="$t('monitor.conn_since')"></th></tr></thead>
+                        <tbody>
+                            <template x-for="(c,i) in (connections||[])" :key="i">
+                                <tr>
+                                    <td><span class="badge badge-sm" :style="connProtoStyle(c.protocol)" x-text="c.protocol.toUpperCase()"></span></td>
+                                    <td x-text="c.user||'-'"></td>
+                                    <td style="font-family:monospace" x-text="c.ip||'-'"></td>
+                                    <td x-text="c.detail||'-'"></td>
+                                    <td x-text="fmtConnTime(c.connected_at)"></td>
+                                </tr>
+                            </template>
+                            <tr x-show="!(connections||[]).length"><td colspan="5" class="empty-cell"><div class="empty-state empty-state--inline"><span class="empty-state__icon">🔗</span><span class="empty-state__title" x-text="$t('monitor.no_connections')"></span></div></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
                 <!-- ═══ 详细信息（折叠） ═══ -->
                 <div style="background: var(--card-bg);border:1px solid var(--border);border-radius:var(--radius-lg);margin-bottom:var(--sp-6)">
                     <div style="padding:var(--sp-4) var(--sp-5);cursor:pointer;display:flex;justify-content:space-between;align-items:center" @click="monitorShowDetail = !monitorShowDetail">
@@ -1194,8 +1217,11 @@
                     <button class="tab-btn" :class="{'tab-active':diskmgmtTab==='pools'}" @click="diskmgmtTab='pools'">🗄️ <span x-text="$t('storage.pools')"></span></button>
                     <button class="tab-btn" :class="{'tab-active':diskmgmtTab==='wizard'}" @click="diskmgmtTab='wizard'">🧙 <span x-text="$t('storage.wizard')"></span></button>
                     <button class="tab-btn" :class="{'tab-active':diskmgmtTab==='maintenance'}" @click="diskmgmtTab='maintenance'"><span x-text="$t('nav.maintenance')"></span></button>
+                    <button class="tab-btn" :class="{'tab-active':diskmgmtTab==='recycle'}" @click="diskmgmtTab='recycle';loadRecycleBin()">🗑️ <span x-text="$t('storage.recycle_tab')"></span></button>
                 </nav>
 
+                <!-- tab 层叠容器：所有 tab 内容占同一 grid 单元格，切换时旧内容淡出不挤占布局（修 tab 跳动） -->
+                <div class="tab-stack">
                 <!-- ═══════════════ Tab 1: 存储总览 ═══════════════ -->
                 <div x-show="diskmgmtTab==='overview'" x-transition.opacity.duration.250ms>
                     <!-- 统计卡片 -->
@@ -1646,6 +1672,57 @@
                         <div x-show="!operationsLog||operationsLog.length===0" style="text-align:center;color: var(--text-light);padding:var(--sp-5);font-size:var(--fs-sm)"><span x-text="$t('logs.no_logs')"></span></div>
                     </div>
                 </div>
+
+                <!-- ═══════════════ Tab 6: 回收站 ═══════════════ -->
+                <div x-show="diskmgmtTab==='recycle'" x-transition.opacity.duration.250ms>
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--sp-4);flex-wrap:wrap;gap:var(--sp-2)">
+                        <div style="font-size:var(--fs-base);font-weight:600;color:var(--text-secondary)">🗑️ <span x-text="$t('storage.recycle_tab')"></span>
+                            <span style="font-size:var(--fs-xs);color:var(--text-muted);font-weight:400;margin-left:var(--sp-2)" x-text="$t('storage.recycle_hint')"></span>
+                        </div>
+                        <div style="display:flex;gap:var(--sp-2);align-items:center">
+                            <select x-model="recycleShareFilter" @change="loadRecycleBin()" style="font-size:var(--fs-sm)">
+                                <option value="" x-text="$t('storage.recycle_all_shares')"></option>
+                                <template x-for="(p, name) in (recycleShares||{})" :key="name">
+                                    <option :value="name" x-text="name"></option>
+                                </template>
+                            </select>
+                            <button class="btn btn-sm" @click="loadRecycleBin()" x-text="$t('common.refresh')"></button>
+                        </div>
+                    </div>
+                    <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius-lg);padding:var(--sp-3)">
+                        <table class="table table-dense">
+                            <thead><tr>
+                                <th x-text="$t('storage.recycle_share')"></th>
+                                <th x-text="$t('storage.recycle_item')"></th>
+                                <th x-text="$t('storage.recycle_deleted_by')"></th>
+                                <th x-text="$t('storage.recycle_deleted_at')"></th>
+                                <th x-text="$t('common.size')"></th>
+                                <th x-text="$t('common.actions')"></th>
+                            </tr></thead>
+                            <tbody>
+                                <template x-for="(it,i) in (recycleItems||[])" :key="i">
+                                    <tr>
+                                        <td><span class="badge badge-sm" style="background:var(--card-bg-alt);color:var(--text-secondary)" x-text="it.share"></span>
+                                            <span x-show="it.legacy" class="badge badge-xs" style="background:var(--warn-light);color:var(--warn)" x-text="$t('storage.recycle_legacy_badge')"></span></td>
+                                        <td><span x-text="(it.is_dir?'📁 ':'📄 ')+it.rel_path" style="word-break:break-all"></span></td>
+                                        <td x-text="it.user"></td>
+                                        <td x-text="it.mtime ? new Date(it.mtime*1000).toLocaleString() : '-'"></td>
+                                        <td x-text="it.is_dir ? '-' : formatSize(it.size)"></td>
+                                        <td style="white-space:nowrap">
+                                            <button class="btn btn-xs btn-primary" @click="restoreRecycleItem(it)" x-text="$t('storage.recycle_restore')"></button>
+                                            <button class="btn btn-xs" style="color:var(--danger)" @click="deleteRecycleItem(it)" x-text="$t('storage.recycle_delete_forever')"></button>
+                                        </td>
+                                    </tr>
+                                </template>
+                                <tr x-show="!(recycleItems||[]).length"><td colspan="6" class="empty-cell"><div class="empty-state empty-state--inline"><span class="empty-state__icon">🗑️</span><span class="empty-state__title" x-text="$t('storage.recycle_empty')"></span></div></td></tr>
+                            </tbody>
+                        </table>
+                        <div x-show="(recycleItems||[]).length > 0 && recycleShareFilter" style="margin-top:var(--sp-3);text-align:right">
+                            <button class="btn btn-sm" style="color:var(--danger)" @click="clearRecycleBin()" x-text="$t('storage.recycle_clear_share')"></button>
+                        </div>
+                    </div>
+                </div>
+                </div><!-- /tab-stack -->
             </div>
             <!-- ═══════════════ 扩容弹窗 ═══════════════ -->
             <div class="modal" x-show="showExtendPool" x-cloak @click.self="showExtendPool=false">
