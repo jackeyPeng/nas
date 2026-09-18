@@ -143,8 +143,8 @@ download_file() {
     return 1
 }
 
-# ==================== [1/9] 安装基础软件包 ====================
-echo "[1/9] 安装基础软件包..."
+# ==================== [1/10] 安装基础软件包 ====================
+echo "[1/10] 安装基础软件包..."
 apt-get update
 DEBIAN_FRONTEND=noninteractive apt-get install -y \
     curl samba nfs-kernel-server vsftpd rclone \
@@ -152,9 +152,9 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y \
     smbclient nfs-common xfsprogs mdadm lvm2 rsync
 echo "  ✓ 软件包安装完成"
 
-# ==================== [2/9] 创建数据目录结构 ====================
+# ==================== [2/10] 创建数据目录结构 ====================
 echo ""
-echo "[2/9] 创建数据目录结构..."
+echo "[2/10] 创建数据目录结构..."
 mkdir -p "$DATA_DIR"
 chown -R "$NAS_USER:$NAS_USER" "$DATA_DIR"
 chmod 755 "$DATA_DIR"
@@ -165,9 +165,9 @@ fi
 usermod -a -G nasusers "$NAS_USER" 2>/dev/null || true
 echo "  ✓ 目录结构创建完成（存储池挂载 /data/nas1，public 与用户 home 由存储向导创建）"
 
-# ==================== [3/9] 配置 Samba ====================
+# ==================== [3/10] 配置 Samba ====================
 echo ""
-echo "[3/9] 配置 Samba..."
+echo "[3/10] 配置 Samba..."
 
 # 提取旧的 Z1 托管共享（如果存在）
 Z1_SAMBA_SHARES=""
@@ -197,9 +197,9 @@ systemctl reset-failed smbd nmbd 2>/dev/null
 timeout 60 systemctl restart smbd nmbd || echo "  ⚠ smbd nmbd 重启失败（结尾注册表会标记，可稍后手动 restart）"
 echo "  ✓ Samba 配置完成"
 
-# ==================== [4/9] 配置 NFS ====================
+# ==================== [4/10] 配置 NFS ====================
 echo ""
-echo "[4/9] 配置 NFS..."
+echo "[4/10] 配置 NFS..."
 if [ -f "$NAS_DIR/configs/nfs.conf" ]; then
     cp "$NAS_DIR/configs/nfs.conf" /etc/nfs.conf
 fi
@@ -233,7 +233,7 @@ EXPEOF
 fi
 
 # 追加 Z1 托管 NFS 导出（过滤掉路径已不存在的旧导出：reset/换机后 /data 可能还没建，
-# 留着会让 exportfs -a 非零退出，set -e 下整个安装中断在 [4/9]）
+# 留着会让 exportfs -a 非零退出，set -e 下整个安装中断在 [4/10]）
 if [ -n "$Z1_NFS_EXPORTS" ]; then
     KEPT=""
     while IFS= read -r line; do
@@ -262,9 +262,9 @@ systemctl reset-failed nfs-kernel-server 2>/dev/null
 timeout 60 systemctl restart nfs-kernel-server || echo "  ⚠ nfs-kernel-server 重启超时/失败（结尾注册表会标记，可稍后 systemctl restart）"
 echo "  ✓ NFS 配置完成"
 
-# ==================== [5/9] 配置 FTP ====================
+# ==================== [5/10] 配置 FTP ====================
 echo ""
-echo "[5/9] 配置 FTP (vsftpd)..."
+echo "[5/10] 配置 FTP (vsftpd)..."
 if [ -f "$NAS_DIR/configs/vsftpd.conf" ]; then
     cp "$NAS_DIR/configs/vsftpd.conf" /etc/vsftpd.conf
 else
@@ -299,9 +299,9 @@ systemctl reset-failed vsftpd 2>/dev/null
 timeout 60 systemctl restart vsftpd || echo "  ⚠ vsftpd 重启失败（结尾注册表会标记，可稍后手动 restart）"
 echo "  ✓ FTP 配置完成"
 
-# ==================== [6/9] 配置 WebDAV ====================
+# ==================== [6/10] 配置 WebDAV ====================
 echo ""
-echo "[6/9] 配置 WebDAV (rclone)..."
+echo "[6/10] 配置 WebDAV (rclone)..."
 # 安装 htpasswd 工具（用于 WebDAV 认证）
 apt-get install -y apache2-utils 2>/dev/null || true
 # 生成 htpasswd 文件（使用 bcrypt 哈希，兼容性好）
@@ -329,9 +329,9 @@ systemctl reset-failed rclone-webdav 2>/dev/null
 timeout 60 systemctl restart rclone-webdav || echo "  ⚠ rclone-webdav 重启失败（结尾注册表会标记，可稍后手动 restart）"
 echo "  ✓ WebDAV 配置完成"
 
-# ==================== [7/9] 安装 FileBrowser ====================
+# ==================== [7/10] 安装 FileBrowser ====================
 echo ""
-echo "[7/9] 安装 FileBrowser..."
+echo "[7/10] 安装 FileBrowser..."
 if command -v filebrowser &>/dev/null; then
     echo "  FileBrowser 已安装，跳过"
 elif [ -n "$OFFLINE_BUNDLE" ]; then
@@ -477,9 +477,9 @@ echo "  ✓ S3 对象存储配置完成 (rclone serve s3, 端口 9000)"
 echo "    bucket 列表: public 目录自动成为一个 bucket"
 echo "    访问方式: s3cmd --no-ssl --host=NAS_IP:9000 ls s3://public/"
 
-# ==================== [9/9] 配置防火墙和安全 ====================
+# ==================== [9/10] 配置防火墙和安全 ====================
 echo ""
-echo "[9/9] 配置防火墙和安全..."
+echo "[9/10] 配置防火墙和安全..."
 
 if [ -f "$NAS_DIR/configs/jail.local" ]; then
     cp "$NAS_DIR/configs/jail.local" /etc/fail2ban/jail.local

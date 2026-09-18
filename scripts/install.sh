@@ -155,29 +155,62 @@ chmod 600 "$REPO_DIR/.env"
 step_ok
 
 # ── 4. 安装系统依赖 ────────────────────────────────────────
-step_begin "安装系统软件包"
+STEP=$((STEP + 1))
+STEP_START=$(date +%s)
+echo -e "\n${BOLD}${CYAN}[$STEP/$TOTAL]${NC} 安装系统软件包"
+
+sub_step() { echo -e "  ${CYAN}→${NC} $1"; }
+sub_done() { echo -e "  ${GREEN}✓${NC} $1 ($(($(date +%s) - SUB_START))s)"; }
 
 # 检查是否需要更新 apt 源（速度测试：下载 < 100KB/s 则切换）
 APT_SOURCES="/etc/apt/sources.list"
 if [ -f "$APT_SOURCES" ] && grep -q "deb.debian.org" "$APT_SOURCES"; then
-    echo -n "(测速) "
+    sub_step "测试软件源速度 ..."
+    SUB_START=$(date +%s)
     SPEED=$(curl -s --connect-timeout 5 --max-time 10 \
         -o /dev/null -w "%{speed_download}" \
         "http://deb.debian.org/debian/dists/trixie/main/binary-amd64/Packages.gz" 2>/dev/null || echo "0")
     SPEED_INT=$(echo "$SPEED" | cut -d. -f1)
     if [ -z "$SPEED_INT" ] || [ "$SPEED_INT" -lt 100000 ]; then
-        echo -n "(切换清华镜像) "
         sed -i 's|http://deb\.debian\.org|http://mirrors.tuna.tsinghua.edu.cn|g' "$APT_SOURCES"
         sed -i 's|http://security\.debian\.org|http://mirrors.tuna.tsinghua.edu.cn|g' "$APT_SOURCES"
+        sub_done "官方源较慢，已切换到清华镜像"
+    else
+        sub_done "官方源速度正常"
     fi
 fi
 
+sub_step "更新软件包索引 (apt-get update) ..."
+SUB_START=$(date +%s)
 apt-get update -qq 2>/dev/null
+sub_done "软件包索引已更新"
+
+sub_step "下载安装 16 个软件包 (samba/nfs/vsftpd/rclone/fail2ban/ufw 等)"
+echo -e "    ${YELLOW}此步骤视网络状况约需 2-10 分钟，请耐心等待（下方实时显示耗时）${NC}"
+SUB_START=$(date +%s)
+APT_LOG=$(mktemp)
+# 后台计时器：每秒刷新已耗时，让用户知道安装仍在进行
+( while true; do
+    printf "\r    ⏱  已进行 %3ds ..." $(( $(date +%s) - SUB_START ))
+    sleep 1
+  done ) &
+TIMER_PID=$!
+APT_RC=0
 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
     curl samba nfs-kernel-server vsftpd rclone fail2ban ufw \
     smartmontools unattended-upgrades smbclient nfs-common \
     xfsprogs mdadm lvm2 apache2-utils \
-    2>&1 | tail -3
+    > "$APT_LOG" 2>&1 || APT_RC=$?
+kill $TIMER_PID 2>/dev/null || true; wait $TIMER_PID 2>/dev/null || true
+printf "\r    %-40s\r" ""
+if [ $APT_RC -ne 0 ]; then
+    tail -10 "$APT_LOG"
+    step_fail "软件包安装失败 (exit $APT_RC)"
+    rm -f "$APT_LOG"
+    exit 1
+fi
+rm -f "$APT_LOG"
+sub_done "软件包安装完成"
 
 step_ok
 
