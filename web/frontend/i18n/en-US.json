@@ -185,6 +185,7 @@
   },
   "login": {
     "title": "NAS Management Panel",
+    "slogan": "Your AI NAS. Your Data, Your Way.",
     "username_placeholder": "Username",
     "password_placeholder": "Password",
     "failed": "Login failed",

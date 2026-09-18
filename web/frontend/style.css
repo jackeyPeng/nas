@@ -99,7 +99,12 @@ body {
     background: var(--card-bg); padding: 48px 40px; border-radius: var(--radius-xl);
     box-shadow: var(--shadow-xl); width: 400px;
 }
-.login-box h1 { text-align: center; margin-bottom: 32px; font-size: var(--fs-xl); }
+.login-box h1 { text-align: center; margin-bottom: var(--sp-2); font-size: var(--fs-xl); }
+/* 品牌 slogan（登录卡内，标题下方） */
+.login-slogan {
+    text-align: center; color: var(--text-muted); font-size: var(--fs-sm);
+    margin: 0 0 var(--sp-6); letter-spacing: 0.5px;
+}
 
 /* ═══ App Layout ═══ */
 .app { display: flex; min-height: 100vh; }

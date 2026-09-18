@@ -55,6 +55,7 @@
     <div class="login-page" x-show="!token" x-cloak>
         <div class="login-box">
             <h1><img src="logo.svg" alt="Z1 NAS" class="brand-logo"><span x-text="$t('login.title')"></span></h1>
+            <p class="login-slogan" x-text="$t('login.slogan')"></p>
             <form @submit.prevent="login()">
                 <div class="form-group">
                     <label x-text="$t('common.username')"></label>

@@ -185,6 +185,7 @@
   },
   "login": {
     "title": "NAS 管理面板",
+    "slogan": "你的 AI NAS，数据随心畅享",
     "username_placeholder": "请输入用户名",
     "password_placeholder": "请输入密码",
     "failed": "登录失败",
