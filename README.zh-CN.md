@@ -148,6 +148,7 @@ curl -fsSL https://get.z1.sale/install.sh | sudo env NAS_PASS=mySecurePass123 ba
 ```bash
 # 1. 克隆仓库
 git clone https://gitee.com/gitdogcat/nas.git ~/soft/nas
+# GitHub 镜像: git clone https://github.com/jackeyPeng/nas.git ~/soft/nas
 
 # 2. 创建软链接
 sudo ln -sfn ~/soft/nas /opt/nas

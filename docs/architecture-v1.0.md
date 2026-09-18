@@ -140,7 +140,7 @@ V1 只有 Local。字段先在内部模型加上（默认 local），USB 挂载�
 
 **原则：一条命令，零人工干预，十分钟内完成。**
 
-- 安装入口：`wget -qO- https://gitee.com/gitdogcat/nas/raw/master/scripts/install.sh | sudo bash`
+- 安装入口：`wget -qO- https://gitee.com/gitdogcat/nas/raw/master/scripts/install.sh | sudo bash`（GitHub 镜像仓库：`https://github.com/jackeyPeng/nas`）
 - 使用 `wget` 而非 `curl`（Debian 最小安装默认自带 wget，不依赖额外包）
 - 安装流程：克隆仓库 → 创建 .env → 安装系统包 → 调用 setup.sh 部署 10 步 → 编译/部署面板 → 验证 46 项注册表
 - 步骤进度条可视化，每步显示耗时，失败即时报错退出

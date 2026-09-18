@@ -36,6 +36,7 @@
 
 # 克隆仓库
 git clone https://gitee.com/gitdogcat/nas.git
+# GitHub 镜像: git clone https://github.com/jackeyPeng/nas.git
 cd nas/web
 
 # 安装依赖
@@ -140,6 +141,7 @@ cd web && go test ./modules/dashboard/
 ## 获取帮助
 
 - **Issue**：[Gitee Issues](https://gitee.com/gitdogcat/nas/issues)
+- **GitHub 镜像**：https://github.com/jackeyPeng/nas
 - **讨论**：欢迎在 Issue 区进行技术讨论
 
 ## 许可证

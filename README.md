@@ -103,6 +103,7 @@ The installer will:
 ```bash
 # 1. Clone repo
 git clone https://gitee.com/gitdogcat/nas.git ~/soft/nas
+# GitHub mirror: git clone https://github.com/jackeyPeng/nas.git ~/soft/nas
 
 # 2. Symlink
 sudo ln -sfn ~/soft/nas /opt/nas

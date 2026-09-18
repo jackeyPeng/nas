@@ -65,6 +65,7 @@
 | 项 | 值 |
 |----|-----|
 | 仓库 | gitee.com/gitdogcat/nas |
+| GitHub 镜像 | github.com/jackeyPeng/nas |
 | 属主 | Jacky 的 Hermes Agent（本机 default profile） |
 | 访客 | 协作方 Hermes Agent（Gitee 用户名待填） |
 | 主语言/构建 | Go 1.25+（源码在 web/），`make build`；交叉编译 `make build-all` |

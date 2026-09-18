@@ -57,6 +57,7 @@ nas-v1.4.0-beta.1-linux-amd64.tar.gz
 | 位置 | 用途 | URL |
 |------|------|-----|
 | Gitee Release | git 托管，版本历史 | `https://gitee.com/gitdogcat/nas/releases/tag/v1.3.0` |
+| GitHub 镜像 | git 镜像仓库 | `https://github.com/jackeyPeng/nas` |
 | R2 (beta) | 快速下载 | `https://get.z1.sale/releases/beta/nas-v1.4.0-beta.1-linux-amd64.tar.gz` |
 | R2 (stable) | 快速下载 | `https://get.z1.sale/releases/stable/nas-v1.3.0-linux-amd64.tar.gz` |
 | R2 (latest) | install.sh 默认 | `https://get.z1.sale/releases/stable/latest-linux-amd64.tar.gz` |

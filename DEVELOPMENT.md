@@ -51,6 +51,7 @@ go version  # 确认版本
 
 ```bash
 git clone https://gitee.com/gitdogcat/nas.git
+# GitHub 镜像: git clone https://github.com/jackeyPeng/nas.git
 cd nas
 ```
 
