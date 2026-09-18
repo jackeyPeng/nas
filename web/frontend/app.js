@@ -389,18 +389,22 @@ function nasPanel() {
         },
         // RAID 方案字段翻译（按 id / safety 映射后端中文）
         raidName(id, fallback) {
+            window.Alpine.store('i18n').lang;
             const k = 'storage.raid_name_' + id;
             return window.t(k) !== k ? window.t(k) : (fallback || id);
         },
         raidDesc(id, fallback) {
+            window.Alpine.store('i18n').lang;
             const k = 'storage.raid_desc_' + id;
             return window.t(k) !== k ? window.t(k) : (fallback || '');
         },
         raidWarn(id, fallback) {
+            window.Alpine.store('i18n').lang;
             const k = 'storage.raid_warn_' + id;
             return window.t(k) !== k ? window.t(k) : (fallback || '');
         },
         safetyLabel(level, fallback) {
+            window.Alpine.store('i18n').lang;
             const k = 'storage.safety_' + level;
             return window.t(k) !== k ? window.t(k) : (fallback || '');
         },
@@ -1452,7 +1456,7 @@ function nasPanel() {
 
         get wizardFilteredOptions() {
             if (!this.wizGoal || !this.wizard.raid_options) return [];
-            const opts = this.wizard.raid_options.filter(o => {
+            let opts = this.wizard.raid_options.filter(o => {
                 if (o.goal !== this.wizGoal) return false;
                 if (this.wizDisks && this.wizDisks.length > 0) {
                     if (this.wizDisks.length < o.min_disks) return false;
@@ -1461,7 +1465,7 @@ function nasPanel() {
                 return true;
             });
             if (opts.length === 0) {
-                return this.wizard.raid_options.filter(o => {
+                opts = this.wizard.raid_options.filter(o => {
                     if (this.wizDisks && this.wizDisks.length > 0) {
                         if (this.wizDisks.length < o.min_disks) return false;
                         if (o.max_disks > 0 && this.wizDisks.length > o.max_disks) return false;
@@ -1469,7 +1473,58 @@ function nasPanel() {
                     return true;
                 });
             }
-            return opts;
+            // 按第 1 步实际所选磁盘重算可用容量（后端 usable_size 是按全部空闲盘算的）
+            return opts.map(o => Object.assign({}, o, { usable_size: this.wizUsableText(o) }));
+        },
+        // ── 向导容量预估（按已选磁盘） ──
+        wizParseSizeGB(s) {
+            if (!s) return 0;
+            const m = String(s).trim().match(/^([\d.]+)\s*([TGMK]?)B?$/i);
+            if (!m) return 0;
+            const num = parseFloat(m[1]);
+            switch (m[2].toUpperCase()) {
+                case 'T': return num * 1024;
+                case 'G': return num;
+                case 'M': return num / 1024;
+                case 'K': return num / (1024 * 1024);
+                default: return num;
+            }
+        },
+        wizFormatGB(gb) {
+            if (gb >= 1024) return (gb / 1024).toFixed(1) + 'T';
+            if (gb >= 1) return Math.round(gb) + 'G';
+            if (gb > 0) return Math.round(gb * 1024) + 'M';
+            return '—';
+        },
+        get wizSelectedSizesGB() {
+            const avail = (this.wizardStatus && this.wizardStatus.available_disks) || [];
+            return (this.wizDisks || []).map(dev => {
+                const d = avail.find(x => x.device === dev);
+                return d ? this.wizParseSizeGB(d.size) : 0;
+            });
+        },
+        get wizSelectedTotalText() {
+            const sizes = this.wizSelectedSizesGB;
+            if (!sizes.length) return '—';
+            return this.wizFormatGB(sizes.reduce((a, b) => a + b, 0));
+        },
+        wizUsableGB(optId) {
+            const sizes = this.wizSelectedSizesGB;
+            if (!sizes.length) return 0;
+            const n = sizes.length;
+            const min = Math.min.apply(null, sizes);
+            const total = sizes.reduce((a, b) => a + b, 0);
+            switch (optId) {
+                case 'single': return sizes[0]; // 后端只用第一块盘
+                case 'raid1': return Math.min(sizes[0], sizes[1] !== undefined ? sizes[1] : sizes[0]);
+                case 'raid5': return n >= 3 ? min * (n - 1) : 0;
+                case 'raid6': return n >= 4 ? min * (n - 2) : 0;
+                default: return total; // merge / raid0 / separate
+            }
+        },
+        wizUsableText(opt) {
+            const gb = this.wizUsableGB(opt.id);
+            return gb > 0 ? this.wizFormatGB(gb) : (opt.usable_size || '—');
         },
         // Wizard: start setup from UI
         async startWizardSetup() {

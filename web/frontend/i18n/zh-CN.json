@@ -403,6 +403,8 @@
     "goal_perf_rec": "推荐 RAID 0",
     "goal_balance": "兼顾容量与安全",
     "goal_balance_rec": "推荐 RAID 5",
+    "wiz_sel_summary": "已选 {0} 块磁盘 · 总容量 {1}",
+    "wiz_goal_preview": "该目标下可选方案的容量与注意事项：",
     "select_plan": "选择存储方案",
     "recommended": "推荐",
     "usable_capacity": "可用容量:",

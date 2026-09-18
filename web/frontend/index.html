@@ -1586,13 +1586,32 @@
                                 <div class="clickable-card" @click="wizGoal='performance'" :style="wizGoal==='performance'?'border:2px solid var(--primary);background: var(--primary-bg)':'border:2px solid var(--border)'" style="border-radius:var(--radius-md);padding:var(--sp-4);text-align:center;cursor:pointer;transition:all 0.15s;background: var(--card-bg)"><div style="font-size:var(--fs-2xl);margin-bottom:6px">⚡</div><div style="font-size:var(--fs-base);font-weight:600"><span x-text="$t('storage.goal_perf')"></span></div><div style="font-size:var(--fs-xs);color: var(--text-light);margin-top:var(--sp-1);line-height:1.5"><span x-text="$t('storage.goal_perf_desc')"></span></div><div style="font-size:var(--fs-xs);color: var(--text-light);margin-top:6px"><span x-text="$t('storage.goal_perf_rec')"></span></div></div>
                                 <div class="clickable-card" @click="wizGoal='balance'" :style="wizGoal==='balance'?'border:2px solid var(--primary);background: var(--primary-bg)':'border:2px solid var(--border)'" style="border-radius:var(--radius-md);padding:var(--sp-4);text-align:center;cursor:pointer;transition:all 0.15s;background: var(--card-bg)"><div style="font-size:var(--fs-2xl);margin-bottom:6px">⚖️</div><div style="font-size:var(--fs-base);font-weight:600" x-text="$t('storage.balance')"></div><div style="font-size:var(--fs-xs);color: var(--text-light);margin-top:var(--sp-1);line-height:1.5"><span x-text="$t('storage.goal_balance')"></span></div><div style="font-size:var(--fs-xs);color: var(--text-light);margin-top:6px"><span x-text="$t('storage.goal_balance_rec')"></span></div></div>
                             </div>
+                            <!-- 所选磁盘摘要 + 该目标下各方案容量/注意事项预览 -->
+                            <div x-show="wizGoal" x-transition.opacity.duration.200ms style="background: var(--card-bg-alt);border:1px solid var(--border);border-radius:var(--radius-md);padding:var(--sp-3) var(--sp-4);margin-bottom:var(--sp-4)">
+                                <div style="font-size:var(--fs-sm);font-weight:600;color: var(--text-secondary);margin-bottom:var(--sp-2)">
+                                    <span x-text="$t('storage.wiz_sel_summary', [wizDisks.length, wizSelectedTotalText])"></span>
+                                </div>
+                                <div style="font-size:var(--fs-xs);color: var(--text-light);margin-bottom:var(--sp-2)" x-text="$t('storage.wiz_goal_preview')"></div>
+                                <template x-for="opt in wizardFilteredOptions" :key="opt.id">
+                                    <div style="padding:var(--sp-2) 0;border-top:1px solid var(--border-light)">
+                                        <div style="display:flex;flex-wrap:wrap;gap:var(--sp-3);align-items:baseline;font-size:var(--fs-sm)">
+                                            <span style="font-weight:600;color: var(--text-secondary)"><span x-text="opt.icon"></span> <span x-text="raidName(opt.id, opt.name)"></span></span>
+                                            <span x-show="opt.recommended" class="badge badge-xs" style="background: var(--success-light);color: var(--success)"><span x-text="$t('storage.recommended')"></span></span>
+                                            <span style="font-size:var(--fs-xs);color: var(--text-light)"><span x-text="$t('storage.usable_capacity')"></span> <strong style="color: var(--primary)" x-text="opt.usable_size"></strong></span>
+                                            <span style="font-size:var(--fs-xs);color: var(--text-light)"><span x-text="$t('storage.safety')"></span> <strong style="color: var(--text-secondary)" x-text="safetyLabel(opt.safety, opt.safety_text)"></strong></span>
+                                        </div>
+                                        <div x-show="opt.warning" style="margin-top:4px;font-size:var(--fs-xs);color: var(--warn);line-height:1.5" x-text="'⚠️ ' + raidWarn(opt.id, opt.warning)"></div>
+                                    </div>
+                                </template>
+                            </div>
                             <div style="display:flex;justify-content:space-between">
                                 <button class="btn btn-secondary" @click="wizStep=1" style="font-size:var(--fs-sm)">← <span x-text="$t('storage.prev_step')"></span></button>
                                 <button class="btn btn-primary" @click="wizStep=3" :disabled="!wizGoal" style="font-size:var(--fs-sm)"><span x-text="$t('storage.next_step')"></span></button>
                             </div>
                         </div>
                         <div x-show="wizStep===3" x-transition.opacity.duration.200ms>
-                            <div style="font-size:var(--fs-base);font-weight:600;color: var(--text-secondary);margin-bottom:var(--sp-3)"><span x-text="$t('storage.select_plan')"></span></div>
+                            <div style="font-size:var(--fs-base);font-weight:600;color: var(--text-secondary);margin-bottom:var(--sp-1)"><span x-text="$t('storage.select_plan')"></span></div>
+                            <div style="font-size:var(--fs-xs);color: var(--text-light);margin-bottom:var(--sp-3)" x-text="$t('storage.wiz_sel_summary', [wizDisks.length, wizSelectedTotalText])"></div>
                             <div style="display:grid;gap:var(--sp-3);margin-bottom:var(--sp-4)">
                                 <template x-for="opt in wizardFilteredOptions" :key="opt.id">
                                     <div class="clickable-card" @click="wizMode=opt.id" :style="wizMode===opt.id?'border:2px solid var(--primary);background: var(--primary-bg)':'border:2px solid var(--border)'" style="border-radius:var(--radius-md);padding:var(--sp-4);cursor:pointer;transition:all 0.15s;background: var(--card-bg)">
@@ -1622,8 +1641,8 @@
                                 <div style="font-size:var(--fs-sm);color: var(--text-secondary);line-height:1.8">
                                     <div><span x-text="$t('storage.plan')"></span> <strong x-text="raidName(wizMode, (wizardFilteredOptions.find(function(o){return o.id===wizMode})||{}).name)"></strong></div>
                                     <div><span x-text="$t('storage.disks_colon')"></span> <strong x-text="wizDisks.length"></strong> <span x-text="$t('storage.disks_dash')"></span> <span style="font-family:monospace;font-size:var(--fs-xs)" x-text="wizDisks.join(', ')"></span></div>
-                                    <div><span x-text="$t('storage.usable_capacity')"></span>: <strong x-text="(wizardFilteredOptions.find(function(o){return o.id===wizMode})||{}).usable_size||'—'"></strong></div>
-                                    <div><span x-text="$t('storage.safety')"></span>: <strong x-text="safetyLabel((wizardFilteredOptions.find(function(o){return o.id===wizMode})||{}).safety, '—')"></strong></div>
+                                    <div><span x-text="$t('storage.usable_capacity')"></span> <strong x-text="(wizardFilteredOptions.find(function(o){return o.id===wizMode})||{}).usable_size||'—'"></strong></div>
+                                    <div><span x-text="$t('storage.safety')"></span> <strong x-text="safetyLabel((wizardFilteredOptions.find(function(o){return o.id===wizMode})||{}).safety, '—')"></strong></div>
                                 </div>
                             </div>
                             <div style="display:flex;justify-content:space-between">

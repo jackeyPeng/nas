@@ -403,6 +403,8 @@
     "goal_perf_rec": "Recommended RAID 0",
     "goal_balance": "Balance capacity & safety",
     "goal_balance_rec": "Recommended RAID 5",
+    "wiz_sel_summary": "Selected {0} disks · total {1}",
+    "wiz_goal_preview": "Usable capacity & notes for plans under this goal:",
     "select_plan": "Select Storage Plan",
     "recommended": "Recommended",
     "usable_capacity": "Usable Capacity:",
