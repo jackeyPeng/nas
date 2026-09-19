@@ -112,6 +112,48 @@ if [ "$NEW_SIZE" -lt 5000000 ]; then
     exit 1
 fi
 
+# ── 校验签名（与 OTA update.go 同一套: SHA256 + ed25519）────────
+# manifest 由 release.sh 签名生成。公钥与 web/modules/update/update.go 内嵌的完全一致。
+OTA_PUBKEY_HEX="af048a1224405d29d06a5e97d795f525a78ef239b9bcf6c051c9cea633f5457e"
+MANIFEST_URL="${DOWNLOAD_BASE}/latest-${ARCH}.json"
+TMP_MANIFEST=$(mktemp)
+trap 'rm -f "$TMP_BIN" "$TMP_MANIFEST"' EXIT
+SIG_VERIFIED=false
+if curl -fsSL --connect-timeout 15 --max-time 30 -o "$TMP_MANIFEST" "$MANIFEST_URL" 2>/dev/null \
+   && command -v openssl >/dev/null 2>&1; then
+    M_SHA=$(sed -n 's/.*"sha256"[[:space:]]*:[[:space:]]*"\([0-9a-f]*\)".*/\1/p' "$TMP_MANIFEST" | head -1)
+    M_SIG=$(sed -n 's/.*"sig"[[:space:]]*:[[:space:]]*"\([0-9a-f]*\)".*/\1/p' "$TMP_MANIFEST" | head -1)
+    LOCAL_SHA=$(sha256sum "$TMP_BIN" | awk '{print $1}')
+    if [ -n "$M_SHA" ] && [ "$LOCAL_SHA" != "$M_SHA" ]; then
+        fail "SHA256 校验失败（本地 ${LOCAL_SHA} ≠ manifest ${M_SHA}），拒绝安装"
+        exit 1
+    fi
+    if [ -n "$M_SIG" ]; then
+        PUB_PEM=$(mktemp); SIG_BIN=$(mktemp)
+        # shellcheck disable=SC2064
+        trap "rm -f '$TMP_BIN' '$TMP_MANIFEST' '$PUB_PEM' '$SIG_BIN'" EXIT
+        # hex→binary 用纯 bash printf（目标机不一定有 xxd）
+        hex2bin() {
+            local h="$1" i
+            for ((i=0; i<${#h}; i+=2)); do printf "\\x${h:i:2}"; done
+        }
+        { printf "\\x30\\x2a\\x30\\x05\\x06\\x03\\x2b\\x65\\x70\\x03\\x21\\x00"; hex2bin "$OTA_PUBKEY_HEX"; } \
+            | openssl pkey -pubin -inform DER -out "$PUB_PEM" 2>/dev/null
+        hex2bin "$M_SIG" > "$SIG_BIN"
+        if openssl pkeyutl -verify -pubin -inkey "$PUB_PEM" -rawin \
+               -in "$TMP_BIN" -sigfile "$SIG_BIN" >/dev/null 2>&1; then
+            SIG_VERIFIED=true
+            ok "SHA256 + ed25519 签名校验通过"
+        else
+            fail "ed25519 签名校验失败，拒绝安装（可能被篡改或下载损坏）"
+            exit 1
+        fi
+    fi
+else
+    warn "无法获取 manifest 或缺少 openssl，跳过签名校验（仅 ELF+大小检查）"
+fi
+[ "$SIG_VERIFIED" = true ] || warn "本次升级未经过签名校验，请确认下载源可信"
+
 # 从二进制里提取版本号。ldflags 注入的 buildinfo 里存有
 # `version.Version=vX.Y.Z` 字符串，以此为锚点最可靠。
 # （不能用裸 grep 第一个 vX.Y.Z —— 二进制里混有依赖的版本串，会抓到 v1.0.0 之类）
@@ -147,9 +189,11 @@ info "备份旧二进制 → ${BACKUP_BIN}"
 cp -a "$PANEL_BIN" "$BACKUP_BIN"
 
 # ── 7. 原子替换 + 重启 ───────────────────────────────────────
+# 注意: 不能直接 mv $TMP_BIN（/tmp 与 /usr/local/bin 跨文件系统时 mv=copy+delete，
+# 中途断电会留下半截二进制且旧文件已删）。先 install 到同目录 .new，再同 fs rename（原子）。
 info "替换二进制并重启 nas-panel..."
-chmod +x "$TMP_BIN"
-mv "$TMP_BIN" "$PANEL_BIN"
+install -m 0755 "$TMP_BIN" "${PANEL_BIN}.new"
+mv "${PANEL_BIN}.new" "$PANEL_BIN"
 systemctl restart nas-panel
 
 # ── 8. 健康检查 + 自动回滚 ───────────────────────────────────
@@ -180,6 +224,27 @@ if [ "$HEALTHY" != "true" ]; then
     fi
     exit 1
 fi
+
+# ── 9. 配置迁移（幂等重生成托管配置）─────────────────────────
+# 先更新 /opt/nas 仓库拿新版配置模板（失败不阻塞），再跑 setup.sh --config-only。
+# NAS_USER 从 nas-panel.service 的 Environment 读（root 环境下无 SUDO_USER）。
+sync_configs() {
+    local repo="/opt/nas"
+    [ -d "$repo/scripts" ] || { warn "未找到 $repo/scripts，跳过配置同步"; return 0; }
+    if [ -d "$repo/.git" ]; then
+        info "更新配置模板（git pull）..."
+        git -C "$repo" pull --ff-only 2>/dev/null || warn "git pull 失败（本地有改动？），用现有模板继续"
+    fi
+    local nas_user
+    nas_user=$(awk -F= '/^Environment=NAS_USER=/{print $3; exit}' /etc/systemd/system/nas-panel.service 2>/dev/null | tr -d '"')
+    info "同步托管配置（setup.sh --config-only，NAS_USER=${nas_user:-未检测到}）..."
+    if NAS_USER="$nas_user" bash "$repo/scripts/setup.sh" --config-only >/tmp/nas-config-sync.log 2>&1; then
+        ok "托管配置已同步到新版模板"
+    else
+        warn "配置同步失败（不影响二进制升级），日志: /tmp/nas-config-sync.log，可手动重跑: sudo bash /opt/nas/scripts/setup.sh --config-only"
+    fi
+}
+sync_configs
 
 # ── 完成 ──────────────────────────────────────────────────────
 RUNNING_VERSION=$(get_running_version)

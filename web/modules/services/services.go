@@ -148,19 +148,25 @@ func handleInstallServices(w http.ResponseWriter, r *http.Request) {
 		common.SudoExec("systemctl", "start", "rclone-s3")
 		steps = append(steps, "S3 已启动")
 
-		// FileBrowser (v2.63.17 with full init)
-		out, _ = common.SudoExec("bash", "-c", `
+		// FileBrowser (版本来自 common.FileBrowserVersion，单一事实源)
+		fbScript := fmt.Sprintf(`
 			ARCH=$(uname -m | sed "s/x86_64/amd64/;s/aarch64/arm64/")
+			FB_VER="%s"
 			DL_ERR=""
-			curl -fsSL --connect-timeout 10 --max-time 600 "https://github.com/filebrowser/filebrowser/releases/download/v2.63.17/linux-${ARCH}-filebrowser.tar.gz" -o /tmp/fb.tar.gz 2>/tmp/fb.err || DL_ERR="github: $(cat /tmp/fb.err)"
+			curl -fsSL --connect-timeout 10 --max-time 600 "https://github.com/filebrowser/filebrowser/releases/download/${FB_VER}/linux-${ARCH}-filebrowser.tar.gz" -o /tmp/fb.tar.gz 2>/tmp/fb.err || DL_ERR="github: $(cat /tmp/fb.err)"
 			if [ ! -f /tmp/fb.tar.gz ]; then
-				curl -fsSL --connect-timeout 10 --max-time 30 "https://get.z1.sale/filebroswer/linux-${ARCH}-filebrowser.tar.gz" -o /tmp/fb.tar.gz 2>/tmp/fb.err || DL_ERR="${DL_ERR}; get.z1.sale: $(cat /tmp/fb.err)"
+				curl -fsSL --connect-timeout 10 --max-time 30 "https://get.z1.sale/filebrowser/linux-${ARCH}-filebrowser.tar.gz" -o /tmp/fb.tar.gz 2>/tmp/fb.err || DL_ERR="${DL_ERR}; get.z1.sale: $(cat /tmp/fb.err)"
 			fi
 			if [ ! -f /tmp/fb.tar.gz ]; then
-				curl -fsSL --connect-timeout 10 --max-time 30 "https://file.abwen.com/control/filebrowser_v2.63.17_linux_${ARCH}.tar.gz" -o /tmp/fb.tar.gz 2>/tmp/fb.err || DL_ERR="${DL_ERR}; file.abwen.com: $(cat /tmp/fb.err)"
+				# 旧拼写 key（filebroswer）兜底：已装机器的旧面板/缓存仍可能只有这个
+				curl -fsSL --connect-timeout 10 --max-time 30 "https://get.z1.sale/filebroswer/linux-${ARCH}-filebrowser.tar.gz" -o /tmp/fb.tar.gz 2>/tmp/fb.err || DL_ERR="${DL_ERR}; get.z1.sale(legacy): $(cat /tmp/fb.err)"
+			fi
+			if [ ! -f /tmp/fb.tar.gz ]; then
+				curl -fsSL --connect-timeout 10 --max-time 30 "https://file.abwen.com/control/filebrowser_${FB_VER}_linux_${ARCH}.tar.gz" -o /tmp/fb.tar.gz 2>/tmp/fb.err || DL_ERR="${DL_ERR}; file.abwen.com: $(cat /tmp/fb.err)"
 			fi
 			if [ -f /tmp/fb.tar.gz ]; then tar xzf /tmp/fb.tar.gz -C /usr/local/bin filebrowser && chmod +x /usr/local/bin/filebrowser && echo "ok"; else echo "FAIL:${DL_ERR}"; fi
-		`)
+		`, common.FileBrowserVersion)
+		out, _ = common.SudoExec("bash", "-c", fbScript)
 		if strings.TrimSpace(out) == "ok" {
 			common.SudoExec("mkdir", "-p", "/etc/filebrowser")
 			common.SudoExec("/usr/local/bin/filebrowser", "config", "init", "--database", "/etc/filebrowser/filebrowser.db")

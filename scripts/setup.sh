@@ -9,6 +9,18 @@
 
 set -e
 
+# ==================== 模式解析 ====================
+# --config-only: 只重生成托管配置（Samba/NFS/FTP/WebDAV/S3/防火墙），
+# 跳过 apt 安装、目录创建、FileBrowser/nas-panel 安装。
+# 用于在线升级后同步新版配置模板（幂等，用户自加段保留）。
+CONFIG_ONLY=false
+for arg in "$@"; do
+    case "$arg" in
+        --config-only) CONFIG_ONLY=true ;;
+        *) echo "未知参数: $arg（支持: --config-only）"; exit 1 ;;
+    esac
+done
+
 # ==================== 架构检测 ====================
 # 将 uname -m 映射为 FileBrowser/rclone 使用的架构名
 detect_arch() {
@@ -49,14 +61,17 @@ echo "========================================="
 echo ""
 
 # ==================== 配置变量 ====================
-# 自动获取当前用户（执行 sudo 的用户）
-NAS_USER="${SUDO_USER:-$USER}"
+# 自动获取当前用户（执行 sudo 的用户）。
+# 显式导出的 NAS_USER 优先——升级流程（apply-upgrade.sh 经 systemd-run 以 root 跑，
+# 无 SUDO_USER）从 nas-panel.service 的 Environment 读出后传入。
+NAS_USER="${NAS_USER:-${SUDO_USER:-$USER}}"
 if [ -z "$NAS_USER" ] || [ "$NAS_USER" = "root" ]; then
     echo "错误: 无法自动检测用户名，请使用 sudo 运行（而非直接以 root 身份）"
     exit 1
 fi
 DATA_DIR="/data"
 NAS_DIR="/opt/nas"
+# 与 web/common/versions.go 的 FileBrowserVersion 保持一致（单一事实源在 Go 常量，改版本两处一起改）
 FILEBROWSER_VERSION="v2.63.17"
 BUNDLE_VERSION="v1.0.0"
 
@@ -144,26 +159,34 @@ download_file() {
 }
 
 # ==================== [1/10] 安装基础软件包 ====================
-echo "[1/10] 安装基础软件包..."
-apt-get update
-DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    curl samba nfs-kernel-server vsftpd rclone \
-    fail2ban ufw smartmontools unattended-upgrades \
-    smbclient nfs-common xfsprogs mdadm lvm2 rsync
-echo "  ✓ 软件包安装完成"
+if [ "$CONFIG_ONLY" = true ]; then
+    echo "[1/10] 安装基础软件包...（--config-only 跳过）"
+else
+    echo "[1/10] 安装基础软件包..."
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        curl samba nfs-kernel-server vsftpd rclone \
+        fail2ban ufw smartmontools unattended-upgrades \
+        smbclient nfs-common xfsprogs mdadm lvm2 rsync
+    echo "  ✓ 软件包安装完成"
+fi
 
 # ==================== [2/10] 创建数据目录结构 ====================
 echo ""
-echo "[2/10] 创建数据目录结构..."
-mkdir -p "$DATA_DIR"
-chown -R "$NAS_USER:$NAS_USER" "$DATA_DIR"
-chmod 755 "$DATA_DIR"
-# 公共组 nasusers：public 目录组级读写用，所有 NAS 用户都加入
-if ! getent group nasusers >/dev/null 2>&1; then
-    groupadd nasusers
+if [ "$CONFIG_ONLY" = true ]; then
+    echo "[2/10] 创建数据目录结构...（--config-only 跳过，避免对已有数据树做递归 chown）"
+else
+    echo "[2/10] 创建数据目录结构..."
+    mkdir -p "$DATA_DIR"
+    chown -R "$NAS_USER:$NAS_USER" "$DATA_DIR"
+    chmod 755 "$DATA_DIR"
+    # 公共组 nasusers：public 目录组级读写用，所有 NAS 用户都加入
+    if ! getent group nasusers >/dev/null 2>&1; then
+        groupadd nasusers
+    fi
+    usermod -a -G nasusers "$NAS_USER" 2>/dev/null || true
+    echo "  ✓ 目录结构创建完成（存储池挂载 /data/nas1，public 与用户 home 由存储向导创建）"
 fi
-usermod -a -G nasusers "$NAS_USER" 2>/dev/null || true
-echo "  ✓ 目录结构创建完成（存储池挂载 /data/nas1，public 与用户 home 由存储向导创建）"
 
 # ==================== [3/10] 配置 Samba ====================
 echo ""
@@ -322,7 +345,9 @@ echo "  ✓ WebDAV 配置完成"
 # ==================== [7/10] 安装 FileBrowser ====================
 echo ""
 echo "[7/10] 安装 FileBrowser..."
-if command -v filebrowser &>/dev/null; then
+if [ "$CONFIG_ONLY" = true ]; then
+    echo "  --config-only 模式跳过 FileBrowser 安装"
+elif command -v filebrowser &>/dev/null; then
     echo "  FileBrowser 已安装，跳过"
 elif [ -n "$OFFLINE_BUNDLE" ]; then
     echo "  从离线包安装 FileBrowser..."
@@ -338,6 +363,7 @@ else
     download_file /tmp/filebrowser.tar.gz \
         "https://github.com/jackeyPeng/nas/raw/releases/nas-bundle-${BUNDLE_VERSION}-${ARCH}.tar.gz" \
         "https://ghfast.top/https://github.com/jackeyPeng/nas/raw/releases/nas-bundle-${BUNDLE_VERSION}-${ARCH}.tar.gz" \
+        "https://get.z1.sale/filebrowser/linux-${ARCH}-filebrowser.tar.gz" \
         "https://get.z1.sale/filebroswer/linux-${ARCH}-filebrowser.tar.gz" \
         "https://github.com/filebrowser/filebrowser/releases/download/${FILEBROWSER_VERSION}/linux-${ARCH}-filebrowser.tar.gz" \
         "https://ghfast.top/https://github.com/filebrowser/filebrowser/releases/download/${FILEBROWSER_VERSION}/linux-${ARCH}-filebrowser.tar.gz"
@@ -524,7 +550,9 @@ echo "  ✓ 安全配置完成"
 # ==================== [10/10] 安装 NAS Web 管理面板 ====================
 echo ""
 echo "[10/10] 安装 NAS Web 管理面板..."
-if [ -f "$NAS_DIR/web/nas-panel" ]; then
+if [ "$CONFIG_ONLY" = true ]; then
+    echo "  --config-only 模式跳过面板安装（二进制由 upgrade.sh / OTA 负责）"
+elif [ -f "$NAS_DIR/web/nas-panel" ]; then
     cp "$NAS_DIR/web/nas-panel" /usr/local/bin/nas-panel
     chmod +x /usr/local/bin/nas-panel
 elif [ -n "$OFFLINE_BUNDLE" ] && tar tzf "$OFFLINE_BUNDLE" 2>/dev/null | grep -q "bin/nas-panel"; then
