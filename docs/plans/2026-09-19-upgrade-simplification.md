@@ -75,3 +75,16 @@ apt 组件升级（samba/nfs/vsftpd/rclone）本期不做面板集成——用�
 - 测试机（.57/.48）实测：CLI 升级全流程（含 --check）、OTA 面板升级、
   --config-only 幂等重跑、人为注入坏二进制验证回滚路径
 - 断电模拟不做（原子 rename 语义由 POSIX 保证）
+
+## 实测记录（2026-09-19，.48）
+
+- CLI：--check 验签通过（SHA256+ed25519）；完整升级 dev → v1.4.0-beta.13 成功，
+  备份/替换/健康检查/git pull/--config-only 全链路 OK，7 个服务全 active，
+  SMB 托管段与 NFS 导出完好
+- 回滚：`.bak` mv 回滚 → dev，再升级 → beta.13，双向通过。
+  注意回滚必须 `mv` 不能 `cp`（运行中二进制「文本文件忙」），脚本提示已更新
+- OTA：面板内升级派发成功，apply-upgrade.sh 独立 unit 存活过面板重启，
+  健康检查+配置同步完成
+- 实测抓到的坑（已修，a07b511）：root 经 systemd-run 跑 `git pull` 撞
+  safe.directory 所有权检查 → `git -c safe.directory=$(readlink -f /opt/nas)` 放行
+- 目标机无 xxd：hex→binary 改用纯 bash printf 实现，验签在 .57/.48 均可用
