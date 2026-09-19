@@ -233,7 +233,10 @@ sync_configs() {
     [ -d "$repo/scripts" ] || { warn "未找到 $repo/scripts，跳过配置同步"; return 0; }
     if [ -d "$repo/.git" ]; then
         info "更新配置模板（git pull）..."
-        git -C "$repo" pull --ff-only 2>/dev/null || warn "git pull 失败（本地有改动？），用现有模板继续"
+        # root 跑非 root 仓库会撞 git safe.directory 检查，-c 显式放行本仓库
+        local repo_real
+        repo_real=$(readlink -f "$repo")
+        git -c safe.directory="$repo_real" -C "$repo" pull --ff-only 2>/dev/null || warn "git pull 失败（本地有改动？），用现有模板继续"
     fi
     local nas_user
     nas_user=$(awk -F= '/^Environment=NAS_USER=/{print $3; exit}' /etc/systemd/system/nas-panel.service 2>/dev/null | tr -d '"')
@@ -257,5 +260,6 @@ echo "  升级后版本: ${RUNNING_VERSION}"
 echo "  旧二进制备份: ${BACKUP_BIN}"
 echo ""
 echo "  回滚方法（如需要）:"
-echo "    sudo cp ${BACKUP_BIN} ${PANEL_BIN} && sudo systemctl restart nas-panel"
+echo "    sudo mv ${BACKUP_BIN} ${PANEL_BIN} && sudo systemctl restart nas-panel"
+echo "    （必须用 mv 原子替换，cp 会因「文本文件忙」失败）"
 echo ""

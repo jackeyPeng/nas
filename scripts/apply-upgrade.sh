@@ -40,7 +40,9 @@ for i in $(seq 1 15); do
         # 4. 配置迁移：git pull 更新模板 + setup.sh --config-only 幂等重生成托管配置
         # 失败不回滚二进制（面板已健康），只记日志提示手动重跑
         if [ -d /opt/nas/.git ]; then
-            git -C /opt/nas pull --ff-only >>"$LOG" 2>&1 || log "git pull 失败，用现有模板继续"
+            # root 跑非 root 仓库会撞 git safe.directory 检查，-c 显式放行本仓库
+            REPO_REAL=$(readlink -f /opt/nas)
+            git -c safe.directory="$REPO_REAL" -C /opt/nas pull --ff-only >>"$LOG" 2>&1 || log "git pull 失败，用现有模板继续"
         fi
         NAS_USER_ENV=$(awk -F= '/^Environment=NAS_USER=/{print $3; exit}' /etc/systemd/system/nas-panel.service 2>/dev/null | tr -d '"')
         if [ -f /opt/nas/scripts/setup.sh ]; then
