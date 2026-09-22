@@ -407,7 +407,7 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 	poolName := r.FormValue("pool_name")
 	confirmName := r.FormValue("confirm_name")
 	confirm := r.FormValue("confirm")
-	common.LogAudit("system", "删除存储池", "STORAGE", "/api/disk/pool/delete", fmt.Sprintf("type=%s device=%s", poolType, poolDevice), "pending", "")
+	common.LogAuditRequest(r, "STORAGE", "删除存储池", fmt.Sprintf("type=%s device=%s name=%s", poolType, poolDevice, poolName), "pending")
 	common.EmitEvent("storage", common.EventWarn, "storage.pool_deleted",
 		map[string]interface{}{"type": poolType, "device": poolDevice}, "")
 

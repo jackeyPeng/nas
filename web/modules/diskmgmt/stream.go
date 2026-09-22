@@ -49,7 +49,7 @@ func handleWizardSetupStream(w http.ResponseWriter, r *http.Request) {
 		sendProgress(w, ProgressEvent{Step: "需要确认", Status: "error", Detail: "请加 confirm=yes"})
 		return
 	}
-	common.LogAudit("system", "存储向导配置(流式)", "STORAGE", "/api/disk/wizard/setup-stream", "mode="+mode, "pending", "")
+	common.LogAuditRequest(r, "STORAGE", "存储向导配置(流式)", "mode="+mode, "pending")
 
 	nasUser := common.GetNASUser()
 	if nasUser == "" {
@@ -492,6 +492,9 @@ func handleWizardResetStream(w http.ResponseWriter, r *http.Request) {
 		sendProgress(w, ProgressEvent{Step: "需要确认", Status: "error", Detail: "请输入 DELETE 确认（不可恢复）"})
 		return
 	}
+
+	// SSE 由前端 GET 触发，全局中间件不审计 GET——这里显式补记
+	common.LogAuditRequest(r, "STORAGE", "存储重置(流式)", "清空所有存储池配置（不可恢复）", "pending")
 
 	totalSteps := 7
 	step := 0

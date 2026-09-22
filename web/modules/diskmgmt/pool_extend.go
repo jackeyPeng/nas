@@ -53,6 +53,9 @@ func handlePoolExtendStream(w http.ResponseWriter, r *http.Request) {
 		sendPoolExtendProgress(w, PoolExtendEvent{Step: "需要确认", Status: "error", Detail: "请加 confirm=yes"})
 		return
 	}
+
+	// SSE 由前端 GET 触发，全局中间件不审计 GET——这里显式补记
+	common.LogAuditRequest(r, "STORAGE", "扩展存储池(流式)", fmt.Sprintf("vg=%s device=%s lv=%s", vgName, device, lvName), "pending")
 	if isSystemDisk(device) {
 		sendPoolExtendProgress(w, PoolExtendEvent{Step: "安全检查", Status: "error", Detail: "不允许使用系统盘"})
 		return

@@ -189,7 +189,7 @@ func handleVaultCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf(`{"error":"保存失败: %v"}`, err), http.StatusInternalServerError)
 		return
 	}
-	common.LogAudit("system", "新增凭据", "VAULT", "/api/vault/create", "name="+name, "success", "")
+	common.LogAuditRequest(r, "VAULT", "新增凭据", "name="+name, "success")
 	common.JSONResponse(w, map[string]interface{}{"message": "凭据已保存"})
 }
 
@@ -219,7 +219,7 @@ func handleVaultReveal(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"解密失败（管理密码可能已变更）"}`, http.StatusInternalServerError)
 		return
 	}
-	common.LogAudit("system", "查看凭据", "VAULT", "/api/vault/reveal", "id="+id, "success", "")
+	common.LogAuditRequest(r, "VAULT", "查看凭据", "id="+id, "success")
 	common.JSONResponse(w, map[string]interface{}{"secret": string(plain)})
 }
 
@@ -235,6 +235,6 @@ func handleVaultDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	db.Exec("DELETE FROM vault WHERE id = ?", id)
-	common.LogAudit("system", "删除凭据", "VAULT", "/api/vault/delete", "id="+id, "success", "")
+	common.LogAuditRequest(r, "VAULT", "删除凭据", "id="+id, "success")
 	common.JSONResponse(w, map[string]interface{}{"message": "凭据已删除"})
 }

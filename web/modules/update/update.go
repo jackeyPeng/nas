@@ -122,7 +122,9 @@ func handleUpgrade(w http.ResponseWriter, r *http.Request) {
 	updateDetail = ""
 	updateMu.Unlock()
 
-	go runUpgrade()
+	username := common.RequestUsername(r)
+	ip := common.RequestIP(r)
+	go runUpgrade(username, ip)
 
 	common.JSONResponse(w, map[string]interface{}{"message": "升级已启动"})
 }
@@ -140,7 +142,7 @@ func setStatus(status, detail string) {
 
 // runUpgrade 在面板进程内完成「下载 + 校验签名」，通过后派发分离的 apply 脚本执行
 // 「替换 + 重启 + 健康检查 + 回滚」。分离脚本作为独立进程，能跨过面板重启存活。
-func runUpgrade() {
+func runUpgrade(username, ip string) {
 	defer func() {
 		updateMu.Lock()
 		if updateStatus == "running" {
@@ -201,7 +203,10 @@ func runUpgrade() {
 		return
 	}
 
-	common.LogAudit("system", "面板升级", "UPDATE", "/api/update/upgrade", "→ "+m.Version, "pending", "")
+	if username == "" {
+		username = "system"
+	}
+	common.LogAudit(username, "面板升级", "UPDATE", "/api/update/upgrade", "→ "+m.Version, "pending", ip)
 	common.EmitEvent("update", common.EventInfo, "update.dispatched",
 		map[string]interface{}{"version": m.Version}, "签名校验通过，升级脚本已派发")
 	// 状态交给 apply-upgrade.sh 完成（它写 /tmp/nas-upgrade.log，前端轮询 /api/update/status）

@@ -177,7 +177,7 @@ func handleBackupData(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, string(b), http.StatusInternalServerError)
 		return
 	}
-	common.LogAudit("system", "数据备份", "BACKUP", "/api/backup/data", "target="+target, "success", "")
+	common.LogAuditRequest(r, "BACKUP", "数据备份", "target="+target, "success")
 	common.EmitEvent("backup", common.EventSuccess, "backup.data_done",
 		map[string]interface{}{"target": target}, "")
 	common.JSONResponse(w, map[string]interface{}{

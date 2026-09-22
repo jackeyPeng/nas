@@ -109,7 +109,7 @@ func handle2FAEnable(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"状态保存失败"}`, http.StatusInternalServerError)
 		return
 	}
-	common.LogAudit("system", "启用两步验证", "SYSTEM", "/api/2fa/enable", "2FA enabled", "success", "")
+	common.LogAuditRequest(r, "SYSTEM", "启用两步验证", "2FA enabled", "success")
 	common.JSONResponse(w, map[string]interface{}{"enabled": true})
 }
 
@@ -129,6 +129,6 @@ func handle2FADisable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	os.Remove(twoFAPath())
-	common.LogAudit("system", "禁用两步验证", "SYSTEM", "/api/2fa/disable", "2FA disabled", "success", "")
+	common.LogAuditRequest(r, "SYSTEM", "禁用两步验证", "2FA disabled", "success")
 	common.JSONResponse(w, map[string]interface{}{"enabled": false})
 }

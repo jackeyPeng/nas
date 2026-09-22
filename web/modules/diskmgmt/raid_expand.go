@@ -47,6 +47,9 @@ func handleRAIDExpandStream(w http.ResponseWriter, r *http.Request) {
 		sendRAIDExpandProgress(w, RAIDExpandEvent{Step: "需要确认", Status: "error", Detail: "请加 confirm=yes"})
 		return
 	}
+
+	// SSE 由前端 GET 触发，全局中间件不审计 GET——这里显式补记
+	common.LogAuditRequest(r, "STORAGE", "扩展RAID阵列(流式)", fmt.Sprintf("md=%s device=%s", mdDev, device), "pending")
 	if isSystemDisk(device) {
 		sendRAIDExpandProgress(w, RAIDExpandEvent{Step: "安全检查", Status: "error", Detail: "不允许使用系统盘"})
 		return

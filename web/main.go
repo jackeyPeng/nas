@@ -154,32 +154,82 @@ func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("%s %s %s", r.Method, r.URL.Path, r.RemoteAddr)
 
-		// Extract username for audit log
-		username := ""
-		auth := r.Header.Get("Authorization")
-		if strings.HasPrefix(auth, "Bearer ") {
-			if user, err := common.VerifyToken(auth[7:]); err == nil {
+		// 注入审计标记：handler 内 LogAuditRequest 会置位，避免与中间件双写
+		req, audited := common.WithAuditFlag(r)
+
+		// 捕获响应状态码，审计记录真实结果
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+
+		next.ServeHTTP(rec, req)
+
+		path := r.URL.Path
+		if !strings.HasPrefix(path, "/api/") || r.Method == http.MethodGet {
+			return
+		}
+
+		username := common.RequestUsername(r)
+		ip := common.RequestIP(r)
+
+		// 登录接口：成功/失败都要审计（含失败尝试，便于追溯暴力破解）
+		if path == "/api/login" {
+			user := r.FormValue("username")
+			result := "success"
+			detail := "user=" + user
+			if rec.status != http.StatusOK {
+				result = "failed"
+			}
+			if user != "" {
 				username = user
 			}
+			common.LogAudit(username, "login", r.Method, path, detail, result, ip)
+			return
 		}
 
-		// Get client IP
-		ip := r.RemoteAddr
-		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-			ip = strings.Split(fwd, ",")[0]
+		// handler 已自行审计（带更丰富的 detail）则不重复记录
+		if *audited {
+			return
 		}
-		ip = strings.Split(ip, ":")[0]
 
-		next.ServeHTTP(w, r)
-
-		// Only audit write operations (POST/PUT/DELETE) — GET polling would flood the log
-		path := r.URL.Path
-		if strings.HasPrefix(path, "/api/") && r.Method != http.MethodGet {
-			action := classifyAction(r.Method, path)
-			detail := buildLogDetail(r)
-			common.LogAudit(username, action, r.Method, path, detail, "success", ip)
+		result := "success"
+		if rec.status >= 400 {
+			result = "failed"
 		}
+		action := classifyAction(r.Method, path)
+		detail := buildLogDetail(r)
+		common.LogAudit(username, action, r.Method, path, detail, result, ip)
 	})
+}
+
+// statusRecorder 包装 ResponseWriter 以捕获状态码
+type statusRecorder struct {
+	http.ResponseWriter
+	status      int
+	wroteHeader bool
+}
+
+func (s *statusRecorder) WriteHeader(code int) {
+	if !s.wroteHeader {
+		s.status = code
+		s.wroteHeader = true
+	}
+	s.ResponseWriter.WriteHeader(code)
+}
+
+func (s *statusRecorder) Write(b []byte) (int, error) {
+	s.wroteHeader = true
+	return s.ResponseWriter.Write(b)
+}
+
+// Flush 透传（SSE 流式接口需要 http.Flusher）
+func (s *statusRecorder) Flush() {
+	if f, ok := s.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// Unwrap 支持 http.ResponseController / httputil.ReverseProxy
+func (s *statusRecorder) Unwrap() http.ResponseWriter {
+	return s.ResponseWriter
 }
 
 func classifyAction(method, path string) string {
