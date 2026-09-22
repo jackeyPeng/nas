@@ -2,9 +2,11 @@ package users
 
 import (
 	"net/http"
+	"sort"
 	"strings"
 
 	"nas-panel/common"
+	"nas-panel/modules/diskmgmt"
 )
 
 // PermissionMatrix 权限矩阵
@@ -51,22 +53,23 @@ func handleMatrix(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
 }
 
-// buildPermissionMatrix 构建权限矩阵
+// buildPermissionMatrix 构建权限矩阵。
+// 事实源 = folders.db（GetAllFolderMeta），不再解析 smb.conf（生成物）：
+// SyncAllConfigs 失败/滞后时旧实现会与 DB 漂移（storage-permission-model §八 #4）。
 func buildPermissionMatrix() PermissionMatrix {
-	// 获取所有共享文件夹
-	folders := listSharedFolders()
-
-	// 获取所有用户
+	metas := diskmgmt.GetAllFolderMeta()
+	folders := listSharedFolders(metas)
 	users := listAllUsers()
 
-	// 解析 smb.conf 构建矩阵
-	smbConf, _ := common.SudoOutput("cat", "/etc/samba/smb.conf")
 	matrix := make(map[string]map[string]string)
-
 	for _, user := range users {
 		matrix[user] = make(map[string]string)
-		for _, folder := range folders {
-			matrix[user][folder] = getUserFolderPermission(smbConf, user, folder)
+		for _, f := range folders {
+			if m := findMetaByName(metas, f); m != nil {
+				matrix[user][f] = FolderMetaUserPermission(*m, user)
+			} else {
+				matrix[user][f] = "noaccess"
+			}
 		}
 	}
 
@@ -77,30 +80,90 @@ func buildPermissionMatrix() PermissionMatrix {
 	}
 }
 
-// listSharedFolders 列出所有 Samba 共享文件夹（排除用户私有目录）
-func listSharedFolders() []string {
-	smbConf, err := common.SudoOutput("cat", "/etc/samba/smb.conf")
-	if err != nil {
-		return []string{}
-	}
-
-	var folders []string
-	for _, line := range strings.Split(smbConf, "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
-			name := strings.Trim(line, "[]")
-			// 排除特殊共享和用户私有目录
-			if name != "global" && name != "homes" && name != "printers" &&
-				!strings.HasPrefix(name, "private") && name != "print$" {
-				// 检查是否是用户私有目录（通过 path 判断）
-				folders = append(folders, name)
-			}
+func findMetaByName(metas []diskmgmt.FolderMeta, name string) *diskmgmt.FolderMeta {
+	for i := range metas {
+		if metas[i].Name == name {
+			return &metas[i]
 		}
 	}
+	return nil
+}
+
+// listSharedFolders 列出所有 Samba 共享文件夹（排除特殊共享）
+func listSharedFolders(metas []diskmgmt.FolderMeta) []string {
+	var folders []string
+	for _, m := range metas {
+		if !m.SambaShare {
+			continue
+		}
+		// 排除特殊共享（旧种子数据残留防御；folders.db 正常不会有这些）
+		if m.Name == "global" || m.Name == "homes" || m.Name == "printers" ||
+			strings.HasPrefix(m.Name, "private") || m.Name == "print$" {
+			continue
+		}
+		folders = append(folders, m.Name)
+	}
+	sort.Strings(folders)
 	return folders
 }
 
-// listAllUsers 列出所有 NAS 用户（系统用户 ∩ Samba 用户）
+// FolderMetaUserPermission 按 Samba 语义从 folders.db 元数据计算单用户权限。
+// 判定规则（与 GenerateSambaConfig/smbShareParams 的生成语义一一对应）：
+//   - !samba_share 或 permission=noaccess → noaccess
+//   - 开放共享（valid_users 与 write_users 双空，如 public）→ 文件夹级 permission
+//     决定读写（writable=yes / read only=yes），所有认证用户同权
+//   - write_users 命中 → readwrite（write list 覆盖 read only，见 Samba 手册）
+//   - valid_users 命中 → readonly；但 write_users 为空（旧数据未物化）时
+//     回退文件夹级 permission（writable=yes 仍放行写）
+//   - 两个列表都未命中 → noaccess
+func FolderMetaUserPermission(m diskmgmt.FolderMeta, username string) string {
+	if !m.SambaShare || m.Permission == "noaccess" {
+		return "noaccess"
+	}
+
+	valid := splitUserList(m.ValidUsers)
+	write := splitUserList(m.WriteUsers)
+
+	// 开放共享：任何可认证用户按文件夹级 permission 读写
+	if len(valid) == 0 && len(write) == 0 {
+		if m.Permission == "readonly" {
+			return "readonly"
+		}
+		return "readwrite"
+	}
+
+	if listHasStr(write, username) {
+		return "readwrite"
+	}
+	if listHasStr(valid, username) {
+		if len(write) == 0 && m.Permission == "readwrite" {
+			return "readwrite"
+		}
+		return "readonly"
+	}
+	return "noaccess"
+}
+
+func listHasStr(list []string, u string) bool {
+	for _, x := range list {
+		if x == u {
+			return true
+		}
+	}
+	return false
+}
+
+func splitUserList(s string) []string {
+	var out []string
+	for _, u := range strings.Split(s, ",") {
+		if u = strings.TrimSpace(u); u != "" {
+			out = append(out, u)
+		}
+	}
+	return out
+}
+
+// listAllUsers 列出所有 NAS 用户（Samba ∪ FTP）
 func listAllUsers() []string {
 	userSet := make(map[string]bool)
 
@@ -127,86 +190,6 @@ func listAllUsers() []string {
 	for u := range userSet {
 		users = append(users, u)
 	}
+	sort.Strings(users)
 	return users
-}
-
-// getUserFolderPermission 获取用户对文件夹的权限
-func getUserFolderPermission(smbConf, username, folder string) string {
-	lines := strings.Split(smbConf, "\n")
-	shareTag := "[" + folder + "]"
-	inShare := false
-	validUsers := ""
-	writeList := ""
-	readOnly := "no"
-
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == shareTag {
-			inShare = true
-			continue
-		}
-		if inShare && strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
-			break
-		}
-		if !inShare {
-			continue
-		}
-
-		if strings.HasPrefix(trimmed, "valid users") {
-			parts := strings.SplitN(trimmed, "=", 2)
-			if len(parts) == 2 {
-				validUsers = strings.TrimSpace(parts[1])
-			}
-		}
-		if strings.HasPrefix(trimmed, "write list") {
-			parts := strings.SplitN(trimmed, "=", 2)
-			if len(parts) == 2 {
-				writeList = strings.TrimSpace(parts[1])
-			}
-		}
-		if strings.HasPrefix(trimmed, "read only") {
-			parts := strings.SplitN(trimmed, "=", 2)
-			if len(parts) == 2 {
-				readOnly = strings.TrimSpace(parts[1])
-			}
-		}
-	}
-
-	// valid users 为空 = 开放共享（Samba 语义：任何可认证用户都能连），
-	// 按 read only / write list 判定读写；默认（read only 缺省 no）为读写
-	if validUsers == "" {
-		for _, u := range strings.Split(writeList, ",") {
-			if strings.TrimSpace(u) == username {
-				return "readwrite"
-			}
-		}
-		if readOnly == "yes" {
-			return "readonly"
-		}
-		return "readwrite"
-	}
-
-	userInList := false
-	for _, u := range strings.Split(validUsers, ",") {
-		if strings.TrimSpace(u) == username {
-			userInList = true
-			break
-		}
-	}
-
-	if !userInList {
-		return "noaccess"
-	}
-
-	// 在 write list 里 → 读写（write list 覆盖 read only，见 Samba 手册）
-	for _, u := range strings.Split(writeList, ",") {
-		if strings.TrimSpace(u) == username {
-			return "readwrite"
-		}
-	}
-
-	if readOnly == "yes" {
-		return "readonly"
-	}
-	return "readwrite"
 }

@@ -27,6 +27,8 @@ type SharedFolder struct {
 	S3Access     bool   `json:"s3_access,omitempty"`
 	Permission   string `json:"permission"`
 	ValidUsers   string `json:"valid_users"`
+	WriteUsers   string `json:"write_users,omitempty"`
+	NFSNoRootSquash bool `json:"nfs_no_root_squash,omitempty"`
 	RecycleBin   bool   `json:"recycle_bin"`
 	QuotaGB      int    `json:"quota_gb"`
 	QuotaUsed    string `json:"quota_used"`
@@ -75,19 +77,12 @@ func handleListFolders(w http.ResponseWriter, r *http.Request) {
 
 	smbConf, _ := common.SudoOutput("cat", "/etc/samba/smb.conf")
 	smbMap := parseSambaShares(smbConf)
-	for i, f := range folders {
-		if smb, ok := smbMap[f.Path]; ok {
-			folders[i].SambaShare = true
-			if smb["read_only"] == "yes" {
-				folders[i].Permission = "readonly"
-			} else {
-				folders[i].Permission = "readwrite"
-			}
-			folders[i].ValidUsers = smb["valid_users"]
-			folders[i].RecycleBin = hasRecycleBin(smbConf, f.Name)
-		} else {
-			folders[i].Permission = "noaccess"
-		}
+	metaMap := make(map[string]FolderMeta) // path → meta（folders.db 权威源）
+	for _, m := range GetAllFolderMeta() {
+		metaMap[m.Path] = m
+	}
+	for i := range folders {
+		enrichSharedFolder(&folders[i], metaMap, smbMap, smbConf)
 	}
 
 	quotaMap := make(map[string]map[string][2]string)
@@ -130,6 +125,45 @@ func handleListFolders(w http.ResponseWriter, r *http.Request) {
 	}
 
 	common.JSONResponse(w, map[string]interface{}{"folders": folders})
+}
+
+// enrichSharedFolder 用权威源富化一个共享文件夹条目的权限/协议字段。
+// 优先级：folders.db 元数据（真相源）> smb.conf 解析（未纳管目录兜底）。
+// smb.conf 是生成物，SyncAllConfigs 失败/滞后时以 DB 为准，UI 不再漂移
+// （storage-permission-model §八 #4 / 双源真相修复）。
+func enrichSharedFolder(f *SharedFolder, metaMap map[string]FolderMeta, smbMap map[string]map[string]string, smbConf string) {
+	if m, ok := metaMap[f.Path]; ok {
+		f.Source = "managed"
+		f.SambaShare = m.SambaShare
+		f.NFSExport = m.NFSExport
+		f.NFSNoRootSquash = m.NFSNoRootSquash
+		f.Permission = m.Permission
+		f.ValidUsers = m.ValidUsers
+		f.WriteUsers = m.WriteUsers
+		f.RecycleBin = m.RecycleBin
+		if m.QuotaGB > 0 {
+			f.QuotaGB = m.QuotaGB
+		}
+		return
+	}
+	// 未纳管目录：从 smb.conf 兜底推断（旧部署/手工建的共享）
+	f.Source = "local"
+	if smb, ok := smbMap[f.Path]; ok {
+		f.SambaShare = true
+		if smb["read_only"] == "yes" {
+			f.Permission = "readonly"
+		} else {
+			f.Permission = "readwrite"
+		}
+		f.ValidUsers = smb["valid_users"]
+		f.WriteUsers = smb["write_list"]
+		f.RecycleBin = hasRecycleBin(smbConf, f.Name)
+	} else {
+		f.Permission = "noaccess"
+	}
+	if isNFSExported(f.Path) {
+		f.NFSExport = true
+	}
 }
 
 func hasRecycleBin(conf, shareName string) bool {
@@ -198,6 +232,7 @@ func handleCreateFolder(w http.ResponseWriter, r *http.Request) {
 	folderPath := filepath.Join(pool, name)
 	recycle := recycleBin == "yes"
 	nfs := nfsExport == "yes"
+	nfsNoRootSquash := r.FormValue("nfs_no_root_squash") == "yes"
 
 	op := PendingOp{
 		Action:     "create",
@@ -209,7 +244,10 @@ func handleCreateFolder(w http.ResponseWriter, r *http.Request) {
 		RecycleBin: recycle,
 		SambaShare: permission != "noaccess",
 		NFSExport:  nfs,
-		QuotaGB:    quotaGB,
+		// 创建路径显式携带（含 false）：新文件夹的 NFS 语义由本次请求完整决定
+		NFSNoRootSquash:    nfsNoRootSquash,
+		NFSNoRootSquashSet: true,
+		QuotaGB:            quotaGB,
 	}
 	if err := executeCreateFolder(op); err != nil {
 		common.JSONResponse(w, map[string]interface{}{"error": "创建文件夹失败: " + err.Error()})
@@ -225,7 +263,7 @@ func handleCreateFolder(w http.ResponseWriter, r *http.Request) {
 		"name":    name,
 		"pool":    pool,
 	})
-	common.LogAudit("system", "创建共享文件夹", "STORAGE", "/api/disk/folders/create", fmt.Sprintf("%s -> %s (perm=%s)", name, folderPath, permission), "success", "")
+	common.LogAuditRequest(r, "STORAGE", "创建共享文件夹", fmt.Sprintf("%s -> %s (perm=%s)", name, folderPath, permission), "success")
 	common.EmitEvent("storage", common.EventInfo, "storage.folder_created",
 		map[string]interface{}{"name": name, "path": folderPath, "perm": permission}, "")
 }
@@ -261,8 +299,11 @@ func handleDeleteFolder(w http.ResponseWriter, r *http.Request) {
 		"pending": true,
 	})
 
-	AddPendingOp("delete", filepath.Base(path), path, filepath.Dir(path), "", "", true, false, false, 0)
-	common.LogAudit("system", "删除共享文件夹", "STORAGE", "/api/disk/folders/delete", fmt.Sprintf("%s -> %s", filepath.Base(path), path), "pending", "")
+	AddPendingOp(PendingOp{
+		Action: "delete", FolderName: filepath.Base(path), FolderPath: path,
+		Pool: filepath.Dir(path), SambaShare: true,
+	})
+	common.LogAuditRequest(r, "STORAGE", "删除共享文件夹", fmt.Sprintf("%s -> %s", filepath.Base(path), path), "pending")
 	common.EmitEvent("storage", common.EventWarn, "storage.folder_deleted",
 		map[string]interface{}{"name": filepath.Base(path), "path": path}, "")
 }
@@ -306,6 +347,12 @@ func handleFolderPermission(w http.ResponseWriter, r *http.Request) {
 		RecycleBin: recycleBin == "yes",
 		SambaShare: permission != "noaccess",
 	}
+	// nfs_no_root_squash 三态：表单显式提供 yes/no 才视为「已设置」，
+	// 否则 executeUpdateFolder 继承现有值（权限对话框不碰 NFS 选项时不重置）
+	if v := r.FormValue("nfs_no_root_squash"); v == "yes" || v == "no" {
+		op.NFSNoRootSquash = v == "yes"
+		op.NFSNoRootSquashSet = true
+	}
 	if err := executeUpdateFolder(op); err != nil {
 		common.JSONResponse(w, map[string]interface{}{"error": "更新权限失败: " + err.Error()})
 		return
@@ -318,7 +365,7 @@ func handleFolderPermission(w http.ResponseWriter, r *http.Request) {
 	common.JSONResponse(w, map[string]interface{}{
 		"message": fmt.Sprintf("共享 %s 权限已更新", shareName),
 	})
-	common.LogAudit("system", "更新共享文件夹", "STORAGE", "/api/disk/folders/permission", fmt.Sprintf("%s -> %s (perm=%s)", shareName, path, permission), "success", "")
+	common.LogAuditRequest(r, "STORAGE", "更新共享文件夹", fmt.Sprintf("%s -> %s (perm=%s)", shareName, path, permission), "success")
 }
 
 // parseSambaShares returns map[sharePath]config map

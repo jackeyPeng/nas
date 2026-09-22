@@ -243,6 +243,11 @@ func handleStorageOverview(w http.ResponseWriter, r *http.Request) {
 
 	// 2. 获取共享文件夹，按挂载点分组，分配到 Volume
 	folderMap := make(map[string][]SharedFolder) // mount → folders
+	// 元数据优先：folders.db 是权威源，smb.conf/exports 只做未纳管目录兜底
+	metaMap := make(map[string]FolderMeta)
+	for _, fm := range GetAllFolderMeta() {
+		metaMap[fm.Path] = fm
+	}
 	{
 		smbConf, _ := common.SudoOutput("cat", "/etc/samba/smb.conf")
 		smbMap := parseSambaShares(smbConf)
@@ -275,22 +280,7 @@ func handleStorageOverview(w http.ResponseWriter, r *http.Request) {
 					}
 					sizeOut, _ := common.SudoOutput("du", "-sh", folderPath)
 					f.Size = parseDuSize(sizeOut)
-					if smb, ok := smbMap[folderPath]; ok {
-						f.SambaShare = true
-						if smb["read_only"] == "yes" {
-							f.Permission = "readonly"
-						} else {
-							f.Permission = "readwrite"
-						}
-						f.ValidUsers = smb["valid_users"]
-						f.RecycleBin = hasRecycleBin(smbConf, entry.Name())
-					} else {
-						f.Permission = "noaccess"
-					}
-					// Check NFS export
-					if isNFSExported(folderPath) {
-						f.NFSExport = true
-					}
+					enrichSharedFolder(&f, metaMap, smbMap, smbConf)
 					// Check WebDAV (rclone serve webdav)
 					if isWebDAVServed(entry.Name()) {
 						f.WebDAVAccess = true
@@ -426,18 +416,7 @@ func handleStorageOverview(w http.ResponseWriter, r *http.Request) {
 				}
 				sizeOut, _ := common.SudoOutput("du", "-sh", folderPath)
 				f.Size = parseDuSize(sizeOut)
-				if smb, ok := smbMap[folderPath]; ok {
-					f.SambaShare = true
-					if smb["read_only"] == "yes" {
-						f.Permission = "readonly"
-					} else {
-						f.Permission = "readwrite"
-					}
-					f.ValidUsers = smb["valid_users"]
-					f.RecycleBin = hasRecycleBin(smbConf, entry.Name())
-				} else {
-					f.Permission = "noaccess"
-				}
+				enrichSharedFolder(&f, metaMap, smbMap, smbConf)
 				overview.SystemFolders = append(overview.SystemFolders, f)
 			}
 		}

@@ -1,53 +1,40 @@
 package users
 
-import "testing"
+import (
+	"testing"
 
-// 开放共享（无 valid users）回显：Samba 语义任何可认证用户可连
-func TestGetUserFolderPermissionOpenShare(t *testing.T) {
+	"nas-panel/modules/diskmgmt"
+)
+
+// 从 folders.db 元数据回显单用户权限（替代旧的 smb.conf 解析路径）。
+// 场景与旧 TestGetUserFolderPermissionOpenShare 等价，外加按用户粒度用例。
+func TestFolderMetaUserPermission(t *testing.T) {
+	smb := func(perm, valid, write string) diskmgmt.FolderMeta {
+		return diskmgmt.FolderMeta{Name: "share", Path: "/data/nas1/share", SambaShare: true,
+			Permission: perm, ValidUsers: valid, WriteUsers: write}
+	}
 	cases := []struct {
 		name string
-		conf string
+		meta diskmgmt.FolderMeta
+		user string
 		want string
 	}{
-		{
-			name: "开放共享默认读写",
-			conf: "[public]\n   path = /data/nas1/public\n   writable = yes\n",
-			want: "readwrite",
-		},
-		{
-			name: "开放共享 read only 全员只读",
-			conf: "[public]\n   path = /data/nas1/public\n   read only = yes\n",
-			want: "readonly",
-		},
-		{
-			name: "开放共享 read only + write list 覆盖",
-			conf: "[public]\n   path = /data/nas1/public\n   read only = yes\n   write list = alice\n",
-			want: "readwrite",
-		},
-		{
-			name: "封闭共享不在 valid users 里禁止",
-			conf: "[fm]\n   path = /data/nas1/fm\n   valid users = fm\n   writable = yes\n",
-			want: "noaccess",
-		},
-		{
-			name: "封闭共享在 valid users 里读写",
-			conf: "[fm]\n   path = /data/nas1/fm\n   valid users = fm\n   writable = yes\n",
-			want: "readwrite",
-		},
+		{"开放共享默认读写", smb("readwrite", "", ""), "alice", "readwrite"},
+		{"开放共享 readonly 全员只读", smb("readonly", "", ""), "alice", "readonly"},
+		{"noaccess 全员禁止", smb("noaccess", "", ""), "alice", "noaccess"},
+		{"非 samba 共享禁止", diskmgmt.FolderMeta{Name: "x", SambaShare: false, Permission: "readwrite"}, "alice", "noaccess"},
+		{"封闭共享不在 valid 禁止", smb("readwrite", "fm", ""), "alice", "noaccess"},
+		{"封闭共享 valid 命中且 write 空（旧数据）读写", smb("readwrite", "fm", ""), "fm", "readwrite"},
+		{"封闭共享 valid 命中 readonly", smb("readwrite", "fm,alice", "fm"), "alice", "readonly"},
+		{"write 命中 readwrite（覆盖 read only）", smb("readonly", "fm,alice", "fm,alice"), "alice", "readwrite"},
+		{"write 命中 readwrite（文件夹级 readonly）", smb("readonly", "fm,alice", "alice"), "alice", "readwrite"},
+		{"public 被按用户编辑后走按用户粒度", smb("readwrite", "fm,bob", "fm"), "alice", "noaccess"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			user := "alice"
-			share := "public"
-			if tc.name == "封闭共享不在 valid users 里禁止" || tc.name == "封闭共享在 valid users 里读写" {
-				share = "fm"
-				if tc.name == "封闭共享在 valid users 里读写" {
-					user = "fm"
-				}
-			}
-			got := getUserFolderPermission(tc.conf, user, share)
+			got := FolderMetaUserPermission(tc.meta, tc.user)
 			if got != tc.want {
-				t.Errorf("getUserFolderPermission(%q, %q) = %q, want %q", share, user, got, tc.want)
+				t.Errorf("FolderMetaUserPermission(%+v, %q) = %q, want %q", tc.meta, tc.user, got, tc.want)
 			}
 		})
 	}

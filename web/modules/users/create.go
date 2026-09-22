@@ -320,8 +320,13 @@ func setSharePermission(username, folder, perm string) error {
 
 	validUsers, writeUsers, permission = applyPermissionChange(validUsers, writeUsers, permission, username, perm)
 
-	diskmgmt.SyncFolderMeta(target.Name, target.Path, target.Pool, permission, validUsers, writeUsers,
-		target.SambaShare, target.NFSExport, target.RecycleBin, target.QuotaGB)
+	// 拷贝整个 meta 再改权限字段：结构性保证不漏携带其他字段
+	// （write_users 抹除事故的教训 — 见 storage-permission-model §写入路径一致性）
+	updated := *target
+	updated.Permission = permission
+	updated.ValidUsers = validUsers
+	updated.WriteUsers = writeUsers
+	diskmgmt.SyncFolderMeta(updated)
 
 	return diskmgmt.SyncAllConfigs()
 }

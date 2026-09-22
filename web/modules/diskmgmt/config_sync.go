@@ -74,6 +74,7 @@ func ensureFoldersSchema(db *sql.DB) {
 		recycle_bin INTEGER NOT NULL DEFAULT 0,
 		samba_share INTEGER NOT NULL DEFAULT 1,
 		nfs_export INTEGER NOT NULL DEFAULT 0,
+		nfs_no_root_squash INTEGER NOT NULL DEFAULT 0,
 		quota_gb INTEGER NOT NULL DEFAULT 0,
 		created_at TEXT NOT NULL DEFAULT (datetime('now')),
 		updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -124,9 +125,11 @@ func seedFromFileSystem(db *sql.DB) {
 			// Check NFS
 			nfs := isNFSExported(path)
 
-			_, err = db.Exec(`INSERT OR IGNORE INTO folders (name, path, pool, permission, valid_users, write_users, recycle_bin, samba_share, nfs_export)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-				name, path, m["mount"], perm, validUsers, writeUsers, boolToInt(recycle), boolToInt(samba), boolToInt(nfs))
+			// seed 兼容：既有 NFS 导出历史上一直是 no_root_squash，
+			// 补种时保留现状（与 migrateWriteUsersColumn 的迁移语义一致）
+			_, err = db.Exec(`INSERT OR IGNORE INTO folders (name, path, pool, permission, valid_users, write_users, recycle_bin, samba_share, nfs_export, nfs_no_root_squash)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				name, path, m["mount"], perm, validUsers, writeUsers, boolToInt(recycle), boolToInt(samba), boolToInt(nfs), boolToInt(nfs))
 			if err != nil {
 				log.Printf("[CONFIG_SYNC] seed 失败 %s: %v", name, err)
 			} else {
@@ -149,20 +152,44 @@ type FolderMeta struct {
 	RecycleBin bool   `json:"recycle_bin"`
 	SambaShare bool   `json:"samba_share"`
 	NFSExport  bool   `json:"nfs_export"`
-	QuotaGB    int    `json:"quota_gb"`
-	CreatedAt  string `json:"created_at"`
+	// NFSNoRootSquash 显式允许 NFS 客户端 root 保留 root 权限（no_root_squash）。
+	// 默认 false = root_squash（安全基线）；仅管理员按文件夹显式开启。
+	NFSNoRootSquash bool   `json:"nfs_no_root_squash"`
+	QuotaGB         int    `json:"quota_gb"`
+	CreatedAt       string `json:"created_at"`
 }
 
 // migrateWriteUsersColumn adds the write_users column to an existing folders
 // table if it is missing (idempotent, safe to run on every startup).
 func migrateWriteUsersColumn(db *sql.DB) {
+	if !folderColumnExists(db, "write_users") {
+		if _, err := db.Exec(`ALTER TABLE folders ADD COLUMN write_users TEXT NOT NULL DEFAULT ''`); err != nil {
+			log.Printf("[CONFIG_SYNC] 添加 write_users 列失败: %v", err)
+			return
+		}
+		log.Printf("[CONFIG_SYNC] 已迁移: folders 表新增 write_users 列")
+	}
+	if !folderColumnExists(db, "nfs_no_root_squash") {
+		if _, err := db.Exec(`ALTER TABLE folders ADD COLUMN nfs_no_root_squash INTEGER NOT NULL DEFAULT 0`); err != nil {
+			log.Printf("[CONFIG_SYNC] 添加 nfs_no_root_squash 列失败: %v", err)
+			return
+		}
+		// 升级兼容：老部署的 NFS 导出一直是 no_root_squash（历史默认），
+		// 迁移时保留已导出文件夹的现状，避免升级后 NFS root 客户端静默断写。
+		// 新建/新导出默认 root_squash，管理员可在面板按文件夹显式开启。
+		db.Exec(`UPDATE folders SET nfs_no_root_squash=1 WHERE nfs_export=1`)
+		log.Printf("[CONFIG_SYNC] 已迁移: folders 表新增 nfs_no_root_squash 列（既有导出保留 no_root_squash）")
+	}
+}
+
+// folderColumnExists 检查 folders 表是否已有指定列。
+func folderColumnExists(db *sql.DB, column string) bool {
 	rows, err := db.Query(`PRAGMA table_info(folders)`)
 	if err != nil {
 		log.Printf("[CONFIG_SYNC] 检查 folders 列失败: %v", err)
-		return
+		return true // 查询失败时按存在处理，避免重复 ALTER 报错刷屏
 	}
 	defer rows.Close()
-	hasWriteUsers := false
 	for rows.Next() {
 		var cid int
 		var name, ctype string
@@ -171,38 +198,35 @@ func migrateWriteUsersColumn(db *sql.DB) {
 		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
 			continue
 		}
-		if name == "write_users" {
-			hasWriteUsers = true
+		if name == column {
+			return true
 		}
 	}
-	if hasWriteUsers {
-		return
-	}
-	if _, err := db.Exec(`ALTER TABLE folders ADD COLUMN write_users TEXT NOT NULL DEFAULT ''`); err != nil {
-		log.Printf("[CONFIG_SYNC] 添加 write_users 列失败: %v", err)
-		return
-	}
-	log.Printf("[CONFIG_SYNC] 已迁移: folders 表新增 write_users 列")
+	return false
 }
 
-// SyncFolderMeta ensures the metadata table matches the file system
-// Called after create/edit/delete folder operations
-func SyncFolderMeta(name, folderPath, pool, permission, validUsers, writeUsers string, samba, nfs, recycle bool, quotaGB int) {
+// SyncFolderMeta upserts a folder's metadata (folders.db 是共享文件夹唯一权威源)。
+// 传整个 FolderMeta 而非散列参数：给表加新字段时所有调用点编译期强制携带，
+// 杜绝某条写入路径漏字段把其他路径的配置抹掉（write_users 事故的结构性修复）。
+func SyncFolderMeta(m FolderMeta) {
 	db := initConfigDB()
 	if db == nil {
 		return
 	}
 
 	// Upsert: insert or update
-	_, err := db.Exec(`INSERT INTO folders (name, path, pool, permission, valid_users, write_users, samba_share, nfs_export, recycle_bin, quota_gb, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+	_, err := db.Exec(`INSERT INTO folders (name, path, pool, permission, valid_users, write_users, samba_share, nfs_export, nfs_no_root_squash, recycle_bin, quota_gb, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
 		ON CONFLICT(path) DO UPDATE SET
 			name=excluded.name, pool=excluded.pool, permission=excluded.permission,
 			valid_users=excluded.valid_users, write_users=excluded.write_users,
 			samba_share=excluded.samba_share,
-			nfs_export=excluded.nfs_export, recycle_bin=excluded.recycle_bin,
+			nfs_export=excluded.nfs_export, nfs_no_root_squash=excluded.nfs_no_root_squash,
+			recycle_bin=excluded.recycle_bin,
 			quota_gb=excluded.quota_gb, updated_at=datetime('now')`,
-		name, folderPath, pool, permission, validUsers, writeUsers, boolToInt(samba), boolToInt(nfs), boolToInt(recycle), quotaGB)
+		m.Name, m.Path, m.Pool, m.Permission, m.ValidUsers, m.WriteUsers,
+		boolToInt(m.SambaShare), boolToInt(m.NFSExport), boolToInt(m.NFSNoRootSquash),
+		boolToInt(m.RecycleBin), m.QuotaGB)
 	if err != nil {
 		log.Printf("[CONFIG_SYNC] 同步元数据失败: %v", err)
 	}
@@ -223,7 +247,7 @@ func GetAllFolderMeta() []FolderMeta {
 	if db == nil {
 		return nil
 	}
-	rows, err := db.Query("SELECT id, name, path, pool, permission, valid_users, write_users, recycle_bin, samba_share, nfs_export, quota_gb, created_at FROM folders ORDER BY id")
+	rows, err := db.Query("SELECT id, name, path, pool, permission, valid_users, write_users, recycle_bin, samba_share, nfs_export, nfs_no_root_squash, quota_gb, created_at FROM folders ORDER BY id")
 	if err != nil {
 		log.Printf("[CONFIG_SYNC] 查询元数据失败: %v", err)
 		return nil
@@ -233,11 +257,12 @@ func GetAllFolderMeta() []FolderMeta {
 	var result []FolderMeta
 	for rows.Next() {
 		var m FolderMeta
-		var rb, smb, nfs int
-		rows.Scan(&m.ID, &m.Name, &m.Path, &m.Pool, &m.Permission, &m.ValidUsers, &m.WriteUsers, &rb, &smb, &nfs, &m.QuotaGB, &m.CreatedAt)
+		var rb, smb, nfs, nrs int
+		rows.Scan(&m.ID, &m.Name, &m.Path, &m.Pool, &m.Permission, &m.ValidUsers, &m.WriteUsers, &rb, &smb, &nfs, &nrs, &m.QuotaGB, &m.CreatedAt)
 		m.RecycleBin = rb != 0
 		m.SambaShare = smb != 0
 		m.NFSExport = nfs != 0
+		m.NFSNoRootSquash = nrs != 0
 		result = append(result, m)
 	}
 	return result
@@ -341,11 +366,9 @@ func GenerateNFSConfig() error {
 		if !m.NFSExport {
 			continue
 		}
-		opts := "rw,sync,no_subtree_check,no_root_squash"
-		if m.Permission == "readonly" {
-			opts = "ro,sync,no_subtree_check"
-		}
-		sb.WriteString(fmt.Sprintf("%s *(%s)\n", m.Path, opts))
+		// 默认 root_squash（安全基线：客户端 root 映射为 nobody）；
+		// no_root_squash 必须按文件夹显式开启（§八 P2 修复）
+		sb.WriteString(fmt.Sprintf("%s *(%s)\n", m.Path, nfsExportOpts(m)))
 	}
 	sb.WriteString(managedEnd + "\n")
 
@@ -584,6 +607,20 @@ func boolToInt(b bool) int {
 	return 0
 }
 
+// nfsExportOpts 生成单个文件夹的 NFS 导出选项。
+// 默认 root_squash（客户端 root 映射为 nobody，安全基线）；
+// no_root_squash 仅在 nfs_no_root_squash 显式开启时生成（§八 P2 #3）。
+// readonly 共享一律 ro（root_squash 对 ro 无意义，不叠加）。
+func nfsExportOpts(m FolderMeta) string {
+	if m.Permission == "readonly" {
+		return "ro,sync,no_subtree_check"
+	}
+	if m.NFSNoRootSquash {
+		return "rw,sync,no_subtree_check,no_root_squash"
+	}
+	return "rw,sync,no_subtree_check,root_squash"
+}
+
 // smbShareParams 决定单个 SMB 共享的权限模式。
 // 返回 (writeMode, writeList)：
 //
@@ -776,8 +813,8 @@ func EnsurePoolStructure(mountPoint, nasUser string) error {
 	common.SudoExec("chown", "-R", nasUser+":"+nasUser, homePath)
 
 	// 3. 写入 folders.db（upsert）：public = samba+nfs；home = 仅 samba
-	SyncFolderMeta("public", pubPath, mountPoint, "readwrite", "", "", true, true, false, 0)
-	SyncFolderMeta(nasUser, homePath, mountPoint, "readwrite", nasUser, "", true, false, false, 0)
+	SyncFolderMeta(FolderMeta{Name: "public", Path: pubPath, Pool: mountPoint, Permission: "readwrite", SambaShare: true, NFSExport: true})
+	SyncFolderMeta(FolderMeta{Name: nasUser, Path: homePath, Pool: mountPoint, Permission: "readwrite", ValidUsers: nasUser, SambaShare: true})
 
 	// 4. 重生成 SMB + NFS 托管配置
 	return SyncAllConfigs()
@@ -800,6 +837,6 @@ func EnsureUserHome(username string) error {
 	common.SudoExec("chown", "-R", username+":"+username, homePath)
 
 	// valid_users=username，write_users 留空（owner 默认 writable，后续授权走 write list）
-	SyncFolderMeta(username, homePath, pool, "readwrite", username, "", true, false, false, 0)
+	SyncFolderMeta(FolderMeta{Name: username, Path: homePath, Pool: pool, Permission: "readwrite", ValidUsers: username, SambaShare: true})
 	return SyncAllConfigs()
 }

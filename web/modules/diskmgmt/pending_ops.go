@@ -27,8 +27,12 @@ type PendingOp struct {
 	RecycleBin bool   `json:"recycle_bin"`
 	SambaShare bool   `json:"samba_share"`
 	NFSExport  bool   `json:"nfs_export"`
-	QuotaGB    int    `json:"quota_gb"`
-	CreatedAt  string `json:"created_at"`
+	// NFSNoRootSquash 显式开启 NFS no_root_squash（默认 root_squash 安全基线）
+	NFSNoRootSquash bool `json:"nfs_no_root_squash"`
+	// NFSNoRootSquashSet 区分「未传」（继承现有值）与「显式传 false」
+	NFSNoRootSquashSet bool `json:"-"`
+	QuotaGB            int  `json:"quota_gb"`
+	CreatedAt          string `json:"created_at"`
 }
 
 // OperationLog represents a completed operation log entry
@@ -58,6 +62,7 @@ func initPendingDB() *sql.DB {
 		recycle_bin INTEGER NOT NULL DEFAULT 0,
 		samba_share INTEGER NOT NULL DEFAULT 1,
 		nfs_export INTEGER NOT NULL DEFAULT 0,
+		nfs_no_root_squash INTEGER NOT NULL DEFAULT 0,
 		quota_gb INTEGER NOT NULL DEFAULT 0,
 		created_at TEXT NOT NULL DEFAULT (datetime('now'))
 	)`)
@@ -87,20 +92,22 @@ func cleanupOldLogs(db *sql.DB) {
 	}
 }
 
-// AddPendingOp adds a pending operation
-func AddPendingOp(action, name, path, pool, permission, validUsers string, samba, nfs, recycle bool, quotaGB int) error {
+// AddPendingOp adds a pending operation（传 PendingOp 结构体，新增字段编译期强制携带）
+func AddPendingOp(op PendingOp) error {
 	db := initPendingDB()
 	if db == nil {
 		return fmt.Errorf("数据库未初始化")
 	}
-	_, err := db.Exec(`INSERT INTO pending_ops (action, folder_name, folder_path, pool, permission, valid_users, recycle_bin, samba_share, nfs_export, quota_gb)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		action, name, path, pool, permission, validUsers, boolToInt(recycle), boolToInt(samba), boolToInt(nfs), quotaGB)
+	_, err := db.Exec(`INSERT INTO pending_ops (action, folder_name, folder_path, pool, permission, valid_users, recycle_bin, samba_share, nfs_export, nfs_no_root_squash, quota_gb)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		op.Action, op.FolderName, op.FolderPath, op.Pool, op.Permission, op.ValidUsers,
+		boolToInt(op.RecycleBin), boolToInt(op.SambaShare), boolToInt(op.NFSExport),
+		boolToInt(op.NFSNoRootSquash), op.QuotaGB)
 	if err != nil {
 		log.Printf("[PENDING] 添加待操作失败: %v", err)
 		return err
 	}
-	log.Printf("[PENDING] 已暂存: %s %s", action, name)
+	log.Printf("[PENDING] 已暂存: %s %s", op.Action, op.FolderName)
 	return nil
 }
 
@@ -110,7 +117,7 @@ func GetPendingOps() []PendingOp {
 	if db == nil {
 		return nil
 	}
-	rows, err := db.Query("SELECT id, action, folder_name, folder_path, pool, permission, valid_users, recycle_bin, samba_share, nfs_export, quota_gb, created_at FROM pending_ops ORDER BY id")
+	rows, err := db.Query("SELECT id, action, folder_name, folder_path, pool, permission, valid_users, recycle_bin, samba_share, nfs_export, nfs_no_root_squash, quota_gb, created_at FROM pending_ops ORDER BY id")
 	if err != nil {
 		return nil
 	}
@@ -119,11 +126,12 @@ func GetPendingOps() []PendingOp {
 	var ops []PendingOp
 	for rows.Next() {
 		var op PendingOp
-		var rb, smb, nfs int
-		rows.Scan(&op.ID, &op.Action, &op.FolderName, &op.FolderPath, &op.Pool, &op.Permission, &op.ValidUsers, &rb, &smb, &nfs, &op.QuotaGB, &op.CreatedAt)
+		var rb, smb, nfs, nrs int
+		rows.Scan(&op.ID, &op.Action, &op.FolderName, &op.FolderPath, &op.Pool, &op.Permission, &op.ValidUsers, &rb, &smb, &nfs, &nrs, &op.QuotaGB, &op.CreatedAt)
 		op.RecycleBin = rb != 0
 		op.SambaShare = smb != 0
 		op.NFSExport = nfs != 0
+		op.NFSNoRootSquash = nrs != 0
 		ops = append(ops, op)
 	}
 	return ops
@@ -141,7 +149,7 @@ func PendingCount() int {
 }
 
 // ApplyPendingOps applies all pending operations and clears the queue
-func ApplyPendingOps() ([]string, error) {
+func ApplyPendingOps(r *http.Request) ([]string, error) {
 	db := initPendingDB()
 	if db == nil {
 		return nil, fmt.Errorf("数据库未初始化")
@@ -179,7 +187,7 @@ func ApplyPendingOps() ([]string, error) {
 			result = "error"
 			auditDetail += " 失败: " + err.Error()
 		}
-		common.LogAudit("system", "存储变更", "APPLY", "/api/disk/pending/apply", auditDetail, result, "")
+		common.LogAuditRequest(r, "STORAGE", "存储变更", auditDetail, result)
 		if result == "success" {
 			common.EmitEvent("storage", common.EventSuccess, "storage.pending_applied", nil, auditDetail)
 		} else {
@@ -226,8 +234,14 @@ func executeCreateFolder(op PendingOp) error {
 		common.SudoExec("chown", "-R", nasUser+":"+nasUser, folderPath)
 	}
 
-	// Sync metadata
-	SyncFolderMeta(op.FolderName, folderPath, op.Pool, op.Permission, op.ValidUsers, "", op.SambaShare, op.NFSExport, op.RecycleBin, op.QuotaGB)
+	// Sync metadata（新文件夹默认 root_squash；no_root_squash 由 op 显式携带）
+	SyncFolderMeta(FolderMeta{
+		Name: op.FolderName, Path: folderPath, Pool: op.Pool,
+		Permission: op.Permission, ValidUsers: op.ValidUsers,
+		SambaShare: op.SambaShare, NFSExport: op.NFSExport,
+		NFSNoRootSquash: op.NFSNoRootSquash,
+		RecycleBin:      op.RecycleBin, QuotaGB: op.QuotaGB,
+	})
 
 	return nil
 }
@@ -244,9 +258,30 @@ func ensureFolderUser(name string) {
 // 按用户元数据并合并保留，否则会把矩阵配置的 write_users 抹掉，
 // 回退文件夹级 writable=yes，只读用户静默获得写权限。
 func executeUpdateFolder(op PendingOp) error {
-	perm, valid, write := mergeFolderUpdate(findFolderMeta(op.FolderPath, op.FolderName), op)
-	SyncFolderMeta(op.FolderName, op.FolderPath, op.Pool, perm, valid, write, op.SambaShare, op.NFSExport, op.RecycleBin, op.QuotaGB)
+	existing := findFolderMeta(op.FolderPath, op.FolderName)
+	perm, valid, write := mergeFolderUpdate(existing, op)
+	m := FolderMeta{
+		Name: op.FolderName, Path: op.FolderPath, Pool: op.Pool,
+		Permission: perm, ValidUsers: valid, WriteUsers: write,
+		SambaShare: op.SambaShare, NFSExport: op.NFSExport,
+		RecycleBin: op.RecycleBin, QuotaGB: op.QuotaGB,
+	}
+	// nfs_no_root_squash 三态解析（纯函数，见 resolveNFSNoRootSquash）
+	m.NFSNoRootSquash = resolveNFSNoRootSquash(existing, op)
+	SyncFolderMeta(m)
 	return nil
+}
+
+// resolveNFSNoRootSquash 三态决策：op 显式携带（Set=true）用 op 的值，
+// 否则继承现有值，避免权限对话框未提供该字段时把 NFS 选项静默重置。
+func resolveNFSNoRootSquash(existing *FolderMeta, op PendingOp) bool {
+	if op.NFSNoRootSquashSet {
+		return op.NFSNoRootSquash
+	}
+	if existing != nil {
+		return existing.NFSNoRootSquash
+	}
+	return false
 }
 
 // findFolderMeta 按 path（事实源主键）优先、name 兜底查找现有元数据。
@@ -415,7 +450,7 @@ func handlePendingApply(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
 		return
 	}
-	results, err := ApplyPendingOps()
+	results, err := ApplyPendingOps(r)
 	if err != nil {
 		common.JSONResponse(w, map[string]interface{}{
 			"error": err.Error(),

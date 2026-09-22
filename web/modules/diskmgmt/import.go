@@ -143,7 +143,7 @@ func handleImportPool(w http.ResponseWriter, r *http.Request) {
 	// 6. 重生成 SMB/NFS 托管配置
 	SyncAllConfigs()
 
-	common.LogAudit("system", "导入存储池", "STORAGE", "/api/disk/import/pool", "vg="+vgName, "success", "")
+	common.LogAuditRequest(r, "STORAGE", "导入存储池", "vg="+vgName, "success")
 	common.EmitEvent("storage", common.EventSuccess, "storage.pool_imported",
 		map[string]interface{}{"vg": vgName}, "")
 	common.JSONResponse(w, map[string]interface{}{
@@ -170,9 +170,9 @@ func rebuildFoldersFromDisk(mountPoint string) {
 		}
 		path := filepath.Join(mountPoint, name)
 		if name == "public" {
-			SyncFolderMeta("public", path, mountPoint, "readwrite", "", "", true, true, false, 0)
+			SyncFolderMeta(FolderMeta{Name: "public", Path: path, Pool: mountPoint, Permission: "readwrite", SambaShare: true, NFSExport: true})
 		} else {
-			SyncFolderMeta(name, path, mountPoint, "readwrite", name, "", true, false, false, 0)
+			SyncFolderMeta(FolderMeta{Name: name, Path: path, Pool: mountPoint, Permission: "readwrite", ValidUsers: name, SambaShare: true})
 		}
 	}
 }
