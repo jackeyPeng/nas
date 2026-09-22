@@ -46,6 +46,25 @@ func TestStatsReParsing(t *testing.T) {
 	}
 }
 
+func TestFilesReParsing(t *testing.T) {
+	// 文件数行（完整 stats 块，无 --stats-one-line 时输出）
+	m := filesRe.FindStringSubmatch("Transferred:           12 / 45, 27%")
+	if m == nil || m[1] != "12" || m[2] != "45" || m[3] != "27" {
+		t.Fatalf("files line parse wrong: %v", m)
+	}
+	// 字节行不应被 filesRe 误匹配
+	if statsRe.FindStringSubmatch("Transferred:   \t 1.234 GiB / 5.678 GiB, 22%, 10.5 MiB/s, ETA 1m23s") == nil {
+		t.Fatal("bytes line should match statsRe")
+	}
+	if filesRe.FindStringSubmatch("Transferred:   \t 1.234 GiB / 5.678 GiB, 22%, 10.5 MiB/s, ETA 1m23s") != nil {
+		t.Fatal("bytes line must NOT match filesRe")
+	}
+	// Checks 行不匹配
+	if filesRe.FindStringSubmatch("Checks:                 0 / 0, -, Listed 3") != nil {
+		t.Fatal("checks line must NOT match filesRe")
+	}
+}
+
 func TestPushLineProgress(t *testing.T) {
 	p := &taskProgress{TaskID: "x", OutputTail: []string{}}
 	p.pushLine("2026-09-22 16:50:41 INFO  :    50.024 MiB / 76.294 MiB, 66%, 2.106 MiB/s, ETA 12s")
@@ -55,6 +74,12 @@ func TestPushLineProgress(t *testing.T) {
 	}
 	if p.full.String() == "" {
 		t.Fatal("full output not accumulated")
+	}
+	// 文件数行
+	p.pushLine("Transferred:           30 / 100, 30%")
+	v = p.view()
+	if v.FilesDone != 30 || v.FilesTotal != 100 || v.FilesPercent != 30 {
+		t.Fatalf("files progress wrong: %+v", v)
 	}
 }
 

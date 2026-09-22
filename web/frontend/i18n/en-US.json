@@ -775,6 +775,7 @@
     "speed": "Speed",
     "eta": "ETA",
     "live_output": "Live output",
+    "files": "Files",
     "sync_logs": "Sync Logs",
     "clear_logs": "Clear Logs",
     "no_logs": "No sync logs",

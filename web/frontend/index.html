@@ -2599,6 +2599,7 @@
                                     <span x-show="rcloneProgressMap[task.id].transferred" x-text="$t('rclone.transferred') + ': ' + rcloneProgressMap[task.id].transferred + ' / ' + rcloneProgressMap[task.id].total"></span>
                                     <span x-show="rcloneProgressMap[task.id].speed" x-text="$t('rclone.speed') + ': ' + rcloneProgressMap[task.id].speed"></span>
                                     <span x-show="rcloneProgressMap[task.id].eta" x-text="$t('rclone.eta') + ': ' + rcloneProgressMap[task.id].eta"></span>
+                                    <span x-show="rcloneProgressMap[task.id].files_total" x-text="$t('rclone.files') + ': ' + rcloneProgressMap[task.id].files_done + ' / ' + rcloneProgressMap[task.id].files_total + ' (' + rcloneProgressMap[task.id].files_percent + '%)'"></span>
                                 </div>
                                 <details style="margin-top:var(--sp-3)" open>
                                     <summary style="cursor:pointer;color: var(--text-light);font-size:var(--fs-xs)" x-text="$t('rclone.live_output')"></summary>

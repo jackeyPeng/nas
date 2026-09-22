@@ -800,16 +800,19 @@ var runningTasks = sync.Map{} // taskID -> bool
 
 // taskProgress 保存正在运行（或刚结束）任务的实时进度，供 /progress 接口轮询。
 type taskProgress struct {
-	mu          sync.Mutex
-	TaskID      string
-	Running     bool
-	StartTime   string
-	Percent     int
-	Speed       string
-	ETA         string
-	Transferred string
-	Total       string
-	StatsLine   string
+	mu           sync.Mutex
+	TaskID       string
+	Running      bool
+	StartTime    string
+	Percent      int
+	Speed        string
+	ETA          string
+	Transferred  string
+	Total        string
+	FilesDone    int
+	FilesTotal   int
+	FilesPercent int
+	StatsLine    string
 	OutputTail  []string // 最近 40 行输出
 	startedAt   time.Time
 	full        strings.Builder // 完整输出（写日志用）
@@ -820,10 +823,14 @@ const maxFullOutput = 512 * 1024
 
 var progressMap sync.Map // taskID -> *taskProgress
 
-// statsRe 匹配 rclone --stats-one-line 的进度行。实测本机 rclone 输出形如：
-// "2026-09-22 16:50:41 INFO  :    50.024 MiB / 76.294 MiB, 66%, 2.106 MiB/s, ETA 12s"
-// （无 Transferred: 前缀）；带 --stats-one-line-date 或旧版本时可能带前缀，故 Transferred: 设为可选。
+// statsRe 匹配 rclone 进度块里的「字节」行（带 ETA），实测两种形态：
+// one-line: "2026-09-22 16:50:41 INFO  :    50.024 MiB / 76.294 MiB, 66%, 2.106 MiB/s, ETA 12s"
+// 完整块:   "Transferred:   \t 1.234 GiB / 5.678 GiB, 22%, 10.5 MiB/s, ETA 1m23s"
 var statsRe = regexp.MustCompile(`(?:Transferred:\s*)?([0-9.]+\s?[KMGTPE]?i?B)\s*/\s*([0-9.]+\s?[KMGTPE]?i?B),\s*([0-9]+)%,\s*([^,]*),\s*ETA\s*(\S+)`)
+
+// filesRe 匹配「文件数」行（不带 ETA，形如 "Transferred:            3 / 10, 30%"）。
+// 只在完整 stats 块输出（去掉 --stats-one-line）时出现，用于海量文件任务的进度估算。
+var filesRe = regexp.MustCompile(`Transferred:\s*(\d+)\s*/\s*(\d+),\s*(\d+)%`)
 
 func (p *taskProgress) pushLine(line string) {
 	p.mu.Lock()
@@ -843,38 +850,50 @@ func (p *taskProgress) pushLine(line string) {
 		p.Speed = strings.TrimSpace(m[4])
 		p.ETA = m[5]
 		p.StatsLine = line
+		return
+	}
+	if m := filesRe.FindStringSubmatch(line); m != nil {
+		p.FilesDone, _ = strconv.Atoi(m[1])
+		p.FilesTotal, _ = strconv.Atoi(m[2])
+		p.FilesPercent, _ = strconv.Atoi(m[3])
 	}
 }
 
 // progressView 是 /progress 接口的 JSON 快照。
 type progressView struct {
-	TaskID      string   `json:"task_id"`
-	Running     bool     `json:"running"`
-	StartTime   string   `json:"start_time"`
-	Elapsed     string   `json:"elapsed"`
-	Percent     int      `json:"percent"`
-	Speed       string   `json:"speed"`
-	ETA         string   `json:"eta"`
-	Transferred string   `json:"transferred"`
-	Total       string   `json:"total"`
-	StatsLine   string   `json:"stats_line"`
-	OutputTail  []string `json:"output_tail"`
+	TaskID       string   `json:"task_id"`
+	Running      bool     `json:"running"`
+	StartTime    string   `json:"start_time"`
+	Elapsed      string   `json:"elapsed"`
+	Percent      int      `json:"percent"`
+	Speed        string   `json:"speed"`
+	ETA          string   `json:"eta"`
+	Transferred  string   `json:"transferred"`
+	Total        string   `json:"total"`
+	FilesDone    int      `json:"files_done"`
+	FilesTotal   int      `json:"files_total"`
+	FilesPercent int      `json:"files_percent"`
+	StatsLine    string   `json:"stats_line"`
+	OutputTail   []string `json:"output_tail"`
 }
 
 func (p *taskProgress) view() progressView {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	v := progressView{
-		TaskID:      p.TaskID,
-		Running:     p.Running,
-		StartTime:   p.StartTime,
-		Percent:     p.Percent,
-		Speed:       p.Speed,
-		ETA:         p.ETA,
-		Transferred: p.Transferred,
-		Total:       p.Total,
-		StatsLine:   p.StatsLine,
-		OutputTail:  append([]string{}, p.OutputTail...),
+		TaskID:       p.TaskID,
+		Running:      p.Running,
+		StartTime:    p.StartTime,
+		Percent:      p.Percent,
+		Speed:        p.Speed,
+		ETA:          p.ETA,
+		Transferred:  p.Transferred,
+		Total:        p.Total,
+		FilesDone:    p.FilesDone,
+		FilesTotal:   p.FilesTotal,
+		FilesPercent: p.FilesPercent,
+		StatsLine:    p.StatsLine,
+		OutputTail:   append([]string{}, p.OutputTail...),
 	}
 	if !p.startedAt.IsZero() {
 		v.Elapsed = formatElapsed(time.Since(p.startedAt))
@@ -1013,7 +1032,9 @@ func executeTask(task SyncTask) {
 	if task.Transfers > 0 {
 		args = append(args, "--transfers", strconv.Itoa(task.Transfers))
 	}
-	args = append(args, "--stats", "5s", "--stats-one-line", "-v")
+	// 完整 stats 块（不用 --stats-one-line）：one-line 模式不含文件数，
+	// 海量文件任务需要 "Transferred: N / M, P%" 行来展示文件级进度。
+	args = append(args, "--stats", "5s", "-v")
 
 	// 流式执行：边读输出边更新进度，不再等进程结束才拿到日志
 	cmd := rcloneCmdSudo(args...)
