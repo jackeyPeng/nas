@@ -2541,35 +2541,36 @@
                                         <td>
                                             <span class="badge-xs" 
                                                 :style="task.direction === 'download' ? 'background-color: var(--purple-light);color: var(--purple)' : 'background: var(--info-light);color: var(--info)'"
-                                                x-text="$t('rclone.download_sync')"></span>
+                                                x-text="task.direction === 'download' ? $t('rclone.download_sync') : $t('rclone.upload')"></span>
                                         </td>
                                         <td style="font-family:monospace;font-size:var(--fs-xs)" x-text="task.direction === 'download' ? task.remote + ':' + task.dest_path : task.source"></td>
                                         <td style="font-family:monospace;font-size:var(--fs-xs)" x-text="task.direction === 'download' ? task.source : task.remote + ':' + task.dest_path"></td>
                                         <td>
                                             <span class="badge-xs" 
                                                 :style="task.mode === 'sync' ? 'background: var(--primary-light);color: var(--primary)' : task.mode === 'copy' ? 'background: var(--success-light);color: var(--success)' : 'background: var(--warn-light);color: var(--warn)'"
-                                                x-text="$t('rclone.sync')"></span>
+                                                x-text="task.mode === 'copy' ? $t('rclone.copy_only') : task.mode === 'bisync' ? $t('rclone.bisync') : $t('rclone.sync')"></span>
                                         </td>
-                                        <td style="font-size:var(--fs-xs);font-family:monospace" x-text="$t('rclone.manual_trigger')"></td>
+                                        <td style="font-size:var(--fs-xs);font-family:monospace" x-text="task.schedule || $t('rclone.manual_trigger')"></td>
                                         <td>
                                             <span class="badge-xs" 
                                                 :style="task.enabled ? 'background: var(--success-light);color: var(--success)' : 'background: var(--card-bg-alt);color: var(--text-light)'"
-                                                x-text="$t('common.enable')"></span>
+                                                x-text="task.enabled ? $t('common.enable') : $t('common.disable')"></span>
                                             <template x-if="task.last_result === 'running'">
                                                 <span class="badge-xs" style="background: var(--warn-light);color: var(--warn);margin-left:var(--sp-1)" x-text="$t('rclone.running')"></span>
                                             </template>
                                         </td>
                                         <td style="font-size:var(--fs-xs)">
                                             <div x-text="task.last_run || '-'"></div>
-                                            <div x-show="task.last_result" style="font-size:var(--fs-xs);margin-top:2px"
-                                                :style="task.last_result === 'success' ? 'color: var(--success)' : task.last_result === 'failed' ? 'color: var(--danger)' : 'color: var(--warn)'"
-                                                x-text="$t('common.success')"></div>
+                                            <div x-show="task.last_result && task.last_result !== 'running'" style="font-size:var(--fs-xs);margin-top:2px"
+                                                :style="task.last_result === 'success' ? 'color: var(--success)' : 'color: var(--danger)'"
+                                                :title="task.last_message"
+                                                x-text="task.last_result === 'success' ? '✓ ' + $t('common.success') : '✗ ' + $t('common.failed') + (task.last_message ? ': ' + task.last_message : '')"></div>
                                         </td>
                                         <td class="actions" style="white-space:nowrap">
                                             <button class="btn btn-sm btn-success badge-xs" @click="runTask(task.id)" :disabled="task.last_result === 'running'"  x-text="$t('common.run')"></button>
                                             <button class="btn btn-sm badge-xs" @click="editTask(task)"  x-text="$t('common.edit')"></button>
                                             <button class="btn btn-sm badge-xs" @click="toggleTask(task.id)" 
-                                                x-text="$t('common.disable')"></button>
+                                                x-text="task.enabled ? $t('common.disable') : $t('common.enable')"></button>
                                             <button class="btn btn-sm btn-danger badge-xs" @click="deleteTask(task.id)"  x-text="$t('backup.delete_backup')"></button>
                                         </td>
                                     </tr>
@@ -2578,6 +2579,35 @@
                         </table>
                     </div>
                 </div>
+
+                <!-- ═══ 实时同步进度 ═══ -->
+                <template x-for="task in rcloneRunningTasks" :key="'prog-'+task.id">
+                    <div style="background: var(--card-bg);border:1px solid var(--primary);border-radius:var(--radius-lg);padding:var(--sp-5);margin-bottom:var(--sp-6)">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--sp-3)">
+                            <div style="display:flex;align-items:center;gap:var(--sp-2)">
+                                <span class="spinner-dot"></span>
+                                <strong x-text="task.name"></strong>
+                                <span class="badge-xs" style="background: var(--primary-light);color: var(--primary)" x-text="$t('rclone.syncing')"></span>
+                            </div>
+                            <span style="font-size:var(--fs-xs);color: var(--text-muted)" x-text="(rcloneProgressMap[task.id] && rcloneProgressMap[task.id].elapsed) ? $t('rclone.elapsed') + ': ' + rcloneProgressMap[task.id].elapsed : ''"></span>
+                        </div>
+                        <template x-if="rcloneProgressMap[task.id]">
+                            <div>
+                                <div class="progress-bar"><div class="progress-fill" :style="'width:' + (rcloneProgressMap[task.id].percent || 0) + '%'"></div></div>
+                                <div style="display:flex;gap:var(--sp-4);font-size:var(--fs-xs);color: var(--text-light);margin-top:var(--sp-2);flex-wrap:wrap">
+                                    <span x-text="(rcloneProgressMap[task.id].percent || 0) + '%'"></span>
+                                    <span x-show="rcloneProgressMap[task.id].transferred" x-text="$t('rclone.transferred') + ': ' + rcloneProgressMap[task.id].transferred + ' / ' + rcloneProgressMap[task.id].total"></span>
+                                    <span x-show="rcloneProgressMap[task.id].speed" x-text="$t('rclone.speed') + ': ' + rcloneProgressMap[task.id].speed"></span>
+                                    <span x-show="rcloneProgressMap[task.id].eta" x-text="$t('rclone.eta') + ': ' + rcloneProgressMap[task.id].eta"></span>
+                                </div>
+                                <details style="margin-top:var(--sp-3)" open>
+                                    <summary style="cursor:pointer;color: var(--text-light);font-size:var(--fs-xs)" x-text="$t('rclone.live_output')"></summary>
+                                    <pre style="background: var(--card-bg-alt);padding:var(--sp-2);border-radius:4px;margin-top:var(--sp-2);overflow-y:auto;max-height:180px;font-size:var(--fs-xs)" x-text="(rcloneProgressMap[task.id].output_tail || []).join('\n')"></pre>
+                                </details>
+                            </div>
+                        </template>
+                    </div>
+                </template>
 
                 <!-- ═══ 同步日志 ═══ -->
                 <div style="background: var(--card-bg);border:1px solid var(--border);border-radius:var(--radius-lg);padding:var(--sp-5)">
@@ -2603,7 +2633,7 @@
                                     </div>
                                     <span class="badge-xs" 
                                         :style="log.result === 'success' ? 'background: var(--success-light);color: var(--success)' : 'background: var(--danger-light);color: var(--danger)'"
-                                        x-text="$t('common.success')"></span>
+                                        x-text="log.result === 'success' ? '✓ ' + $t('common.success') : '✗ ' + $t('common.failed')"></span>
                                 </div>
                                 <div x-show="log.message" style="font-size:var(--fs-xs);color: var(--text-light);margin-bottom:var(--sp-2)" x-text="log.message"></div>
                                 <details x-show="log.output" style="font-size:var(--fs-xs)">

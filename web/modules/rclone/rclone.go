@@ -1,6 +1,7 @@
 package rclone
 
 import (
+	"bufio"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -70,6 +71,19 @@ var (
 
 func init() {
 	os.MkdirAll(dataDir, 0755)
+	// 面板重启时，上次运行中被强杀的任务会永远停在 running —— 启动时归一为 failed
+	tasks := loadTasks()
+	dirty := false
+	for i := range tasks {
+		if tasks[i].LastResult == "running" {
+			tasks[i].LastResult = "failed"
+			tasks[i].LastMessage = "面板重启，任务中断"
+			dirty = true
+		}
+	}
+	if dirty {
+		saveTasks(tasks)
+	}
 }
 
 func loadTasks() []SyncTask {
@@ -175,6 +189,7 @@ func RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/rclone/tasks/{id}", common.AuthMiddleware(handleDeleteTask))
 	mux.HandleFunc("POST /api/rclone/tasks/{id}/run", common.AuthMiddleware(handleRunTask))
 	mux.HandleFunc("POST /api/rclone/tasks/{id}/toggle", common.AuthMiddleware(handleToggleTask))
+	mux.HandleFunc("GET /api/rclone/tasks/{id}/progress", common.AuthMiddleware(handleTaskProgress))
 
 	// 日志
 	mux.HandleFunc("GET /api/rclone/logs", common.AuthMiddleware(handleListLogs))
@@ -783,6 +798,133 @@ func handleToggleTask(w http.ResponseWriter, r *http.Request) {
 
 var runningTasks = sync.Map{} // taskID -> bool
 
+// taskProgress 保存正在运行（或刚结束）任务的实时进度，供 /progress 接口轮询。
+type taskProgress struct {
+	mu          sync.Mutex
+	TaskID      string
+	Running     bool
+	StartTime   string
+	Percent     int
+	Speed       string
+	ETA         string
+	Transferred string
+	Total       string
+	StatsLine   string
+	OutputTail  []string // 最近 40 行输出
+	startedAt   time.Time
+	full        strings.Builder // 完整输出（写日志用）
+	fullLen     int
+}
+
+const maxFullOutput = 512 * 1024
+
+var progressMap sync.Map // taskID -> *taskProgress
+
+// statsRe 匹配 rclone --stats-one-line 的进度行。实测本机 rclone 输出形如：
+// "2026-09-22 16:50:41 INFO  :    50.024 MiB / 76.294 MiB, 66%, 2.106 MiB/s, ETA 12s"
+// （无 Transferred: 前缀）；带 --stats-one-line-date 或旧版本时可能带前缀，故 Transferred: 设为可选。
+var statsRe = regexp.MustCompile(`(?:Transferred:\s*)?([0-9.]+\s?[KMGTPE]?i?B)\s*/\s*([0-9.]+\s?[KMGTPE]?i?B),\s*([0-9]+)%,\s*([^,]*),\s*ETA\s*(\S+)`)
+
+func (p *taskProgress) pushLine(line string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.fullLen < maxFullOutput {
+		p.full.WriteString(line + "\n")
+		p.fullLen += len(line) + 1
+	}
+	p.OutputTail = append(p.OutputTail, line)
+	if len(p.OutputTail) > 40 {
+		p.OutputTail = p.OutputTail[len(p.OutputTail)-40:]
+	}
+	if m := statsRe.FindStringSubmatch(line); m != nil {
+		p.Transferred = strings.TrimSpace(m[1])
+		p.Total = strings.TrimSpace(m[2])
+		p.Percent, _ = strconv.Atoi(m[3])
+		p.Speed = strings.TrimSpace(m[4])
+		p.ETA = m[5]
+		p.StatsLine = line
+	}
+}
+
+// progressView 是 /progress 接口的 JSON 快照。
+type progressView struct {
+	TaskID      string   `json:"task_id"`
+	Running     bool     `json:"running"`
+	StartTime   string   `json:"start_time"`
+	Elapsed     string   `json:"elapsed"`
+	Percent     int      `json:"percent"`
+	Speed       string   `json:"speed"`
+	ETA         string   `json:"eta"`
+	Transferred string   `json:"transferred"`
+	Total       string   `json:"total"`
+	StatsLine   string   `json:"stats_line"`
+	OutputTail  []string `json:"output_tail"`
+}
+
+func (p *taskProgress) view() progressView {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	v := progressView{
+		TaskID:      p.TaskID,
+		Running:     p.Running,
+		StartTime:   p.StartTime,
+		Percent:     p.Percent,
+		Speed:       p.Speed,
+		ETA:         p.ETA,
+		Transferred: p.Transferred,
+		Total:       p.Total,
+		StatsLine:   p.StatsLine,
+		OutputTail:  append([]string{}, p.OutputTail...),
+	}
+	if !p.startedAt.IsZero() {
+		v.Elapsed = formatElapsed(time.Since(p.startedAt))
+	}
+	return v
+}
+
+func formatElapsed(d time.Duration) string {
+	d = d.Round(time.Second)
+	h := int(d.Hours())
+	m := int(d.Minutes()) % 60
+	s := int(d.Seconds()) % 60
+	if h > 0 {
+		return fmt.Sprintf("%dh%02dm%02ds", h, m, s)
+	}
+	if m > 0 {
+		return fmt.Sprintf("%dm%02ds", m, s)
+	}
+	return fmt.Sprintf("%ds", s)
+}
+
+// setTaskRunState 更新任务的 LastRun/LastResult/LastMessage 并落盘。
+func setTaskRunState(id, result, runTime, message string) {
+	tasks := loadTasks()
+	for i := range tasks {
+		if tasks[i].ID == id {
+			tasks[i].LastRun = runTime
+			tasks[i].LastResult = result
+			tasks[i].LastMessage = message
+			saveTasks(tasks)
+			return
+		}
+	}
+}
+
+// handleTaskProgress 返回任务实时进度（运行中或最近一次运行结果）。
+func handleTaskProgress(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		http.Error(w, `{"error":"id required"}`, http.StatusBadRequest)
+		return
+	}
+	p, ok := progressMap.Load(id)
+	if !ok {
+		common.JSONResponse(w, progressView{TaskID: id, OutputTail: []string{}})
+		return
+	}
+	common.JSONResponse(w, p.(*taskProgress).view())
+}
+
 func handleRunTask(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
@@ -826,12 +968,19 @@ func executeTask(task SyncTask) {
 	defer runningTasks.Delete(task.ID)
 
 	start := time.Now()
+	// 立即把任务标为运行中（手动 run 和定时调度两条路径都覆盖），
+	// 前端任务列表马上能看到「运行中」徽标，运行按钮同时禁用。
+	setTaskRunState(task.ID, "running", start.Format("2006-01-02 15:04:05"), "")
 	logEntry := TaskLog{
 		ID:        generateID(),
 		TaskID:    task.ID,
 		TaskName:  task.Name,
 		StartTime: start.Format("2006-01-02 15:04:05"),
 	}
+
+	// 进度追踪（运行中 + 结束后保留最后一份快照供前端轮询）
+	prog := &taskProgress{TaskID: task.ID, Running: true, StartTime: logEntry.StartTime, startedAt: start, OutputTail: []string{}}
+	progressMap.Store(task.ID, prog)
 
 	// 构建 rclone 命令
 	args := []string{}
@@ -866,38 +1015,58 @@ func executeTask(task SyncTask) {
 	}
 	args = append(args, "--stats", "5s", "--stats-one-line", "-v")
 
+	// 流式执行：边读输出边更新进度，不再等进程结束才拿到日志
 	cmd := rcloneCmdSudo(args...)
-	out, err := cmd.CombinedOutput()
-
-	logEntry.EndTime = time.Now().Format("2006-01-02 15:04:05")
-	logEntry.Output = string(out)
-
-	// 更新任务状态
-	tasks := loadTasks()
-	for i := range tasks {
-		if tasks[i].ID == task.ID {
-			tasks[i].LastRun = logEntry.EndTime
-			if err != nil {
-				tasks[i].LastResult = "failed"
-				tasks[i].LastMessage = err.Error()
-				logEntry.Result = "failed"
-				logEntry.Message = err.Error()
-				common.EmitEvent("rclone", common.EventError, "rclone.sync_failed",
-					map[string]interface{}{"task": task.Name, "remote": task.Remote, "direction": task.Direction},
-					err.Error())
-			} else {
-				tasks[i].LastResult = "success"
-				tasks[i].LastMessage = "同步完成"
-				logEntry.Result = "success"
-				logEntry.Message = "同步完成"
-				common.EmitEvent("rclone", common.EventSuccess, "rclone.sync_ok",
-					map[string]interface{}{"task": task.Name, "remote": task.Remote, "direction": task.Direction},
-					"")
+	var runErr error
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		runErr = err
+	} else {
+		cmd.Stderr = cmd.Stdout
+		if err := cmd.Start(); err != nil {
+			runErr = err
+		} else {
+			sc := bufio.NewScanner(stdout)
+			sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+			for sc.Scan() {
+				prog.pushLine(sc.Text())
 			}
-			saveTasks(tasks)
-			break
+			runErr = cmd.Wait()
 		}
 	}
+
+	prog.mu.Lock()
+	fullOutput := prog.full.String()
+	prog.Running = false
+	prog.mu.Unlock()
+
+	logEntry.EndTime = time.Now().Format("2006-01-02 15:04:05")
+	logEntry.Output = fullOutput
+
+	// 更新任务状态
+	var result, message string
+	if runErr != nil {
+		message = runErr.Error()
+		// rclone 失败时把输出里的第一条 ERROR 行并入 message，前端不用展开日志就能看到原因
+		for _, line := range prog.view().OutputTail {
+			if strings.Contains(line, "ERROR") || strings.Contains(line, "Failed to") {
+				message = strings.TrimSpace(line)
+				break
+			}
+		}
+		result = "failed"
+		common.EmitEvent("rclone", common.EventError, "rclone.sync_failed",
+			map[string]interface{}{"task": task.Name, "remote": task.Remote, "direction": task.Direction},
+			runErr.Error())
+	} else {
+		result, message = "success", "同步完成"
+		common.EmitEvent("rclone", common.EventSuccess, "rclone.sync_ok",
+			map[string]interface{}{"task": task.Name, "remote": task.Remote, "direction": task.Direction},
+			"")
+	}
+	logEntry.Result = result
+	logEntry.Message = message
+	setTaskRunState(task.ID, result, logEntry.EndTime, message)
 
 	appendLog(logEntry)
 }

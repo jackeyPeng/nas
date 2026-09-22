@@ -306,6 +306,13 @@ select, textarea {
     50% { opacity: 0.5; }
 }
 
+/* ═══ Sync progress spinner dot ═══ */
+.spinner-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--primary); display: inline-block;
+    animation: pulse-skeleton 1.2s ease-in-out infinite;
+}
+
 /* ═══ Alert config ═══ */
 .alert-config { display: flex; flex-direction: column; gap: var(--sp-5); }
 .config-section {

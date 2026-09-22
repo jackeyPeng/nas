@@ -209,6 +209,9 @@ function nasPanel() {
         rcloneTasks: [],
         sharedDirs: [],
         rcloneLogs: [],
+        rcloneProgressMap: {},
+        rcloneProgressTimer: null,
+        rcloneWasRunning: [],
         showAddRemote: false,
         editingRemote: '',   // 非空 = 编辑模式
         showAddTask: false,
@@ -541,7 +544,7 @@ function nasPanel() {
                 case 'notice': this.loadNotice(); break;
                 case 'backup': this.loadBackups(); break;
                 case 'vault': this.loadVault(); break;
-                case 'rclone': this.loadRcloneStatus(); this.loadRcloneRemotes(); this.loadRcloneTasks(); this.loadRcloneLogs(); this.loadSharedDirs(); break;
+                case 'rclone': this.loadRcloneStatus(); this.loadRcloneRemotes(); this.loadRcloneTasks().then(() => { if (this.rcloneRunningTasks.length) this.startRcloneProgressPolling(); }); this.loadRcloneLogs(); this.loadSharedDirs(); break;
                 case 'logs': this.loadAuditLogs(); break;
                 case 'events': this.loadEvents(); this.loadEventStats(); break;
                 case 'diagnostics': this.loadDiagnostics(); break;
@@ -2559,9 +2562,51 @@ function nasPanel() {
             if (data) this.rcloneRemotes = data.remotes || [];
         },
 
+        get rcloneRunningTasks() {
+            return this.rcloneTasks.filter(t => t.last_result === 'running');
+        },
+
         async loadRcloneTasks() {
             const data = await this.api('/rclone/tasks');
             if (data) this.rcloneTasks = data.tasks || [];
+        },
+
+        // 运行中任务的实时进度轮询（3s 一轮）：刷新任务列表 + 拉每个运行中任务的 progress
+        startRcloneProgressPolling() {
+            if (this.rcloneProgressTimer) return;
+            this.rcloneWasRunning = this.rcloneRunningTasks.map(t => t.id);
+            const tick = async () => {
+                if (this.page !== 'rclone') { this.stopRcloneProgressPolling(); return; }
+                await this.loadRcloneTasks();
+                const running = this.rcloneRunningTasks;
+                // 检测刚结束的任务 → 提示结果
+                const nowRunning = running.map(t => t.id);
+                for (const id of this.rcloneWasRunning) {
+                    if (!nowRunning.includes(id)) {
+                        const t = this.rcloneTasks.find(x => x.id === id);
+                        if (t && t.last_result === 'success') {
+                            this.showToast(this.t('msg.task_finished', [t.name]), 'success');
+                        } else if (t && t.last_result === 'failed') {
+                            this.showToast(this.t('msg.task_failed', [t.name]) + (t.last_message ? ': ' + t.last_message : ''), 'error');
+                        }
+                    }
+                }
+                this.rcloneWasRunning = nowRunning;
+                for (const t of running) {
+                    const data = await this.api('/rclone/tasks/' + encodeURIComponent(t.id) + '/progress');
+                    if (data) this.rcloneProgressMap[t.id] = data;
+                }
+                if (!running.length) {
+                    this.stopRcloneProgressPolling();
+                    this.loadRcloneLogs();
+                }
+            };
+            tick();
+            this.rcloneProgressTimer = setInterval(tick, 3000);
+        },
+
+        stopRcloneProgressPolling() {
+            if (this.rcloneProgressTimer) { clearInterval(this.rcloneProgressTimer); this.rcloneProgressTimer = null; }
         },
 
         async loadSharedDirs() {
@@ -2841,9 +2886,8 @@ function nasPanel() {
             const data = await this.api('/rclone/tasks/' + encodeURIComponent(id) + '/run', { method: 'POST' });
             if (data && !data.error) {
                 this.showToast(this.t('msg.task_started'), 'success');
-                this.loadRcloneTasks();
-                // 3秒后刷新日志
-                setTimeout(() => { this.loadRcloneTasks(); this.loadRcloneLogs(); }, 3000);
+                await this.loadRcloneTasks();
+                this.startRcloneProgressPolling();
             } else if (data && data.error) {
                 this.showToast(this.t('msg.start_failed') + ': ' + data.error, 'error');
             }
