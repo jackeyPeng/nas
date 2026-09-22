@@ -675,22 +675,24 @@ Samba 的 `path` 指令虽然文档声称支持 `%U` 变量，但 `%U` 表示的
 #   ro              - 只读
 #   sync            - 同步写入（数据立即落盘，安全但稍慢）
 #   no_subtree_check - 不检查子目录（性能更好）
-#   no_root_squash  - 允许远程 root 保持 root 权限（局域网内信任）
+#   root_squash     - 远程 root 降权为 nobody（默认，安全基线）
+#   no_root_squash  - 允许远程 root 保持 root 权限（须在面板按文件夹显式开启）
 
-/data/shared    192.168.1.0/24(rw,sync,no_subtree_check,no_root_squash)
-/data/media     192.168.1.0/24(ro,sync,no_subtree_check)
-/data/documents 192.168.1.0/24(rw,sync,no_subtree_check,no_root_squash)
-/data/photos    192.168.1.0/24(rw,sync,no_subtree_check,no_root_squash)
-/data/backups   192.168.1.0/24(rw,sync,no_subtree_check,no_root_squash)
+/data/shared    *(rw,sync,no_subtree_check,root_squash)
+/data/media     *(ro,sync,no_subtree_check)
+/data/documents *(rw,sync,no_subtree_check,no_root_squash)
+/data/photos    *(rw,sync,no_subtree_check,root_squash)
+/data/backups   *(rw,sync,no_subtree_check,no_root_squash)
 ```
 
 **注意事项：**
 
-- IP 段限制为 `192.168.1.0/24`，仅允许同局域网设备访问
+- 导出网段为 `*`（对所有网段开放），跨网段/多网卡客户端可挂载；如需限制网段自行收紧
 - `/data/media` 设为只读，防止客户端误删影音文件
-- 批量部署时，如果网段不同，需修改此文件中的 IP 段
-- `no_root_squash` 允许远程 root 以 root 身份操作文件，适合家庭/办公局域网；
-  如果部署在公网，应改为 `root_squash`（默认值）
+- **squash 策略（2026-09-21 起）**：默认 `root_squash`——远程 root 被降权为 nobody，无法任意读写导出目录；
+  确需远程 root 全权的文件夹（如备份目标），通过 API 参数 `nfs_no_root_squash=yes` 显式开启
+  （`POST /api/disk/folders/create` 或 `folders/permission`；面板 UI 开关待补）。
+  升级兼容：老部署既有的 NFS 导出保留原 no_root_squash 行为，不会升级后静默断写
 
 **使配置生效：**
 
@@ -1421,6 +1423,11 @@ sudo systemctl start smartd
 | /var/log/vsftpd.log            | vsftpd    | FTP 传输日志            |
 | /var/log/auth.log              | 系统      | SSH/系统认证日志        |
 | /var/log/fail2ban.log          | Fail2ban  | 封禁/解封记录           |
+
+**面板审计日志**：面板自身的全部写操作（含登录成功/失败）自动记录到审计库
+（`/opt/nas/data/audit.db`，SQLite WAL 异步写入，默认保留 90 天，
+可用 `NAS_DATA_DIR` 改数据目录），在面板「日志」页查询，字段含时间/用户/操作/方法/路径/详情/结果/IP。
+失败请求同样入审计（result=failed），可用于追溯误操作与暴力破解。
 
 ### 配置备份
 

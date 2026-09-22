@@ -759,6 +759,7 @@ NAS 里的视频/音乐/照片直接在浏览器播放，带媒体库海报墙�
 - ✅ `smbShareParams()` 纯函数生成；write_users 为空时兼容旧文件夹级 permission（旧数据行为不变，直到首次按用户编辑）
 - ✅ `applyPermissionChange()`：deny 同时清 valid_users + write_users；不变式 write_users ⊆ valid_users
 - ✅ `getUserFolderPermission()` 解析 write list（优先级覆盖 read only），矩阵回显正确
+- ✅ **2026-09-21 回显事实源切换**：矩阵回显从解析 smb.conf（生成物）改为直读 folders.db（`FolderMetaUserPermission()`），SyncAllConfigs 失败/滞后不再漂移（storage-permission-model §八 #4 已修）；NFS 导出默认 root_squash，`nfs_no_root_squash` 按文件夹显式开启（§八 #3 已修，升级迁移保留既有导出行为）
 - ✅ 协议 tag 诚实标注（commit 19dff10）：SMB=按用户(蓝)、NFS=网段级(灰)、DAV/S3=全局(黄)，FTP 从共享文件夹协议开关移除
 - ✅ 单元测试（`config_sync_test.go` 4 场景 + `create_test.go` 列表辅助）
 - ✅ **2026-09-15 .57 端到端复测**：fmnas 上 alice=readwrite/bob=readonly/charlie=noaccess，smbclient 实测 alice mkdir 成功、bob mkdir 被 NT_STATUS_ACCESS_DENIED 拒（但 ls 正常）、charlie tree connect failed；folders.db / smb.conf / 矩阵 API 三处一致。测试数据已还原

@@ -1,6 +1,6 @@
 # NAS 面板 功能清单 + 操作项分类（测试验证清单）
 
-> 最后更新: 2026-09-13
+> 最后更新: 2026-09-21
 > 代码基准: /home/jacky/soft/nas（Go 后端 web/ + Alpine.js 前端 web/frontend/）
 > 用途: 逐项测试验证。每个「操作项」标注三种分类之一，测试时按行逐个过。
 >
@@ -8,6 +8,11 @@
 > - **只显示** —— 纯只读展示，无任何写动作（状态卡片 / 硬件档案 / 版本信息 / 日志查询等）
 > - **用户操作** —— 用户在 UI 上主动触发的写操作（点按钮 / 提交表单 / 切开关，含 SSE 进度流程）
 > - **系统自动** —— 无需用户触发，由定时器 / cron / 启动时 / 后台自动执行
+>
+> **审计约定（2026-09-21 起）**: 所有「用户操作」均自动写入审计日志——全局 `loggingMiddleware`
+> 拦截一切非 GET 的 `/api/*` 请求（含失败请求，result=failed），登录成功/失败单独记录；
+> handler 内用 `common.LogAuditRequest` 补记富 detail 并防双写；SSE 流式接口由前端 GET 触发，
+> 在 handler 内显式补记（wizard setup/reset-stream、pool extend-stream、raid expand-stream）。
 
 ---
 
@@ -17,7 +22,7 @@
 
 | 操作项 | 分类 | 说明 |
 |---|---|---|
-| 登录表单（用户名 + 密码） | 用户操作 | `POST /api/login`，成功后返回 token，写入本地会话 |
+| 登录表单（用户名 + 密码） | 用户操作 | `POST /api/login`，成功后返回 token，写入本地会话；成功/失败均写审计（action=login，失败记 attempted user + IP） |
 | 首登强制改密 | 用户操作 | 登录时若密码仍为出厂默认，前端强制进入改密流程 |
 | 2FA 状态查看 | 只显示 | `GET /api/2fa/status` |
 | 2FA 初始化（生成 TOTP 密钥 + 二维码） | 用户操作 | `POST /api/2fa/setup` |
@@ -121,6 +126,7 @@
 | 创建共享文件夹 | 用户操作 | `POST /api/disk/folders/create`（走 pending，需「应用配置」生效） |
 | 删除共享文件夹 | 用户操作 | `POST /api/disk/folders/delete` |
 | 修改共享文件夹权限 | 用户操作 | `POST /api/disk/folders/permission` |
+| NFS no_root_squash 按文件夹开关 | 用户操作 | `nfs_no_root_squash=yes/no` 参数（create/permission），默认 root_squash 安全基线；面板 UI 开关待补 |
 | 共享文件夹配额 | 用户操作 | `GET/POST /api/disk/folders/quota`（XFS project quota） |
 | 配置一致性检查 | 用户操作 | `GET /api/disk/config/check` |
 | 配置同步 | 用户操作 | `POST /api/disk/config/sync` |
@@ -303,15 +309,17 @@
 
 ## 14. 操作日志（Audit Logs）
 
-**功能说明**: 审计日志查询与清理。所有 `/api/*` 写操作经 `loggingMiddleware` 自动记录。
+**功能说明**: 审计日志查询与清理。所有 `/api/*` 写操作经 `loggingMiddleware` 自动记录（2026-09-21 加固：覆盖全部写接口 + 登录成败 + 失败请求）。
 
 | 操作项 | 分类 | 说明 |
 |---|---|---|
 | 审计日志查询 | 只显示 | `GET /api/logs` |
 | 日志计数 | 只显示 | `GET /api/logs/count` |
-| 清空日志 | 用户操作 | `POST /api/logs/clear` |
+| 清空日志 | 用户操作 | `POST /api/logs/clear`（本身也写审计） |
 | 日志保留配置 | 用户操作 | `GET/POST /api/logs/config` |
-| 写操作自动记录审计 | 系统自动 | `loggingMiddleware` → `LogAudit`（非阻塞，异步写 SQLite） |
+| 写操作自动记录审计 | 系统自动 | `loggingMiddleware` → `LogAudit`：非 GET `/api/*` 全量记录，带真实 username（JWT）/client IP（X-Forwarded-For）/result（HTTP ≥400 记 failed）；handler 内 `LogAuditRequest` 富 detail 并防双写 |
+| 登录审计 | 系统自动 | `/api/login` 成功/失败均记录（失败含尝试用户名 + IP，可追溯暴力破解） |
+| SSE 流式操作审计 | 系统自动 | 前端以 GET 触发 SSE，handler 显式补记：wizard setup-stream / reset-stream、pool extend-stream、raid expand-stream |
 | 审计日志自动清理 | 系统自动 | `cleanupOldLogs`：启动时 goroutine，按 `NAS_LOG_RETENTION_DAYS`（默认 90 天）清理 |
 
 ---
@@ -342,7 +350,7 @@
 | 配置定时备份 | 系统自动 | cron 每周日凌晨 3 点，保留 3~5 份 |
 | 升级前自动备份 | 系统自动 | upgrade.sh / setup.sh 触发 |
 | 诊断自动调度 | 系统自动 | daily/weekly/monthly + 保护参数 |
-| 审计日志自动记录 | 系统自动 | loggingMiddleware 全量写操作 |
+| 审计日志自动记录 | 系统自动 | loggingMiddleware 全量写操作 + 登录成败 + SSE 流式操作 |
 | 审计日志自动清理 | 系统自动 | 默认 90 天保留 |
 
 ---
@@ -352,12 +360,12 @@
 | 分类 | 操作项数 |
 |---|---|
 | 只显示 | 47 |
-| 用户操作 | 82 |
-| 系统自动 | 19 |
-| **合计** | **148** |
+| 用户操作 | 83 |
+| 系统自动 | 21 |
+| **合计** | **151** |
 | 功能模块数 | 16 |
 
-> 注：「系统自动」19 项里，第 16 节「系统自动任务汇总」是对散落在模块 3/5/6/13/14/15 里的无人值守任务的跨模块汇总（重复计数），测试时可直接按第 16 节这张汇总表一次过完所有无人值守链路。
+> 注：「系统自动」21 项里，第 16 节「系统自动任务汇总」是对散落在模块 3/5/6/13/14/15 里的无人值守任务的跨模块汇总（重复计数），测试时可直接按第 16 节这张汇总表一次过完所有无人值守链路。
 
 ---
 

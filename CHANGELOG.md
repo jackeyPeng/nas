@@ -1,5 +1,25 @@
 # NAS 项目变更日志
 
+## 未发布
+
+### 审计日志全覆盖加固（2026-09-21）
+
+- **全量写操作自动审计**：loggingMiddleware 拦截所有非 GET `/api/*` 请求——此前仅 25/79 个写操作有审计记录（用户/组增删、系统 reset/hostname/HTTPS、磁盘 format/mount、备份增删、配置编辑、rclone 全部等 54 个写接口漏记），现 100% 覆盖
+- **真实身份**：审计带 JWT 解出的 username（不再写死 "system"）+ client IP（X-Forwarded-For 优先）；handler 级新增 `common.LogAuditRequest`（富 detail + ctx 标记防中间件双写）
+- **失败也入审计**：statusRecorder 捕获响应码，HTTP ≥400 记 result=failed（此前一律 success）
+- **登录审计**：`/api/login` 成功/失败均记录，失败含尝试用户名 + IP（可追溯暴力破解）
+- **SSE 流式操作补记**：前端以 GET 触发的 4 个流式接口（wizard setup/reset-stream、pool extend-stream、raid expand-stream）在 handler 内显式审计
+- 测试：main_audit_test.go（中间件去重/登录成败/失败标记）
+
+### NFS root_squash 安全基线 + 权限矩阵事实源切换（2026-09-21）
+
+- **NFS 导出默认 root_squash**（此前一律 no_root_squash，局域网任意 root 客户端对 rw 导出有全权）；folders 表新增 `nfs_no_root_squash` 列按文件夹显式开启；升级迁移保留既有导出行为，新建默认安全基线（storage-permission-model §八 #3 已修）
+- **权限矩阵/总览回显改读 folders.db**（唯一事实源），不再解析 smb.conf 生成物——SyncAllConfigs 失败/滞后不再漂移（§八 #4 已修）
+- **SyncFolderMeta 签名改整结构体**：新增字段编译期强制携带，杜绝某条写入路径漏字段抹掉其他路径配置（write_users 事故的结构性修复）
+- 测试：nfs_squash_test.go（3 场景）+ matrix_test.go 重写
+
+---
+
 ## 版本变更一览
 
 | 版本 | 日期 | 主要变化 |

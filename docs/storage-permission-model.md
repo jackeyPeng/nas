@@ -63,7 +63,7 @@ UI tag 诚实标注：SMB 蓝（按用户）、NFS 灰（网段）、DAV/S3 黄�
 - `public` 且 valid/write_users 双空 → 开放共享，不写 `valid users`，所有认证用户读写；
 - 其余（含 public 被按用户编辑后）→ `valid users` + `smbShareParams()` 按用户粒度。
 
-回显侧 `getUserFolderPermission()`（users/matrix.go）解析 smb.conf，同语义。
+回显侧（users/matrix.go）：`FolderMetaUserPermission()` 直接读 folders.db 元数据，同语义，不再解析 smb.conf（生成物）——SyncAllConfigs 失败/滞后时矩阵与 DB 不再漂移（2026-09-21 修复，§八 #4）。
 
 ## 五、旧数据兼容与两级物化
 
@@ -92,8 +92,8 @@ UI tag 诚实标注：SMB 蓝（按用户）、NFS 灰（网段）、DAV/S3 黄�
 
 1. ~~**P1 — 文件夹权限对话框会清空 write_users**~~ ✅ 已修（2026-09-15 commit 6ddb75b）：`executeUpdateFolder` 先读 DB 现有元数据，`mergeFolderUpdate` 合并保留 write_users（裁剪保持 write⊆valid），op.ValidUsers 空时继承现有值。
 2. **P1 — 全局协议旁路 SMB 权限**：任何拿到 WebDAV/S3/FTP 凭据的用户可见/可写整个 /data（含他人 home 目录、noaccess 文件夹）。UI tag 已诚实标注，但产品文档未强调"开全局协议 ≈ 放弃文件夹权限"。
-3. **P2 — NFS `no_root_squash`**：局域网内任意 root 客户端对 rw 导出拥有 root 权限。家用场景或可接受，应作为显式选项而非默认。
-4. **P2 — 矩阵回显解析 smb.conf 而非事实源**：smb.conf 是生成物，SyncAllConfigs 失败/滞后时矩阵显示与 DB 漂移（现有 configCheck 能发现部分，但不阻断展示）。
+3. ~~**P2 — NFS `no_root_squash`**~~ ✅ 已修（2026-09-21）：导出默认 `root_squash`（安全基线），folders 表新增 `nfs_no_root_squash` 列，管理员按文件夹显式开启；升级迁移时既有 NFS 导出保留 no_root_squash 现状（避免升级后 root 客户端静默断写），新建/新导出默认 root_squash。测试：nfs_squash_test.go（rw 默认 squash / 显式 no_root_squash / ro 不受开关影响）。
+4. ~~**P2 — 矩阵回显解析 smb.conf 而非事实源**~~ ✅ 已修（2026-09-21）：buildPermissionMatrix 改为读 folders.db（GetAllFolderMeta + FolderMetaUserPermission），smb.conf 不再参与回显；总览/列表页同步改为 folders.db 权威源 + enrichSharedFolder 统一富化（未纳管目录仍走 smb.conf 兜底）。
 5. **P3 — 非 public 共享目录 mode 0700 + force user**：NFS 非 root 客户端对 rw 导出实际写不进去（写权限只在 SMB 层映射）；FTP/WebDAV 以 nasUser 身份走 force 映射不受影响。
 6. **P3 — listAllUsers 只含 Samba+FTP 用户**：仅 WebDAV(htpasswd) 用户不在物化展开范围内。
 7. **P3 — SyncAllConfigs 无全局互斥**：并发编辑可能交错生成配置（单管理员家庭场景风险低）。
