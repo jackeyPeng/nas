@@ -165,7 +165,8 @@
 | 创建同步任务 | 用户操作 | `POST /api/rclone/tasks` |
 | 编辑同步任务 | 用户操作 | `PUT /api/rclone/tasks/{id}` |
 | 删除同步任务 | 用户操作 | `DELETE /api/rclone/tasks/{id}` |
-| 手动运行任务 | 用户操作 | `POST /api/rclone/tasks/{id}/run` |
+| 手动运行任务 | 用户操作 | `POST /api/rclone/tasks/{id}/run`（启动即标 running，前端实时进度面板 3s 轮询） |
+| 任务实时进度 | 只显示 | `GET /api/rclone/tasks/{id}/progress`（percent/speed/ETA/elapsed + 最近 40 行输出） |
 | 启用/禁用任务 | 用户操作 | `POST /api/rclone/tasks/{id}/toggle` |
 | 同步日志查看 | 只显示 | `GET /api/rclone/logs`（保留 200 条） |
 | 清空同步日志 | 用户操作 | `DELETE /api/rclone/logs` |
