@@ -846,6 +846,7 @@
     "next_page": "Next",
     "desc": "Records all user operations: storage, users, services, etc.",
     "all_actions": "All Actions",
+    "filter_config": "Config changes",
     "today": "Today",
     "no_records": "No operation records"
   },

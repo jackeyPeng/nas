@@ -2939,6 +2939,10 @@
                         <option value="system" x-text="$t('system.title')"></option>
                         <option value="backup" x-text="$t('backup.title')"></option>
                         <option value="rclone" x-text="$t('rclone.title')"></option>
+                        <option value="diagnostics" x-text="$t('diagnostics.title')"></option>
+                        <option value="monitor" x-text="$t('monitor.title')"></option>
+                        <option value="vault" x-text="$t('vault.title')"></option>
+                        <option value="config" x-text="$t('logs.filter_config')"></option>
                     </select>
                     <select x-model="auditLogFilter.days" @change="auditLogPage=0;loadAuditLogs()" style="padding:6px var(--sp-3);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:var(--fs-sm)">
                         <option value="1"><span x-text="$t('logs.today')"></span></option>
@@ -2972,7 +2976,7 @@
                                         <span style="color: var(--text-secondary)" x-text="log.detail"></span>
                                         <span style="color: var(--text-muted);margin-left:var(--sp-2);font-size:var(--fs-xs)" x-text="log.method + ' ' + log.path"></span>
                                     </td>
-                                    <td><span class="badge" :style="log.result==='error'?'background: var(--danger-light);color: var(--danger)':'background: var(--success-light);color: var(--success)'" style="font-size:var(--fs-xs);white-space:nowrap" x-text="$t('common.failed')"></span></td>
+                                    <td><span class="badge" :style="log.result==='failed'?'background: var(--danger-light);color: var(--danger)':'background: var(--success-light);color: var(--success)'" style="font-size:var(--fs-xs);white-space:nowrap" x-text="log.result==='failed' ? $t('common.failed') : $t('common.success')"></span></td>
                                 </tr>
                             </template>
                             <tr x-show="!auditLogs.length">

@@ -846,6 +846,7 @@
     "next_page": "下一页",
     "desc": "记录所有用户在系统上的操作，包括存储管理、用户管理、服务管理等",
     "all_actions": "全部操作",
+    "filter_config": "配置变更",
     "today": "今天",
     "no_records": "暂无操作记录"
   },
