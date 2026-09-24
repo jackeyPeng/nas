@@ -460,9 +460,15 @@ if [ -z "$RCLONE_VERSION" ] || [ "$(echo "$RCLONE_VERSION < 1.62" | bc 2>/dev/nu
 fi
 
 # 创建 S3 服务配置（认证密钥）
+# S3 access key：rclone serve s3 (gofakes3) 拒绝短于 3 字符的 access key
+# （InvalidAccessKeyId），短用户名（如 fm）加 z1- 前缀
+S3_ACCESS_KEY="$NAS_USER"
+if [ ${#S3_ACCESS_KEY} -lt 3 ]; then
+    S3_ACCESS_KEY="z1-$NAS_USER"
+fi
 mkdir -p /etc/rclone
 cat > /etc/rclone/s3-env << S3EOF
-RCLONE_S3_ACCESS_KEY=$NAS_USER
+RCLONE_S3_ACCESS_KEY=$S3_ACCESS_KEY
 RCLONE_S3_SECRET_KEY=$NAS_PASS
 S3EOF
 chmod 640 /etc/rclone/s3-env
@@ -477,7 +483,7 @@ After=network.target
 Type=simple
 User=$NAS_USER
 EnvironmentFile=/etc/rclone/s3-env
-ExecStart=/usr/bin/rclone serve s3 $DATA_DIR/nas1/public --addr :9000 --auth-key $NAS_USER,$NAS_PASS
+ExecStart=/usr/bin/rclone serve s3 $DATA_DIR/nas1/public --addr :9000 --auth-key $S3_ACCESS_KEY,$NAS_PASS
 Restart=on-failure
 RestartSec=10
 
@@ -668,7 +674,7 @@ echo "  - NFS:         mount -t nfs NAS_IP:/data/nas1/public /mnt/nas"
 echo "  - FTP:         ftp://NAS_IP/ (用户名: $NAS_USER)"
 echo "  - WebDAV:      http://NAS_IP:8080/ (用户名: $NAS_USER)"
 echo "  - FileBrowser: http://NAS_IP:8081/ (用户名: $NAS_USER)"
-echo "  - S3 API:       http://NAS_IP:9000 (s3cmd --no-ssl --host=NAS_IP:9000 ls s3://public/)"
+echo "  - S3 API:       http://NAS_IP:9000 (access key: $S3_ACCESS_KEY, s3cmd --no-ssl --host=NAS_IP:9000 ls s3://public/)"
 echo "  - Web 面板:    http://NAS_IP:8090 (用户名: $NAS_USER)"
 echo ""
 echo "管理脚本:"

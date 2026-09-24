@@ -133,6 +133,26 @@ func TestReadEnvFile_FileNotFound(t *testing.T) {
 	}
 }
 
+// ---- S3AccessKey ----
+
+func TestS3AccessKey(t *testing.T) {
+	tests := []struct {
+		user, want string
+	}{
+		{"fm", "z1-fm"},    // 2 chars: gofakes3 rejects <3, add prefix
+		{"ab", "z1-ab"},    // 2 chars
+		{"a", "z1-a"},      // 1 char
+		{"jacky", "jacky"}, // >=3 chars: unchanged
+		{"abc", "abc"},     // exactly 3: unchanged
+		{"", "z1-"},        // empty edge case (len 0 < 3)
+	}
+	for _, tt := range tests {
+		if got := S3AccessKey(tt.user); got != tt.want {
+			t.Errorf("S3AccessKey(%q) = %q, want %q", tt.user, got, tt.want)
+		}
+	}
+}
+
 // ---- ReadAllEnv ----
 
 func TestReadAllEnv(t *testing.T) {

@@ -352,6 +352,17 @@ func changePassword(username, password string) error {
 			"--password", password,
 			"--database", "/etc/filebrowser/filebrowser.db")
 
+		// Update rclone-s3 auth-key (ExecStart embeds access_key,secret literally)
+		s3Key := common.S3AccessKey(username)
+		common.SudoExec("bash", "-c", fmt.Sprintf(
+			"sed -i -E 's|--auth-key [^ ]+|--auth-key %s,%s|' /etc/systemd/system/rclone-s3.service",
+			s3Key, password))
+		common.SudoExec("bash", "-c", fmt.Sprintf(
+			"test -f /etc/rclone/s3-env && sed -i -E 's|^RCLONE_S3_SECRET_KEY=.*|RCLONE_S3_SECRET_KEY=%s|;s|^RCLONE_S3_ACCESS_KEY=.*|RCLONE_S3_ACCESS_KEY=%s|' /etc/rclone/s3-env",
+			password, s3Key))
+		common.SudoExec("systemctl", "daemon-reload")
+		common.SudoExec("systemctl", "restart", "rclone-s3")
+
 		// Update in-memory panel password (takes effect immediately, no restart)
 		common.UpdateNasPass(password)
 	}

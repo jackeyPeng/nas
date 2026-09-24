@@ -869,6 +869,11 @@ WantedBy=multi-user.target
 - 文件权限：`chmod 640`（允许 <NAS_USER> 组读取）
 - 文件属主：`chown <NAS_USER>:<NAS_USER>`
 - 使用统一的 NAS 密码：`$NAS_PASS`（在 setup.sh 中定义）
+- **S3 access key（`<S3_ACCESS_KEY>`）**：默认等于 `NAS_USER`，但 rclone serve s3 内嵌的
+  gofakes3 库会拒绝短于 3 字符的 access key（一律返回 `InvalidAccessKeyId`），
+  因此用户名不足 3 字符时（如 `fm`）自动加 `z1-` 前缀（→ `z1-fm`）。
+  实际值以 `/etc/rclone/s3-env` 的 `RCLONE_S3_ACCESS_KEY` 为准；
+  面板改密时会自动同步该文件与 rclone-s3.service 并重启服务
 - rclone serve s3 以 `/data` 为根目录，`/data` 下的每个子目录自动成为 S3 bucket（如 `shared`、`backups`、`media` 等）
 - 内网环境下也可使用匿名模式（不带 `--auth-key`），允许无认证访问
 
@@ -932,7 +937,7 @@ s3cmd --configure
 mkdir -p ~/.s3cfg
 cat > ~/.s3cfg << EOF
 [default]
-access_key = <NAS_USER>
+access_key = <S3_ACCESS_KEY>
 secret_key = <NAS_PASS>
 host_base = 192.168.1.100:9000
 host_bucket = 192.168.1.100:9000
@@ -956,7 +961,7 @@ import boto3
 s3 = boto3.client(
     's3',
     endpoint_url='http://192.168.1.100:9000',
-    aws_access_key_id='<NAS_USER>',
+    aws_access_key_id='<S3_ACCESS_KEY>',
     aws_secret_access_key='<NAS_PASS>',
     region_name='us-east-1'
 )

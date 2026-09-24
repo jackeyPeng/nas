@@ -62,6 +62,16 @@ func GetEnvFilePath() string {
 	return ""
 }
 
+// S3AccessKey derives the S3 access key from a username.
+// rclone serve s3 (gofakes3) rejects access keys shorter than 3 chars with
+// InvalidAccessKeyId, so short usernames (e.g. "fm") get a "z1-" prefix.
+func S3AccessKey(user string) string {
+	if len(user) < 3 {
+		return "z1-" + user
+	}
+	return user
+}
+
 // GetNASUser returns the panel's configured NAS user.
 // 权威来源是 systemd 的 Environment=NAS_USER（os.Getenv），与 main.go 一致；
 // 兜底 "fm"（main.go 的 defaultUser）。
