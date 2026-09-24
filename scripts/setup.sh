@@ -254,7 +254,7 @@ if [ -n "$Z1_NFS_EXPORTS" ]; then
         exp_path=$(echo "$line" | awk '{print $1}')
         if [ -d "$exp_path" ]; then
             exp_opts=$(echo "$line" | awk '{print $3}')
-            [ -z "$exp_opts" ] && exp_opts="(rw,sync,no_subtree_check,no_root_squash)"
+            [ -z "$exp_opts" ] && exp_opts="(rw,sync,no_subtree_check,no_root_squash,insecure)"
             KEPT="${KEPT}${exp_path} *${exp_opts}
 "
         else
@@ -502,22 +502,24 @@ if [ -f "$NAS_DIR/configs/jail.local" ]; then
 else
     cat > /etc/fail2ban/jail.local << 'JEOF'
 [DEFAULT]
-bantime = 3600
+# 家用放宽策略：ban 10 分钟、允许 10 次尝试，避免用户输错密码把自己锁在门外
+bantime = 600
 findtime = 600
-maxretry = 5
+maxretry = 10
 
 [sshd]
 enabled = true
 port = ssh
 filter = sshd
 logpath = /var/log/auth.log
+maxretry = 10
 
 [vsftpd]
 enabled = true
 port = ftp,ftp-data,ftps,ftps-data
 filter = vsftpd
 logpath = /var/log/vsftpd.log
-maxretry = 5
+maxretry = 10
 JEOF
 fi
 systemctl enable fail2ban

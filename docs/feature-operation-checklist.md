@@ -126,7 +126,7 @@
 | 创建共享文件夹 | 用户操作 | `POST /api/disk/folders/create`（走 pending，需「应用配置」生效） |
 | 删除共享文件夹 | 用户操作 | `POST /api/disk/folders/delete` |
 | 修改共享文件夹权限 | 用户操作 | `POST /api/disk/folders/permission` |
-| NFS no_root_squash 按文件夹开关 | 用户操作 | `nfs_no_root_squash=yes/no` 参数（create/permission），默认 root_squash 安全基线；面板 UI 开关待补 |
+| NFS 导出选项生成 | 系统行为 | 默认 `no_root_squash,insecure`（2026-09-24 起，家用可用性优先：挂载即可写、NAT 后客户端可挂）；readonly 文件夹一律 `ro,...,insecure`；`nfs_no_root_squash` 列保留但不再生效 |
 | 共享文件夹配额 | 用户操作 | `GET/POST /api/disk/folders/quota`（XFS project quota） |
 | 配置一致性检查 | 用户操作 | `GET /api/disk/config/check` |
 | 配置同步 | 用户操作 | `POST /api/disk/config/sync` |

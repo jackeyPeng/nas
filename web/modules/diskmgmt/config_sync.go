@@ -255,6 +255,7 @@ func GetAllFolderMeta() []FolderMeta {
 	defer rows.Close()
 
 	var result []FolderMeta
+	result = make([]FolderMeta, 0)
 	for rows.Next() {
 		var m FolderMeta
 		var rb, smb, nfs, nrs int
@@ -608,17 +609,19 @@ func boolToInt(b bool) int {
 }
 
 // nfsExportOpts 生成单个文件夹的 NFS 导出选项。
-// 默认 root_squash（客户端 root 映射为 nobody，安全基线）；
-// no_root_squash 仅在 nfs_no_root_squash 显式开启时生成（§八 P2 #3）。
-// readonly 共享一律 ro（root_squash 对 ro 无意义，不叠加）。
+// 产品定位是家用/小白用户，可用性优先：默认 no_root_squash + insecure，
+// 让客户端"挂载即可写"，不出现看不懂的权限报错。
+// - insecure：允许 >=1024 源端口。NAT 后的客户端源端口会被重映射为高位端口，
+//   默认 secure 会被 mountd 以 "illegal port" 拒绝（表现为 access denied）。
+// - no_root_squash：客户端 root 保持 root，挂载后可直接写入，
+//   避免"挂上了却 Permission denied"的困惑。
+// NFSNoRootSquash 字段保留（DB 兼容），默认已是 no_root_squash，不再影响生成结果。
+// readonly 共享一律 ro（不加写相关选项）。
 func nfsExportOpts(m FolderMeta) string {
 	if m.Permission == "readonly" {
-		return "ro,sync,no_subtree_check"
+		return "ro,sync,no_subtree_check,insecure"
 	}
-	if m.NFSNoRootSquash {
-		return "rw,sync,no_subtree_check,no_root_squash"
-	}
-	return "rw,sync,no_subtree_check,root_squash"
+	return "rw,sync,no_subtree_check,no_root_squash,insecure"
 }
 
 // smbShareParams 决定单个 SMB 共享的权限模式。
@@ -645,7 +648,10 @@ func smbManagedLines(m FolderMeta, nasUser string) (writeMode, writeList, validL
 	writeMode = "writable = yes"
 	hasPerUser := strings.TrimSpace(m.ValidUsers) != "" || strings.TrimSpace(m.WriteUsers) != ""
 	if m.Name == "public" && !hasPerUser {
-		return writeMode, "", ""
+		// 开放共享：guest ok 让局域网设备（电视/手机/访客电脑）免账号直接访问，
+		// 写入经 force user 统一映射到服务账号。管理员一旦按用户编辑过权限，
+		// 走 hasPerUser 分支恢复账号制。
+		return writeMode + "\n   guest ok = yes", "", ""
 	}
 	users := m.ValidUsers
 	if users == "" {

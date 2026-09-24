@@ -2,7 +2,7 @@ package diskmgmt
 
 import "testing"
 
-// NFS 导出选项：默认 root_squash（安全基线），no_root_squash 必须显式开启（§八 P2 #3）
+// NFS 导出选项：家用场景可用性优先，默认 no_root_squash + insecure（2026-09-24 起放宽）
 func TestNFSExportOpts(t *testing.T) {
 	cases := []struct {
 		name string
@@ -10,19 +10,19 @@ func TestNFSExportOpts(t *testing.T) {
 		want string
 	}{
 		{
-			name: "rw 默认 root_squash",
+			name: "rw 默认 no_root_squash + insecure",
 			meta: FolderMeta{Permission: "readwrite", NFSExport: true},
-			want: "rw,sync,no_subtree_check,root_squash",
+			want: "rw,sync,no_subtree_check,no_root_squash,insecure",
 		},
 		{
-			name: "rw 显式开启 no_root_squash",
+			name: "rw 显式 NFSNoRootSquash 结果一致",
 			meta: FolderMeta{Permission: "readwrite", NFSExport: true, NFSNoRootSquash: true},
-			want: "rw,sync,no_subtree_check,no_root_squash",
+			want: "rw,sync,no_subtree_check,no_root_squash,insecure",
 		},
 		{
-			name: "readonly 一律 ro（squash 开关不影响）",
+			name: "readonly 一律 ro + insecure",
 			meta: FolderMeta{Permission: "readonly", NFSExport: true, NFSNoRootSquash: true},
-			want: "ro,sync,no_subtree_check",
+			want: "ro,sync,no_subtree_check,insecure",
 		},
 	}
 	for _, tc := range cases {

@@ -675,24 +675,29 @@ Samba 的 `path` 指令虽然文档声称支持 `%U` 变量，但 `%U` 表示的
 #   ro              - 只读
 #   sync            - 同步写入（数据立即落盘，安全但稍慢）
 #   no_subtree_check - 不检查子目录（性能更好）
-#   root_squash     - 远程 root 降权为 nobody（默认，安全基线）
-#   no_root_squash  - 允许远程 root 保持 root 权限（须在面板按文件夹显式开启）
+#   root_squash     - 远程 root 降权为 nobody（更安全，需自行改 /etc/exports 开启）
+#   no_root_squash  - 允许远程 root 保持 root 权限（默认，挂载即可写）
+#   insecure        - 允许客户端使用 >=1024 源端口（NAT 后的客户端必需，见下方说明）
 
-/data/shared    *(rw,sync,no_subtree_check,root_squash)
-/data/media     *(ro,sync,no_subtree_check)
-/data/documents *(rw,sync,no_subtree_check,no_root_squash)
-/data/photos    *(rw,sync,no_subtree_check,root_squash)
-/data/backups   *(rw,sync,no_subtree_check,no_root_squash)
+/data/shared    *(rw,sync,no_subtree_check,no_root_squash,insecure)
+/data/media     *(ro,sync,no_subtree_check,insecure)
+/data/documents *(rw,sync,no_subtree_check,no_root_squash,insecure)
+/data/photos    *(rw,sync,no_subtree_check,no_root_squash,insecure)
+/data/backups   *(rw,sync,no_subtree_check,no_root_squash,insecure)
 ```
 
 **注意事项：**
 
 - 导出网段为 `*`（对所有网段开放），跨网段/多网卡客户端可挂载；如需限制网段自行收紧
+- **insecure（2026-09-24 起默认）**：NFS 传统 `secure` 选项要求客户端源端口 < 1024，但经过 NAT
+  的客户端（家庭/办公网络跨网段访问的常态）源端口会被重映射为高位端口，mountd 会以
+  `illegal port` 拒绝挂载（客户端表现为 `access denied by server`）。`insecure` 仅放开源端口限制，
+  身份校验仍走客户端 IP，对家用局域网场景风险可控
 - `/data/media` 设为只读，防止客户端误删影音文件
-- **squash 策略（2026-09-21 起）**：默认 `root_squash`——远程 root 被降权为 nobody，无法任意读写导出目录；
-  确需远程 root 全权的文件夹（如备份目标），通过 API 参数 `nfs_no_root_squash=yes` 显式开启
-  （`POST /api/disk/folders/create` 或 `folders/permission`；面板 UI 开关待补）。
-  升级兼容：老部署既有的 NFS 导出保留原 no_root_squash 行为，不会升级后静默断写
+- **squash 策略（2026-09-24 起放宽为 no_root_squash）**：产品定位家用/小型办公，可用性优先——
+  默认 `no_root_squash`，客户端 root 挂载后直接可写，不会出现"挂上了却 Permission denied"的困惑。
+  需要收紧的部署可自行在面板将文件夹改为只读，或手工编辑 `/etc/exports` 加回 `root_squash`
+  （注意：面板配置同步会以 folders.db 元数据重新生成托管段，手工改动会被覆盖）
 
 **使配置生效：**
 

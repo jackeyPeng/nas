@@ -89,7 +89,7 @@ func TestSmbManagedLines(t *testing.T) {
 		wantList  bool // 期望有 write list 行
 		wantValid bool // 期望有 valid users 行
 	}{
-		{"public 无按用户元数据=开放共享", FolderMeta{Name: "public", Permission: "readwrite"}, "writable = yes", false, false},
+		{"public 无按用户元数据=开放共享(guest ok)", FolderMeta{Name: "public", Permission: "readwrite"}, "writable = yes\n   guest ok = yes", false, false},
 		{"public 被按用户编辑后走按用户粒度", FolderMeta{Name: "public", Permission: "readwrite", ValidUsers: "fm,alice", WriteUsers: "fm"}, "read only = yes", true, true},
 		{"home 共享默认", FolderMeta{Name: "fm", Permission: "readwrite", ValidUsers: "fm"}, "writable = yes", false, true},
 		{"home 只读", FolderMeta{Name: "fm", Permission: "readonly", ValidUsers: "fm"}, "read only = yes", false, true},
