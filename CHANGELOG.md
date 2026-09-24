@@ -1,33 +1,44 @@
 # NAS 项目变更日志
 
-## 未发布
-
-### 审计日志全覆盖加固（2026-09-21）
-
-- **全量写操作自动审计**：loggingMiddleware 拦截所有非 GET `/api/*` 请求——此前仅 25/79 个写操作有审计记录（用户/组增删、系统 reset/hostname/HTTPS、磁盘 format/mount、备份增删、配置编辑、rclone 全部等 54 个写接口漏记），现 100% 覆盖
-- **真实身份**：审计带 JWT 解出的 username（不再写死 "system"）+ client IP（X-Forwarded-For 优先）；handler 级新增 `common.LogAuditRequest`（富 detail + ctx 标记防中间件双写）
-- **失败也入审计**：statusRecorder 捕获响应码，HTTP ≥400 记 result=failed（此前一律 success）
-- **登录审计**：`/api/login` 成功/失败均记录，失败含尝试用户名 + IP（可追溯暴力破解）
-- **SSE 流式操作补记**：前端以 GET 触发的 4 个流式接口（wizard setup/reset-stream、pool extend-stream、raid expand-stream）在 handler 内显式审计
-- 测试：main_audit_test.go（中间件去重/登录成败/失败标记）
-
-### NFS root_squash 安全基线 + 权限矩阵事实源切换（2026-09-21）
-
-- **NFS 导出默认 root_squash**（此前一律 no_root_squash，局域网任意 root 客户端对 rw 导出有全权）；folders 表新增 `nfs_no_root_squash` 列按文件夹显式开启；升级迁移保留既有导出行为，新建默认安全基线（storage-permission-model §八 #3 已修）
-- **权限矩阵/总览回显改读 folders.db**（唯一事实源），不再解析 smb.conf 生成物——SyncAllConfigs 失败/滞后不再漂移（§八 #4 已修）
-- **SyncFolderMeta 签名改整结构体**：新增字段编译期强制携带，杜绝某条写入路径漏字段抹掉其他路径配置（write_users 事故的结构性修复）
-- 测试：nfs_squash_test.go（3 场景）+ matrix_test.go 重写
-
----
-
 ## 版本变更一览
 
 | 版本 | 日期 | 主要变化 |
 |------|------|---------|
+| v1.4.0-beta.15 | 2026-09-24 | 家用可用性优先 — NFS 默认 no_root_squash+insecure（挂载即可写、NAT 后可挂）+ public 共享 guest ok + fail2ban 放宽（ban 10 分钟/10 次）+ S3 短用户名 access key 修复 + 审计日志全覆盖加固 + rclone 同步实时进度 |
 | v1.4.0-beta.14 | 2026-09-19 | 在线升级加固 — 二进制原子替换 + CLI 升级验签 + 升级后配置幂等迁移（setup.sh --config-only）+ FileBrowser 版本单一事实源 |
 | v1.4.0-beta.13 | 2026-09-19 | NFS 导出对所有网段开放（跨网段客户端可挂载） |
 | v1.4.0-beta.12 | 2026-09-18 | 创建向导按已选磁盘实时预估容量（选目标后预览面板 + 各方案可用容量/注意事项）+ 登录页品牌 slogan |
 | v1.4.0-beta.11 | 2026-09-18 | 当前连接展示（监控页，SMB 会话 + 各协议端口归类）+ 回收站改 per-share `.recycle/`（删除=rename 零拷贝，恢复保留目录树，旧 `#recycle` 兼容）+ 存储页 tab 切换跳动修复 |
+
+---
+
+## [2026-09-24] - 家用可用性优先 + S3 修复 + 审计加固
+
+### 版本 v1.4.0-beta.15
+
+### 变更（产品决策：家用可用性优先）
+
+- **NFS 导出默认反转为 `no_root_squash,insecure`**：覆盖 09-21 的 root_squash 安全基线方案——客户端 root 挂载后直接可写（不再出现"挂上了却 Permission denied"）；`insecure` 允许 ≥1024 源端口，NAT 后的客户端（跨网段访问常态）不再被 mountd 以 illegal port 拒绝。readonly 文件夹一律 `ro,...,insecure`；`nfs_no_root_squash` 列保留（DB 兼容）但不再生效。需要收紧的部署可将文件夹改只读或手工编辑 /etc/exports（注意配置同步会覆盖托管段）
+- **public 共享 `guest ok = yes`**：局域网设备（电视/手机/访客电脑）免账号直接访问，写入经 force user 统一映射到服务账号；管理员一旦按用户编辑过权限，自动恢复账号制
+- **fail2ban 放宽**：bantime 3600→600 秒、maxretry 5→10 次——避免家用用户输错密码把自己锁在门外（jail.local + setup.sh 模板同步）
+
+### 修复
+
+- **S3 access key 短于 3 字符被 gofakes3 拒绝**：rclone serve s3 内嵌库强制 accessKeyMinLen=3，短用户名（如 fm）的签名请求一律 InvalidAccessKeyId（403），匿名探测正常故长期未暴露；新增 `common.S3AccessKey()` 派生——<3 字符加 `z1-` 前缀（fm → z1-fm），setup.sh/services.go 两处单元生成/安装提示同步；实际值以 /etc/rclone/s3-env 为准
+- **改密后 S3 静默失效**（既有缺口）：changePassword 更新 NAS_USER 密码时从不重写 rclone-s3 的 auth-key；现同步更新 s3-env + service ExecStart 并重启服务
+- **审计日志结果徽章永远绿色**：前端固定显示 success，failed 记录也标绿；日志筛选缺"诊断"等分类，补齐
+- **GetAllFolderMeta 返回 null**：无文件夹时 JSON 输出 null 而非 []，前端需判空；显式 make 空切片
+
+### 新增
+
+- **审计日志全覆盖加固**（09-21）：loggingMiddleware 拦截所有非 GET `/api/*` 写操作（此前 54 个接口漏记，现 100%）；JWT 真实身份 + client IP；HTTP ≥400 记 failed；/api/login 成败均入档（失败含尝试用户名+IP，可追溯暴力破解）；4 个 SSE 流式接口 handler 内显式审计
+- **权限矩阵/总览回显改读 folders.db**（唯一事实源），不再解析 smb.conf 生成物；SyncFolderMeta 签名改整结构体，杜绝写入路径漏字段（write_users 事故的结构性修复）
+- **rclone 同步任务实时进度**：进度面板展示传输速率/已传字节，新增文件数统计（海量小文件任务可估算完成度）；事件中心模块补录操作清单（158 项/17 模块）
+
+### 验收
+
+- 两台测试机清空重装：9 服务 active、注册表 46 项 37 过 + 9 警告（存储池未建，建池后消除）；RAID1 建池 + testshare（回收站+NFS）创建，/etc/exports 与 smb.conf 托管段生成正确（no_root_squash,insecure / guest ok 均生效）
+- 工作站实测全协议：NFS v4.2 挂载 root 写入成功、SMB guest 免密上传成功、FTP 登录+上传、WebDAV PROPFIND+PUT 201、FileBrowser JWT 登录+列表、S3（z1-fm）boto3 list/put/get/list 全过；账号制隔离验证（fm 连 testshare 被拒，符合预期）
 
 ---
 
