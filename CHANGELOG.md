@@ -4,11 +4,31 @@
 
 | 版本 | 日期 | 主要变化 |
 |------|------|---------|
+| v1.4.0-beta.16 | 2026-10-08 | 文档快照 — 新增《协议服务配置详解》(docs/protocol-service-configs.md，6 协议 + 横切配置代码逐项核对)+ 修正 GenerateNFSConfig 过期注释(与 no_root_squash 默认行为对齐)。文件管理器开发前的回滚基线，不含二进制变更 |
 | v1.4.0-beta.15 | 2026-09-24 | 家用可用性优先 — NFS 默认 no_root_squash+insecure（挂载即可写、NAT 后可挂）+ public 共享 guest ok + fail2ban 放宽（ban 10 分钟/10 次）+ S3 短用户名 access key 修复 + 审计日志全覆盖加固 + rclone 同步实时进度 |
 | v1.4.0-beta.14 | 2026-09-19 | 在线升级加固 — 二进制原子替换 + CLI 升级验签 + 升级后配置幂等迁移（setup.sh --config-only）+ FileBrowser 版本单一事实源 |
 | v1.4.0-beta.13 | 2026-09-19 | NFS 导出对所有网段开放（跨网段客户端可挂载） |
 | v1.4.0-beta.12 | 2026-09-18 | 创建向导按已选磁盘实时预估容量（选目标后预览面板 + 各方案可用容量/注意事项）+ 登录页品牌 slogan |
 | v1.4.0-beta.11 | 2026-09-18 | 当前连接展示（监控页，SMB 会话 + 各协议端口归类）+ 回收站改 per-share `.recycle/`（删除=rename 零拷贝，恢复保留目录树，旧 `#recycle` 兼容）+ 存储页 tab 切换跳动修复 |
+
+---
+
+## [2026-10-08] - 文档快照（文件管理器开发前基线）
+
+### 版本 v1.4.0-beta.16
+
+### 文档
+
+- **新增 docs/protocol-service-configs.md《协议服务配置详解》**：SMB/NFS/FTP/WebDAV/S3/FileBrowser 六协议的服务配置逐项代码核对版（配置源、生成规则、认证与隔离粒度、重载方式、端口），加横切配置（fail2ban/ufw/sudoers 白名单/SyncAllConfigs 链路）与本次核对发现的 4 项问题清单（1 已修 3 待办：回收站共享 vfs objects 覆盖 fruit 模块、vsftpd 双模板漂移、全局协议旁路表述精确化）
+- storage-permission-model.md 头部加交叉引用
+
+### 修正
+
+- **GenerateNFSConfig 过期注释**（config_sync.go）：注释仍写"默认 root_squash 安全基线"，与 nfsExportOpts 实际行为（默认 no_root_squash，2026-09-24 产品决策）相反；已更新为决策记录。纯注释改动，无行为变化
+
+### 说明
+
+- 本版为文件管理器（面板整池文件管理，取代 FileBrowser）开发前的回滚基线：仅 tag + CHANGELOG，不跑 release.sh、不更新对外 control 渠道，一键安装拿到的仍是 beta.15 二进制（内容等价，beta.15 后无代码行为变更）
 
 ---
 

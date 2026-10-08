@@ -2,6 +2,7 @@
 
 > 更新: 2026-09-15 · 对应代码: web/modules/diskmgmt + web/modules/users
 > 本文描述**实际实现**，非设计愿景。与 docs/permission-model-discussion.md（SMB 按用户模型讨论稿）互补。
+> 各协议服务的配置细节（smb.conf/exports/vsftpd/rclone unit/横切配置）见 docs/protocol-service-configs.md（2026-10-08 代码核对版）。
 
 ## 一、四层存储链路
 

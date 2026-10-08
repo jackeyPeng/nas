@@ -367,8 +367,8 @@ func GenerateNFSConfig() error {
 		if !m.NFSExport {
 			continue
 		}
-		// 默认 root_squash（安全基线：客户端 root 映射为 nobody）；
-		// no_root_squash 必须按文件夹显式开启（§八 P2 修复）
+		// 家用可用性优先（2026-09-24 产品决策，反转 09-21 的 root_squash 安全基线）：
+		// rw 一律 no_root_squash,insecure（挂载即可写、NAT 后客户端可挂），选项见 nfsExportOpts
 		sb.WriteString(fmt.Sprintf("%s *(%s)\n", m.Path, nfsExportOpts(m)))
 	}
 	sb.WriteString(managedEnd + "\n")
