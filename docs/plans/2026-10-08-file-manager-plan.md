@@ -168,35 +168,64 @@ func poolRoot() string {
 // 拒绝:绝对路径、".." 片段(含 URL 编码残留)、符号链接解析后逃出池根。
 // 允许:空串(=池根)、"." 片段、池内符号链接。
 func resolvePoolPath(rel string) (string, error) {
-	root := filepath.Clean(poolRoot())
+	root := normalizedRoot()
 	rel = strings.TrimSpace(rel)
 	if strings.HasPrefix(rel, "/") {
 		return "", fmt.Errorf("不接受绝对路径")
 	}
-	// 先按字面拒绝任何 ".." 片段(Clean 会消解它,这里故意不消解——
-	// 请求里出现 ".." 即视为攻击,不做"善意解释")
-	for _, seg := range strings.Split(rel, "/") {
-		if seg == ".." {
-			return "", fmt.Errorf("路径包含非法片段")
-		}
+	// 先按字面拒绝任何 ".." 片段或子串(Clean 会消解它,这里故意不消解——
+	// 请求里出现 ".." 即视为攻击,不做"善意解释";fail-closed,
+	// 副作用是 my..dir 类文件名也被拒,家用场景可接受)
+	if strings.Contains(rel, "..") {
+		return "", fmt.Errorf("路径包含非法片段")
 	}
 	full := filepath.Clean(filepath.Join(root, rel))
 	if full != root && !strings.HasPrefix(full, root+string(filepath.Separator)) {
 		return "", fmt.Errorf("路径越界")
 	}
-	// 符号链接逃逸:对已存在的部分逐级 EvalSymlinks
-	if resolved, err := filepath.EvalSymlinks(full); err == nil {
+	// 符号链接逃逸:对【最深已存在祖先】EvalSymlinks(Task 1 review Critical#1 修订:
+	// 叶子不存在时中间目录仍可能是逃逸符号链接,写盘会被内核解析落到池外)
+	existing := full
+	for {
+		if _, err := os.Lstat(existing); err == nil {
+			break
+		}
+		parent := filepath.Dir(existing)
+		if parent == existing { // 走到文件系统根仍不存在,异常
+			return "", fmt.Errorf("路径解析失败")
+		}
+		existing = parent
+	}
+	if resolved, err := filepath.EvalSymlinks(existing); err == nil {
+		// resolved 与 root 都须在同一解析层级(root 已 EvalSymlinks 归一,Important#2)
 		if resolved != root && !strings.HasPrefix(resolved, root+string(filepath.Separator)) {
 			return "", fmt.Errorf("符号链接指向池外")
 		}
-	} else if !os.IsNotExist(err) {
+		// 校验通过后返回【解析前】的字面路径(full),池内符号链接按原路径使用
+	} else {
 		return "", fmt.Errorf("路径解析失败: %v", err)
 	}
 	return full, nil
 }
 ```
 
-(实现文件需 `import "os"`;`os.IsNotExist` 判断"目标尚不存在"是合法场景——mkdir/上传的目标路径。)
+**修订记录(2026-10-08 Task 1 review)**:初版代码只对 `full` 整体存在时做 EvalSymlinks,存在两个缺陷,已按 review findings 修订:
+- Critical#1:叶子不存在但中间目录是逃逸符号链接时放行,后续写盘 handler 会把文件落到池外(reviewer 沙箱实证)。修订为向上找最深已存在祖先做校验。
+- Important#2:`root` 未 EvalSymlinks,若生产 `/data/nas1` 本身是符号链接,已存在路径的 resolved 前缀比较全部失败(全量误拒)。修订为 `normalizedRoot()`:
+
+```go
+// normalizedRoot 返回 EvalSymlinks 归一后的池根(失败回落字面值)。
+// 与 resolvePoolPath 的 resolved 比较双方须在同一解析层级。
+func normalizedRoot() string {
+	root := filepath.Clean(poolRoot())
+	if resolved, err := filepath.EvalSymlinks(root); err == nil {
+		return resolved
+	}
+	return root
+}
+```
+
+(实现文件需 `import "os"`。测试补用例:`TestResolvePoolPathRejectsSymlinkEscapeNonexistentLeaf` —— `public/evil -> /etc`(池外),请求 `public/evil/newfile.txt`(叶子不存在)必须被拒。)
 
 `ownerShareOf` 放同文件:
 
@@ -209,10 +238,11 @@ func ownerShareOf(absPath string) (diskmgmt.FolderMeta, bool) {
 	var best diskmgmt.FolderMeta
 	found := false
 	for _, m := range diskmgmt.GetAllFolderMeta() {
-		prefix := filepath.Clean(m.Path) + string(filepath.Separator)
-		if strings.HasPrefix(absPath+string(filepath.Separator), prefix) ||
-			filepath.Clean(m.Path) == absPath {
-			if !found || len(m.Path) > len(best.Path) {
+		clean := filepath.Clean(m.Path)
+		prefix := clean + string(filepath.Separator)
+		if strings.HasPrefix(absPath+string(filepath.Separator), prefix) {
+			// 最长匹配用 Clean 后长度(Task 1 review Minor#3:原始 m.Path 可能带尾/重复斜杠)
+			if !found || len(clean) > len(filepath.Clean(best.Path)) {
 				best, found = m, true
 			}
 		}
@@ -221,7 +251,7 @@ func ownerShareOf(absPath string) (diskmgmt.FolderMeta, bool) {
 }
 ```
 
-注意:若 `diskmgmt.GetAllFolderMeta` 触发 folders.db 打开失败(测试环境无 DB),它返回空 slice(非 nil,既有约定),ownerShareOf 返回 false——测试里不依赖真 DB。
+注:`absPath+sep` 与 `prefix` 的比较在 share 路径恰为 absPath 本身时也成立(相等加 sep 即前缀),无需单独 OR 条件。`GetAllFolderMeta` 无 DB 时返回 nil(range nil 与空 slice 行为一致),ownerShareOf 返回 false——测试不依赖真 DB。
 
 - [ ] **Step 4: 跑测试确认通过**
 
