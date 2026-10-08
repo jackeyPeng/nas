@@ -11,4 +11,6 @@ import (
 // mkdir/rename/move/copy/delete/stat/chmod/chown/fix-home-perms。
 func RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/files/list", common.AuthMiddleware(handleList))
+	mux.HandleFunc("/api/files/download", common.AuthMiddleware(handleDownload))
+	mux.HandleFunc("/api/files/zip", common.AuthMiddleware(handleZip))
 }
