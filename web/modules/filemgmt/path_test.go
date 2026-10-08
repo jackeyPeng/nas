@@ -54,6 +54,15 @@ func TestResolvePoolPathRejectsSymlinkEscape(t *testing.T) {
 	}
 }
 
+func TestResolvePoolPathRejectsSymlinkEscapeNonexistentLeaf(t *testing.T) {
+	setupFakePool(t)
+	// public/evil -> /etc(池外),叶子 newfile.txt 不存在;
+	// 若只对叶子整体做 EvalSymlinks 会因 NotExist 被放过,实际写盘会落到 /etc 下。
+	if got, err := resolvePoolPath("public/evil/newfile.txt"); err == nil {
+		t.Fatalf("中间目录是逃逸符号链接且叶子不存在时应被拒, got %q", got)
+	}
+}
+
 func TestResolvePoolPathKeepsInnerSymlink(t *testing.T) {
 	root := setupFakePool(t)
 	os.Symlink(filepath.Join(root, "fm"), filepath.Join(root, "public", "inner"))
