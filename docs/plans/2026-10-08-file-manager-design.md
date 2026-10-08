@@ -72,7 +72,7 @@ web/modules/filemgmt/
 
 | 方法 | 端点 | 说明 |
 |------|------|------|
-| GET | `/api/files/list?path=` | 列目录：返回 entries[]（name/type/size/mode/owner/group/mtime）+ 当前路径用量 + 面包屑。按类型再名称排序，目录在前 |
+| GET | `/api/files/list?path=` | 列目录：返回 entries[]（name/type/size/mode/owner/group/mtime）+ 面包屑 + truncated。按类型再名称排序，目录在前。用量不进 list（§5.1：du 异步，走独立 `/api/files/usage`） |
 | GET | `/api/files/download?path=` | 单文件下载：`http.ServeContent`（自动支持 Range/断点续传、Content-Type 嗅探） |
 | GET | `/api/files/zip?path=` | 目录打包下载：`archive/zip` 流式写 ResponseWriter，不落地临时文件 |
 | GET | `/api/files/preview?path=` | 文本/图片预览：文本限 1MB（超出截断提示），图片直接 ServeContent；非可预览类型返回 415 |
