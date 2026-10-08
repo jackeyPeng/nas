@@ -19,6 +19,7 @@ import (
 	"nas-panel/modules/diagnostics"
 	"nas-panel/modules/diskmgmt"
 	"nas-panel/modules/events"
+	"nas-panel/modules/filemgmt"
 	"nas-panel/modules/firewall"
 	"nas-panel/modules/hardware"
 	"nas-panel/modules/health"
@@ -136,6 +137,7 @@ func main() {
 	update.RegisterRoutes(mux)
 	hardware.RegisterRoutes(mux)
 	events.RegisterRoutes(mux)
+	filemgmt.RegisterRoutes(mux)
 
 	// Serve frontend
 	frontendRoot, _ := fs.Sub(frontendFS, "frontend")
