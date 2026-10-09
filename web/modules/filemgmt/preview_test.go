@@ -26,6 +26,38 @@ func TestPreviewText(t *testing.T) {
 	}
 }
 
+func TestPreviewTextExactly1MB(t *testing.T) {
+	root := setupFakePool(t)
+	exact := strings.Repeat("x", maxTextPreview)
+	os.WriteFile(filepath.Join(root, "public", "exact.txt"), []byte(exact), 0644)
+	req := httptest.NewRequest("GET", "/api/files/preview?path=public/exact.txt", nil)
+	rec := httptest.NewRecorder()
+	handlePreview(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("got %d", rec.Code)
+	}
+	var resp map[string]interface{}
+	json.Unmarshal(rec.Body.Bytes(), &resp)
+	if resp["truncated"] != false {
+		t.Fatalf("恰好 1MB 不应 truncated, resp=%v", resp)
+	}
+	content, _ := resp["content"].(string)
+	if len(content) != maxTextPreview {
+		t.Fatalf("内容应完整 %d 字节, got %d", maxTextPreview, len(content))
+	}
+
+	over := strings.Repeat("x", maxTextPreview+1)
+	os.WriteFile(filepath.Join(root, "public", "over.txt"), []byte(over), 0644)
+	req2 := httptest.NewRequest("GET", "/api/files/preview?path=public/over.txt", nil)
+	rec2 := httptest.NewRecorder()
+	handlePreview(rec2, req2)
+	var resp2 map[string]interface{}
+	json.Unmarshal(rec2.Body.Bytes(), &resp2)
+	if resp2["truncated"] != true {
+		t.Fatalf("1MB+1 应 truncated=true, resp=%v", resp2)
+	}
+}
+
 func TestPreviewTextTruncates(t *testing.T) {
 	root := setupFakePool(t)
 	big := strings.Repeat("x", maxTextPreview+100)

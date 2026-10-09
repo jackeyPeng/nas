@@ -62,6 +62,7 @@ func handlePreview(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		defer f.Close()
+		w.Header().Set("X-Content-Type-Options", "nosniff")
 		http.ServeContent(w, r, info.Name(), info.ModTime(), f) // Content-Type 由扩展名嗅探
 		return
 	case textExts[ext]:

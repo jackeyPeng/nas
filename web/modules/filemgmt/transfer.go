@@ -38,6 +38,7 @@ func handleDownload(w http.ResponseWriter, r *http.Request) {
 	defer f.Close()
 	w.Header().Set("Content-Disposition",
 		fmt.Sprintf(`attachment; filename="%s"`, escapeFilename(info.Name())))
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	http.ServeContent(w, r, info.Name(), info.ModTime(), f) // Range/Content-Type 自动
 }
 
