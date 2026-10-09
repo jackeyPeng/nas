@@ -93,6 +93,13 @@ function nasPanel() {
         selectedDisk: null,
         selectedDiskDevice: '',
         operationsLog: [],
+        // 文件管理器(只读 v1)
+        filesPage: {
+            path: '', entries: [], breadcrumb: [], truncated: false, loading: false,
+            usageText: '',
+            preview: { open: false, kind: '', name: '', content: '', url: '' },
+            relJoin(name) { return this.path ? this.path + '/' + name : name; },
+        },
         // Shared folders
         sharedFolders: [],
         showAddFolder: false,
@@ -537,6 +544,7 @@ function nasPanel() {
                 case 'services': this.loadServices(); break;
                 case 'users': this.loadUsers(); this.loadUserGroups(); this.loadPermMatrix(); this.loadLoginLogs(); break;
                 case 'diskmgmt': this.loadStorageOverview(); this.loadWizardStatus(); this.loadSharedFolders(); this.loadPendingOps(); this.loadUsers(); this.loadImportablePools(); break;
+                case 'files': this.loadFiles(''); break;
                 case 'firewall': this.loadFirewall(); break;
                 case 'monitor': this.initMonitorRefresh(); this.loadAlertConfig(); break;
                 case 'system': this.loadSystemOverview(); this.load2FAStatus(); this.checkPanelUpdate(); break;
@@ -1073,6 +1081,84 @@ function nasPanel() {
             let v = bytes, i = -1;
             do { v /= 1024; i++; } while (v >= 1024 && i < units.length - 1);
             return v.toFixed(v >= 100 ? 0 : 1) + ' ' + units[i];
+        },
+
+        // ═══ 文件管理器(只读 v1) ═══
+        async loadFiles(rel) {
+            this.filesPage.loading = true;
+            try {
+                const data = await this.api('/files/list?path=' + encodeURIComponent(rel));
+                if (data) {
+                    this.filesPage.path = rel;
+                    this.filesPage.entries = data.entries || [];
+                    this.filesPage.breadcrumb = data.breadcrumb || [];
+                    this.filesPage.truncated = !!data.truncated;
+                    // 用量懒加载,不阻塞列表
+                    this.loadFilesUsage(rel);
+                }
+            } finally {
+                this.filesPage.loading = false;
+            }
+        },
+        // du_status 三态(Task 4 review Important#1):ok=bytes 有值;timeout/error=bytes 为 null,
+        // 前端对非 ok 一律降级展示"用量不可用",不 switch 具体态
+        async loadFilesUsage(rel) {
+            const d = await this.api('/files/usage?path=' + encodeURIComponent(rel));
+            if (d && d.pool) {
+                this.filesPage.usageText = `${this.formatSize(d.pool.used_kb * 1024)} / ${this.formatSize(d.pool.total_kb * 1024)}`;
+            } else {
+                this.filesPage.usageText = this.t('files.usage_unavailable');
+            }
+        },
+        async downloadFile(e) {
+            const rel = this.filesPage.relJoin(e.name);
+            try {
+                const res = await fetch('/api/files/download?path=' + encodeURIComponent(rel), {
+                    headers: { 'Authorization': 'Bearer ' + this.token }
+                });
+                if (!res.ok) throw new Error(await res.text());
+                const blob = await res.blob();
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = e.name;
+                a.click();
+                URL.revokeObjectURL(a.href);
+            } catch (err) {
+                this.showToast(String(err.message || err), 'error');
+            }
+        },
+        previewable(e) {
+            if (e.type !== 'file') return false;
+            const ext = ('.' + e.name.split('.').pop()).toLowerCase();
+            return ['.txt', '.md', '.json', '.yaml', '.yml', '.log', '.conf', '.ini', '.csv', '.sh',
+                '.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'].includes(ext) && e.size <= 10 * 1024 * 1024;
+        },
+        async previewFile(e) {
+            const rel = this.filesPage.relJoin(e.name);
+            const ext = ('.' + e.name.split('.').pop()).toLowerCase();
+            const imgs = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'];
+            const kind = imgs.includes(ext) ? 'image' : 'text';
+            this.filesPage.preview = { open: true, kind, name: e.name, content: '', url: '' };
+            try {
+                const res = await fetch('/api/files/preview?path=' + encodeURIComponent(rel), {
+                    headers: { 'Authorization': 'Bearer ' + this.token }
+                });
+                if (!res.ok) throw new Error(await res.text());
+                if (kind === 'image') {
+                    const blob = await res.blob();
+                    this.filesPage.preview.url = URL.createObjectURL(blob);
+                } else {
+                    const d = await res.json();
+                    this.filesPage.preview.content = d.content + (d.truncated ? '\n\n... [已截断,请下载查看全文]' : '');
+                }
+            } catch (err) {
+                this.showToast(String(err.message || err), 'error');
+                this.filesPage.preview.open = false;
+            }
+        },
+        fmtTime(ts) {
+            if (!ts) return '-';
+            return new Date(ts * 1000).toLocaleString();
         },
 
         connProtoStyle(p) {

@@ -1205,5 +1205,19 @@
     "backup": {
       "data_done": "Data backup completed → {target}"
     }
+  },
+  "files": {
+    "pool_root": "Pool root",
+    "name": "Name",
+    "size": "Size",
+    "owner": "Owner",
+    "mode": "Permissions",
+    "mtime": "Modified",
+    "actions": "Actions",
+    "download": "Download",
+    "preview": "Preview",
+    "empty_dir": "Empty directory",
+    "truncated_hint": "Too many entries, showing first 2000. Use SMB for the full listing.",
+    "usage_unavailable": "Usage unavailable"
   }
 }

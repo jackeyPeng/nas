@@ -1205,5 +1205,19 @@
     "backup": {
       "data_done": "数据备份完成 → {target}"
     }
+  },
+  "files": {
+    "pool_root": "池根",
+    "name": "名称",
+    "size": "大小",
+    "owner": "属主",
+    "mode": "权限",
+    "mtime": "修改时间",
+    "actions": "操作",
+    "download": "下载",
+    "preview": "预览",
+    "empty_dir": "空目录",
+    "truncated_hint": "目录条目过多，仅显示前 2000 项；完整内容请用 SMB 访问",
+    "usage_unavailable": "用量不可用"
   }
 }

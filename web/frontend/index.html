@@ -39,7 +39,7 @@
             <a href="#" @click.prevent="navigate('backup'); mobileMenu=false" style="display:block;padding:var(--sp-3) var(--sp-4);border-bottom:1px solid var(--border-light);text-decoration:none;color: var(--text-secondary)">📦 <span x-text="$t('nav.backup')"></span></a>
             <a href="#" @click.prevent="navigate('rclone'); mobileMenu=false" style="display:block;padding:var(--sp-3) var(--sp-4);border-bottom:1px solid var(--border-light);text-decoration:none;color: var(--text-secondary)">☁️ <span x-text="$t('nav.rclone')"></span></a>
             <div style="padding:var(--sp-3) var(--sp-4)">
-                <a :href="'http://'+location.hostname+':8081'" target="_blank" style="display:block;padding:var(--sp-3);background: var(--primary);color:white;text-align:center;border-radius:var(--radius-sm);text-decoration:none;font-weight:600">📁 <span x-text="$t('nav.file_manager')"></span></a>
+                <a href="#" @click.prevent="navigate('files'); mobileMenu=false" style="display:block;padding:var(--sp-3);background: var(--primary);color:white;text-align:center;border-radius:var(--radius-sm);text-decoration:none;font-weight:600">📁 <span x-text="$t('nav.file_manager')"></span></a>
             </div>
             <div style="padding:var(--sp-3) var(--sp-4)">
                 <select @change="switchLang($event.target.value)" style="width:100%;padding:var(--sp-2);border:1px solid var(--border);border-radius:4px;font-size:var(--fs-base)">
@@ -114,6 +114,9 @@
                     <div>
                         <li :class="{active: page === 'diskmgmt'}" @click="navigate('diskmgmt')">
                             <span style="margin-left:var(--sp-5)">💽</span> <span x-text="$t('nav.storage_mgmt')"></span>
+                        </li>
+                        <li :class="{active: page === 'files'}" @click="navigate('files')">
+                            <span style="margin-left:var(--sp-5)">📁</span> <span x-text="$t('nav.file_manager')"></span>
                         </li>
                         <li :class="{active: page === 'rclone'}" @click="navigate('rclone')">
                             <span style="margin-left:var(--sp-5)">☁️</span> <span x-text="$t('nav.rclone')"></span>
@@ -1838,6 +1841,62 @@
                     <div class="modal-actions">
                         <button class="btn" @click="showRAIDExpand=false" x-text="$t('common.cancel')"></button>
                         <button class="btn btn-primary" @click="expandRAIDStream()"><span x-text="$t('storage.start_expand')"></span></button>
+                    </div>
+                </div>
+            </div>
+            <!-- File Manager -->
+            <div x-show="page === 'files'" class="page" x-init="if(page==='files') loadFiles('')" x-transition.opacity.duration.300ms>
+                <div style="display:flex;align-items:center;gap:var(--sp-2);flex-wrap:wrap;margin-bottom:var(--sp-3)">
+                    <template x-for="(bc, i) in filesPage.breadcrumb" :key="i">
+                        <span>
+                            <a href="#" @click.prevent="loadFiles(bc.path)" style="color:var(--primary);text-decoration:none"
+                               x-text="bc.path === '' ? $t('files.pool_root') : bc.name"></a>
+                            <span x-show="i < filesPage.breadcrumb.length - 1" style="color:var(--text-light)"> / </span>
+                        </span>
+                    </template>
+                    <span style="margin-left:auto;color:var(--text-light)" x-text="filesPage.usageText"></span>
+                </div>
+                <table class="table-dense" style="width:100%">
+                    <thead><tr>
+                        <th x-text="$t('files.name')"></th><th x-text="$t('files.size')"></th>
+                        <th x-text="$t('files.owner')"></th><th x-text="$t('files.mode')"></th>
+                        <th x-text="$t('files.mtime')"></th><th x-text="$t('files.actions')"></th>
+                    </tr></thead>
+                    <tbody>
+                        <template x-for="e in filesPage.entries" :key="e.name">
+                            <tr>
+                                <td>
+                                    <a href="#" x-show="e.type==='dir'" @click.prevent="loadFiles(filesPage.relJoin(e.name))"
+                                       style="color:var(--text-primary);text-decoration:none">📁 <span x-text="e.name"></span></a>
+                                    <span x-show="e.type==='file'">📄 <span x-text="e.name"></span></span>
+                                    <span x-show="e.type==='symlink'" :title="e.target">🔗 <span x-text="e.name"></span> → <span x-text="e.target" style="color:var(--text-light)"></span></span>
+                                    <span x-show="e.type==='other'">• <span x-text="e.name"></span></span>
+                                </td>
+                                <td x-text="e.type==='dir' ? '—' : formatSize(e.size)"></td>
+                                <td x-text="e.owner + ':' + e.group"></td>
+                                <td><code x-text="e.mode_text"></code></td>
+                                <td x-text="fmtTime(e.mtime)"></td>
+                                <td>
+                                    <button class="btn-xs" x-show="e.type!=='dir'" @click="downloadFile(e)" x-text="$t('files.download')"></button>
+                                    <button class="btn-xs" x-show="previewable(e)" @click="previewFile(e)" x-text="$t('files.preview')"></button>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+                <div class="empty-state" x-show="filesPage.entries.length === 0 && !filesPage.loading" x-cloak>
+                    <div x-text="$t('files.empty_dir')"></div>
+                </div>
+                <div x-show="filesPage.truncated" style="color:var(--warn);margin-top:var(--sp-2)" x-text="$t('files.truncated_hint')"></div>
+                <!-- 预览弹层 -->
+                <div x-show="filesPage.preview.open" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100" @click.self="filesPage.preview.open=false">
+                    <div style="max-width:80vw;max-height:80vh;margin:5vh auto;background:var(--card-bg);border-radius:var(--radius-md);padding:var(--sp-4);overflow:auto">
+                        <div style="display:flex;justify-content:space-between;margin-bottom:var(--sp-2)">
+                            <b x-text="filesPage.preview.name"></b>
+                            <button class="btn-xs" @click="filesPage.preview.open=false">✕</button>
+                        </div>
+                        <pre x-show="filesPage.preview.kind==='text'" style="white-space:pre-wrap;word-break:break-all;font-size:var(--fs-sm)" x-text="filesPage.preview.content"></pre>
+                        <img x-show="filesPage.preview.kind==='image'" :src="filesPage.preview.url" style="max-width:100%">
                     </div>
                 </div>
             </div>
