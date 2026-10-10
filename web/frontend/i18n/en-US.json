@@ -1218,6 +1218,7 @@
     "preview": "Preview",
     "empty_dir": "Empty directory",
     "truncated_hint": "Too many entries, showing first 2000. Use SMB for the full listing.",
-    "usage_unavailable": "Usage unavailable"
+    "usage_unavailable": "Usage unavailable",
+    "preview_truncated": "\n\n... [truncated, download to view full text]"
   }
 }

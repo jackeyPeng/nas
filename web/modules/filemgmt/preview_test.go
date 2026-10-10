@@ -29,7 +29,9 @@ func TestPreviewText(t *testing.T) {
 func TestPreviewTextExactly1MB(t *testing.T) {
 	root := setupFakePool(t)
 	exact := strings.Repeat("x", maxTextPreview)
-	os.WriteFile(filepath.Join(root, "public", "exact.txt"), []byte(exact), 0644)
+	if err := os.WriteFile(filepath.Join(root, "public", "exact.txt"), []byte(exact), 0644); err != nil {
+		t.Fatal(err)
+	}
 	req := httptest.NewRequest("GET", "/api/files/preview?path=public/exact.txt", nil)
 	rec := httptest.NewRecorder()
 	handlePreview(rec, req)
@@ -47,10 +49,15 @@ func TestPreviewTextExactly1MB(t *testing.T) {
 	}
 
 	over := strings.Repeat("x", maxTextPreview+1)
-	os.WriteFile(filepath.Join(root, "public", "over.txt"), []byte(over), 0644)
+	if err := os.WriteFile(filepath.Join(root, "public", "over.txt"), []byte(over), 0644); err != nil {
+		t.Fatal(err)
+	}
 	req2 := httptest.NewRequest("GET", "/api/files/preview?path=public/over.txt", nil)
 	rec2 := httptest.NewRecorder()
 	handlePreview(rec2, req2)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("got %d", rec2.Code)
+	}
 	var resp2 map[string]interface{}
 	json.Unmarshal(rec2.Body.Bytes(), &resp2)
 	if resp2["truncated"] != true {

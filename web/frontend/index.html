@@ -1889,11 +1889,11 @@
                 </div>
                 <div x-show="filesPage.truncated" style="color:var(--warn);margin-top:var(--sp-2)" x-text="$t('files.truncated_hint')"></div>
                 <!-- 预览弹层 -->
-                <div x-show="filesPage.preview.open" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100" @click.self="filesPage.preview.open=false">
+                <div x-show="filesPage.preview.open" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100" @click.self="closePreview()">
                     <div style="max-width:80vw;max-height:80vh;margin:5vh auto;background:var(--card-bg);border-radius:var(--radius-md);padding:var(--sp-4);overflow:auto">
                         <div style="display:flex;justify-content:space-between;margin-bottom:var(--sp-2)">
                             <b x-text="filesPage.preview.name"></b>
-                            <button class="btn-xs" @click="filesPage.preview.open=false">✕</button>
+                            <button class="btn-xs" @click="closePreview()">✕</button>
                         </div>
                         <pre x-show="filesPage.preview.kind==='text'" style="white-space:pre-wrap;word-break:break-all;font-size:var(--fs-sm)" x-text="filesPage.preview.content"></pre>
                         <img x-show="filesPage.preview.kind==='image'" :src="filesPage.preview.url" style="max-width:100%">

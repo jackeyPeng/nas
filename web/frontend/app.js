@@ -1118,11 +1118,12 @@ function nasPanel() {
                 });
                 if (!res.ok) throw new Error(await res.text());
                 const blob = await res.blob();
+                const objUrl = URL.createObjectURL(blob);
                 const a = document.createElement('a');
-                a.href = URL.createObjectURL(blob);
+                a.href = objUrl;
                 a.download = e.name;
                 a.click();
-                URL.revokeObjectURL(a.href);
+                setTimeout(() => URL.revokeObjectURL(objUrl), 1000);
             } catch (err) {
                 this.showToast(String(err.message || err), 'error');
             }
@@ -1133,11 +1134,16 @@ function nasPanel() {
             return ['.txt', '.md', '.json', '.yaml', '.yml', '.log', '.conf', '.ini', '.csv', '.sh',
                 '.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'].includes(ext) && e.size <= 10 * 1024 * 1024;
         },
+        closePreview() {
+            if (this.filesPage.preview.url) URL.revokeObjectURL(this.filesPage.preview.url);
+            this.filesPage.preview = { open: false, kind: '', name: '', content: '', url: '' };
+        },
         async previewFile(e) {
             const rel = this.filesPage.relJoin(e.name);
             const ext = ('.' + e.name.split('.').pop()).toLowerCase();
             const imgs = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'];
             const kind = imgs.includes(ext) ? 'image' : 'text';
+            if (this.filesPage.preview.url) URL.revokeObjectURL(this.filesPage.preview.url);
             this.filesPage.preview = { open: true, kind, name: e.name, content: '', url: '' };
             try {
                 const res = await fetch('/api/files/preview?path=' + encodeURIComponent(rel), {
@@ -1149,7 +1155,7 @@ function nasPanel() {
                     this.filesPage.preview.url = URL.createObjectURL(blob);
                 } else {
                     const d = await res.json();
-                    this.filesPage.preview.content = d.content + (d.truncated ? '\n\n... [已截断,请下载查看全文]' : '');
+                    this.filesPage.preview.content = d.content + (d.truncated ? this.t('files.preview_truncated') : '');
                 }
             } catch (err) {
                 this.showToast(String(err.message || err), 'error');
