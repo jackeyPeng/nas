@@ -1192,6 +1192,11 @@ git commit -m "feat(filemgmt): 前端文件页 v1 — 浏览/面包屑/下载/�
 **修订记录(2026-10-12 Task 8 实现期)**:Step 1 的「文件名 `../evil` 被 validateFileName 拒 400」不可实现——实测 Go 标准库 `multipart.Part.FileName()` 内置 `filepath.Base()` 剥路径:`../evil` 取出即 `evil`(合法名,不会 400),`a/b.txt` 取出 `b.txt`,仅全名 `..` 保持原样被 validateFileName 拒。**拍板**:穿越语义由 stdlib Base() + resolvePoolPath 双重兜底(剥完的名只会落在目标目录内,无逃逸面),validateFileName 仍保留为纵深防御(拦 `..` 全名/控制字符/超长/反斜杠 `..\x` 类)。测试期望修订为:`../evil` → 200 且文件以 `evil` 名落在目标目录内(池外与目标目录外无落盘);`..` → 400。
 - [x] Step 2: 确认失败
 - [x] Step 3: 实现 — `mr, err := r.MultipartReader()`;逐 `mr.NextPart()`;part.FileName() 过 validateFileName;目标 = resolvePoolPath(path) + filename 再 resolvePoolPath;`io.Copy(f, part)` 32KB buffer;磁盘满 write 错误 → 507 + os.Remove 半成品;完成后 chmod/chown 对齐(复用 Task 11 的 alignNewFilePerms 辅助——若 Task 11 未先行,本 Task 内实现该辅助并让 Task 11 复用)
+
+**修订记录(2026-10-12 Task 8 review)**:独立审查结论「需修复后合入」(Critical 0 / Important 2),拍板如下:
+- Important#1:Step 3 的「write 错误 → 507 + os.Remove 半成品」字面实现会误删——Lstat 预检与 OpenFile(O_EXCL) 之间并发创建时 EEXIST 失败,此时文件非我所建,统一 os.Remove 会以 root 删掉并发方文件(数据丢失)且误报 507。**修订语义**:按失败阶段分流——open 阶段 EEXIST → 409(同 Lstat 预检语义,不 Remove);open 阶段其他失败 → 507(未落字节,不 Remove);**仅 open 成功后的 copy/chmod 失败才 Remove 半成品 + 507/500**。清理责任移入 writePartToFile 内部(copy 失败自清),handler 只按错误类型映射状态码。
+- Important#2:测试的 `t.Skip` 后无任何断言(死代码),chown 路径文件系统层零验证。修订:root-gated 真实断言(syscall.Stat_t 校验 uid/gid),并补 0600 普通共享分支的 root-gated 断言;非 root 环境维持 skip。
+- Minor 遗留(留 Task 9-13 顺带,不阻塞):ownerShareOf/ownerShareOfVia 逻辑重复待抽单一实现;多 part 中途读失败改 JSON body 带 written 列表;chown 跳过时日志升 WARN;空上传(files=0)审计语义再议。
 - [x] Step 4: 测试绿 + build
 - [x] Step 5: Commit `feat(filemgmt): 流式上传 — MultipartReader 不撑内存 + 同名 409/overwrite + 权限对齐`
 
