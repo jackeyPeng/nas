@@ -1179,6 +1179,8 @@ git commit -m "feat(filemgmt): 前端文件页 v1 — 浏览/面包屑/下载/�
 - Minor#4(反斜杠/首尾空格/Windows 保留名/Unicode NFC 不在白名单):规格未要求,Linux 下合法且双重锚定无路径风险,列为未来规格增强(SMB Windows 客户端体验),不在本轮改。
 - 补测试:rename 池根→400;rename 同名→200 no-op(旧名仍在、内容不变);mkdir 显式 chmod 后 mode 恒 0755。
 
+**复审记录(2026-10-12 scoped re-review,commit ba819c8)**:可合入。6 项修复全部落实、顺序语义正确(池根检查在 Lstat 前、同名 no-op 在 dst 预检前——renameat2(NOREPLACE) 对 oldpath==newpath 返回 EEXIST,no-op 分支必须在 syscall 前)。遗留记录:① **filemgmt 包为 Linux-only**(renameat2 使 GOOS=darwin 编译失败;release.sh 只交叉编译 linux amd64/arm64,实测两目标均通过,发布不受影响;未来需 darwin 开发环境再拆 mutate_linux.go + build tag);② 审计 detail 原样拼接用户输入 path(控制字符仅 new_name 被 validateFileName 拦,path 未滤)——与既有 mkdir/rename 审计同模式,M2 收尾轮统一对 detail 转义;③ 存量 flaky:common/TestEventBusSubscribe 的 t.TempDir 清理与异步 eventbus writer 竞态(旧提交同样概率挂,非本轮引入),待按 audit 测试同款方案(包级持久目录+TestMain 清理)修复。
+
 ### Task 8: 上传(流式)
 
 **Files:** Modify `mutate.go`(或新 `upload.go`)+ 测试
