@@ -3,6 +3,8 @@ package filemgmt
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -643,5 +645,133 @@ func TestHandleCopyToSelfRejected(t *testing.T) {
 	handleCopy(rec, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("复制到自己应 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Task 9 review C1: 复制/移动到 src 自身子目录 → 400(防无限递归写满磁盘)。
+// ---------------------------------------------------------------------------
+
+// copy dst_dir=a/b、src=a(dst 在 src 树内)必须被拒 400,且 a/b 内无新增内容
+// (证明 copyTree 从未被调用,不是跑了一半才失败)。
+func TestHandleCopyRejectsDstInsideSrc(t *testing.T) {
+	root := setupFakePool(t)
+	srcDir := filepath.Join(root, "public", "a")
+	subDir := filepath.Join(srcDir, "b")
+	os.MkdirAll(subDir, 0755)
+	os.WriteFile(filepath.Join(srcDir, "file.txt"), []byte("x"), 0644)
+
+	body, _ := json.Marshal(map[string]string{"src": "public/a", "dst_dir": "public/a/b"})
+	req := httptest.NewRequest("POST", "/api/files/copy", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	handleCopy(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("copy 到 src 子目录应 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	entries, err := os.ReadDir(subDir)
+	if err != nil {
+		t.Fatalf("子目录应仍在: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("子目录内应无新增内容(拒绝应发生在 copyTree 之前), got %v", entries)
+	}
+}
+
+// move dst_dir=a/b、src=a 同样必须被拒 400,源树原样未动。
+func TestHandleMoveRejectsDstInsideSrc(t *testing.T) {
+	root := setupFakePool(t)
+	srcDir := filepath.Join(root, "public", "a")
+	subDir := filepath.Join(srcDir, "b")
+	os.MkdirAll(subDir, 0755)
+	os.WriteFile(filepath.Join(srcDir, "file.txt"), []byte("x"), 0644)
+
+	body, _ := json.Marshal(map[string]string{"src": "public/a", "dst_dir": "public/a/b"})
+	req := httptest.NewRequest("POST", "/api/files/move", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	handleMove(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("move 到 src 子目录应 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if _, err := os.Stat(filepath.Join(srcDir, "file.txt")); err != nil {
+		t.Fatalf("源应原样未动: %v", err)
+	}
+	entries, err := os.ReadDir(subDir)
+	if err != nil {
+		t.Fatalf("子目录应仍在: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("子目录内应无新增内容, got %v", entries)
+	}
+}
+
+// dst_dir 恰为 src 自身(非子目录,是同一目录)已由"目标已存在"409 覆盖
+// (base 相同会撞 409),这里补一个 dst_dir 深层嵌套于 src 的用例,确认
+// HasPrefix 判断对多级子目录同样生效。
+func TestHandleCopyRejectsDstDeepInsideSrc(t *testing.T) {
+	root := setupFakePool(t)
+	srcDir := filepath.Join(root, "public", "a")
+	deepDir := filepath.Join(srcDir, "b", "c", "d")
+	os.MkdirAll(deepDir, 0755)
+
+	body, _ := json.Marshal(map[string]string{"src": "public/a", "dst_dir": "public/a/b/c/d"})
+	req := httptest.NewRequest("POST", "/api/files/copy", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	handleCopy(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("copy 到 src 深层子目录应 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+// Task 9 review Important#2:copyTree 撞已存在目标必须返回可用 errors.Is(err, fs.ErrExist)
+// 判别的错误(handler 据此 409 且不清理),且预置目标内容原样不动。
+func TestCopyTreeExistingTargetReturnsErrExist(t *testing.T) {
+	root := setupFakePool(t)
+	src := filepath.Join(root, "public", "src.txt")
+	os.WriteFile(src, []byte("new"), 0644)
+	dst := filepath.Join(root, "public", "dst.txt")
+	os.WriteFile(dst, []byte("existing"), 0644)
+
+	_, err := copyTree(src, dst)
+	if err == nil {
+		t.Fatalf("copyTree 目标已存在应报错")
+	}
+	if !errors.Is(err, fs.ErrExist) {
+		t.Fatalf("错误应满足 errors.Is(err, fs.ErrExist), got %v", err)
+	}
+	data, rerr := os.ReadFile(dst)
+	if rerr != nil || string(data) != "existing" {
+		t.Fatalf("预置目标应原样未动, got %q err=%v", data, rerr)
+	}
+}
+
+// Task 9 review Important#3:跨 fs move 必须在删源前对新落盘文件做权限对齐
+// (alignCopiedTreePerms → alignNewFilePerms,权限跟目标共享)。注入 public meta,
+// 断言移动后文件 mode==0664 且源已被删。
+func TestMoveCrossFSAlignsPermsBeforeSourceRemoval(t *testing.T) {
+	root := setupFakePool(t)
+	old := getFolderMetaFn
+	getFolderMetaFn = func() []diskmgmt.FolderMeta {
+		return []diskmgmt.FolderMeta{{Name: "public", Path: filepath.Join(root, "public")}}
+	}
+	t.Cleanup(func() { getFolderMetaFn = old })
+
+	srcDir := filepath.Join(root, "fm", "d")
+	os.MkdirAll(srcDir, 0700)
+	srcFile := filepath.Join(srcDir, "f.txt")
+	os.WriteFile(srcFile, []byte("data"), 0600)
+	dst := filepath.Join(root, "public", "d")
+
+	if err := moveCrossFS(srcDir, dst); err != nil {
+		t.Fatalf("moveCrossFS 应成功: %v", err)
+	}
+	if _, err := os.Lstat(srcDir); err == nil {
+		t.Fatalf("校验通过后源应被删除")
+	}
+	info, err := os.Stat(filepath.Join(dst, "f.txt"))
+	if err != nil {
+		t.Fatalf("目标文件应在: %v", err)
+	}
+	if info.Mode().Perm() != 0664 {
+		t.Fatalf("跨 fs move 落盘文件应对齐 public 共享 0664, got %o", info.Mode().Perm())
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -189,11 +190,13 @@ func handleRename(w http.ResponseWriter, r *http.Request) {
 // 本包是 Linux-only 既定约束(renameat2 已先例使用 golang.org/x/sys/unix),Stat_t
 // 字段按 Linux ABI 直接取用。
 func sameFS(a, b string) bool {
+	// Lstat 口径(Task 9 review Minor#1):rename/copyTree 操作的都是链接本身,
+	// Stat 跟随链接会对跨 fs 链接误判 fs。
 	var sa, sb syscall.Stat_t
-	if err := syscall.Stat(a, &sa); err != nil {
+	if err := syscall.Lstat(a, &sa); err != nil {
 		return false
 	}
-	if err := syscall.Stat(b, &sb); err != nil {
+	if err := syscall.Lstat(b, &sb); err != nil {
 		return false
 	}
 	return sa.Dev == sb.Dev
@@ -314,12 +317,21 @@ func moveCrossFS(srcAbs, dstAbs string) error {
 	if err != nil {
 		return fmt.Errorf("跨文件系统复制失败: %w", err)
 	}
+	// 竞态说明(Task 9 review Minor#2):treeByteSize 在 copyTree 之后统计,
+	// 复制期间源被并发修改会导致字节比对不一致——失败方向安全(保留源),接受该竞态。
 	srcBytes, err := treeByteSize(srcAbs)
 	if err != nil {
 		return fmt.Errorf("源树字节统计失败,已保留源: %w", err)
 	}
 	if written != srcBytes {
 		return fmt.Errorf("跨文件系统移动字节校验失败(写入=%d 源=%d),已保留源,请检查目标磁盘空间", written, srcBytes)
+	}
+	// 权限对齐(Task 9 review Important#3):拍板「copy 与跨 fs move 新落盘文件
+	// 逐个走 alignNewFilePerms」。必须在 RemoveAll(src) 之前——对齐失败则清理
+	// 目标、保留源,任何失败点源都还在。
+	if err := alignCopiedTreePerms(dstAbs); err != nil {
+		os.RemoveAll(dstAbs)
+		return fmt.Errorf("跨文件系统移动权限对齐失败,已保留源并清理目标: %w", err)
 	}
 	if err := os.RemoveAll(srcAbs); err != nil {
 		return fmt.Errorf("校验通过但删除源失败: %w", err)
@@ -359,6 +371,15 @@ func resolveMoveCopyTarget(w http.ResponseWriter, src, dstDir string) (srcAbs, d
 	}
 	if !dstDirInfo.IsDir() {
 		http.Error(w, "目标路径不是目录", http.StatusBadRequest)
+		return "", "", false
+	}
+	// Task 9 review Critical#1:目标目录不能在源内部(含源本身)——否则
+	// copyTree/递归 rename 会在新建的 dst 内看见自己继续向下自我嵌套,
+	// 失控写满磁盘(reviewer 沙箱实证)。GNU cp 同款语义:dst 恰为 src 或
+	// 是 src 的子目录都拒绝。该校验在 copyTree/os.Rename 调用之前生效,
+	// move/copy 共用本函数,改一处两边生效。
+	if dstDirAbs == srcAbs || strings.HasPrefix(dstDirAbs, srcAbs+string(filepath.Separator)) {
+		http.Error(w, "目标目录不能在源内部", http.StatusBadRequest)
 		return "", "", false
 	}
 
@@ -409,12 +430,31 @@ func handleMove(w http.ResponseWriter, r *http.Request) {
 
 	dstDirAbs := filepath.Dir(dstAbs)
 	if sameFS(srcAbs, dstDirAbs) {
-		if err := os.Rename(srcAbs, dstAbs); err != nil {
+		// renameat2(RENAME_NOREPLACE)(Task 9 review Important#1):裸 os.Rename
+		// 在 409 预检与 rename 之间的 TOCTOU 窗口会静默覆盖目标,违反
+		// 「目标存在一律 409」拍板;与 handleRename(Task 7)同款内核原子兜底。
+		if err := unix.Renameat2(unix.AT_FDCWD, srcAbs, unix.AT_FDCWD, dstAbs, unix.RENAME_NOREPLACE); err != nil {
+			if errors.Is(err, unix.EEXIST) || errors.Is(err, unix.ENOTEMPTY) {
+				http.Error(w, "目标已存在", http.StatusConflict)
+				return
+			}
+			if errors.Is(err, unix.ENOENT) {
+				http.Error(w, "源不存在", http.StatusNotFound)
+				return
+			}
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 	} else {
 		if err := moveCrossFS(srcAbs, dstAbs); err != nil {
+			// 半成品清理(Task 9 review Important#4):失败后不清目标会被 409 卡死重试。
+			// EEXIST 例外(Task 9 review Important#2 同款):目标树内有并发方创建的内容
+			// 时不得 RemoveAll 误删。
+			if errors.Is(err, fs.ErrExist) {
+				http.Error(w, "目标已存在", http.StatusConflict)
+				return
+			}
+			os.RemoveAll(dstAbs)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -447,6 +487,13 @@ func handleCopy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if _, err := copyTree(srcAbs, dstAbs); err != nil {
+		// EEXIST 分流(Task 9 review Important#2):copyFile(O_EXCL)/os.Symlink 撞
+		// 并发方已建目标时,目标树内含非本次创建的内容,不得 RemoveAll 误删;
+		// 其余错误目标确为本次新建(已过 409 预检),RemoveAll 安全。
+		if errors.Is(err, fs.ErrExist) {
+			http.Error(w, "目标已存在", http.StatusConflict)
+			return
+		}
 		os.RemoveAll(dstAbs) // 目标是本次新建的,RemoveAll 安全;源不受影响。
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
