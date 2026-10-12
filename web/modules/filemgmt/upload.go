@@ -2,8 +2,10 @@ package filemgmt
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -188,23 +190,21 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
 			part.Close()
 			// 拍板决策 1:多 part 冲突语义——立即停止,响应体注明冲突文件名
 			// 与已写入的文件名列表;已写入的 part 不回滚。
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusConflict)
-			encodeJSONBody(w, map[string]interface{}{
-				"ok":       false,
-				"error":    "同名已存在",
-				"conflict": filename,
-				"written":  written,
-				"files":    len(written),
-				"bytes":    totalBytes,
-			})
+			writeUploadConflictBody(w, filename, written, totalBytes)
 			return
 		}
 
 		n, werr := writePartToFile(targetAbs, part, buf, overwrite)
 		part.Close()
 		if werr != nil {
-			os.Remove(targetAbs)
+			// 清理责任已下沉到 writePartToFile 内部(copy 失败自清半成品);
+			// handler 只按错误类型映射状态码,不在此处 os.Remove。
+			if errors.Is(werr, fs.ErrExist) {
+				// OpenFile(O_EXCL) 碰撞:文件非我所建(并发方已创建),
+				// 与 Lstat 预检同款 409 JSON body,不得 Remove 并发方文件。
+				writeUploadConflictBody(w, filename, written, totalBytes)
+				return
+			}
 			http.Error(w, werr.Error(), http.StatusInsufficientStorage)
 			return
 		}
@@ -228,6 +228,21 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// writeUploadConflictBody 写出同名冲突的 409 响应体,供 Lstat 预检与 writePartToFile
+// 的 O_EXCL/EEXIST 分支共用同一 JSON body 格式(ok/error/conflict/written/files/bytes)。
+func writeUploadConflictBody(w http.ResponseWriter, filename string, written []string, totalBytes int64) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusConflict)
+	encodeJSONBody(w, map[string]interface{}{
+		"ok":       false,
+		"error":    "同名已存在",
+		"conflict": filename,
+		"written":  written,
+		"files":    len(written),
+		"bytes":    totalBytes,
+	})
+}
+
 // encodeJSONBody 在已显式 WriteHeader 自定义状态码之后写 JSON body。
 // common.JSONResponse 不接受状态码参数(隐式 200),409 冲突响应需要先设状态码,
 // 故这里直接复用同款 json.Encoder 配置(禁用 HTML 转义),不改动 common 包。
@@ -239,6 +254,12 @@ func encodeJSONBody(w http.ResponseWriter, data interface{}) {
 
 // writePartToFile 把 part 流式写入 targetAbs。overwrite=false 时用 O_EXCL 防止并发创建覆盖;
 // overwrite=true 时 O_TRUNC 截断写。返回写入字节数。
+//
+// 清理责任收敛在本函数内部(Task 8 review Important#1 修订):
+//   - OpenFile 失败(含 O_EXCL 碰撞 EEXIST)→ 未落任何字节,直接返回错误,不做任何 Remove。
+//     EEXIST 时目标文件非本函数所建(并发方已创建),调用方(handler)不得 Remove 它。
+//   - OpenFile 成功后 CopyBuffer 失败 → 本函数内部自清半成品:f.Close() 后 os.Remove(targetAbs),
+//     再返回原始 copy 错误(此时文件确为本函数所建,清理是安全的)。
 func writePartToFile(targetAbs string, part io.Reader, buf []byte, overwrite bool) (int64, error) {
 	flags := os.O_WRONLY | os.O_CREATE | os.O_EXCL
 	if overwrite {
@@ -248,10 +269,15 @@ func writePartToFile(targetAbs string, part io.Reader, buf []byte, overwrite boo
 	if err != nil {
 		return 0, err
 	}
-	defer f.Close()
 	n, err := io.CopyBuffer(f, part, buf)
 	if err != nil {
+		f.Close()
+		os.Remove(targetAbs)
 		return n, err
+	}
+	if cerr := f.Close(); cerr != nil {
+		os.Remove(targetAbs)
+		return n, cerr
 	}
 	return n, nil
 }
