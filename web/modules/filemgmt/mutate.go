@@ -11,11 +11,16 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"golang.org/x/sys/unix"
 
 	"nas-panel/common"
 )
+
+// recycleDirName 与 diskmgmt/recycle.go 的 recycleDirName 同值同源
+// (diskmgmt 那份未导出,故在本模块定义同值常量)。
+const recycleDirName = ".recycle"
 
 // validateFileName 校验新建/重命名用的裸文件名(不含路径分隔符)。
 // 拒绝:空串、含 "/"、含 ".." 子串、含控制字符(< 0x20)、字节长度 > 255、
@@ -528,4 +533,121 @@ func alignCopiedTreePerms(root string) error {
 		}
 		return alignNewFilePerms(path)
 	})
+}
+
+// ---------------------------------------------------------------------------
+// Task 10: delete → .recycle(与 diskmgmt/recycle.go 回收站页同构 keeptree 布局)
+// ---------------------------------------------------------------------------
+
+// pathHasRecycleSegment 判断相对路径(按 "/" 切分)是否任一段恰为 recycleDirName,
+// 用于防止删除 .recycle 自身内容(应在回收站页管理,不走本端点)。
+func pathHasRecycleSegment(rel string) bool {
+	for _, seg := range strings.Split(rel, "/") {
+		if seg == recycleDirName {
+			return true
+		}
+	}
+	return false
+}
+
+// recycleAdminUser 解析审计用户名:优先 common.RequestUsername(JWT 身份),
+// 空则兜底 common.GetNASUser()(测试环境无 JWT 走此分支)。
+func recycleAdminUser(r *http.Request) string {
+	if u := common.RequestUsername(r); u != "" {
+		return u
+	}
+	return common.GetNASUser()
+}
+
+// resolveRecycleTarget 算出 srcAbs 应落入的回收站目标路径(未处理冲突):
+//   - found(ownerShareOfVia 命中所属共享)→ <share.Path>/.recycle/<admin>/<srcAbs 相对 share.Path 的原相对路径...>(keeptree)
+//   - !found(池根散落文件)→ <poolRoot>/.recycle/<admin>/<basename>
+func resolveRecycleTarget(srcAbs, admin string) (string, error) {
+	meta, found := ownerShareOfVia(srcAbs)
+	if found {
+		shareClean := filepath.Clean(meta.Path)
+		rel, err := filepath.Rel(shareClean, srcAbs)
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(shareClean, recycleDirName, admin, rel), nil
+	}
+	return filepath.Join(normalizedRoot(), recycleDirName, admin, filepath.Base(srcAbs)), nil
+}
+
+// recycleConflictFree 若 target 已存在(os.Lstat 口径,目录/文件/符号链接均算冲突),
+// 对 basename 追加 ".<unixnano>" 后缀重试,直到不冲突。目录整树带后缀同理
+// (后缀加在最终叶子名上,父目录结构不变)。
+func recycleConflictFree(target string) string {
+	candidate := target
+	for {
+		if _, err := os.Lstat(candidate); err != nil {
+			return candidate
+		}
+		candidate = fmt.Sprintf("%s.%d", target, time.Now().UnixNano())
+	}
+}
+
+// handleDelete — POST /api/files/delete,JSON body {path}。
+// 删除 = os.Rename 到所属共享(或池根)的 .recycle/<admin>/ 下,零拷贝;
+// 与回收站页(diskmgmt/recycle.go)keeptree 布局同构,删除后天然可见可 restore。
+func handleDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Path string `json:"path"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "请求体不是合法 JSON", http.StatusBadRequest)
+		return
+	}
+	srcAbs, err := resolvePoolPath(req.Path)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if srcAbs == normalizedRoot() {
+		http.Error(w, "不能删除池根", http.StatusBadRequest)
+		return
+	}
+	if pathHasRecycleSegment(req.Path) {
+		http.Error(w, "回收站内容请在回收站页管理", http.StatusBadRequest)
+		return
+	}
+	meta, found := ownerShareOfVia(srcAbs)
+	if found && srcAbs == filepath.Clean(meta.Path) {
+		http.Error(w, "不能删除共享文件夹本身,请在存储页操作", http.StatusBadRequest)
+		return
+	}
+	if _, err := os.Lstat(srcAbs); err != nil {
+		http.Error(w, "源不存在", http.StatusNotFound)
+		return
+	}
+
+	admin := recycleAdminUser(r)
+	recycleTarget, err := resolveRecycleTarget(srcAbs, admin)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	recycleTarget = recycleConflictFree(recycleTarget)
+
+	if err := os.MkdirAll(filepath.Dir(recycleTarget), 0700); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := os.Rename(srcAbs, recycleTarget); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	recycleRel, rerr := filepath.Rel(normalizedRoot(), recycleTarget)
+	if rerr != nil {
+		recycleRel = recycleTarget
+	}
+	common.LogAuditRequest(r, "files", "delete",
+		fmt.Sprintf("path=%s recycle=%s", req.Path, recycleRel), "success")
+	common.JSONResponse(w, map[string]interface{}{"ok": true, "recycle_path": recycleRel})
 }

@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"testing"
 
+	"nas-panel/common"
 	"nas-panel/modules/diskmgmt"
 )
 
@@ -773,5 +774,280 @@ func TestMoveCrossFSAlignsPermsBeforeSourceRemoval(t *testing.T) {
 	}
 	if info.Mode().Perm() != 0664 {
 		t.Fatalf("跨 fs move 落盘文件应对齐 public 共享 0664, got %o", info.Mode().Perm())
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Task 10: delete → .recycle(与回收站页 diskmgmt/recycle.go 同构 keeptree 布局)
+// ---------------------------------------------------------------------------
+
+// withPublicFolderMeta 注入 fake getFolderMetaFn,返回 public(root/public)与
+// fm(root/fm,充当用户 home)两个共享 meta,对照 upload_test.go 注入模式。
+func withPublicFolderMeta(t *testing.T, root string) {
+	t.Helper()
+	old := getFolderMetaFn
+	getFolderMetaFn = func() []diskmgmt.FolderMeta {
+		return []diskmgmt.FolderMeta{
+			{Name: "public", Path: filepath.Join(root, "public")},
+			{Name: "fm", Path: filepath.Join(root, "fm")},
+		}
+	}
+	t.Cleanup(func() { getFolderMetaFn = old })
+}
+
+// Test 13: 删 public 下文件 → 源消失,public/.recycle/<admin>/a.txt 出现且内容一致。
+// 测试环境无 JWT,admin 兜底 common.GetNASUser()。
+func TestHandleDeleteMovesToRecycleUnderOwningShare(t *testing.T) {
+	root := setupFakePool(t)
+	withPublicFolderMeta(t, root)
+
+	srcPath := filepath.Join(root, "public", "a.txt")
+	os.WriteFile(srcPath, []byte("hello"), 0644)
+
+	body, _ := json.Marshal(map[string]string{"path": "public/a.txt"})
+	req := httptest.NewRequest("POST", "/api/files/delete", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	handleDelete(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("delete 应 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if _, err := os.Lstat(srcPath); err == nil {
+		t.Fatalf("源应消失")
+	}
+	admin := common.GetNASUser()
+	wantPath := filepath.Join(root, "public", recycleDirName, admin, "a.txt")
+	data, err := os.ReadFile(wantPath)
+	if err != nil {
+		t.Fatalf("回收站内应出现 %s: %v", wantPath, err)
+	}
+	if string(data) != "hello" {
+		t.Fatalf("内容应保留, got %q", data)
+	}
+}
+
+// Test 14: 多级子目录下文件 → keeptree,原相对路径整段保留。
+func TestHandleDeleteKeepsTreeForNestedFile(t *testing.T) {
+	root := setupFakePool(t)
+	withPublicFolderMeta(t, root)
+
+	nestedDir := filepath.Join(root, "public", "sub", "dir")
+	os.MkdirAll(nestedDir, 0755)
+	srcPath := filepath.Join(nestedDir, "f.txt")
+	os.WriteFile(srcPath, []byte("nested"), 0644)
+
+	body, _ := json.Marshal(map[string]string{"path": "public/sub/dir/f.txt"})
+	req := httptest.NewRequest("POST", "/api/files/delete", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	handleDelete(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("delete 应 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	admin := common.GetNASUser()
+	wantPath := filepath.Join(root, "public", recycleDirName, admin, "sub", "dir", "f.txt")
+	data, err := os.ReadFile(wantPath)
+	if err != nil {
+		t.Fatalf("keeptree 回收站内应出现 %s: %v", wantPath, err)
+	}
+	if string(data) != "nested" {
+		t.Fatalf("内容应保留, got %q", data)
+	}
+}
+
+// Test 15: 删 fm home 下文件 → 落 fm 的 .recycle,不落 public 的。
+func TestHandleDeleteUsesOwningShareNotOthers(t *testing.T) {
+	root := setupFakePool(t)
+	withPublicFolderMeta(t, root)
+
+	srcPath := filepath.Join(root, "fm", "b.txt")
+	os.WriteFile(srcPath, []byte("fm-data"), 0600)
+
+	body, _ := json.Marshal(map[string]string{"path": "fm/b.txt"})
+	req := httptest.NewRequest("POST", "/api/files/delete", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	handleDelete(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("delete 应 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	admin := common.GetNASUser()
+	wantPath := filepath.Join(root, "fm", recycleDirName, admin, "b.txt")
+	if _, err := os.Stat(wantPath); err != nil {
+		t.Fatalf("应落 fm 的 .recycle: %v", err)
+	}
+	notWantPath := filepath.Join(root, "public", recycleDirName, admin, "b.txt")
+	if _, err := os.Stat(notWantPath); err == nil {
+		t.Fatalf("不应落 public 的 .recycle")
+	}
+}
+
+// Test 16: 删目录 → 整子树随 rename 保留(目录内文件内容一致)。
+func TestHandleDeleteDirectoryKeepsSubtree(t *testing.T) {
+	root := setupFakePool(t)
+	withPublicFolderMeta(t, root)
+
+	srcDir := filepath.Join(root, "public", "folder")
+	os.MkdirAll(filepath.Join(srcDir, "inner"), 0755)
+	os.WriteFile(filepath.Join(srcDir, "top.txt"), []byte("top"), 0644)
+	os.WriteFile(filepath.Join(srcDir, "inner", "deep.txt"), []byte("deep"), 0644)
+
+	body, _ := json.Marshal(map[string]string{"path": "public/folder"})
+	req := httptest.NewRequest("POST", "/api/files/delete", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	handleDelete(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("delete 应 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if _, err := os.Lstat(srcDir); err == nil {
+		t.Fatalf("源目录应消失")
+	}
+	admin := common.GetNASUser()
+	recycled := filepath.Join(root, "public", recycleDirName, admin, "folder")
+	data1, err := os.ReadFile(filepath.Join(recycled, "top.txt"))
+	if err != nil || string(data1) != "top" {
+		t.Fatalf("top.txt 应保留, data=%q err=%v", data1, err)
+	}
+	data2, err := os.ReadFile(filepath.Join(recycled, "inner", "deep.txt"))
+	if err != nil || string(data2) != "deep" {
+		t.Fatalf("inner/deep.txt 应保留, data=%q err=%v", data2, err)
+	}
+}
+
+// Test 17: 池根散落文件(fake meta 返回空列表 → !found)→ 落 <poolRoot>/.recycle/<admin>/<basename>。
+func TestHandleDeleteNoOwningShareFallsBackToPoolRootRecycle(t *testing.T) {
+	root := setupFakePool(t)
+	old := getFolderMetaFn
+	getFolderMetaFn = func() []diskmgmt.FolderMeta { return nil }
+	t.Cleanup(func() { getFolderMetaFn = old })
+
+	srcPath := filepath.Join(root, "loose.txt")
+	os.WriteFile(srcPath, []byte("loose"), 0644)
+
+	body, _ := json.Marshal(map[string]string{"path": "loose.txt"})
+	req := httptest.NewRequest("POST", "/api/files/delete", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	handleDelete(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("delete 应 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	admin := common.GetNASUser()
+	wantPath := filepath.Join(root, recycleDirName, admin, "loose.txt")
+	if _, err := os.Stat(wantPath); err != nil {
+		t.Fatalf("应落池根 .recycle: %v", err)
+	}
+}
+
+// Test 18: 路径穿越 → 400;池根("" 与 ".") → 400。
+func TestHandleDeleteRejectsTraversalAndPoolRoot(t *testing.T) {
+	root := setupFakePool(t)
+	withPublicFolderMeta(t, root)
+
+	for _, p := range []string{"../../etc", "", "."} {
+		body, _ := json.Marshal(map[string]string{"path": p})
+		req := httptest.NewRequest("POST", "/api/files/delete", bytes.NewReader(body))
+		rec := httptest.NewRecorder()
+		handleDelete(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("path=%q 应 400, got %d body=%s", p, rec.Code, rec.Body.String())
+		}
+	}
+	_ = root
+}
+
+// Test 19: .recycle 防套娃 — 删 public/.recycle/<admin>/a.txt → 400 且文件仍在。
+func TestHandleDeleteRejectsRecycleItself(t *testing.T) {
+	root := setupFakePool(t)
+	withPublicFolderMeta(t, root)
+
+	admin := common.GetNASUser()
+	recycleFile := filepath.Join(root, "public", recycleDirName, admin, "a.txt")
+	os.MkdirAll(filepath.Dir(recycleFile), 0700)
+	os.WriteFile(recycleFile, []byte("x"), 0644)
+
+	relPath := filepath.ToSlash(filepath.Join("public", recycleDirName, admin, "a.txt"))
+	body, _ := json.Marshal(map[string]string{"path": relPath})
+	req := httptest.NewRequest("POST", "/api/files/delete", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	handleDelete(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf(".recycle 内容应 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if _, err := os.Stat(recycleFile); err != nil {
+		t.Fatalf("文件应仍在: %v", err)
+	}
+}
+
+// Test 20: 删共享文件夹本身(path=="public") → 400 且目录仍在。
+func TestHandleDeleteRejectsShareRootItself(t *testing.T) {
+	root := setupFakePool(t)
+	withPublicFolderMeta(t, root)
+
+	body, _ := json.Marshal(map[string]string{"path": "public"})
+	req := httptest.NewRequest("POST", "/api/files/delete", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	handleDelete(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("删共享文件夹本身应 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if _, err := os.Stat(filepath.Join(root, "public")); err != nil {
+		t.Fatalf("共享目录应仍在: %v", err)
+	}
+}
+
+// Test 21: 冲突后缀 — 预先在回收站目标位置放同名文件,再删源 → 成功且回收站内
+// 出现 a.txt.<数字后缀>,原冲突文件未动。
+func TestHandleDeleteConflictAppendsSuffix(t *testing.T) {
+	root := setupFakePool(t)
+	withPublicFolderMeta(t, root)
+
+	admin := common.GetNASUser()
+	conflictPath := filepath.Join(root, "public", recycleDirName, admin, "a.txt")
+	os.MkdirAll(filepath.Dir(conflictPath), 0700)
+	os.WriteFile(conflictPath, []byte("existing"), 0644)
+
+	srcPath := filepath.Join(root, "public", "a.txt")
+	os.WriteFile(srcPath, []byte("new"), 0644)
+
+	body, _ := json.Marshal(map[string]string{"path": "public/a.txt"})
+	req := httptest.NewRequest("POST", "/api/files/delete", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	handleDelete(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("delete 应 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	// 原冲突文件未动
+	data, err := os.ReadFile(conflictPath)
+	if err != nil || string(data) != "existing" {
+		t.Fatalf("原冲突文件应未动, data=%q err=%v", data, err)
+	}
+	// 回收站目录下应多出一个带数字后缀的 a.txt.<n>
+	entries, err := os.ReadDir(filepath.Dir(conflictPath))
+	if err != nil {
+		t.Fatalf("读回收站目录失败: %v", err)
+	}
+	found := false
+	for _, e := range entries {
+		name := e.Name()
+		if name != "a.txt" && strings.HasPrefix(name, "a.txt.") {
+			data, rerr := os.ReadFile(filepath.Join(filepath.Dir(conflictPath), name))
+			if rerr == nil && string(data) == "new" {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("应出现带后缀的新回收文件, entries=%v", entries)
+	}
+	if _, err := os.Lstat(srcPath); err == nil {
+		t.Fatalf("源应消失")
+	}
+}
+
+// Test 22: GET → 405。
+func TestHandleDeleteRejectsGet(t *testing.T) {
+	setupFakePool(t)
+	req := httptest.NewRequest("GET", "/api/files/delete", nil)
+	rec := httptest.NewRecorder()
+	handleDelete(rec, req)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("GET 应 405, got %d", rec.Code)
 	}
 }

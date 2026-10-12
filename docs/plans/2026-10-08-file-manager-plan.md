@@ -1246,11 +1246,11 @@ git commit -m "feat(filemgmt): 前端文件页 v1 — 浏览/面包屑/下载/�
 
 **Interfaces:** Produces `handleDelete`(POST `{path}`);删除目标 = `ownerShareOf(abs)`(Task 1)定位所属 share → `<share.Path>/.recycle/<admin>/<unixnano>/<basename>`;无所属 share → `<poolRoot>/.recycle/<admin>/<unixnano>/<basename>`;admin 用户名 = `common.RequestUsername(r)` 的 JWT 身份(兜底 common.GetNASUser());os.Rename 零拷贝;父目录不存在则 MkdirAll(mode 0700)
 
-- [ ] Step 1: 失败测试 — 删 public 下文件后:源消失、`public/.recycle/<user>/` 下出现且内容一致;删 home(fm)下文件落 fm 的 .recycle;目录删除保留子树;池根散落文件(不属于任何 share,测试里 folders.db 空)落池根 .recycle;删除路径穿越拒;`.recycle` 自身不可删(防套娃,拒绝 path 含 `.recycle` 段)
-- [ ] Step 2: 确认失败
-- [ ] Step 3: 实现(注意:`.recycle/<user>` 目录名与 diskmgmt/recycle.go 的 `recycleDirName` 常量同源——import diskmgmt 用其导出常量,若未导出则在本模块定义同值并注释指向;删除后回收站页 handleRecycleList 天然可见,无需改 diskmgmt)
-- [ ] Step 4: 测试绿 + build;**联动实测**:起面板删一个文件 → 存储页回收站 tab 可见可 restore
-- [ ] Step 5: Commit `feat(filemgmt): 删除进 .recycle — ownerShareOf 定位所属共享,与回收站页同源联动`
+- [x] Step 1: 失败测试 — 删 public 下文件后:源消失、`public/.recycle/<user>/` 下出现且内容一致;删 home(fm)下文件落 fm 的 .recycle;目录删除保留子树;池根散落文件(不属于任何 share,测试里 folders.db 空)落池根 .recycle;删除路径穿越拒;`.recycle` 自身不可删(防套娃,拒绝 path 含 `.recycle` 段)
+- [x] Step 2: 确认失败
+- [x] Step 3: 实现(注意:`.recycle/<user>` 目录名与 diskmgmt/recycle.go 的 `recycleDirName` 常量同源——import diskmgmt 用其导出常量,若未导出则在本模块定义同值并注释指向;删除后回收站页 handleRecycleList 天然可见,无需改 diskmgmt)
+- [x] Step 4: 测试绿 + build;**联动实测**:起面板删一个文件 → 存储页回收站 tab 可见可 restore
+- [x] Step 5: Commit `feat(filemgmt): 删除进 .recycle — ownerShareOf 定位所属共享,与回收站页同源联动`
 
 ### Task 11: 前端写操作(v2 UI)
 
