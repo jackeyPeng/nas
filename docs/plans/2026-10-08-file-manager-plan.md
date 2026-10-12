@@ -1187,11 +1187,13 @@ git commit -m "feat(filemgmt): 前端文件页 v1 — 浏览/面包屑/下载/�
 
 **Interfaces:** Produces `handleUpload`(POST `/api/files/upload?path=<目标目录>` multipart;`r.MultipartReader()` 流式;同名无 `overwrite=yes` → 409;写盘后按目标目录 setgid/属主对齐:public 下 0664 + 组 nasusers,home 下 0600 + 属主=home 用户,普通共享按 folders.db force user 同名)
 
-- [ ] Step 1: 失败测试 — httptest 构造 multipart 上传单文件成功且内容一致;同名冲突 409;overwrite=yes 覆盖成功;上传到不存在目录 404;文件名 `../evil` 被 validateFileName 拒 400;大文件(构造 5MB reader)不整体进内存(断言无 ParseMultipartForm 调用——实现用 MultipartReader 即可,测试跑 5MB 流验证功能)
-- [ ] Step 2: 确认失败
-- [ ] Step 3: 实现 — `mr, err := r.MultipartReader()`;逐 `mr.NextPart()`;part.FileName() 过 validateFileName;目标 = resolvePoolPath(path) + filename 再 resolvePoolPath;`io.Copy(f, part)` 32KB buffer;磁盘满 write 错误 → 507 + os.Remove 半成品;完成后 chmod/chown 对齐(复用 Task 11 的 alignNewFilePerms 辅助——若 Task 11 未先行,本 Task 内实现该辅助并让 Task 11 复用)
-- [ ] Step 4: 测试绿 + build
-- [ ] Step 5: Commit `feat(filemgmt): 流式上传 — MultipartReader 不撑内存 + 同名 409/overwrite + 权限对齐`
+- [x] Step 1: 失败测试 — httptest 构造 multipart 上传单文件成功且内容一致;同名冲突 409;overwrite=yes 覆盖成功;上传到不存在目录 404;文件名 `../evil` 被 validateFileName 拒 400;大文件(构造 5MB reader)不整体进内存(断言无 ParseMultipartForm 调用——实现用 MultipartReader 即可,测试跑 5MB 流验证功能)
+
+**修订记录(2026-10-12 Task 8 实现期)**:Step 1 的「文件名 `../evil` 被 validateFileName 拒 400」不可实现——实测 Go 标准库 `multipart.Part.FileName()` 内置 `filepath.Base()` 剥路径:`../evil` 取出即 `evil`(合法名,不会 400),`a/b.txt` 取出 `b.txt`,仅全名 `..` 保持原样被 validateFileName 拒。**拍板**:穿越语义由 stdlib Base() + resolvePoolPath 双重兜底(剥完的名只会落在目标目录内,无逃逸面),validateFileName 仍保留为纵深防御(拦 `..` 全名/控制字符/超长/反斜杠 `..\x` 类)。测试期望修订为:`../evil` → 200 且文件以 `evil` 名落在目标目录内(池外与目标目录外无落盘);`..` → 400。
+- [x] Step 2: 确认失败
+- [x] Step 3: 实现 — `mr, err := r.MultipartReader()`;逐 `mr.NextPart()`;part.FileName() 过 validateFileName;目标 = resolvePoolPath(path) + filename 再 resolvePoolPath;`io.Copy(f, part)` 32KB buffer;磁盘满 write 错误 → 507 + os.Remove 半成品;完成后 chmod/chown 对齐(复用 Task 11 的 alignNewFilePerms 辅助——若 Task 11 未先行,本 Task 内实现该辅助并让 Task 11 复用)
+- [x] Step 4: 测试绿 + build
+- [x] Step 5: Commit `feat(filemgmt): 流式上传 — MultipartReader 不撑内存 + 同名 409/overwrite + 权限对齐`
 
 ### Task 9: move + copy(同 fs rename,跨 fs copy+delete)
 
