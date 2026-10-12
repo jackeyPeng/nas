@@ -134,6 +134,47 @@ func TestHandleRenameSourceNotFound(t *testing.T) {
 	}
 }
 
+func TestHandleRenameRejectsPoolRootEmptyPath(t *testing.T) {
+	setupFakePool(t)
+	body, _ := json.Marshal(map[string]string{"path": "", "new_name": "x"})
+	req := httptest.NewRequest("POST", "/api/files/rename", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	handleRename(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("path=\"\" (池根) 应 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleRenameRejectsPoolRootDotPath(t *testing.T) {
+	setupFakePool(t)
+	body, _ := json.Marshal(map[string]string{"path": ".", "new_name": "x"})
+	req := httptest.NewRequest("POST", "/api/files/rename", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	handleRename(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("path=\".\" (池根) 应 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleRenameSameNameNoOp(t *testing.T) {
+	root := setupFakePool(t)
+	os.WriteFile(filepath.Join(root, "public", "same.txt"), []byte("content"), 0644)
+	body, _ := json.Marshal(map[string]string{"path": "public/same.txt", "new_name": "same.txt"})
+	req := httptest.NewRequest("POST", "/api/files/rename", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	handleRename(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("同名 rename 应 200 no-op, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	data, err := os.ReadFile(filepath.Join(root, "public", "same.txt"))
+	if err != nil {
+		t.Fatalf("文件应仍在: %v", err)
+	}
+	if string(data) != "content" {
+		t.Fatalf("内容应不变, got %q", data)
+	}
+}
+
 func TestHandleRenameRejectsGet(t *testing.T) {
 	setupFakePool(t)
 	req := httptest.NewRequest("GET", "/api/files/rename", nil)

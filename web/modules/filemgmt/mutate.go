@@ -2,18 +2,20 @@ package filemgmt
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
-	"unicode/utf8"
+
+	"golang.org/x/sys/unix"
 
 	"nas-panel/common"
 )
 
 // validateFileName 校验新建/重命名用的裸文件名(不含路径分隔符)。
-// 拒绝:空串、含 "/"、含 ".." 子串、含控制字符(< 0x20)、UTF-8 长度 > 255 字节、
+// 拒绝:空串、含 "/"、含 ".." 子串、含控制字符(< 0x20)、字节长度 > 255、
 // 全名恰为 "." 或 ".."。其余放行。
 func validateFileName(name string) error {
 	if name == "" {
@@ -33,7 +35,7 @@ func validateFileName(name string) error {
 			return fmt.Errorf("名称不能包含控制字符")
 		}
 	}
-	if utf8.RuneCountInString(name) > 255 || len(name) > 255 {
+	if len(name) > 255 {
 		return fmt.Errorf("名称过长")
 	}
 	return nil
@@ -69,9 +71,13 @@ func handleMkdir(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	// targetAbs 理应等于 filepath.Join(parentAbs, req.Name);以 parentAbs 为准创建,
-	// 避免两次解析之间出现竞态导致路径不一致。
-	_ = parentAbs
+	// targetAbs 必须等于 filepath.Join(parentAbs, req.Name);两次解析之间
+	// 若出现语义漂移(例如符号链接竞态改变了归一化结果),拒绝继续,防止
+	// 双重锚定退化为摆设。
+	if targetAbs != filepath.Join(parentAbs, req.Name) {
+		http.Error(w, "路径解析不一致", http.StatusInternalServerError)
+		return
+	}
 	if _, err := os.Lstat(targetAbs); err == nil {
 		http.Error(w, "同名已存在", http.StatusConflict)
 		return
@@ -85,6 +91,12 @@ func handleMkdir(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "父目录不存在", http.StatusNotFound)
 			return
 		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	// 显式 chmod,消除进程 umask(systemd 服务 umask 不定)对目录权限的影响。
+	if err := os.Chmod(targetAbs, 0755); err != nil {
+		os.Remove(targetAbs)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -115,6 +127,11 @@ func handleRename(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	// 池根本身不可重命名(path="" 或 "." 都归一化为池根)。
+	if srcAbs == normalizedRoot() {
+		http.Error(w, "不能重命名池根", http.StatusBadRequest)
+		return
+	}
 	if _, err := os.Lstat(srcAbs); err != nil {
 		http.Error(w, "源不存在", http.StatusNotFound)
 		return
@@ -131,11 +148,28 @@ func handleRename(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	// 同名 no-op:POSIX rename 到同一路径本就是无操作成功,不发起 syscall。
+	if srcAbs == dstAbs {
+		common.LogAuditRequest(r, "files", "rename",
+			fmt.Sprintf("path=%s new_name=%s same-name no-op", req.Path, req.NewName), "success")
+		common.JSONResponse(w, map[string]interface{}{"ok": true})
+		return
+	}
 	if _, err := os.Lstat(dstAbs); err == nil {
 		http.Error(w, "目标已存在", http.StatusConflict)
 		return
 	}
-	if err := os.Rename(srcAbs, dstAbs); err != nil {
+	// renameat2(RENAME_NOREPLACE):Lstat 预检之后仍有 TOCTOU 窗口,
+	// 用内核原子的"目标存在即失败"兜底,避免静默覆盖目标数据。
+	if err := unix.Renameat2(unix.AT_FDCWD, srcAbs, unix.AT_FDCWD, dstAbs, unix.RENAME_NOREPLACE); err != nil {
+		if errors.Is(err, unix.EEXIST) || errors.Is(err, unix.ENOTEMPTY) {
+			http.Error(w, "目标已存在", http.StatusConflict)
+			return
+		}
+		if errors.Is(err, unix.ENOENT) {
+			http.Error(w, "源不存在", http.StatusNotFound)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

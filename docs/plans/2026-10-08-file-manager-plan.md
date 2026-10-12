@@ -1162,11 +1162,22 @@ git commit -m "feat(filemgmt): 前端文件页 v1 — 浏览/面包屑/下载/�
 
 **Interfaces:** Produces `handleMkdir`(POST `/api/files/mkdir` body `{path, name}`)、`handleRename`(POST `/api/files/rename` body `{path, new_name}`)、`func validateFileName(name string) error`(禁 `/`、`..`、控制字符、>255 字节、空、`.`/`..` 全名)
 
-- [ ] Step 1: 失败测试 — mkdir 成功建目录且 mode 0755;mkdir 名称含 `/` 或 `..` 拒绝 400;rename 成功;rename 目标已存在 409;rename 到 `..` 名 400;两 handler 对 GET 返回 405
-- [ ] Step 2: 确认编译失败
-- [ ] Step 3: 实现 — validateFileName 纯函数 + 两 handler(resolvePoolPath 双路径:父目录 + 目标名 join 后**再过一次** resolvePoolPath 防拼接逃逸);handler 内 `common.LogAuditRequest(r, "files", "mkdir"/"rename", "path=... name=...", "success")` 富 detail
-- [ ] Step 4: 测试绿 + build
-- [ ] Step 5: Commit `feat(filemgmt): 新建目录与重命名 — 名称白名单校验 + 双重路径锚定`
+- [x] Step 1: 失败测试 — mkdir 成功建目录且 mode 0755;mkdir 名称含 `/` 或 `..` 拒绝 400;rename 成功;rename 目标已存在 409;rename 到 `..` 名 400;两 handler 对 GET 返回 405
+- [x] Step 2: 确认编译失败
+- [x] Step 3: 实现 — validateFileName 纯函数 + 两 handler(resolvePoolPath 双路径:父目录 + 目标名 join 后**再过一次** resolvePoolPath 防拼接逃逸);handler 内 `common.LogAuditRequest(r, "files", "mkdir"/"rename", "path=... name=...", "success")` 富 detail
+- [x] Step 4: 测试绿 + build
+- [x] Step 5: Commit `feat(filemgmt): 新建目录与重命名 — 名称白名单校验 + 双重路径锚定`
+
+**修订记录(2026-10-12 Task 7 review)**:独立审查结论「需修复后合入」(Critical 0 / Important 2 / Minor 8),拍板如下:
+- Important#1:handleRename 未拒绝池根本身——path="" 时 resolvePoolPath 按设计返回池根,随后对池根发起 rename syscall(EINVAL→500)。修订:srcAbs == normalizedRoot() 时 400「不能重命名池根」。另澄清既有文档/代码分歧:design §六第 1 条写 resolvePoolPath「拒绝空路径」,path.go 实际放行空串=池根(list/usage 浏览根合法)——**以代码为准,后续写 handler 一律自行防御根路径**,design 该句待 M3 文档轮修正。
+- Important#2:rename 的 Lstat 预检与 os.Rename 之间 TOCTOU 静默覆盖目标(数据丢失类)。修订:改用 `unix.Renameat2(RENAME_NOREPLACE)`(golang.org/x/sys 由 indirect 转直接依赖),EEXIST/ENOTEMPTY 映射 409;Lstat 预检保留(常规路径的友好 409,renameat2 是并发兜底)。
+- Minor#1:mkdir 双重锚定退化(第一次解析的 parentAbs 被 `_ =` 丢弃)。修订:断言 `targetAbs == filepath.Join(parentAbs, req.Name)`,不一致 500,让双锚定名副其实。
+- Minor#2:validateFileName 的 `utf8.RuneCountInString(name) > 255` 是冗余条件(rune 数恒 ≤ 字节数),删除,只留 `len(name) > 255`。
+- Minor#3:rename 同名(srcAbs==dstAbs)原实现 409「目标已存在」。拍板:改 200 no-op(POSIX 同名 rename 即无操作成功),补测试。
+- Minor#5:mkdir mode 0755 受进程 umask 影响(systemd 服务 umask 不定)。修订:os.Mkdir 后显式 `os.Chmod(targetAbs, 0755)`,测试断言恒 0755。
+- Minor#6(审计类别小写 "files"+英文 action vs 仓内既有大写类别+中文 action 约定):本 Task 维持现约定,延至 M2 收尾统一拍板,不在本轮改。
+- Minor#4(反斜杠/首尾空格/Windows 保留名/Unicode NFC 不在白名单):规格未要求,Linux 下合法且双重锚定无路径风险,列为未来规格增强(SMB Windows 客户端体验),不在本轮改。
+- 补测试:rename 池根→400;rename 同名→200 no-op(旧名仍在、内容不变);mkdir 显式 chmod 后 mode 恒 0755。
 
 ### Task 8: 上传(流式)
 
