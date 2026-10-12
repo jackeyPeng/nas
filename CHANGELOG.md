@@ -4,12 +4,44 @@
 
 | 版本 | 日期 | 主要变化 |
 |------|------|---------|
+| v1.4.0-beta.17 | 2026-10-12 | 面板文件管理器 M1 v1 只读基线 — 内置「文件」页取代 FileBrowser 外链（浏览/面包屑/下载/zip 打包/预览/用量）+ resolvePoolPath 路径安全核心（穿越/符号链接逃逸 fail-closed）+ checklist 新增模块 17（166 项/18 模块，修正存量统计口径）+ 产品手册 7.8 章节 |
 | v1.4.0-beta.16 | 2026-10-08 | 文档快照 — 新增《协议服务配置详解》(docs/protocol-service-configs.md，6 协议 + 横切配置代码逐项核对)+ 修正 GenerateNFSConfig 过期注释(与 no_root_squash 默认行为对齐)。文件管理器开发前的回滚基线，不含二进制变更 |
 | v1.4.0-beta.15 | 2026-09-24 | 家用可用性优先 — NFS 默认 no_root_squash+insecure（挂载即可写、NAT 后可挂）+ public 共享 guest ok + fail2ban 放宽（ban 10 分钟/10 次）+ S3 短用户名 access key 修复 + 审计日志全覆盖加固 + rclone 同步实时进度 |
 | v1.4.0-beta.14 | 2026-09-19 | 在线升级加固 — 二进制原子替换 + CLI 升级验签 + 升级后配置幂等迁移（setup.sh --config-only）+ FileBrowser 版本单一事实源 |
 | v1.4.0-beta.13 | 2026-09-19 | NFS 导出对所有网段开放（跨网段客户端可挂载） |
 | v1.4.0-beta.12 | 2026-09-18 | 创建向导按已选磁盘实时预估容量（选目标后预览面板 + 各方案可用容量/注意事项）+ 登录页品牌 slogan |
 | v1.4.0-beta.11 | 2026-09-18 | 当前连接展示（监控页，SMB 会话 + 各协议端口归类）+ 回收站改 per-share `.recycle/`（删除=rename 零拷贝，恢复保留目录树，旧 `#recycle` 兼容）+ 存储页 tab 切换跳动修复 |
+
+---
+
+## [2026-10-12] - 面板文件管理器 M1 v1 只读基线
+
+### 版本 v1.4.0-beta.17
+
+### 新增（feat/file-manager 分支，docs/plans/2026-10-08-file-manager-{design,plan}.md 16 Task 计划的 Task 1-6）
+
+- **web/modules/filemgmt 模块（整池文件管理，取代 FileBrowser）**：
+  - 路径安全核心 `resolvePoolPath`（path.go）：所有 handler 的唯一路径入口，入参一律池根相对路径；拒绝绝对路径/`..` 子串/池外路径；符号链接逃逸校验对**最深已存在祖先** EvalSymlinks（堵住「叶子不存在但中间目录是逃逸链接」的穿越）；池根 normalizedRoot 归一后比较（生产 /data/nas1 为符号链接时不误拒）
+  - 列目录 `GET /api/files/list`（browse.go）：排序/属主/权限位/符号链接标注，2000 条截断 + truncated 标志
+  - 下载 `GET /api/files/download` + 目录 `GET /api/files/zip`（transfer.go）：ServeContent+Range 断点续传；zip 流式写 ResponseWriter，符号链接存 stub 不跟随，zip 根为符号链接目录时先 EvalSymlinks 再 Walk（防空壳包）
+  - 预览 `GET /api/files/preview` + 用量 `GET /api/files/usage`（preview.go）：文本 ≤1MB JSON 传输 + 前端 x-text 转义（无效 UTF-8→U+FFFD）；图片 ≤10MB；SVG 一律 415（可内联脚本，预览即存储型 XSS）；du 独立异步端点，du_status 三态 ok/timeout/error，前端非 ok 一律降级
+- **前端「文件」页 v1**：目录浏览 + 面包屑导航 + 下载 + 预览 + 用量展示；导航「文件」入口由 FileBrowser 外链替换为面板内页面；blob URL closePreview 防泄漏；预览截断文案 i18n 化
+
+### 安全
+
+- download/preview 响应带 `X-Content-Type-Options: nosniff`；1MB 截断边界测试
+- resolvePoolPath fail-closed 设计 + 全覆盖单测（穿越/逃逸/归一化）
+
+### 文档
+
+- feature-operation-checklist.md：新增模块 17「文件管理（FileMgmt）」8 操作项；**修正存量统计口径**（旧汇总表写 158/用户操作 83，awk 实算 157/82，本次按实算基数更新为 166 项/18 模块）；「系统自动任务汇总」重编号为第 18 节并收录路径锚定校验项
+- nas-product-manual.md：新增 7.8「面板文件管理 — 内置 Web 文件页」；7.6 FileBrowser 加过渡期说明（入口已替换，M2 后默认不再安装）
+- TODO.md：新增 #34 面板文件管理（取代 FileBrowser），状态进行中（M1 完成，M2/M3 待办）
+
+### 说明
+
+- FileBrowser 服务本期仍随 setup.sh 安装、仍可独立访问（8081），仅面板导航入口替换；setup.sh 默认不装 FileBrowser 在 M2（beta.18）落地
+- v1 为只读基线：无上传/新建/重命名/移动/删除/权限操作，M2/M3 按里程碑推进
 
 ---
 

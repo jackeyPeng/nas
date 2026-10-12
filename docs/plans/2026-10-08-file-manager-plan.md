@@ -69,7 +69,7 @@ web/frontend/styles.css(或既有样式文件)  # 仅在缺组件时补,优先�
   - `func ownerShareOf(absPath string) (diskmgmt.FolderMeta, bool)` — folders.db 中 Path 前缀最长匹配的共享(删除时定位 .recycle 用)
   - `var poolRootOverride string`(仅测试置位;空则用 `/data/nas1`)
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```go
 package filemgmt
@@ -137,12 +137,12 @@ func TestResolvePoolPathKeepsInnerSymlink(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `cd web && go test ./modules/filemgmt/ -run TestResolvePoolPath -count=1`
 Expected: 编译失败 `undefined: resolvePoolPath / poolRootOverride`
 
-- [ ] **Step 3: 最小实现**
+- [x] **Step 3: 最小实现**
 
 ```go
 package filemgmt
@@ -253,12 +253,12 @@ func ownerShareOf(absPath string) (diskmgmt.FolderMeta, bool) {
 
 注:`absPath+sep` 与 `prefix` 的比较在 share 路径恰为 absPath 本身时也成立(相等加 sep 即前缀),无需单独 OR 条件。`GetAllFolderMeta` 无 DB 时返回 nil(range nil 与空 slice 行为一致),ownerShareOf 返回 false——测试不依赖真 DB。
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `cd web && go test ./modules/filemgmt/ -run TestResolvePoolPath -count=1 -v`
 Expected: 4 个测试全 PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web/modules/filemgmt/path.go web/modules/filemgmt/path_test.go
@@ -282,7 +282,7 @@ git commit -m "feat(filemgmt): 路径锚定安全核心 resolvePoolPath — 拒�
   - `func handleList(w, r)` — GET `/api/files/list?path=`;响应 `{"path": rel, "entries": [...], "truncated": bool, "breadcrumb": [...], "pool_usage": {...}}`
   - `func RegisterRoutes(mux *http.ServeMux)`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```go
 package filemgmt
@@ -363,12 +363,12 @@ func TestHandleListReturnsJSON(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `cd web && go test ./modules/filemgmt/ -run 'TestListDir|TestHandleList' -count=1`
 Expected: 编译失败 `undefined: listDir / handleList`
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 ```go
 package filemgmt
@@ -511,12 +511,12 @@ func breadcrumb(rel string) []map[string]string {
 
 (池根的 i18n 名称由前端用 `$t('files.pool_root')` 渲染,breadcrumb 里的 "池根" 仅作兜底——实现时后端返回 `name:""` 给池根,前端判空显示 i18n 文案。)
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `cd web && go test ./modules/filemgmt/ -count=1 -v`
 Expected: 全 PASS(含 Task 1 的 4 个)
 
-- [ ] **Step 5: main.go 接线**
+- [x] **Step 5: main.go 接线**
 
 `web/main.go` 第 138 行 `events.RegisterRoutes(mux)` 之后加:
 
@@ -529,7 +529,7 @@ import 块加 `"nas-panel/modules/filemgmt"`。
 Run: `cd web && go build ./...`
 Expected: 编译通过
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add web/modules/filemgmt/ web/main.go
@@ -552,7 +552,7 @@ git commit -m "feat(filemgmt): 列目录 API — 排序/属主/权限位/符号�
   - `func handleZip(w, r)` — GET `/api/files/zip?path=`;`archive/zip` 流式写 ResponseWriter,不落地临时文件;Content-Disposition attachment 文件名=目录名.zip
   - `func zipDir(w io.Writer, absRoot, zipPrefix string) error`(可单测的纯逻辑件)
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```go
 package filemgmt
@@ -639,12 +639,12 @@ func TestHandleZipRejectsTraversal(t *testing.T) {
 
 (测试里 `readAll` 直接用 `io.ReadAll`,import "io" 后替换。)
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `cd web && go test ./modules/filemgmt/ -run 'TestHandleDownload|TestZipDir|TestHandleZip' -count=1`
 Expected: 编译失败 `undefined: handleDownload / handleZip / zipDir`
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 ```go
 package filemgmt
@@ -779,7 +779,7 @@ func zipDir(w io.Writer, absRoot, zipPrefix string) error {
 }
 ```
 
-- [ ] **Step 4: 跑测试确认通过 + RegisterRoutes 追加**
+- [x] **Step 4: 跑测试确认通过 + RegisterRoutes 追加**
 
 filemgmt.go RegisterRoutes 加:
 
@@ -791,7 +791,7 @@ filemgmt.go RegisterRoutes 加:
 Run: `cd web && go build ./... && go test ./modules/filemgmt/ -count=1`
 Expected: 全 PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web/modules/filemgmt/
@@ -813,7 +813,7 @@ git commit -m "feat(filemgmt): 文件下载(ServeContent+Range)与目录 zip 流
   - `func handlePreview(w, r)` — GET `/api/files/preview?path=`;文本(按扩展名白名单 .txt/.md/.json/.yaml/.yml/.log/.conf/.ini/.csv/.sh)返回 `{"kind":"text","content":...,"truncated":bool}`;图片(.jpg/.jpeg/.png/.gif/.webp/.bmp)直接 ServeContent;**SVG 一律拒绝**(XSS,对齐 spec §十四.5)返回 415;其他类型 415 `{"kind":"unsupported"}`
   - `func handleUsage(w, r)` — GET `/api/files/usage?path=`;df 池挂载点总量/已用 + 当前目录 du -sb(超时 5s,超时返回 `"du":null,"du_status":"timeout"`)
 
-- [ ] **Step 1: 写失败测试**(文本预览/截断/SVG 拒绝/usage 结构)
+- [x] **Step 1: 写失败测试**(文本预览/截断/SVG 拒绝/usage 结构)
 
 ```go
 package filemgmt
@@ -881,9 +881,9 @@ func TestPreviewUnsupportedType(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 确认失败** — `cd web && go test ./modules/filemgmt/ -run TestPreview -count=1` → `undefined: handlePreview`
+- [x] **Step 2: 确认失败** — `cd web && go test ./modules/filemgmt/ -run TestPreview -count=1` → `undefined: handlePreview`
 
-- [ ] **Step 3: 实现**(要点)
+- [x] **Step 3: 实现**(要点)
 
 ```go
 var textExts = map[string]bool{".txt": true, ".md": true, ".json": true, ".yaml": true,
@@ -923,9 +923,9 @@ func handlePreview(w http.ResponseWriter, r *http.Request) {
 
 handleUsage:df 用 `common.SudoOutput` 免 sudo 也可(面板 root,直接 `exec.Command("df", "--output=size,used,avail,pcent", mountpoint)`);du 用 `exec.CommandContext`(5s 超时)`du -sb --apparent-size <abs>`,超时返回 du:null + du_status:"timeout"。响应 `{"pool":{"total_kb":...,"used_kb":...,"avail_kb":...,"use_pct":"42%"},"dir":{"bytes":123,"du_status":"ok"}}`。
 
-- [ ] **Step 4: 测试过 + 注册路由 + build** — RegisterRoutes 加 preview/usage 两行;`cd web && go build ./... && go test ./modules/filemgmt/ -count=1` 全绿
+- [x] **Step 4: 测试过 + 注册路由 + build** — RegisterRoutes 加 preview/usage 两行;`cd web && go build ./... && go test ./modules/filemgmt/ -count=1` 全绿
 
-- [ ] **Step 5: Commit** — `git commit -m "feat(filemgmt): 文本/图片预览(SVG 拒绝防 XSS)+ 池/目录用量(du 超时兜底)"`
+- [x] **Step 5: Commit** — `git commit -m "feat(filemgmt): 文本/图片预览(SVG 拒绝防 XSS)+ 池/目录用量(du 超时兜底)"`
 
 ---
 
@@ -940,7 +940,7 @@ handleUsage:df 用 `common.SudoOutput` 免 sudo 也可(面板 root,直接 `exec.
 - Consumes: Task 2-4 的 4 个 GET 端点
 - Produces: 可用的 files 页(浏览/下载/预览)
 
-- [ ] **Step 1: 导航项替换 FileBrowser 外链**
+- [x] **Step 1: 导航项替换 FileBrowser 外链**
 
 index.html:42(移动端菜单)当前是:
 
@@ -956,7 +956,7 @@ index.html:42(移动端菜单)当前是:
 
 侧边栏(index.html:115 附近,diskmgmt 的 `<li>` 旁)加同款 `<li :class="{active: page === 'files'}" @click="navigate('files')">📁 $t('nav.file_manager')</li>`(结构照抄相邻 li)。
 
-- [ ] **Step 2: files 页 div**
+- [x] **Step 2: files 页 div**
 
 在 diskmgmt 页 div(index.html:1188)之后加(骨架,样式类全部复用既有):
 
@@ -1022,7 +1022,7 @@ index.html:42(移动端菜单)当前是:
 
 注意:文本预览用 `x-text`(自动转义,防 XSS);图片 `src` 指向 `/api/files/preview?path=...`(带认证 cookie/token 的方式与既有 download 一致——查 app.js 里既有认证请求怎么带 token,照抄同款 fetch 封装,预览图片改用 blob URL:fetch → blob → URL.createObjectURL)。
 
-- [ ] **Step 3: app.js 状态与方法**
+- [x] **Step 3: app.js 状态与方法**
 
 在 Alpine data 里加(位置照抄 diskmgmt 状态附近):
 
@@ -1053,6 +1053,8 @@ async loadFiles(rel) {
     } catch (e) { this.toast(e.message, 'error'); }
     finally { this.filesPage.loading = false; }
 },
+// du_status 三态(Task 4 review Important#1):ok=bytes 有值;timeout/error=bytes 为 null,
+// 前端对非 ok 一律降级展示"用量计算中/不可用",不 switch 具体态
 async loadFilesUsage(rel) {
     try {
         const resp = await this.api('/api/files/usage?path=' + encodeURIComponent(rel));
@@ -1103,7 +1105,7 @@ fmtTime(ts) { return new Date(ts * 1000).toLocaleString(); },
 
 (`this.api(...)` / `this.toast(...)` 是既有封装——实现前 grep app.js 确认方法名,若既有封装叫别的名(如 `req`/`notify`),照既有名用。)
 
-- [ ] **Step 4: i18n 文案**
+- [x] **Step 4: i18n 文案**
 
 zh-CN.json 加(位置按 key 字母序/邻近 nav 段):
 
@@ -1123,11 +1125,11 @@ en-US.json 对应英文("Pool root"/"Name"/"Size"/"Owner"/"Permissions"/"Modifie
 Run: `python3 scripts/check-i18n.py`
 Expected: 0 缺失
 
-- [ ] **Step 5: 浏览器实测**
+- [x] **Step 5: 浏览器实测**
 
 本地起面板(或部署到测试机),验证:导航进 files 页 → 列池根(public + 各用户 home)→ 点进 public → 下载文件 → 预览 txt/图片 → 面包屑回退 → 中英文切换文案完整 → 符号链接显示 target 且不可点进池外。
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add web/frontend/
@@ -1144,11 +1146,11 @@ git commit -m "feat(filemgmt): 前端文件页 v1 — 浏览/面包屑/下载/�
 - Modify: `TODO.md`(FileBrowser 取代项标进行中)
 - Modify: `docs/nas-product-manual`(文件管理章节,若手册有对应结构)
 
-- [ ] **Step 1:** 按 nas-storage-architecture skill 的"更新文档和 KB"清单执行:checklist(含重算统计)+ 产品手册 + CHANGELOG + TODO
-- [ ] **Step 2:** 红线 grep:`grep -rnE "10\.216\.|10\.187\.|192\.168\.213\.|nas123456" scripts/ configs/ web/frontend/ .env.example` 必须空
-- [ ] **Step 3:** `cd web && go build ./... && go test ./... -count=1` 全绿(无关包存量失败用 git stash 对照确认后在 commit message 注明)
-- [ ] **Step 4:** Commit + tag v1.4.0-beta.17 + push;是否跑 release.sh 由用户拍板(spec §十:M1 完成即可对外宣布)
-- [ ] **Step 5:** KB 同步:新文档 kb_write 到 `NAS项目/产品文档/`,CHANGELOG 更新 `NAS项目/CHANGELOG.md`
+- [x] **Step 1:** 按 nas-storage-architecture skill 的"更新文档和 KB"清单执行:checklist(含重算统计)+ 产品手册 + CHANGELOG + TODO
+- [x] **Step 2:** 红线 grep:`grep -rnE "10\.216\.|10\.187\.|192\.168\.213\.|nas123456" scripts/ configs/ web/frontend/ .env.example` 必须空
+- [x] **Step 3:** `cd web && go build ./... && go test ./... -count=1` 全绿(无关包存量失败用 git stash 对照确认后在 commit message 注明)
+- [x] **Step 4:** Commit + tag v1.4.0-beta.17 + push;是否跑 release.sh 由用户拍板(spec §十:M1 完成即可对外宣布)
+- [x] **Step 5:** KB 同步:新文档 kb_write 到 `NAS项目/产品文档/`,CHANGELOG 更新 `NAS项目/CHANGELOG.md`
 
 ---
 
