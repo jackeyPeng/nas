@@ -1214,11 +1214,11 @@ git commit -m "feat(filemgmt): 前端文件页 v1 — 浏览/面包屑/下载/�
 
 **Interfaces:** Produces `handleMove`(POST `{src, dst_dir}`)、`handleCopy`(POST `{src, dst_dir}`)、`func sameFS(a, b string) bool`(比较 syscall.Stat_t.Dev)、`func copyTree(src, dst string) error`(io.Copy 流式递归,先建目录后拷文件,符号链接拷链接本身 os.Symlink 不跟随)
 
-- [ ] Step 1: 失败测试 — 同 fs move = rename(源消失目标在);move 目标已存在同名 409;copy 后源仍在;copy 目录递归内容一致;move/copy 目标目录不存在 404;src 穿越拒 400;copyTree 遇符号链接不跟随(目标处是链接不是内容)
-- [ ] Step 2: 确认失败
-- [ ] Step 3: 实现 — sameFS 用 Stat_t.Dev;move:同 fs os.Rename,跨 fs copyTree+校验字节数+os.RemoveAll(源)(校验失败保留源并 500 告警,不静默丢数据);copy:一律 copyTree;两者 dst 完整路径再过 resolvePoolPath
-- [ ] Step 4: 测试绿 + build
-- [ ] Step 5: Commit `feat(filemgmt): 移动/复制 — 同 fs 零拷贝 rename,跨 fs copy+delete 带校验`
+- [x] Step 1: 失败测试 — 同 fs move = rename(源消失目标在);move 目标已存在同名 409;copy 后源仍在;copy 目录递归内容一致;move/copy 目标目录不存在 404;src 穿越拒 400;copyTree 遇符号链接不跟随(目标处是链接不是内容)
+- [x] Step 2: 确认失败
+- [x] Step 3: 实现 — sameFS 用 Stat_t.Dev;move:同 fs os.Rename,跨 fs copyTree+校验字节数+os.RemoveAll(源)(校验失败保留源并 500 告警,不静默丢数据);copy:一律 copyTree;两者 dst 完整路径再过 resolvePoolPath
+- [x] Step 4: 测试绿 + build
+- [x] Step 5: Commit `feat(filemgmt): 移动/复制 — 同 fs 零拷贝 rename,跨 fs copy+delete 带校验`
 
 ### Task 10: 删除(进 .recycle,与回收站页联动)
 
