@@ -1232,6 +1232,16 @@ git commit -m "feat(filemgmt): 前端文件页 v1 — 浏览/面包屑/下载/�
 
 ### Task 10: 删除(进 .recycle,与回收站页联动)
 
+**拍板记录(2026-10-12 Task 10 开工前,plan Self-Review 预留验证项裁决)**:
+- **recycle.go 对 `<unixnano>` 额外一级不兼容,已实证**:handleRecycleRestore 把 `rel_path` 当原相对路径恢复(`dst = sharePath/relPath`,recycle.go:197),若布局为 `.recycle/<user>/<unixnano>/<basename>`,恢复会落到 `<share>/<unixnano>/<basename>` 错误位置;listRecycleDir 的顶层枚举(:95-114)也会把 Name/RelPath 显示成无意义的纳秒数。**按 plan Self-Review 预案改用与 SMB vfs recycle 完全同构的 keeptree 布局**:`<share.Path>/.recycle/<admin>/<目标在 share 内的原相对路径...>`。
+- **同名冲突**:回收站内 rel path 已存在时,basename 追加 `.<unixnano>` 后缀(如 `file.txt.1760...`),restore 语义不变(恢复为带后缀名,与回收站页既有 `.restored` 冲突模式同款思路);目录冲突同理整树带后缀。
+- **无所属 share**:落 `<poolRoot>/.recycle/<admin>/<basename>`(池根回收站不进回收站页——recycleRoots 只枚举共享,plan 既定语义;冲突加后缀同款)。
+- **`.recycle` 常量**:diskmgmt.recycleDirName 未导出,按 plan 在 filemgmt 定义同值常量 + 注释指向 diskmgmt/recycle.go 同源。
+- **池根防御**:path==池根("" / ".")→ 400「不能删除池根」(写 handler 根路径防御既定拍板,Task 7 复审记录)。
+- **`.recycle` 自身不可删**:目标相对路径任一段为 `.recycle` → 400(防套娃);池根 .recycle 同样受保护。
+- **admin 用户名**:common.RequestUsername(r) JWT 身份,空则兜底 common.GetNASUser();测试环境无 JWT 走兜底,可测。
+- **删除 = os.Rename 零拷贝**;.recycle/<admin>/ 父目录 MkdirAll 0700;目录删除整子树随 rename 保留。
+
 **Files:** Modify `mutate.go` + 测试
 
 **Interfaces:** Produces `handleDelete`(POST `{path}`);删除目标 = `ownerShareOf(abs)`(Task 1)定位所属 share → `<share.Path>/.recycle/<admin>/<unixnano>/<basename>`;无所属 share → `<poolRoot>/.recycle/<admin>/<unixnano>/<basename>`;admin 用户名 = `common.RequestUsername(r)` 的 JWT 身份(兜底 common.GetNASUser());os.Rename 零拷贝;父目录不存在则 MkdirAll(mode 0700)
