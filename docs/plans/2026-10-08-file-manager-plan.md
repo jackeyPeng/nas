@@ -1202,6 +1202,14 @@ git commit -m "feat(filemgmt): 前端文件页 v1 — 浏览/面包屑/下载/�
 
 ### Task 9: move + copy(同 fs rename,跨 fs copy+delete)
 
+**拍板记录(2026-10-12 Task 9 开工前,规格空白裁决)**:
+- **JSON 字段名 `dst_dir`(snake_case)**:plan Interfaces 与 design §四表(`dstDir`)不一致,以 plan 为准——仓内既有端点均 snake_case(rename 的 `new_name`);design 该表留 M3 文档轮统一修正。
+- **v2 不支持 `overwrite=yes`**:design §八错误表写了「同名冲突(上传/移动/复制/重命名)→409+overwrite 重试」,但 rename(Task 7)已按 409-only 落地并过审;目录覆盖替换语义复杂(非空目录 ENOTEMPTY)且易误删,move/copy 维持 409-only 保持一致,overwrite 扩展留 M3 按需拍板。
+- **权限对齐**:同 fs move=rename 零改动(属主/mode 天然保留);copy 与跨 fs move 新落盘文件逐个走 alignNewFilePerms(权限跟目标共享,与上传一致);copyTree 先按源 mode 写(chmod 源 mode),再被 alignNewFilePerms 对齐覆盖——净效果=目标共享语义;符号链接跳过 chmod/chown(Lchown 不做)。
+- **跨 fs move 校验**:copyTree 返回写入总字节数,与源树 stat 总字节比对,不一致→保留源+500 告警,绝不 RemoveAll;一致才 os.RemoveAll(src)。跨 fs 分支抽 `moveCrossFS(srcAbs, dstAbs) error` 纯编排函数,单测直接调它(测试环境无第二个 fs,handler 级跨 fs 路径由同构机验收覆盖)。
+- **大目录进度**:design §5.3 允许简化——v2 同步实现(HTTP 阻塞至完成),不做 task-id/SSE;前端 Task 11 显示「处理中」。
+- **池根防御**:src==池根 → 400(对照 Task 7 rename 池根拒绝);dst_dir 不存在→404、非目录→400;dst 目标已存在→409。
+
 **Files:** Modify `mutate.go` + 测试
 
 **Interfaces:** Produces `handleMove`(POST `{src, dst_dir}`)、`handleCopy`(POST `{src, dst_dir}`)、`func sameFS(a, b string) bool`(比较 syscall.Stat_t.Dev)、`func copyTree(src, dst string) error`(io.Copy 流式递归,先建目录后拷文件,符号链接拷链接本身 os.Symlink 不跟随)
