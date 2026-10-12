@@ -1220,6 +1220,16 @@ git commit -m "feat(filemgmt): 前端文件页 v1 — 浏览/面包屑/下载/�
 - [x] Step 4: 测试绿 + build
 - [x] Step 5: Commit `feat(filemgmt): 移动/复制 — 同 fs 零拷贝 rename,跨 fs copy+delete 带校验`
 
+**修订记录(2026-10-12 Task 9 review)**:独立审查结论「需修复后合入」(Critical 1 / Important 4 / Minor 3),拍板如下:
+- Critical#1:**复制/移动到 src 自身子目录 → copyTree 失控无限递归可写满磁盘**(dst_dir=a/b、src=a 时 WalkDir 惰性遍历会看见新建的 a/b/a 继续向下自我嵌套;reviewer 沙箱实证 2000+ entry 仍增长)。校验链只拒了 srcAbs==targetAbs,漏了 dst_dir 在 src 树内。修订:resolveMoveCopyTarget 增加 `dstDirAbs == srcAbs || strings.HasPrefix(dstDirAbs, srcAbs+sep)` → 400(GNU cp 同款语义),move/copy 共用;补「copy/move 到 src 子目录被拒 400」测试。
+- Important#1:handleMove 同 fs 用裸 os.Rename,409 预检与 rename 之间 TOCTOU 可静默覆盖目标,违反「目标存在一律 409」拍板且与 handleRename(Task 7 renameat2)不一致。修订:同 fs 分支改 `unix.Renameat2(RENAME_NOREPLACE)`,EEXIST/ENOTEMPTY→409,照抄 handleRename 既有分支。
+- Important#2:handleCopy 失败无条件 RemoveAll(dstAbs)——Task 8 已修的同款问题重现:copyTree 内 copyFile(O_EXCL)/os.Symlink 撞并发方已建目标报 EEXIST 时,RemoveAll 会误删并发方成品。修订:copy 错误映射区分 `errors.Is(err, fs.ErrExist)` → 409 且不清理;其余错误才 RemoveAll+500。
+- Important#3:跨 fs move 未做权限对齐,偏离拍板「copy 与跨 fs move 新落盘文件逐个走 alignNewFilePerms」。修订:moveCrossFS 字节校验通过后、RemoveAll(src) **之前**调 alignCopiedTreePerms(dstAbs);对齐失败 → 保留源、清理目标、返回错误(任何失败点源都还在)。
+- Important#4:跨 fs move 失败后目标半成品不清理,重试被 409 卡死。修订:handleMove 跨 fs 错误分支 os.RemoveAll(dstAbs),带 Important#2 同款 EEXIST 例外。
+- Minor#1:sameFS 改用 syscall.Lstat(与 rename/copyTree 操作链接本身的口径一致;Stat 跟随链接会对跨 fs 链接误判)。本轮修。
+- Minor#2:moveCrossFS 的 treeByteSize 在 copyTree 之后统计,复制期间源被并发修改会误报(失败方向安全:保留源)。本轮加注释说明接受该竞态,不改时序。
+- Minor#3:测试缺口在拍板降级许可内(字节校验失败分支/跨 fs sameFS 分支/逃逸链接 handler 层),记录留同构机验收;C1 场景测试随本轮修复补上。
+
 ### Task 10: 删除(进 .recycle,与回收站页联动)
 
 **Files:** Modify `mutate.go` + 测试
