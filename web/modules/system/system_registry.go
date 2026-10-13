@@ -232,7 +232,7 @@ func GetRegistry() RegistryReport {
 
 // fileBrowserInstalled 判断 FileBrowser 二进制是否存在。
 // beta.18 起 setup.sh 默认不装 FileBrowser（面板文件管理已取代），
-// 新装机上 FileBrowser 专属注册表项（ID 6/21/24/33）若仍按"必须存在"硬检查会导致 46/46 口径跌到 42/46；
+// 新装机上 FileBrowser 专属注册表项（ID 6/21/24/29/33）若仍按"必须存在"硬检查会导致 46/46 口径跌落；
 // 以 /usr/local/bin/filebrowser 存在性为门条件化这些项，--with-filebrowser 装过的机器维持真实检查。
 func fileBrowserInstalled() bool {
 	_, err := os.Stat("/usr/local/bin/filebrowser")
@@ -396,7 +396,9 @@ func RefreshRegistry() RegistryReport {
 		updateItem(28, "fail", "未配置")
 	}
 
-	if _, err := os.Stat("/etc/filebrowser/filebrowser.db"); err == nil {
+	if !fileBrowserInstalled() {
+		updateItem(29, "pass", "未安装(面板文件管理已取代,beta.18 起默认跳过)")
+	} else if _, err := os.Stat("/etc/filebrowser/filebrowser.db"); err == nil {
 		// FileBrowser API 无法区分"用户不存在"和"密码错误"
 		// 检查数据库文件存在且 filebrowser 服务运行中 = 用户应已创建
 		fbActive, _ := common.ExecOutput("systemctl", "is-active", "filebrowser")
