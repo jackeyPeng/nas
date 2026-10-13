@@ -1422,9 +1422,10 @@ function nasPanel() {
             await this.loadFiles(this.filesPage.path);
         },
         // ═══ 权限对话框(单条属性回显 + 批量 chmod 共用) ═══
-        // modeToSymbolic('0644') -> '-rw-r--r--'(纯 JS 预览,不请求后端);非 3~4 位八进制输入返回 null
+        // modeToSymbolic('0644') -> '-rw-r--r--'(纯 JS 预览,不请求后端);
+        // Task 15 复审 M2:正则收紧为 ^0?[0-7]{3}$ 与后端对齐(拒 1755 等 setuid 位),非法返回 null
         modeToSymbolic(mode) {
-            if (!/^[0-7]{3,4}$/.test(mode || '')) return null;
+            if (!/^0?[0-7]{3}$/.test(mode || '')) return null;
             const perm = mode.slice(-3);
             const bits = [['r', 4], ['w', 2], ['x', 1]];
             let out = '-';
@@ -1438,7 +1439,12 @@ function nasPanel() {
             if (!this.users.length) await this.loadUsers();
             if (!this.userGroups.length) await this.loadUserGroups();
             const data = await this.api('/files/stat?path=' + encodeURIComponent(this.filesPage.relJoin(entry.name)));
-            if (!data) return;
+            // Task 15 复审 I1:api() 对非 JSON 错误响应(http.Error 纯文本)返回文本字符串(真值),
+            // !data 拦不住——调用方守卫:必须是含 mode 字段的对象,否则 toast 错误文本且不开对话框
+            if (!data || typeof data !== 'object' || !data.mode) {
+                if (typeof data === 'string' && data.trim()) this.showToast(data.trim(), 'error');
+                return;
+            }
             this.filesPage.permsDialog = {
                 show: true, entry, stat: data, modeInput: data.mode, recursive: false,
                 ownerSel: '', groupSel: '', origOwner: data.owner, origGroup: data.group,
@@ -1473,37 +1479,58 @@ function nasPanel() {
                 await this.saveBatchPerms();
                 return;
             }
+            // Task 15 复审 I2:mode 合法性前端闸门(非空时),不再直接吃后端 400
+            if (d.modeInput && !this.modeToSymbolic(d.modeInput)) {
+                d.error = this.t('files.perms_mode_invalid');
+                return;
+            }
             d.error = '';
             d.saving = true;
-            try {
-                const rel = this.filesPage.relJoin(d.entry.name);
-                if (d.modeInput && d.modeInput !== d.stat.mode) {
+            const rel = this.filesPage.relJoin(d.entry.name);
+            // Task 15 复审 M1:mode 比较归一化(去前导零),"644" 与 "0644" 等价不触发冗余请求
+            const normMode = m => String(m || '').replace(/^0+/, '');
+            // Task 15 复审 I3:两请求独立失败、错误各自收集,全部成功才关对话框(拍板原文语义)
+            const errors = [];
+            if (d.modeInput && normMode(d.modeInput) !== normMode(d.stat.mode)) {
+                try {
                     await this.fileWrite('/chmod', { path: rel, mode: d.modeInput, recursive: d.recursive });
+                } catch (err) {
+                    errors.push('chmod: ' + String(err.message || err));
                 }
-                const ownerChanged = d.ownerSel && d.ownerSel !== d.origOwner;
-                const groupChanged = d.groupSel && d.groupSel !== d.origGroup;
-                if (ownerChanged || groupChanged) {
+            }
+            const ownerChanged = d.ownerSel && d.ownerSel !== d.origOwner;
+            const groupChanged = d.groupSel && d.groupSel !== d.origGroup;
+            if (ownerChanged || groupChanged) {
+                try {
                     await this.fileWrite('/chown', {
                         path: rel,
                         owner: ownerChanged ? d.ownerSel : '',
                         group: groupChanged ? d.groupSel : '',
                         recursive: d.recursive,
                     });
+                } catch (err) {
+                    errors.push('chown: ' + String(err.message || err));
                 }
-                this.filesPage.permsDialog.show = false;
-                this.showToast(this.t('msg.op_success'), 'success');
-                await this.loadFiles(this.filesPage.path);
-            } catch (err) {
-                this.filesPage.permsDialog.error = String(err.message || err);
-            } finally {
-                this.filesPage.permsDialog.saving = false;
             }
+            this.filesPage.permsDialog.saving = false;
+            if (errors.length) {
+                this.filesPage.permsDialog.error = errors.join(' / ');
+                return;
+            }
+            this.filesPage.permsDialog.show = false;
+            this.showToast(this.t('msg.op_success'), 'success');
+            await this.loadFiles(this.filesPage.path);
         },
         async saveBatchPerms() {
             // E2E 发现:函数级 type-to-confirm 守卫(savePerms/confirmFixHomePerms 同款纵深防御,
             // 按钮 :disabled 只是 UI 层,直接调用本函数不应绕过确认词)
             if (this.permsConfirmDisabled()) return;
             const d = this.filesPage.permsDialog;
+            // Task 15 复审 I2:批量必填合法 mode,避免空 mode 直发 N 条注定 400 的请求
+            if (!this.modeToSymbolic(d.modeInput)) {
+                d.error = this.t('files.perms_mode_invalid');
+                return;
+            }
             const entries = d.batchEntries;
             d.error = '';
             d.saving = true;
