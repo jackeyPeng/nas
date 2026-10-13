@@ -1295,6 +1295,16 @@ git commit -m "feat(filemgmt): 前端文件页 v1 — 浏览/面包屑/下载/�
 
 ### Task 13: stat + chmod + chown
 
+**拍板记录(2026-10-13 Task 13 开工前,规格空白裁决)**:
+- **Files 行矛盾修正**:抽取 `resolveOwnerGroup(info)` 必然触碰 browse.go(现内联在 listDir 循环里)——授权对 browse.go 做**最小重构**(抽函数+调用点替换,行为逐字节不变,既有 browse 测试保持绿),Files 允许清单相应加 browse.go。
+- **池根防御**(写 handler 既定拍板):chmod/chown 目标为池根 → 400;stat 池根放行(只读)。
+- **chown owner/group 均可选**:空串=该项不变(os.Chown 传 -1);两者全空 → 400「owner/group 至少提供一项」;非空者必须 user.Lookup/LookupGroup 解析成功,否则 400(含具体项名)。
+- **符号链接语义**:非递归 chmod 目标是符号链接 → 400 拒绝(os.Chmod 跟随链接会改目标,与 recursive Walk「跳过链接」语义对齐,防误改);非递归 chown 目标是符号链接 → os.Lchown 改链接本身(放行,与递归 Walk 的 Lchown 语义一致);stat 一律 Lstat 语义(链接报自身)。
+- **.recycle 段不加守卫**:chmod/chown/stat 无套娃/数据搬迁风险(管理员 root 视角工具,修复回收站内权限是合法运维动作);仅 delete 需要防套娃(已落地)。
+- **审计**:chmod/chown 属 design §六.3 高危写操作,成功路径 handler 内 `common.LogAuditRequest(r, "files", "chmod"/"chown", "path=... mode=.../owner=... group=... recursive=...", "success")`;失败路径留给中间件。
+- **recursive 前端确认**:type-to-confirm 属 Task 15 前端职责,后端不加确认词参数(面板内 API,与既有 recursive 删除同模式)。
+- **stat 响应**:`recursive_possible` = Lstat 后 IsDir();mode 为数字(如 0644 十进制表示的 FileMode.Perm())+ mode_text(如 "-rw-r--r--" 或 "0644",对照 listDir 既有 mode_text 格式保持一致)。
+
 **Files:** Create `web/modules/filemgmt/perms.go` + `perms_test.go`;Modify `filemgmt.go`
 
 **Interfaces:** Produces:
