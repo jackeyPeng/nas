@@ -1303,7 +1303,7 @@ git commit -m "feat(filemgmt): 前端文件页 v1 — 浏览/面包屑/下载/�
 - **.recycle 段不加守卫**:chmod/chown/stat 无套娃/数据搬迁风险(管理员 root 视角工具,修复回收站内权限是合法运维动作);仅 delete 需要防套娃(已落地)。
 - **审计**:chmod/chown 属 design §六.3 高危写操作,成功路径 handler 内 `common.LogAuditRequest(r, "files", "chmod"/"chown", "path=... mode=.../owner=... group=... recursive=...", "success")`;失败路径留给中间件。
 - **recursive 前端确认**:type-to-confirm 属 Task 15 前端职责,后端不加确认词参数(面板内 API,与既有 recursive 删除同模式)。
-- **stat 响应**:`recursive_possible` = Lstat 后 IsDir();mode 为数字(如 0644 十进制表示的 FileMode.Perm())+ mode_text(如 "-rw-r--r--" 或 "0644",对照 listDir 既有 mode_text 格式保持一致)。
+- **stat 响应**:`recursive_possible` = Lstat 后 IsDir();**mode 为字符串八进制(如 "0644")**(2026-10-13 复审后改判:原措辞「数字」含混,实现落地为字符串八进制——Task 15 前端八进制输入框/预设按钮直接消费,契约以此为准)+ mode_text(如 "-rw-r--r--",对照 listDir 既有格式保持一致)。
 
 **Files:** Create `web/modules/filemgmt/perms.go` + `perms_test.go`;Modify `filemgmt.go`
 

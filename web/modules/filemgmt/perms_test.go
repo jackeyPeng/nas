@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/user"
 	"path/filepath"
 	"strconv"
 	"syscall"
@@ -29,6 +30,12 @@ func TestParseMode(t *testing.T) {
 		{"9999", 0, true},
 		{"rwx", 0, true},
 		{"1755", 0, true}, // setuid 位不放行,>0777
+		{"2755", 0, true}, // setgid 位不放行(Task 13 复审补)
+		{"4644", 0, true}, // 混合特殊位不放行
+		{"+644", 0, true}, // 前导 + 号
+		{" 644", 0, true}, // 前导空格
+		{"-644", 0, true}, // 负号
+		{"644 ", 0, true}, // 尾随空格
 		{"", 0, true},
 		{"06440", 0, true}, // 5 位数
 	}
@@ -104,17 +111,22 @@ func TestHandleStatFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Lstat 失败: %v", err)
 	}
-	wantMode := "0" + strconv.FormatInt(int64(info.Mode().Perm()), 8)
-	if resp["mode"] != wantMode {
-		t.Fatalf("mode=%v want %v", resp["mode"], wantMode)
+	// Task 13 复审 Minor:独立断言(不与实现共用格式化公式)——0640 文件
+	// mode 应为字符串八进制 "0640",mode_text 为符号位 "-rw-r-----"。
+	if resp["mode"] != "0640" {
+		t.Fatalf(`mode=%v want "0640"`, resp["mode"])
 	}
-	if resp["mode_text"] != info.Mode().String() {
-		t.Fatalf("mode_text=%v want %v", resp["mode_text"], info.Mode().String())
+	if resp["mode_text"] != "-rw-r-----" {
+		t.Fatalf(`mode_text=%v want "-rw-r-----"`, resp["mode_text"])
 	}
 	if resp["recursive_possible"] != false {
 		t.Fatalf("文件 recursive_possible 应为 false, got %v", resp["recursive_possible"])
 	}
+	// owner/group 独立对照:测试文件由本进程创建,uid/gid 即运行者。
 	wantOwner, wantGroup := resolveOwnerGroup(info)
+	if u, err := user.LookupId(strconv.Itoa(os.Geteuid())); err == nil && resp["owner"] != u.Username {
+		t.Fatalf("owner=%v want %v(运行者)", resp["owner"], u.Username)
+	}
 	if resp["owner"] != wantOwner {
 		t.Fatalf("owner=%v want %v", resp["owner"], wantOwner)
 	}
@@ -419,6 +431,24 @@ func TestHandleChownRecursiveOnFileRejected(t *testing.T) {
 
 // currentUsernameForTest 返回当前进程 euid 对应的用户名,供需要"合法用户名"的
 // 测试用例使用(校验分支测试不依赖 root,但仍需传一个 user.Lookup 能成功的名字)。
+// Task 13 复审 Minor:仅测试用辅助从生产文件 perms.go 移入本测试文件。
+func lookupCurrentUsername() (string, error) {
+	u, err := user.LookupId(strconv.Itoa(os.Geteuid()))
+	if err != nil {
+		return "", err
+	}
+	return u.Username, nil
+}
+
+// lookupUIDByName 返回系统用户名对应的数字 uid,供测试断言 chown 生效使用。
+func lookupUIDByName(name string) (int, error) {
+	u, err := user.Lookup(name)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(u.Uid)
+}
+
 func currentUsernameForTest() (string, error) {
 	return lookupCurrentUsername()
 }
@@ -482,5 +512,61 @@ func TestHandleChownRecursiveLchownSemanticsRootOnly(t *testing.T) {
 	targetStat := targetInfo.Sys().(*syscall.Stat_t)
 	if int(targetStat.Uid) == nobodyUID {
 		t.Fatalf("链接目标 owner 被意外修改为 nobody,应保持原值")
+	}
+}
+
+// Task 13 复审 Minor:非 root 也能覆盖 chown 成功路径——Linux 允许文件属主
+// chown 到自身现有 uid/gid(同值无变化),借此验证 handler 的 Lookup→Chown/Lchown
+// 分支选择逻辑本身,不等 root 环境。
+func TestHandleChownToSelfSucceedsNonRoot(t *testing.T) {
+	root := setupFakePool(t)
+	target := filepath.Join(root, "public", "selfown.txt")
+	if err := os.WriteFile(target, []byte("x"), 0644); err != nil {
+		t.Fatalf("写文件失败: %v", err)
+	}
+	currentUser, err := lookupCurrentUsername()
+	if err != nil {
+		t.Skipf("无法解析当前用户名: %v", err)
+	}
+	rec := httptest.NewRecorder()
+	handleChown(rec, chownReq(map[string]interface{}{"path": "public/selfown.txt", "owner": currentUser, "group": "", "recursive": false}))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("chown 到自身 uid(同值)应 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	// 文件仍可读且属主不变
+	info, err := os.Stat(target)
+	if err != nil {
+		t.Fatalf("文件应仍在: %v", err)
+	}
+	owner, _ := resolveOwnerGroup(info)
+	if owner != currentUser {
+		t.Fatalf("owner=%s want %s", owner, currentUser)
+	}
+}
+
+func TestHandleChownSymlinkToSelfLchownNonRoot(t *testing.T) {
+	root := setupFakePool(t)
+	target := filepath.Join(root, "public", "real.txt")
+	if err := os.WriteFile(target, []byte("x"), 0644); err != nil {
+		t.Fatalf("写文件失败: %v", err)
+	}
+	link := filepath.Join(root, "public", "selflnk")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatalf("建链接失败: %v", err)
+	}
+	currentUser, err := lookupCurrentUsername()
+	if err != nil {
+		t.Skipf("无法解析当前用户名: %v", err)
+	}
+	rec := httptest.NewRecorder()
+	handleChown(rec, chownReq(map[string]interface{}{"path": "public/selflnk", "owner": currentUser, "group": "", "recursive": false}))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("符号链接 chown(Lchown 同值)应 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	// 链接本身仍是符号链接(Lchown 不解引用)
+	fi, err := os.Lstat(link)
+	isLink := err == nil && (fi.Mode()&os.ModeSymlink != 0)
+	if !isLink {
+		t.Fatalf("目标应仍是符号链接: err=%v", err)
 	}
 }

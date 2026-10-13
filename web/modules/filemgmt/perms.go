@@ -55,25 +55,6 @@ func resolveOwnerGroup(info fs.FileInfo) (owner, group string) {
 	return owner, group
 }
 
-// lookupCurrentUsername 返回当前进程 euid 对应的用户名,供测试构造"合法用户名"
-// 参数使用。生产代码不依赖本函数。
-func lookupCurrentUsername() (string, error) {
-	u, err := user.LookupId(strconv.Itoa(os.Geteuid()))
-	if err != nil {
-		return "", err
-	}
-	return u.Username, nil
-}
-
-// lookupUIDByName 返回系统用户名对应的数字 uid,供测试断言 chown 生效使用。
-func lookupUIDByName(name string) (int, error) {
-	u, err := user.Lookup(name)
-	if err != nil {
-		return 0, err
-	}
-	return strconv.Atoi(u.Uid)
-}
-
 // ---------------------------------------------------------------------------
 // handleStat
 // ---------------------------------------------------------------------------
