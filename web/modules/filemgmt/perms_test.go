@@ -749,12 +749,40 @@ func TestHandleFixHomePermsRejectsGet(t *testing.T) {
 	}
 }
 
-// 失败即停路径:home 内放一个非 root 下属主非运行者的构造比较难在非 root 测试环境
-// 稳定构造(本进程对自己创建的文件总有权限 chmod/chown 到同值)。此处改用更可靠的
-// 构造方式——在子树中放一个本进程创建后立即移除写权限的目录,使 Walk 递归进入
-// 更深层的孙子节点时因父目录 0500(无执行？不对,目录需要 x 才能进入)导致 Stat
-// 失败。实测发现:对自建文件,chmod 本身不受已有 mode 限制(属主总可 chmod 自己
-// 拥有的文件/目录,uid 匹配即可,与当前 mode 无关),因此非 root 环境无法稳定构造
-// "chmod 失败"场景;chown 到其他用户在非 root 下必 EPERM,但这与"失败即停"要验证的
-// "递归中途失败 500 带路径"语义不完全一致(是否中途/全部失败依赖 Walk 顺序,路径
-// 断言会脆弱)。按 Task 要求"构造不了就注释说明,不强求"处理,此处不新增强行测试。
+// Task 14 复审 Minor-1 回归:home 位置是符号链接时必须 400 拒绝(Lstat 不跟随),
+// 否则递归 chmod/chown 会作用到池外目标。
+func TestHandleFixHomePermsSymlinkHomeRejected(t *testing.T) {
+	root := setupFakePool(t)
+	currentUser, err := lookupCurrentUsername()
+	if err != nil {
+		t.Skipf("无法解析当前用户名: %v", err)
+	}
+	// 池外真实目录 + 池内指向它的符号链接(名字=合法用户名)
+	outside := t.TempDir()
+	link := filepath.Join(root, currentUser)
+	if err := os.Symlink(outside, link); err != nil {
+		t.Fatalf("建链接失败: %v", err)
+	}
+	rec := httptest.NewRecorder()
+	handleFixHomePerms(rec, fixHomeReq(map[string]interface{}{"username": currentUser}))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("符号链接 home 应 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	// 池外目标未被改动(0700 递归若跟随链接会把 TempDir 打成 0700)
+	probe := filepath.Join(outside, "sub")
+	if err := os.Mkdir(probe, 0755); err == nil {
+		// Mkdir 成功说明目录仍可写——若已被 chmod 0700 且属主不变这里仍会成功,
+		// 直接断言 mode 保持 0755
+		info, statErr := os.Stat(probe)
+		if statErr != nil || info.Mode().Perm() != 0755 {
+			t.Fatalf("池外目录被改动: err=%v", statErr)
+		}
+	}
+}
+
+// 失败即停路径未强行构造,原因(压缩版):非 root 环境下,属主对自己创建的文件
+// 总能 chmod(与当前 mode 无关),无法稳定构造"递归中途 chmod 失败";chown 到他
+// 人在非 root 必 EPERM,但那是整体 root-gated 语义(TestHandleFixHomePermsChown-
+// RootOnly 已覆盖),且"中途失败"断言依赖 Walk 遍历顺序,测试脆弱。按任务约定
+// "构造不了就注释说明,不强求"处理;500 带路径逻辑与 Task 13 chmodTree/chownTree
+// 共用(该路径已在 Task 13 覆盖)。

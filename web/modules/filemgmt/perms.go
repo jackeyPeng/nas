@@ -333,8 +333,11 @@ func handleFixHomePerms(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	home := filepath.Join(normalizedRoot(), req.Username)
-	info, err := os.Stat(home)
-	if err != nil || !info.IsDir() {
+	// Task 14 复审 Minor-1:Lstat 拒绝符号链接 home——os.Stat 会跟随链接,
+	// 若池根下 <username> 是指向池外目录的链接,后续递归 chmod/chown 会作用
+	// 到池外目标。与 handleChown 根节点的 Lstat 习惯对齐,fail-closed。
+	info, err := os.Lstat(home)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		http.Error(w, "home 目录不存在", http.StatusBadRequest)
 		return
 	}
