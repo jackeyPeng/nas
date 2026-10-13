@@ -212,10 +212,15 @@ func findShareMetaPath(share string) (string, error) {
 	return "", fmt.Errorf("共享文件夹 %q 不存在", share)
 }
 
-// resolveShareOrPoolRootPath 先查 share 是否为池根伪共享名，命中则直接返回
-// 池根路径；未命中则走原 findShareMetaPath（错误语义不变：共享不存在 400）。
-// restore/delete/clear 三个 handler 共用，对伪共享自动成立。
+// resolveShareOrPoolRootPath 先按真实共享名查 findShareMetaPath，未命中再查
+// 池根伪共享名——与 buildRecycleRoots 的「真实共享优先」注入顺序保持一致
+// （若管理员真建了名为「(池根 xxx)」的共享，list 展示真实共享，restore/delete/
+// clear 也必须解析到同一路径，不能伪名抢先后不一致）。错误语义不变：两处都
+// 未命中 → 共享不存在 400。restore/delete/clear 三个 handler 共用。
 func resolveShareOrPoolRootPath(share string) (string, error) {
+	if sharePath, err := findShareMetaPath(share); err == nil {
+		return sharePath, nil
+	}
 	if poolRoot, ok := poolRootForPseudoShare(share, GetAllFolderMeta()); ok {
 		return poolRoot, nil
 	}
