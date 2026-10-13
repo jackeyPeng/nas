@@ -1273,6 +1273,11 @@ git commit -m "feat(filemgmt): 前端文件页 v1 — 浏览/面包屑/下载/�
 - [ ] Step 5: 浏览器实测全流程:上传(含大文件进度)/新建/重命名/移动/复制/删除 → 回收站页恢复 → 审计日志页可见每条写操作
 - [x] Step 6: Commit `feat(filemgmt): 前端写操作 — 多选工具栏/流式上传进度/移动复制选择器/删除确认`
 
+**修订记录(2026-10-13 Task 11 review + E2E)**:独立审查(jsdom+真 Alpine 实证)结论「需修复后合入」,拍板如下:
+- Important#1:上传进度条全程冻结 0%——`const progress = this.filesPage.uploadProgress = {...}` 链式赋值捕获 raw 对象,onprogress 对 raw 的 mutation 绕过 Alpine 代理不触发渲染(jsdom 实证 RAW→DOM 停 0%/PROXY→更新;uploadFilesWithOverwrite 的写法是对的)。修订:赋值与取引用拆两行(`this.filesPage.uploadProgress = {...}; const progress = this.filesPage.uploadProgress;`)或 handler 内全走 `this.filesPage.uploadProgress.xxx`。
+- Minor 同轮修:① 上传失败/409-取消 toast 直接展示原始 responseText(JSON 串)——解析 `.error` 字段兜底原文;② fileWrite 未对齐 api() 的 401 logout 处理——补齐;③ renameFile 成功后 selected 残留旧名(同目录 loadFiles 不触发清空,后续批量操作按旧名 404)——rename 成功后从 selected 剔除旧名/清空;④ transferPickerDirs 未过滤 `.recycle`(可把文件移动/复制进回收站干扰 restore)——filter 掉;⑤ 删除失败复用 `files.transfer_partial_fail` 键语义错位——改通用名 `files.batch_partial_fail`(双语同步)。
+- **浏览器 E2E(Step 5,本地 dev 面板+真实 Chrome,2026-10-13)**:登录→浏览→mkdir(UI→落盘 0755→刷新)→上传(CDP 注入 8MB 真实文件,XHR 全链路,md5 一致,public 对齐 0664)→rename→move(选择器真实点击,路径拼接 public/docs/e2e-dir 正确,落盘验证)→copy(md5 一致)→删除文件+目录(type-to-confirm 输错锁定/输对解锁,keeptree 整树进 public/.recycle/fm/docs/)→回收站页 API 条目可见→上传 409 冲突 confirm 覆盖重试成功→审计日志页 files 全操作富 detail 可见(含 409 失败记录与覆盖成功记录)→i18n EN 切换工具栏/文案正确。**发现并排除一个环境假警报**:手工种的 folders.db 缺 NOT NULL DEFAULT ''(生产 schema 有),NULL 列致 diskmgmt GetAllFolderMeta 的 rows.Scan 静默半填充(Scan 错误未检查)→RecycleBin 误读 false→删除走池根回退;修数据后 keeptree 落位正确。**遗留加固项(留 Task 12/M3 评估)**:GetAllFolderMeta 应检查 rows.Scan 错误并记日志,防 NULL/脏行静默产出半填充 meta。
+
 ### Task 12: M2 文档同步 + 发版(beta.18)
 
 同 Task 6 清单(checklist 重算统计/CHANGELOG/TODO/红线/KB)。CHANGELOG 注明:setup.sh 本期起**新装默认不装 FileBrowser**(spec §十一 M2 节点)——Modify `scripts/setup.sh` [7/10] 段加开关(默认跳过安装,已装的不动;`--with-filebrowser` 保留安装能力一个版本周期)。
