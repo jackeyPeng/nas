@@ -1500,6 +1500,9 @@ function nasPanel() {
             }
         },
         async saveBatchPerms() {
+            // E2E 发现:函数级 type-to-confirm 守卫(savePerms/confirmFixHomePerms 同款纵深防御,
+            // 按钮 :disabled 只是 UI 层,直接调用本函数不应绕过确认词)
+            if (this.permsConfirmDisabled()) return;
             const d = this.filesPage.permsDialog;
             const entries = d.batchEntries;
             d.error = '';
