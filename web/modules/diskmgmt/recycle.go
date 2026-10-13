@@ -3,10 +3,12 @@ package diskmgmt
 import (
 	"fmt"
 	"net/http"
+	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"nas-panel/common"
 )
@@ -227,6 +229,88 @@ func resolveShareOrPoolRootPath(share string) (string, error) {
 	return findShareMetaPath(share)
 }
 
+// mergeRestoreConflictFree 若 target 已存在（os.Lstat 口径，目录/文件/符号链接
+// 均算冲突），先追加 ".restored"，若该候选也冲突则继续追加
+// ".<unixnano>" 直到不冲突为止（同 filemgmt recycleConflictFree 思路，
+// 本地独立实现，不跨包引用）。
+func mergeRestoreConflictFree(target string) string {
+	candidate := target + ".restored"
+	for {
+		if _, err := os.Lstat(candidate); err != nil {
+			return candidate
+		}
+		candidate = fmt.Sprintf("%s.restored.%d", target, time.Now().UnixNano())
+	}
+}
+
+// mergeTreeRestore 把 src 树合并式恢复到 dst：
+//   - dst 不存在 → 整体 Rename 一步到位。
+//   - dst 存在且 src/dst 都是目录（Lstat 判定）→ 逐子项处理：
+//   - 子项在 dst 内不存在 → Rename 移过去；
+//   - 子项与 dst 同名项都是目录 → 递归合并；
+//   - 其余情形（文件撞文件/类型不匹配）→ 移到 mergeRestoreConflictFree 候选名，
+//     不覆盖已有数据；
+//   - 符号链接按 Lstat 语义处理，Rename 移动链接本身，不跟随解析。
+//
+// 全部子项处理完后 os.Remove(src)（应已空；非空说明有遗漏，返回错误而非
+// RemoveAll 兜底）。任一子步失败立即返回带路径的 error，已移动的子项保持
+// 移动状态，不回滚（部分恢复如实上报）。
+// src 不是目录而 dst 存在（文件撞文件）不属本 helper 职责，由调用方处理。
+func mergeTreeRestore(src, dst string) error {
+	dstInfo, dstErr := os.Lstat(dst)
+	if dstErr != nil {
+		if err := os.Rename(src, dst); err != nil {
+			return fmt.Errorf("合并恢复失败 %s -> %s: %w", src, dst, err)
+		}
+		return nil
+	}
+
+	srcInfo, err := os.Lstat(src)
+	if err != nil {
+		return fmt.Errorf("合并恢复失败，无法读取 %s: %w", src, err)
+	}
+	if !srcInfo.IsDir() || !dstInfo.IsDir() {
+		return fmt.Errorf("合并恢复失败: %s 与 %s 并非都是目录", src, dst)
+	}
+
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return fmt.Errorf("合并恢复失败，无法读取目录 %s: %w", src, err)
+	}
+	for _, entry := range entries {
+		srcChild := filepath.Join(src, entry.Name())
+		dstChild := filepath.Join(dst, entry.Name())
+		childDstInfo, statErr := os.Lstat(dstChild)
+		if statErr != nil {
+			// 目标不存在 → 直接移动
+			if err := os.Rename(srcChild, dstChild); err != nil {
+				return fmt.Errorf("合并恢复失败 %s -> %s: %w", srcChild, dstChild, err)
+			}
+			continue
+		}
+		srcChildInfo, lstatErr := os.Lstat(srcChild)
+		if lstatErr != nil {
+			return fmt.Errorf("合并恢复失败，无法读取 %s: %w", srcChild, lstatErr)
+		}
+		if srcChildInfo.IsDir() && childDstInfo.IsDir() {
+			if err := mergeTreeRestore(srcChild, dstChild); err != nil {
+				return err
+			}
+			continue
+		}
+		// 碰撞（文件撞文件、类型不匹配等）→ 移到不冲突的 .restored 候选名
+		candidate := mergeRestoreConflictFree(dstChild)
+		if err := os.Rename(srcChild, candidate); err != nil {
+			return fmt.Errorf("合并恢复失败（碰撞处理）%s -> %s: %w", srcChild, candidate, err)
+		}
+	}
+
+	if err := os.Remove(src); err != nil {
+		return fmt.Errorf("合并恢复完成子项但清理源目录失败（可能有遗漏）%s: %w", src, err)
+	}
+	return nil
+}
+
 // handleRecycleRestore POST share, rel_path, user, legacy=yes|""
 func handleRecycleRestore(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -264,6 +348,21 @@ func handleRecycleRestore(w http.ResponseWriter, r *http.Request) {
 	if _, err := common.SudoOutput("test", "-e", src); err != nil {
 		http.Error(w, `{"error":"回收站条目不存在"}`, http.StatusNotFound)
 		return
+	}
+	// D1 复审 Important 跟进：dst 已存在且 src/dst 都是目录时走合并式恢复
+	// （逐子项 mv 回原位），而不是整树落 .restored 旁落。进程是 root，
+	// os.Lstat 可直接判定类型。
+	if dstInfo, dstErr := os.Lstat(dst); dstErr == nil && dstInfo.IsDir() {
+		if srcInfo, srcErr := os.Lstat(src); srcErr == nil && srcInfo.IsDir() {
+			if err := mergeTreeRestore(src, dst); err != nil {
+				http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
+				return
+			}
+			common.EmitEvent("storage", common.EventSuccess, "recycle.restored",
+				map[string]interface{}{"share": share, "path": relPath, "merge": "true"}, "")
+			common.JSONResponse(w, map[string]interface{}{"message": "已恢复(合并)", "restored_to": dst})
+			return
+		}
 	}
 	finalDst := dst
 	if _, err := common.SudoOutput("test", "-e", dst); err == nil {
