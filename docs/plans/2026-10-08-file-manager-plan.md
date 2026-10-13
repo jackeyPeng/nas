@@ -1266,12 +1266,12 @@ git commit -m "feat(filemgmt): 前端文件页 v1 — 浏览/面包屑/下载/�
 
 **Files:** Modify `index.html`(工具栏 + 上传控件 + 确认对话框)、`app.js`(selected[] 多选状态 + upload/mkdir/rename/move/copy/delete 方法)、i18n 两文件
 
-- [ ] Step 1: 表格加复选框列(全选/单选),工具栏:上传(input[type=file] multiple + 进度条 xhr.upload.onprogress——fetch 无上传进度,上传专用 XMLHttpRequest)、新建目录(prompt 对话框)、选中后 [移动][复制][删除] 按钮
-- [ ] Step 2: 移动/复制对话框:简易目录选择器(loadFiles 数据复用,逐级下拉/点击选择目标目录)
-- [ ] Step 3: 删除确认:展示条目数 + 名称列表,确认文案 `$t('files.confirm_delete')`("删除的文件进入回收站,可在存储页恢复");递归删除目录额外 type-to-confirm(输入目录名,对齐既有危险操作模式)
-- [ ] Step 4: i18n 全部文案双语 + check-i18n.py 过
+- [x] Step 1: 表格加复选框列(全选/单选),工具栏:上传(input[type=file] multiple + 进度条 xhr.upload.onprogress——fetch 无上传进度,上传专用 XMLHttpRequest)、新建目录(prompt 对话框)、选中后 [移动][复制][删除] 按钮
+- [x] Step 2: 移动/复制对话框:简易目录选择器(loadFiles 数据复用,逐级下拉/点击选择目标目录)
+- [x] Step 3: 删除确认:展示条目数 + 名称列表,确认文案 `$t('files.confirm_delete')`("删除的文件进入回收站,可在存储页恢复");递归删除目录额外 type-to-confirm(输入目录名,对齐既有危险操作模式)
+- [x] Step 4: i18n 全部文案双语 + check-i18n.py 过
 - [ ] Step 5: 浏览器实测全流程:上传(含大文件进度)/新建/重命名/移动/复制/删除 → 回收站页恢复 → 审计日志页可见每条写操作
-- [ ] Step 6: Commit `feat(filemgmt): 前端写操作 — 多选工具栏/流式上传进度/移动复制选择器/删除确认`
+- [x] Step 6: Commit `feat(filemgmt): 前端写操作 — 多选工具栏/流式上传进度/移动复制选择器/删除确认`
 
 ### Task 12: M2 文档同步 + 发版(beta.18)
 

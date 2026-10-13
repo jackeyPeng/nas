@@ -1856,8 +1856,30 @@
                     </template>
                     <span style="margin-left:auto;color:var(--text-light)" x-text="filesPage.usageText"></span>
                 </div>
+                <div style="display:flex;align-items:center;gap:var(--sp-2);flex-wrap:wrap;margin-bottom:var(--sp-3)">
+                    <input x-ref="fileUploadInput" type="file" multiple style="display:none" @change="uploadFiles($event.target)">
+                    <button class="btn btn-sm btn-primary" @click="selectUploadFiles()" x-text="$t('files.toolbar_upload')"></button>
+                    <button class="btn btn-sm" @click="openMkdir()" x-text="$t('files.toolbar_mkdir')"></button>
+                    <button class="btn btn-sm" @click="loadFiles(filesPage.path)" x-text="$t('files.toolbar_refresh')"></button>
+                    <span x-show="filesPage.selected.length" class="badge-sm" style="background:var(--primary-light);color:var(--primary)" x-text="$t('files.selected_count', [filesPage.selected.length])"></span>
+                    <template x-if="filesPage.selected.length">
+                        <span style="display:flex;gap:var(--sp-2)">
+                            <button class="btn btn-sm" @click="openTransferDialog('move')" x-text="$t('files.toolbar_move')"></button>
+                            <button class="btn btn-sm" @click="openTransferDialog('copy')" x-text="$t('files.toolbar_copy')"></button>
+                            <button class="btn btn-sm btn-danger" @click="openDeleteDialog()" x-text="$t('files.toolbar_delete')"></button>
+                        </span>
+                    </template>
+                </div>
+                <div x-show="filesPage.uploadProgress.active" style="margin-bottom:var(--sp-3)" x-cloak>
+                    <div style="display:flex;justify-content:space-between;font-size:var(--fs-xs);margin-bottom:var(--sp-1)">
+                        <span x-text="$t('files.uploading')"></span>
+                        <span x-text="filesPage.uploadProgress.percent + '% (' + formatSize(filesPage.uploadProgress.loaded) + ' / ' + formatSize(filesPage.uploadProgress.total) + ')' "></span>
+                    </div>
+                    <progress max="100" :value="filesPage.uploadProgress.percent" style="width:100%"></progress>
+                </div>
                 <table class="table-dense" style="width:100%">
                     <thead><tr>
+                        <th><input type="checkbox" :title="$t('files.select_all')" :checked="filesPage.entries.length > 0 && filesPage.selected.length === filesPage.entries.length" @change="toggleAllFiles()"></th>
                         <th x-text="$t('files.name')"></th><th x-text="$t('files.size')"></th>
                         <th x-text="$t('files.owner')"></th><th x-text="$t('files.mode')"></th>
                         <th x-text="$t('files.mtime')"></th><th x-text="$t('files.actions')"></th>
@@ -1865,9 +1887,9 @@
                     <tbody>
                         <template x-for="e in filesPage.entries" :key="e.name">
                             <tr>
+                                <td><input type="checkbox" :checked="isFileSelected(e)" @change="toggleFileSelection(e)"></td>
                                 <td>
-                                    <a href="#" x-show="e.type==='dir'" @click.prevent="loadFiles(filesPage.relJoin(e.name))"
-                                       style="color:var(--text-primary);text-decoration:none">📁 <span x-text="e.name"></span></a>
+                                    <a href="#" x-show="e.type==='dir'" @click.prevent="loadFiles(filesPage.relJoin(e.name))" style="color:var(--text-primary);text-decoration:none">📁 <span x-text="e.name"></span></a>
                                     <span x-show="e.type==='file'">📄 <span x-text="e.name"></span></span>
                                     <span x-show="e.type==='symlink'" :title="e.target">🔗 <span x-text="e.name"></span> → <span x-text="e.target" style="color:var(--text-light)"></span></span>
                                     <span x-show="e.type==='other'">• <span x-text="e.name"></span></span>
@@ -1876,9 +1898,13 @@
                                 <td x-text="e.owner + ':' + e.group"></td>
                                 <td><code x-text="e.mode_text"></code></td>
                                 <td x-text="fmtTime(e.mtime)"></td>
-                                <td>
+                                <td style="white-space:nowrap">
                                     <button class="btn-xs" x-show="e.type!=='dir'" @click="downloadFile(e)" x-text="$t('files.download')"></button>
                                     <button class="btn-xs" x-show="previewable(e)" @click="previewFile(e)" x-text="$t('files.preview')"></button>
+                                    <button class="btn-xs" @click="openRename(e)" x-text="$t('files.rename')"></button>
+                                    <button class="btn-xs" @click="openTransferDialog('move', e)" x-text="$t('files.toolbar_move')"></button>
+                                    <button class="btn-xs" @click="openTransferDialog('copy', e)" x-text="$t('files.toolbar_copy')"></button>
+                                    <button class="btn-xs btn-danger" @click="openDeleteDialog(e)" x-text="$t('files.toolbar_delete')"></button>
                                 </td>
                             </tr>
                         </template>
@@ -1888,6 +1914,83 @@
                     <div x-text="$t('files.empty_dir')"></div>
                 </div>
                 <div x-show="filesPage.truncated" style="color:var(--warn);margin-top:var(--sp-2)" x-text="$t('files.truncated_hint')"></div>
+                <!-- 新建目录弹窗 -->
+                <div class="modal" x-show="filesPage.showMkdir" x-cloak @click.self="filesPage.showMkdir=false">
+                    <div class="modal-box">
+                        <h3 x-text="$t('files.mkdir_title')"></h3>
+                        <div class="form-group">
+                            <label x-text="$t('files.mkdir_name_label')"></label>
+                            <input type="text" x-model="filesPage.mkdirName" :placeholder="$t('files.mkdir_name_ph')" @keydown.enter="createFileDirectory()">
+                            <p x-show="filesPage.mkdirError" style="color:var(--danger);font-size:var(--fs-xs)" x-text="filesPage.mkdirError"></p>
+                        </div>
+                        <div class="modal-actions">
+                            <button class="btn" @click="filesPage.showMkdir=false" x-text="$t('common.cancel')"></button>
+                            <button class="btn btn-primary" @click="createFileDirectory()" x-text="$t('common.create')"></button>
+                        </div>
+                    </div>
+                </div>
+                <!-- 重命名弹窗 -->
+                <div class="modal" x-show="filesPage.showRename" x-cloak @click.self="filesPage.showRename=false">
+                    <div class="modal-box">
+                        <h3 x-text="$t('files.rename_title')"></h3>
+                        <div class="form-group">
+                            <label x-text="$t('files.rename_label')"></label>
+                            <input type="text" x-model="filesPage.renameName" @keydown.enter="renameFile()">
+                            <p x-show="filesPage.renameError" style="color:var(--danger);font-size:var(--fs-xs)" x-text="filesPage.renameError"></p>
+                        </div>
+                        <div class="modal-actions">
+                            <button class="btn" @click="filesPage.showRename=false" x-text="$t('common.cancel')"></button>
+                            <button class="btn btn-primary" @click="renameFile()" x-text="$t('common.save')"></button>
+                        </div>
+                    </div>
+                </div>
+                <!-- 移动/复制弹窗 -->
+                <div class="modal" x-show="filesPage.showTransfer" x-cloak @click.self="filesPage.showTransfer=false">
+                    <div class="modal-box" style="max-width:520px">
+                        <h3 x-text="filesPage.transferMode === 'move' ? $t('files.move_title') : $t('files.copy_title')"></h3>
+                        <div style="display:flex;gap:var(--sp-1);flex-wrap:wrap;margin-bottom:var(--sp-3)">
+                            <template x-for="(bc, i) in filesPage.transferBreadcrumb" :key="i">
+                                <span>
+                                    <a href="#" @click.prevent="transferPickerNavigate(bc.path)" style="color:var(--primary);text-decoration:none" x-text="bc.path === '' ? $t('files.pool_root') : bc.name"></a>
+                                    <span x-show="i < filesPage.transferBreadcrumb.length - 1" style="color:var(--text-light)"> / </span>
+                                </span>
+                            </template>
+                        </div>
+                        <div style="max-height:240px;overflow:auto;border:1px solid var(--border);border-radius:var(--radius-sm)">
+                            <template x-for="dir in transferPickerDirs()" :key="dir.name">
+                                <button class="btn-xs" style="display:block;width:100%;text-align:left;padding:var(--sp-2) var(--sp-3);border:0;border-bottom:1px solid var(--border-light);background:transparent" @click="transferPickerNavigate(filesPage.transferPath ? filesPage.transferPath + '/' + dir.name : dir.name)">📁 <span x-text="dir.name"></span></button>
+                            </template>
+                            <div class="empty-state empty-state--inline" x-show="!transferPickerDirs().length"><span x-text="$t('files.empty_dir')"></span></div>
+                        </div>
+                        <p style="margin:var(--sp-3) 0 0;color:var(--text-secondary);font-size:var(--fs-sm)" x-text="filesPage.transferMode === 'move' ? $t('files.move_to_confirm', [filesPage.transferPath || $t('files.pool_root')]) : $t('files.copy_to_confirm', [filesPage.transferPath || $t('files.pool_root')])"></p>
+                        <div class="modal-actions">
+                            <button class="btn" @click="filesPage.showTransfer=false" x-text="$t('common.cancel')"></button>
+                            <button class="btn btn-primary" @click="confirmTransfer()" x-text="$t('files.picker_select_here')"></button>
+                        </div>
+                    </div>
+                </div>
+                <!-- 删除确认弹窗 -->
+                <div class="modal" x-show="filesPage.showDelete" x-cloak @click.self="filesPage.showDelete=false">
+                    <div class="modal-box">
+                        <h3 x-text="$t('files.delete_title')"></h3>
+                        <p x-text="$t('files.confirm_delete')"></p>
+                        <p><strong x-text="$t('files.selected_count', [filesPage.deleteEntries.length])"></strong></p>
+                        <ul style="margin:0;padding-left:var(--sp-5)">
+                            <template x-for="entry in filesPage.deleteEntries.slice(0, 10)" :key="entry.name">
+                                <li x-text="entry.name"></li>
+                            </template>
+                            <li x-show="filesPage.deleteEntries.length > 10" x-text="$t('files.delete_more', [filesPage.deleteEntries.length - 10])"></li>
+                        </ul>
+                        <div class="form-group" x-show="filesPage.deleteRequiredName" style="margin-top:var(--sp-3)">
+                            <label x-text="$t('files.delete_type_confirm_label', [filesPage.deleteRequiredName])"></label>
+                            <input type="text" x-model="filesPage.deleteConfirmName" :placeholder="$t('files.delete_type_confirm_ph')">
+                        </div>
+                        <div class="modal-actions">
+                            <button class="btn" @click="filesPage.showDelete=false" x-text="$t('common.cancel')"></button>
+                            <button class="btn btn-danger" @click="confirmDelete()" :disabled="deleteConfirmDisabled()" x-text="$t('files.toolbar_delete')"></button>
+                        </div>
+                    </div>
+                </div>
                 <!-- 预览弹层 -->
                 <div x-show="filesPage.preview.open" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100" @click.self="closePreview()">
                     <div style="max-width:80vw;max-height:80vh;margin:5vh auto;background:var(--card-bg);border-radius:var(--radius-md);padding:var(--sp-4);overflow:auto">

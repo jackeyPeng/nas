@@ -96,7 +96,11 @@ function nasPanel() {
         // 文件管理器(只读 v1)
         filesPage: {
             path: '', entries: [], breadcrumb: [], truncated: false, loading: false,
-            usageText: '',
+            usageText: '', selected: [], uploadProgress: { active: false, percent: 0, loaded: 0, total: 0 },
+            showMkdir: false, mkdirName: '', mkdirError: '',
+            showRename: false, renameEntry: null, renameName: '', renameError: '',
+            showTransfer: false, transferMode: '', transferEntries: [], transferPath: '', transferBreadcrumb: [], transferPickerEntries: [],
+            showDelete: false, deleteEntries: [], deleteConfirmName: '', deleteRequiredName: '', deleteError: '',
             preview: { open: false, kind: '', name: '', content: '', url: '' },
             relJoin(name) { return this.path ? this.path + '/' + name : name; },
         },
@@ -1085,6 +1089,7 @@ function nasPanel() {
 
         // ═══ 文件管理器(只读 v1) ═══
         async loadFiles(rel) {
+            const changingDir = this.filesPage.path !== rel;
             this.filesPage.loading = true;
             try {
                 const data = await this.api('/files/list?path=' + encodeURIComponent(rel));
@@ -1093,6 +1098,7 @@ function nasPanel() {
                     this.filesPage.entries = data.entries || [];
                     this.filesPage.breadcrumb = data.breadcrumb || [];
                     this.filesPage.truncated = !!data.truncated;
+                    if (changingDir) this.filesPage.selected = [];
                     // 用量懒加载,不阻塞列表
                     this.loadFilesUsage(rel);
                 }
@@ -1109,6 +1115,154 @@ function nasPanel() {
             } else {
                 this.filesPage.usageText = this.t('files.usage_unavailable');
             }
+        },
+        toggleFileSelection(entry) {
+            const selected = this.filesPage.selected;
+            const index = selected.findIndex(e => e.name === entry.name);
+            if (index >= 0) selected.splice(index, 1);
+            else selected.push({ name: entry.name, type: entry.type });
+        },
+        isFileSelected(entry) {
+            return this.filesPage.selected.some(e => e.name === entry.name);
+        },
+        toggleAllFiles() {
+            const entries = this.filesPage.entries;
+            if (this.filesPage.selected.length === entries.length) this.filesPage.selected = [];
+            else this.filesPage.selected = entries.map(e => ({ name: e.name, type: e.type }));
+        },
+        clearFileSelection() {
+            this.filesPage.selected = [];
+        },
+        async fileWrite(path, body) {
+            const res = await fetch('/api/files' + path, {
+                method: 'POST',
+                headers: { 'Authorization': 'Bearer ' + this.token, 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            if (!res.ok) throw new Error(await res.text());
+            return res;
+        },
+        openMkdir() {
+            this.filesPage.mkdirName = '';
+            this.filesPage.mkdirError = '';
+            this.filesPage.showMkdir = true;
+        },
+        async createFileDirectory() {
+            const name = this.filesPage.mkdirName.trim();
+            if (!name || name === '.' || name === '..' || name.includes('/') || name.includes('..')) {
+                this.filesPage.mkdirError = this.t('files.invalid_name');
+                return;
+            }
+            try {
+                await this.fileWrite('/mkdir', { path: this.filesPage.path, name });
+                this.filesPage.showMkdir = false;
+                this.showToast(this.t('msg.op_success'), 'success');
+                await this.loadFiles(this.filesPage.path);
+            } catch (err) {
+                this.filesPage.mkdirError = String(err.message || err);
+                this.showToast(this.filesPage.mkdirError, 'error');
+            }
+        },
+        openRename(entry) {
+            this.filesPage.renameEntry = entry;
+            this.filesPage.renameName = entry.name;
+            this.filesPage.renameError = '';
+            this.filesPage.showRename = true;
+        },
+        async renameFile() {
+            const name = this.filesPage.renameName.trim();
+            const entry = this.filesPage.renameEntry;
+            if (!name || name === '.' || name === '..' || name.includes('/') || name.includes('..')) {
+                this.filesPage.renameError = this.t('files.invalid_name');
+                return;
+            }
+            try {
+                await this.fileWrite('/rename', { path: this.filesPage.relJoin(entry.name), new_name: name });
+                this.filesPage.showRename = false;
+                this.showToast(this.t('msg.op_success'), 'success');
+                await this.loadFiles(this.filesPage.path);
+            } catch (err) {
+                this.filesPage.renameError = String(err.message || err);
+                this.showToast(this.filesPage.renameError, 'error');
+            }
+        },
+        selectUploadFiles() {
+            this.$refs.fileUploadInput.click();
+        },
+        uploadFiles(input) {
+            const files = Array.from(input.files || []);
+            if (!files.length) return;
+            const form = new FormData();
+            files.forEach(file => form.append('files', file, file.name));
+            const progress = this.filesPage.uploadProgress = { active: true, percent: 0, loaded: 0, total: files.reduce((sum, file) => sum + file.size, 0) };
+            const xhr = new XMLHttpRequest();
+            const url = '/api/files/upload?path=' + encodeURIComponent(this.filesPage.path);
+            xhr.open('POST', url);
+            xhr.setRequestHeader('Authorization', 'Bearer ' + this.token);
+            xhr.upload.onprogress = event => {
+                if (event.lengthComputable) {
+                    progress.loaded = event.loaded;
+                    progress.total = event.total;
+                    progress.percent = Math.round(event.loaded / event.total * 100);
+                }
+            };
+            xhr.onload = () => {
+                input.value = '';
+                if (xhr.status === 409) {
+                    let conflict = '';
+                    try { conflict = JSON.parse(xhr.responseText).conflict || ''; } catch (e) {}
+                    if (confirm(this.t('files.conflict_overwrite_confirm', [conflict]))) {
+                        this.uploadFilesWithOverwrite(files);
+                        return;
+                    }
+                    this.filesPage.uploadProgress = { active: false, percent: 0, loaded: 0, total: 0 };
+                    this.showToast(xhr.responseText, 'error');
+                    return;
+                }
+                if (xhr.status < 200 || xhr.status >= 300) {
+                    this.filesPage.uploadProgress = { active: false, percent: 0, loaded: 0, total: 0 };
+                    this.showToast(xhr.responseText || this.t('msg.op_failed'), 'error');
+                    return;
+                }
+                this.filesPage.uploadProgress.percent = 100;
+                this.filesPage.uploadProgress.active = false;
+                this.showToast(this.t('msg.op_success'), 'success');
+                this.loadFiles(this.filesPage.path);
+            };
+            xhr.onerror = () => {
+                input.value = '';
+                this.filesPage.uploadProgress = { active: false, percent: 0, loaded: 0, total: 0 };
+                this.showToast(this.t('msg.op_failed'), 'error');
+            };
+            xhr.send(form);
+        },
+        uploadFilesWithOverwrite(files) {
+            const form = new FormData();
+            files.forEach(file => form.append('files', file, file.name));
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/api/files/upload?path=' + encodeURIComponent(this.filesPage.path) + '&overwrite=yes');
+            xhr.setRequestHeader('Authorization', 'Bearer ' + this.token);
+            xhr.upload.onprogress = event => {
+                if (event.lengthComputable) {
+                    this.filesPage.uploadProgress.loaded = event.loaded;
+                    this.filesPage.uploadProgress.total = event.total;
+                    this.filesPage.uploadProgress.percent = Math.round(event.loaded / event.total * 100);
+                }
+            };
+            xhr.onload = () => {
+                this.filesPage.uploadProgress.active = false;
+                if (xhr.status < 200 || xhr.status >= 300) {
+                    this.showToast(xhr.responseText || this.t('msg.op_failed'), 'error');
+                    return;
+                }
+                this.showToast(this.t('msg.op_success'), 'success');
+                this.loadFiles(this.filesPage.path);
+            };
+            xhr.onerror = () => {
+                this.filesPage.uploadProgress.active = false;
+                this.showToast(this.t('msg.op_failed'), 'error');
+            };
+            xhr.send(form);
         },
         async downloadFile(e) {
             const rel = this.filesPage.relJoin(e.name);
@@ -1161,6 +1315,83 @@ function nasPanel() {
                 this.showToast(String(err.message || err), 'error');
                 this.filesPage.preview.open = false;
             }
+        },
+        // ═══ 移动/复制目录选择器 ═══
+        openTransferDialog(mode, singleEntry) {
+            this.filesPage.transferMode = mode; // 'move' | 'copy'
+            this.filesPage.transferEntries = singleEntry ? [singleEntry] : this.filesPage.selected.slice();
+            this.filesPage.transferPickerEntries = [];
+            this.filesPage.showTransfer = true;
+            this.transferPickerNavigate('');
+        },
+        async transferPickerNavigate(path) {
+            const data = await this.api('/files/list?path=' + encodeURIComponent(path));
+            if (!data) return;
+            this.filesPage.transferPath = path;
+            this.filesPage.transferBreadcrumb = data.breadcrumb || [];
+            this.filesPage.transferPickerEntries = data.entries || [];
+        },
+        transferPickerDirs() {
+            // 目录选择器只展示当前浏览目录下的子目录
+            return (this.filesPage.transferPickerEntries || []).filter(e => e.type === 'dir');
+        },
+        async confirmTransfer() {
+            const mode = this.filesPage.transferMode;
+            const dstDir = this.filesPage.transferPath;
+            const entries = this.filesPage.transferEntries;
+            let successCount = 0;
+            for (const entry of entries) {
+                try {
+                    await this.fileWrite('/' + mode, { src: this.filesPage.relJoin(entry.name), dst_dir: dstDir });
+                    successCount++;
+                } catch (err) {
+                    this.showToast(this.t('files.transfer_partial_fail', [successCount, entries.length, String(err.message || err)]), 'error');
+                    this.filesPage.showTransfer = false;
+                    this.filesPage.selected = [];
+                    await this.loadFiles(this.filesPage.path);
+                    return;
+                }
+            }
+            this.filesPage.showTransfer = false;
+            this.filesPage.selected = [];
+            this.showToast(this.t('msg.op_success'), 'success');
+            await this.loadFiles(this.filesPage.path);
+        },
+        // ═══ 删除确认(type-to-confirm 对齐危险操作模式) ═══
+        openDeleteDialog(singleEntry) {
+            const entries = singleEntry ? [singleEntry] : this.filesPage.selected.slice();
+            if (!entries.length) return;
+            this.filesPage.deleteEntries = entries;
+            this.filesPage.deleteConfirmName = '';
+            this.filesPage.deleteError = '';
+            const firstDir = entries.find(e => e.type === 'dir');
+            this.filesPage.deleteRequiredName = firstDir ? firstDir.name : '';
+            this.filesPage.showDelete = true;
+        },
+        deleteConfirmDisabled() {
+            if (!this.filesPage.deleteRequiredName) return false;
+            return this.filesPage.deleteConfirmName !== this.filesPage.deleteRequiredName;
+        },
+        async confirmDelete() {
+            if (this.deleteConfirmDisabled()) return;
+            const entries = this.filesPage.deleteEntries;
+            let successCount = 0;
+            for (const entry of entries) {
+                try {
+                    await this.fileWrite('/delete', { path: this.filesPage.relJoin(entry.name) });
+                    successCount++;
+                } catch (err) {
+                    this.showToast(this.t('files.transfer_partial_fail', [successCount, entries.length, String(err.message || err)]), 'error');
+                    this.filesPage.showDelete = false;
+                    this.filesPage.selected = [];
+                    await this.loadFiles(this.filesPage.path);
+                    return;
+                }
+            }
+            this.filesPage.showDelete = false;
+            this.filesPage.selected = [];
+            this.showToast(this.t('msg.op_success'), 'success');
+            await this.loadFiles(this.filesPage.path);
         },
         fmtTime(ts) {
             if (!ts) return '-';
