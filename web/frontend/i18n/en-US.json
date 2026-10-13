@@ -1242,7 +1242,7 @@
     "picker_select_here": "Select this folder",
     "move_to_confirm": "Move to {0}",
     "copy_to_confirm": "Copy to {0}",
-    "transfer_partial_fail": "Failed after {0}/{1} items succeeded: {2}",
+    "batch_partial_fail": "Failed after {0}/{1} items succeeded: {2}",
     "delete_title": "Confirm deletion",
     "confirm_delete": "Deleted files are moved to the recycle bin and can be restored from Storage",
     "delete_more": "and {0} more",

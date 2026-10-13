@@ -1139,6 +1139,11 @@ function nasPanel() {
                 headers: { 'Authorization': 'Bearer ' + this.token, 'Content-Type': 'application/json' },
                 body: JSON.stringify(body)
             });
+            // Minor②:对齐 api()(约 475 行)既有的 401 处理 — 登出并中断调用方后续逻辑
+            if (res.status === 401) {
+                this.logout();
+                throw new Error(this.t('msg.op_failed'));
+            }
             if (!res.ok) throw new Error(await res.text());
             return res;
         },
@@ -1179,6 +1184,9 @@ function nasPanel() {
             try {
                 await this.fileWrite('/rename', { path: this.filesPage.relJoin(entry.name), new_name: name });
                 this.filesPage.showRename = false;
+                // Minor③:rename 成功后从 selected 中剔除旧名条目(同目录刷新不会清空 selected,
+                // 残留旧名会导致后续批量移动/删除按旧名请求 404)。只移除被改名的条目,保留其余选择。
+                this.filesPage.selected = this.filesPage.selected.filter(e => e.name !== entry.name);
                 this.showToast(this.t('msg.op_success'), 'success');
                 await this.loadFiles(this.filesPage.path);
             } catch (err) {
@@ -1189,12 +1197,23 @@ function nasPanel() {
         selectUploadFiles() {
             this.$refs.fileUploadInput.click();
         },
+        // 上传/批量操作失败 responseText 可能是 JSON({"error":"..."})或纯文本,统一解析取 .error,解析失败兜底原文
+        parseErrorText(text) {
+            try {
+                const data = JSON.parse(text);
+                if (data && data.error) return data.error;
+            } catch (e) {}
+            return text;
+        },
         uploadFiles(input) {
             const files = Array.from(input.files || []);
             if (!files.length) return;
             const form = new FormData();
             files.forEach(file => form.append('files', file, file.name));
-            const progress = this.filesPage.uploadProgress = { active: true, percent: 0, loaded: 0, total: files.reduce((sum, file) => sum + file.size, 0) };
+            // Important#1 修复:先赋值到 filesPage.uploadProgress,再取引用,确保 progress 是 Alpine 响应式代理
+            // 而非链式赋值 `const progress = this.filesPage.uploadProgress = {...}` 捕获到的 raw 对象
+            this.filesPage.uploadProgress = { active: true, percent: 0, loaded: 0, total: files.reduce((sum, file) => sum + file.size, 0) };
+            const progress = this.filesPage.uploadProgress;
             const xhr = new XMLHttpRequest();
             const url = '/api/files/upload?path=' + encodeURIComponent(this.filesPage.path);
             xhr.open('POST', url);
@@ -1210,18 +1229,18 @@ function nasPanel() {
                 input.value = '';
                 if (xhr.status === 409) {
                     let conflict = '';
-                    try { conflict = JSON.parse(xhr.responseText).conflict || ''; } catch (e) {}
+                    try { conflict = JSON.parse(xhr.responseText).conflict || this.parseErrorText(xhr.responseText) || ''; } catch (e) {}
                     if (confirm(this.t('files.conflict_overwrite_confirm', [conflict]))) {
                         this.uploadFilesWithOverwrite(files);
                         return;
                     }
                     this.filesPage.uploadProgress = { active: false, percent: 0, loaded: 0, total: 0 };
-                    this.showToast(xhr.responseText, 'error');
+                    this.showToast(this.parseErrorText(xhr.responseText), 'error');
                     return;
                 }
                 if (xhr.status < 200 || xhr.status >= 300) {
                     this.filesPage.uploadProgress = { active: false, percent: 0, loaded: 0, total: 0 };
-                    this.showToast(xhr.responseText || this.t('msg.op_failed'), 'error');
+                    this.showToast(this.parseErrorText(xhr.responseText) || this.t('msg.op_failed'), 'error');
                     return;
                 }
                 this.filesPage.uploadProgress.percent = 100;
@@ -1252,7 +1271,7 @@ function nasPanel() {
             xhr.onload = () => {
                 this.filesPage.uploadProgress.active = false;
                 if (xhr.status < 200 || xhr.status >= 300) {
-                    this.showToast(xhr.responseText || this.t('msg.op_failed'), 'error');
+                    this.showToast(this.parseErrorText(xhr.responseText) || this.t('msg.op_failed'), 'error');
                     return;
                 }
                 this.showToast(this.t('msg.op_success'), 'success');
@@ -1332,8 +1351,8 @@ function nasPanel() {
             this.filesPage.transferPickerEntries = data.entries || [];
         },
         transferPickerDirs() {
-            // 目录选择器只展示当前浏览目录下的子目录
-            return (this.filesPage.transferPickerEntries || []).filter(e => e.type === 'dir');
+            // 目录选择器只展示当前浏览目录下的子目录;过滤 .recycle 防止把文件移动/复制进回收站干扰 restore 语义(Minor④)
+            return (this.filesPage.transferPickerEntries || []).filter(e => e.type === 'dir' && e.name !== '.recycle');
         },
         async confirmTransfer() {
             const mode = this.filesPage.transferMode;
@@ -1345,7 +1364,7 @@ function nasPanel() {
                     await this.fileWrite('/' + mode, { src: this.filesPage.relJoin(entry.name), dst_dir: dstDir });
                     successCount++;
                 } catch (err) {
-                    this.showToast(this.t('files.transfer_partial_fail', [successCount, entries.length, String(err.message || err)]), 'error');
+                    this.showToast(this.t('files.batch_partial_fail', [successCount, entries.length, String(err.message || err)]), 'error');
                     this.filesPage.showTransfer = false;
                     this.filesPage.selected = [];
                     await this.loadFiles(this.filesPage.path);
@@ -1381,7 +1400,7 @@ function nasPanel() {
                     await this.fileWrite('/delete', { path: this.filesPage.relJoin(entry.name) });
                     successCount++;
                 } catch (err) {
-                    this.showToast(this.t('files.transfer_partial_fail', [successCount, entries.length, String(err.message || err)]), 'error');
+                    this.showToast(this.t('files.batch_partial_fail', [successCount, entries.length, String(err.message || err)]), 'error');
                     this.filesPage.showDelete = false;
                     this.filesPage.selected = [];
                     await this.loadFiles(this.filesPage.path);
