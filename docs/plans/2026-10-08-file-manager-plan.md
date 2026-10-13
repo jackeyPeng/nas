@@ -1352,6 +1352,8 @@ git commit -m "feat(filemgmt): 前端文件页 v1 — 浏览/面包屑/下载/�
 - **i18n**:新键全部挂 files.* 命名空间(约 12-16 键),双语 parity,scripts/check-i18n.py 必须过;锚点式文本插入改 JSON(禁 json.dump 整文件回写,skill pitfall 18a)。
 - **Step 5 浏览器实测 + SMB 端验证由父代理执行**(不在 opencode 交付内):opencode 交付 Steps 1-4 + 自检(node --check app.js、check-i18n.py、go build 过 embed);父代理随后 build 二进制起本地 dev 服务器做浏览器 E2E(参照 Task 11 E2E 模式)+ smbclient 以目标用户验证 force user 映射下 0700/0775 实际读写效果。
 
+**修订记录(2026-10-13 Step 5 浏览器 E2E 完成,SMB 端并入 Task 16)**:本地 dev 服务器(9f596de+守卫修复 c072aaa 构建)+ /data/nas1 种池实测,全部通过:① 单条属性对话框 stat 回显(owner/group/mode/mode_text)、预设按钮、modeToSymbolic 实时预览、保存后列表刷新且落盘 755;② 批量改权限:**E2E 抓到真 bug**——直接调用 saveBatchPerms() 可绕过确认词(按钮 :disabled 只是 UI 层,函数内无守卫),修复 c072aaa 补函数级 permsConfirmDisabled 守卫(savePerms/confirmFixHomePerms 同款纵深防御);修复后无确认词拦截(show 保持/落盘不变)、输「修改」后串行 2/2 进度+汇总 toast「成功 2 项,失败 0 项」+落盘 644;③ 递归目录 chmod:错词拦截、正确词后 public 树 750 落盘、**符号链接目标 mode 不变(chmodTree 跳过语义经 UI 验证)**;④ 非法 mode 999 → 后端 400 纯文本展示在对话框 error 区;⑤ 用户页 fix-home-perms:输错用户名拦截、输对后 home 树 0777→0700 落盘、成功 toast;⑥ EN 语言确认词=「confirm」(中文词在 EN 模式被拦、英文词放行,无卡死——审查顾虑#3 实证解除);⑦ 审计日志落 chmod/fix-home-perms 条目;⑧ 弹窗叠加:page 级 x-show 容器天然隔离,未见叠加。**SMB 端验证(smbclient + force user 映射下 0700/0775 实际读写)本机无 smbd,并入 Task 16 生产同构机全链路验收执行**——Step 5 复选框待 Task 16 SMB 部分完成后勾选。测试环境已清理(面板进程停、/data/nas1 还原 root 属主、临时文件删除)。
+
 **Files:** Modify `index.html`、`app.js`、i18n
 
 - [x] Step 1: 行内 ⋮ 菜单加"属性/权限":对话框回显 stat(owner/group/mode_text)+ mode 八进制输入(实时预览符号位)+ recursive 勾选 + owner/group 下拉(数据源:既有 users 模块的用户列表端点,grep `/api/users` 确认)+ 预设按钮(0644/0755/0700)
