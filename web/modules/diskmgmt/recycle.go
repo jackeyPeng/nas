@@ -39,15 +39,57 @@ func RegisterRecycleRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/disk/recycle/clear", common.AuthMiddleware(handleRecycleClear))
 }
 
-// recycleRoots 返回所有启用回收站的共享目录（name → path）
-func recycleRoots() map[string]string {
+// buildRecycleRoots 是 recycleRoots 的纯函数核心：先建真实共享 map
+// （RecycleBin=true），再对 metas 的全部 distinct Pool 值注入池根伪共享条目
+// （key="(池根 <base(pool)>)"，value=pool），仅当该 key 尚不存在时注入——
+// 真实共享优先。
+//
+// D1 修复(2026-10-13 同构机验收):默认 recycle_bin=0 的共享删除走池根 .recycle
+// 回退(filemgmt resolveRecycleTarget)，若回收站页只枚举 RecycleBin=true 共享，
+// 这些删除在 items/shares 里完全不可见、无法 restore。注入池根伪共享后，
+// listRecycleDir 对伪条目天然生效(.recycle 为空时返回空列表，无害)。
+func buildRecycleRoots(metas []FolderMeta) map[string]string {
 	roots := map[string]string{}
-	for _, m := range GetAllFolderMeta() {
+	for _, m := range metas {
 		if m.RecycleBin {
 			roots[m.Name] = m.Path
 		}
 	}
+	for _, m := range metas {
+		if m.Pool == "" {
+			continue
+		}
+		key := fmt.Sprintf("(池根 %s)", filepath.Base(m.Pool))
+		if _, exists := roots[key]; !exists {
+			roots[key] = m.Pool
+		}
+	}
 	return roots
+}
+
+// recycleRoots 返回所有启用回收站的共享目录（name → path），并纳入池根伪共享
+// （见 buildRecycleRoots）。
+func recycleRoots() map[string]string {
+	return buildRecycleRoots(GetAllFolderMeta())
+}
+
+// poolRootForPseudoShare 判断 share 是否为某 distinct pool 的伪共享名
+// （"(池根 <base(pool)>)"），命中则返回该 pool 路径。
+func poolRootForPseudoShare(share string, metas []FolderMeta) (string, bool) {
+	if share == "" {
+		return "", false
+	}
+	seen := map[string]bool{}
+	for _, m := range metas {
+		if m.Pool == "" || seen[m.Pool] {
+			continue
+		}
+		seen[m.Pool] = true
+		if fmt.Sprintf("(池根 %s)", filepath.Base(m.Pool)) == share {
+			return m.Pool, true
+		}
+	}
+	return "", false
 }
 
 // handleRecycleList GET /api/disk/recycle[?share=xxx]
@@ -170,6 +212,16 @@ func findShareMetaPath(share string) (string, error) {
 	return "", fmt.Errorf("共享文件夹 %q 不存在", share)
 }
 
+// resolveShareOrPoolRootPath 先查 share 是否为池根伪共享名，命中则直接返回
+// 池根路径；未命中则走原 findShareMetaPath（错误语义不变：共享不存在 400）。
+// restore/delete/clear 三个 handler 共用，对伪共享自动成立。
+func resolveShareOrPoolRootPath(share string) (string, error) {
+	if poolRoot, ok := poolRootForPseudoShare(share, GetAllFolderMeta()); ok {
+		return poolRoot, nil
+	}
+	return findShareMetaPath(share)
+}
+
 // handleRecycleRestore POST share, rel_path, user, legacy=yes|""
 func handleRecycleRestore(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -183,7 +235,7 @@ func handleRecycleRestore(w http.ResponseWriter, r *http.Request) {
 	if r.FormValue("legacy") == "yes" {
 		dirName = legacyRecycleDirName
 	}
-	sharePath, err := findShareMetaPath(share)
+	sharePath, err := resolveShareOrPoolRootPath(share)
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
 		return
@@ -240,7 +292,7 @@ func handleRecycleDelete(w http.ResponseWriter, r *http.Request) {
 	if r.FormValue("legacy") == "yes" {
 		dirName = legacyRecycleDirName
 	}
-	sharePath, err := findShareMetaPath(share)
+	sharePath, err := resolveShareOrPoolRootPath(share)
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
 		return
@@ -272,7 +324,7 @@ func handleRecycleClear(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"confirm_name 必须等于共享名"}`, http.StatusBadRequest)
 		return
 	}
-	sharePath, err := findShareMetaPath(share)
+	sharePath, err := resolveShareOrPoolRootPath(share)
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
 		return

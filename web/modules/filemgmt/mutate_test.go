@@ -1142,6 +1142,9 @@ func TestHandleDeleteRejectsSymlinkIntoRecycle(t *testing.T) {
 
 // Task 10 review Important#2:所属共享 RecycleBin=false 时回退池根 .recycle
 // (share 级 .recycle 对回收站页不可见且 SMB 无 hide files)。
+// D1 修复:RecycleBin=false 共享回退池根 .recycle 时,布局改为相对池根的
+// keeptree(<poolRoot>/.recycle/<admin>/<相对池根原路径...>),而不是只存 basename——
+// 否则回收站页无法按原路径 restore(同构机验收缺陷 D1)。
 func TestHandleDeleteShareWithoutRecycleBinFallsBackToPoolRoot(t *testing.T) {
 	root := setupFakePool(t)
 	old := getFolderMetaFn
@@ -1164,10 +1167,78 @@ func TestHandleDeleteShareWithoutRecycleBinFallsBackToPoolRoot(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(root, "public", "photos", ".recycle")); err == nil {
 		t.Fatalf("RecycleBin=false 的共享内不应创建 .recycle")
 	}
-	moved := filepath.Join(root, ".recycle", common.GetNASUser(), "x.txt")
+	if _, err := os.Lstat(src); err == nil {
+		t.Fatalf("源应消失")
+	}
+	moved := filepath.Join(root, ".recycle", common.GetNASUser(), "public", "photos", "x.txt")
 	data, err := os.ReadFile(moved)
 	if err != nil || string(data) != "data" {
-		t.Fatalf("应回退池根 .recycle/<admin>/x.txt, err=%v got=%q", err, data)
+		t.Fatalf("应回退池根 keeptree .recycle/<admin>/public/photos/x.txt, err=%v got=%q", err, data)
+	}
+}
+
+// D1 修复:RecycleBin=false 共享下嵌套子目录文件,keeptree 应保留相对池根的完整
+// 原路径(含共享名、多级子目录),不是只取 basename。
+func TestHandleDeleteShareWithoutRecycleBinKeepsNestedTree(t *testing.T) {
+	root := setupFakePool(t)
+	old := getFolderMetaFn
+	getFolderMetaFn = func() []diskmgmt.FolderMeta {
+		return []diskmgmt.FolderMeta{
+			{Name: "public", Path: filepath.Join(root, "public"), RecycleBin: false},
+		}
+	}
+	t.Cleanup(func() { getFolderMetaFn = old })
+
+	nestedDir := filepath.Join(root, "public", "sub")
+	os.MkdirAll(nestedDir, 0755)
+	src := filepath.Join(nestedDir, "x.txt")
+	os.WriteFile(src, []byte("nested-data"), 0644)
+
+	body, _ := json.Marshal(map[string]string{"path": "public/sub/x.txt"})
+	req := httptest.NewRequest("POST", "/api/files/delete", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	handleDelete(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("删除应成功, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if _, err := os.Lstat(src); err == nil {
+		t.Fatalf("源应消失")
+	}
+	moved := filepath.Join(root, ".recycle", common.GetNASUser(), "public", "sub", "x.txt")
+	data, err := os.ReadFile(moved)
+	if err != nil || string(data) != "nested-data" {
+		t.Fatalf("应落池根 keeptree .recycle/<admin>/public/sub/x.txt, err=%v got=%q", err, data)
+	}
+}
+
+// D1 修复:无所属共享(fake meta 空列表)删嵌套文件 → keeptree 落位,保留相对
+// 池根的多级原路径,不是只存 basename。
+func TestHandleDeleteNoOwningShareKeepsNestedTree(t *testing.T) {
+	root := setupFakePool(t)
+	old := getFolderMetaFn
+	getFolderMetaFn = func() []diskmgmt.FolderMeta { return nil }
+	t.Cleanup(func() { getFolderMetaFn = old })
+
+	nestedDir := filepath.Join(root, "a")
+	os.MkdirAll(nestedDir, 0755)
+	src := filepath.Join(nestedDir, "b.txt")
+	os.WriteFile(src, []byte("loose-nested"), 0644)
+
+	body, _ := json.Marshal(map[string]string{"path": "a/b.txt"})
+	req := httptest.NewRequest("POST", "/api/files/delete", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	handleDelete(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("delete 应 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if _, err := os.Lstat(src); err == nil {
+		t.Fatalf("源应消失")
+	}
+	admin := common.GetNASUser()
+	wantPath := filepath.Join(root, recycleDirName, admin, "a", "b.txt")
+	data, err := os.ReadFile(wantPath)
+	if err != nil || string(data) != "loose-nested" {
+		t.Fatalf("应落池根 keeptree .recycle: err=%v got=%q", err, data)
 	}
 }
 

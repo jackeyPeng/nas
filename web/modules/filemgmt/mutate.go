@@ -570,8 +570,13 @@ func recycleAdminUser(r *http.Request) string {
 }
 
 // resolveRecycleTarget 算出 srcAbs 应落入的回收站目标路径(未处理冲突):
-//   - found(ownerShareOfVia 命中所属共享)→ <share.Path>/.recycle/<admin>/<srcAbs 相对 share.Path 的原相对路径...>(keeptree)
-//   - !found(池根散落文件)→ <poolRoot>/.recycle/<admin>/<basename>
+//   - found(ownerShareOfVia 命中所属共享)且 RecycleBin=true → <share.Path>/.recycle/<admin>/<srcAbs 相对 share.Path 的原相对路径...>(keeptree)
+//   - 其余情形(RecycleBin=false 共享回退 / 池根散落文件)→ <poolRoot>/.recycle/<admin>/<srcAbs 相对池根的原相对路径...>(keeptree)
+//
+// D1 修复(2026-10-13 同构机验收):池根回退分支此前只存 filepath.Base(srcAbs),
+// 丢失原路径信息,导致回收站页(diskmgmt recycleRoots 纳入池根伪共享后)无法按
+// 原路径 restore。改为相对池根的 keeptree,池根散落文件(rel 无斜杠)retains
+// 与旧 basename 布局等价,天然向后兼容。
 func resolveRecycleTarget(srcAbs, admin string) (string, error) {
 	meta, found := ownerShareOfVia(srcAbs)
 	// Task 10 review Important#2:所属共享未启用回收站(RecycleBin=false)时回退池根
@@ -585,7 +590,16 @@ func resolveRecycleTarget(srcAbs, admin string) (string, error) {
 		}
 		return filepath.Join(shareClean, recycleDirName, admin, rel), nil
 	}
-	return filepath.Join(normalizedRoot(), recycleDirName, admin, filepath.Base(srcAbs)), nil
+	// srcAbs 已经过 resolvePoolPath 锚定在池根内,rel 正常情况下不可能上逃;
+	// 以 ".." 开头仍作防御性拒绝,不信任该不变式到底。
+	rel, err := filepath.Rel(normalizedRoot(), srcAbs)
+	if err != nil {
+		return "", err
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("路径解析异常: 相对池根路径越界")
+	}
+	return filepath.Join(normalizedRoot(), recycleDirName, admin, rel), nil
 }
 
 // recycleConflictFree 若 target 已存在(os.Lstat 口径,目录/文件/符号链接均算冲突),
