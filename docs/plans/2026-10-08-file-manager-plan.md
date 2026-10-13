@@ -1282,6 +1282,11 @@ git commit -m "feat(filemgmt): 前端文件页 v1 — 浏览/面包屑/下载/�
 
 ### Task 12: M2 文档同步 + 发版(beta.18)
 
+**拍板记录(2026-10-13 Task 12 开工前)**:
+- **setup.sh FileBrowser 开关语义**:新增 `--with-filebrowser`;默认**整段跳过 [7/10]**(安装+config+systemd+端口校验);`command -v filebrowser` 命中(已装)→ 同样整段不动(不重装不重配不重启,"已装的不动");带开关 → 原行为不变。尾部「访问方式」的 FileBrowser 行仅已装时打印;「服务状态」循环保留(filebrowser 显示 inactive/unknown 无害)。ufw 8081/sudoers filebrowser 条目/services 页安装按钮(用户主动 opt-in)/https.go 均不动。
+- **注册表 4 项条件化(连带影响,plan 原文未覆盖)**:46 项注册表含 4 个 FileBrowser 专属项(ID 6 服务/21 systemd unit/24 二进制/33 数据库),默认不装后全新机器会 42/46 打破「注册表 46/46」验收口径。**拍板**:以 `/usr/local/bin/filebrowser` 存在性为门——不存在 → 4 项记 pass + detail「未安装(面板文件管理已取代,beta.18 起默认跳过)」;存在 → 维持真实检查。46 总数不变,新装机 42 真检 + 4 条件通过 = 46/46 口径保留;--with-filebrowser 机器全真检。
+- **保留期**:`--with-filebrowser` 保留一个版本周期,beta.19(M3)评估彻底移除(含注册表 4 项删除与 46→42 总数变更、官网/手册/卸载提示,spec §十一)。
+
 同 Task 6 清单(checklist 重算统计/CHANGELOG/TODO/红线/KB)。CHANGELOG 注明:setup.sh 本期起**新装默认不装 FileBrowser**(spec §十一 M2 节点)——Modify `scripts/setup.sh` [7/10] 段加开关(默认跳过安装,已装的不动;`--with-filebrowser` 保留安装能力一个版本周期)。
 
 ---
