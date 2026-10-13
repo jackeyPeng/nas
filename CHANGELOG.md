@@ -32,6 +32,7 @@
 
 ### 安全（独立审查驱动的关键修复，全部有回归测试）
 
+- **D1（同构机验收抓出）：默认配置下删除文件在回收站页不可见不可恢复**——向导/建户创建的共享默认 recycle_bin=0，面板删除走池根回退且旧布局仅存 basename（原位信息丢失），而回收站页只枚举 RecycleBin=true 共享。修复：回退布局改池根相对 keeptree（`.recycle/<user>/<池根相对原路径>`，可精确还原原位）+ recycleRoots() 纳入「(池根 xxx)」伪共享（真实同名共享优先）+ restore/delete/clear 统一走「真实共享优先、伪名兜底」解析；伪共享 clear 的 confirm_name 服务端校验同款。同构机复跑：删除→伪共享可见→原位 restore→穿越/非法 user 拒绝→RecycleBin=true share 级路径回归，全过
 - fix-home-perms home 根 Lstat 拒符号链接（防池根下链接把递归 chmod/chown 引到池外目标）
 - 非递归 chmod 拒符号链接（防跟随链接误改池内其他目标）；递归 Walk 链接跳过/Lchown 语义全程一致
 - mode 白名单双重校验（正则+数值 ≤0777）前后端对齐：前端 ^0?[0-7]{3}$ 实时预览即拒 1755，后端独立再校验

@@ -1362,12 +1362,12 @@ git commit -m "feat(filemgmt): 前端文件页 v1 — 浏览/面包屑/下载/�
 - [x] Step 2: 用户页(users)每个用户行加"修复 home 权限"按钮 → fix-home-perms,危险确认(type-to-confirm 输入用户名)
 - [x] Step 3: 批量:多选后 [改权限] 对话框对每条逐一调用(前端串行 + 进度 N/M),结果汇总 toast
 - [x] Step 4: i18n 双语 + check-i18n.py
-- [ ] Step 5: 浏览器实测 + **SMB 端验证**:面板 chown/chmod 后,smbclient 以该用户登录验证读写行为符合预期(force user 映射下 mask 0700/0775 的实际效果)
+- [x] Step 5: 浏览器实测 + **SMB 端验证**:面板 chown/chmod 后,smbclient 以该用户登录验证读写行为符合预期(force user 映射下 mask 0700/0775 的实际效果)（浏览器实测 2026-10-13 本地过；SMB 端 S1-S6 于同构机 测试机 过：跨用户 ACCESS_DENIED、force user=fm 下 0600 alice 属主文件读拒、面板 chown 回 fm 后立即可读、打坏 bob home→SMB 写拒→fix-home-perms→SMB 写恢复）
 - [x] Step 6: Commit `feat(filemgmt): 前端权限管理 — stat 回显/chmod chown 对话框/fix-home-perms/批量串行`
 
 ### Task 16: M3 文档同步 + 生产同构机全链路验收 + 发版(beta.19)
 
-**拍板记录(2026-10-13 同构机验收缺陷 D1 修复方案)**:10.216.10.57(Debian 13.6 裸机全新安装,beta.19 二进制)验收发现 **D1:默认配置下面板删除的文件在回收站页不可见不可恢复**——向导/建户创建的共享默认 recycle_bin=0,面板删除走池根回退 `.recycle/<admin>/<basename>`(仅存 basename,原位信息丢失),而回收站页 recycleRoots() 只枚举 RecycleBin=true 的共享 → API items:[] shares:{},手册「回收站页可直接恢复到原位置」承诺在默认配置下不成立(本地 E2E 因手工种库问题掩盖,同构机抓出)。**修复拍板**:
+**拍板记录(2026-10-13 同构机验收缺陷 D1 修复方案)**:测试机(Debian 13.6 裸机全新安装,beta.19 二进制)验收发现 **D1:默认配置下面板删除的文件在回收站页不可见不可恢复**——向导/建户创建的共享默认 recycle_bin=0,面板删除走池根回退 `.recycle/<admin>/<basename>`(仅存 basename,原位信息丢失),而回收站页 recycleRoots() 只枚举 RecycleBin=true 的共享 → API items:[] shares:{},手册「回收站页可直接恢复到原位置」承诺在默认配置下不成立(本地 E2E 因手工种库问题掩盖,同构机抓出)。**修复拍板**:
 - **回退布局改池根相对 keeptree**:resolveRecycleTarget 兜底分支从 `.recycle/<admin>/<basename>` 改为 `.recycle/<admin>/<相对池根原路径...>`(如 `.recycle/fm/public/acc-dir/x.bin`)——restore 可精确还原原位;recycleConflictFree 后缀逻辑不变。
 - **recycleRoots() 纳入池根伪共享**:key=`(池根 <base(pool)>)`(如「(池根 nas1)」),value=池根路径;folder meta 全部 distinct pool 去重注入;同名真实共享存在时真实共享优先(先建真实 map 再补伪条目)。空 .recycle 时 listRecycleDir 天然返回空,无害。
 - **restore/delete/clear 的 share→path 解析统一**:三 handler 现走 findShareMetaPath(share)(伪名查不到)——抽 helper「伪名→池根路径,否则 findShareMetaPath」,resolveRecyclePath/恢复目标重建(sharePath+rel)对伪共享自动成立(dst=池根/public/... = 原位,前缀断言通过)。
@@ -1377,9 +1377,9 @@ git commit -m "feat(filemgmt): 前端文件页 v1 — 浏览/面包屑/下载/�
 
 **同构机验收已通过项(2026-10-13,beta.19=4528b93)**:全新安装 [7/10] 跳过 FileBrowser(二进制不存在/HTML 零提及)、注册表 46/46、建池 merge 4×50G、alice/bob 建户(home 0700+samba);§十三:浏览/上传 2MB md5 一致/mkdir/rename/Range 206/zip/move/copy 全过;穿越攻击 6 用例全拒(..%2f 双重编码 404 fail-closed);审计 13 条含 chmod/chown/fix-home-perms;root 实测补齐单测 skip 项(chmod 生效/chown 生效/1755 拒/池根拒/fix-home-perms 777 root:root→700 alice:alice);SMB S1-S6:跨用户 ACCESS_DENIED、force user=fm 下 0600 alice 属主文件读拒(权限位真实生效)、面板 chown 回 fm 后立即可读、打坏 bob home→SMB 写拒→fix-home-perms→SMB 写恢复。
 
-- [ ] Step 1: 文档清单同 Task 6;CHANGELOG 注明 FileBrowser 卸载提示(cleanup 路径)
-- [ ] Step 2: **Debian 13 同构机全链路验收**(spec §十三 清单逐项打勾):2 用户 + home → 浏览/上传/下载/移动/删除/回收站 restore → chown 后 smbclient 实测 → 穿越攻击用例(`?path=../../etc/passwd`、符号链接、`..%2f`)全拒 → 审计日志逐条可查 → i18n 完整
-- [ ] Step 3: 验收抓到缺陷:修 + 单测 + commit + 重部署重跑受影响项,全绿才 tag
+- [x] Step 1: 文档清单同 Task 6;CHANGELOG 注明 FileBrowser 卸载提示(cleanup 路径)（4528b93 + D1 修复条目补充;checklist 177 项/18 模块 awk 实算;TODO#34 M3 全落地;手册 7.8 v3 + FileBrowser 退役说明 + 删除回退伪共享语义同步）
+- [x] Step 2: **Debian 13 同构机全链路验收**(spec §十三 清单逐项打勾):2 用户 + home → 浏览/上传/下载/移动/删除/回收站 restore → chown 后 smbclient 实测 → 穿越攻击用例(`?path=../../etc/passwd`、符号链接、`..%2f`)全拒 → 审计日志逐条可查 → i18n 完整（2026-10-13 @ 测试机 Debian 13.6 裸机全新安装,详见节首验收记录;i18n 本地 check-i18n 1213 键 parity;回收站 restore 经 D1 修复后复跑通过）
+- [x] Step 3: 验收抓到缺陷:修 + 单测 + commit + 重部署重跑受影响项,全绿才 tag（D1:d7c2a12 + f34795a,重部署 f34795a 二进制后 R1-R5 复跑全绿:回退 keeptree/伪共享 list/原位 restore/穿越拒绝/clear confirm 校验/RecycleBin=true share 级回归）
 - [ ] Step 4: tag v1.4.0-beta.19 + push;release.sh 与否用户拍板
 - [ ] Step 5: KB 同步 + nas-storage-architecture skill 更新(新增 filemgmt 模块的坑与约定:resolvePoolPath 唯一入口、.recycle 同源、os.Chmod 免 sudo 等)
 

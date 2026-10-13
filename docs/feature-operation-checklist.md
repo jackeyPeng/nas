@@ -139,7 +139,7 @@
 
 | 操作项 | 分类 | 说明 |
 |---|---|---|
-| 回收站条目列表（按共享筛选） | 只显示 | `GET /api/disk/recycle[?share=]`；新布局 .recycle/<user>/ + 旧 #recycle 兼容（「旧版」徽章） |
+| 回收站条目列表（按共享筛选） | 只显示 | `GET /api/disk/recycle[?share=]`；新布局 .recycle/<user>/ + 旧 #recycle 兼容（「旧版」徽章）；shares 含「(池根 xxx)」伪共享（面板删除的池根回退条目可见可恢复，D1 修复） |
 | 恢复条目 | 用户操作 | `POST /api/disk/recycle/restore`；rename 零拷贝回原路径，冲突加 .restored 后缀 |
 | 彻底删除条目 | 用户操作 | `POST /api/disk/recycle/delete`（confirm=yes） |
 | 清空共享回收站 | 用户操作 | `POST /api/disk/recycle/clear`（confirm_name=共享名，服务端校验） |
@@ -372,7 +372,7 @@
 | 重命名 | 用户操作 | `POST /api/files/rename` {path,new_name}；renameat2(RENAME_NOREPLACE) 原子防覆盖；同名 no-op 200；池根拒绝 |
 | 移动 | 用户操作 | `POST /api/files/move` {src,dst_dir}；同 fs renameat2 零拷贝，跨 fs copyTree+字节校验+权限对齐后才删源；目标在源内部（含符号链接解析后）400 防无限递归 |
 | 复制 | 用户操作 | `POST /api/files/copy` {src,dst_dir}；递归 copyTree（符号链接拷链接本身）；新文件按目标共享对齐权限；EEXIST 不误删并发方文件 |
-| 删除（进回收站） | 用户操作 | `POST /api/files/delete` {path}；落所属共享 `.recycle/<user>/<原相对路径>` keeptree 与回收站页同源联动；目录前端 type-to-confirm；共享根/池根/.recycle 段拒绝；RecycleBin=false 回退池根 |
+| 删除（进回收站） | 用户操作 | `POST /api/files/delete` {path}；落所属共享 `.recycle/<user>/<原相对路径>` keeptree 与回收站页同源联动；目录前端 type-to-confirm；共享根/池根/.recycle 段拒绝；RecycleBin=false 回退池根 `.recycle/<user>/<池根相对路径>` keeptree（经回收站页「(池根 xxx)」伪共享可见可原位恢复，D1 修复） |
 | 改权限（chmod 单条，含递归） | 用户操作 | `POST /api/files/chmod` {path,mode,recursive}；mode 白名单校验；非递归符号链接拒 400；递归 Walk 跳过链接；池根拒 400；前端属性对话框八进制输入+实时符号位预览+预设按钮（0644/0755/0700）；目录递归需 type-to-confirm 确认词 |
 | 改属主（chown 单条，含递归） | 用户操作 | `POST /api/files/chown` {path,owner,group,recursive}；owner/group 可选（空=不变传 -1，至少一项）；user.Lookup/LookupGroup 校验；符号链接 Lchown 改链接本身；池根拒 400；前端 owner/group 下拉（数据源 users/user-groups 懒加载） |
 | 批量改权限 | 用户操作 | 多选后工具栏「改权限」→ 前端串行逐条 POST chmod + 进度 N/M + 成功/失败汇总 toast；单条失败不中断；递归仅对所选目录生效；批量必输确认词（函数级守卫，UI disabled 之外纵深防御） |
