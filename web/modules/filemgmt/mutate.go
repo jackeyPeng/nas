@@ -574,7 +574,10 @@ func recycleAdminUser(r *http.Request) string {
 //   - !found(池根散落文件)→ <poolRoot>/.recycle/<admin>/<basename>
 func resolveRecycleTarget(srcAbs, admin string) (string, error) {
 	meta, found := ownerShareOfVia(srcAbs)
-	if found {
+	// Task 10 review Important#2:所属共享未启用回收站(RecycleBin=false)时回退池根
+	// .recycle——share 级 .recycle 对回收站页不可见(recycleRoots 只枚举 RecycleBin
+	// 共享)且 smb.conf 无 hide files 会对客户端可见;池根回收站是既定兜底语义。
+	if found && meta.RecycleBin {
 		shareClean := filepath.Clean(meta.Path)
 		rel, err := filepath.Rel(shareClean, srcAbs)
 		if err != nil {
@@ -622,10 +625,21 @@ func handleDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "不能删除池根", http.StatusBadRequest)
 		return
 	}
-	if pathHasRecycleSegment(req.Path) {
+	// 防套娃(Task 10 review Important#1):基于解析后路径判定,不用原始 req.Path——
+	// resolvePoolPath 会 TrimSpace+Clean,前导空格绕过(" .recycle/x")在此归一后必现形;
+	// 再对真实路径(EvalSymlinks)判定,堵池内符号链接指向 .recycle 的绕过。
+	if litRel, relErr := filepath.Rel(normalizedRoot(), srcAbs); relErr == nil && pathHasRecycleSegment(litRel) {
 		http.Error(w, "回收站内容请在回收站页管理", http.StatusBadRequest)
 		return
 	}
+	if realSrc, evalErr := filepath.EvalSymlinks(srcAbs); evalErr == nil {
+		realRel, relErr := filepath.Rel(normalizedRoot(), realSrc)
+		if relErr == nil && pathHasRecycleSegment(realRel) {
+			http.Error(w, "回收站内容请在回收站页管理", http.StatusBadRequest)
+			return
+		}
+	}
+	// (源不存在时 EvalSymlinks 报错跳过真实路径判定,由下方 Lstat 统一 404)
 	meta, found := ownerShareOfVia(srcAbs)
 	if found && srcAbs == filepath.Clean(meta.Path) {
 		http.Error(w, "不能删除共享文件夹本身,请在存储页操作", http.StatusBadRequest)
@@ -637,6 +651,12 @@ func handleDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	admin := recycleAdminUser(r)
+	// admin 用户名纵深校验(Task 10 review Minor#3,对照 diskmgmt resolveRecyclePath):
+	// 现有用户白名单已挡住,此处纯防御。
+	if strings.Contains(admin, "/") || strings.Contains(admin, "..") {
+		http.Error(w, "删除者用户名非法", http.StatusBadRequest)
+		return
+	}
 	recycleTarget, err := resolveRecycleTarget(srcAbs, admin)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

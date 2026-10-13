@@ -788,8 +788,8 @@ func withPublicFolderMeta(t *testing.T, root string) {
 	old := getFolderMetaFn
 	getFolderMetaFn = func() []diskmgmt.FolderMeta {
 		return []diskmgmt.FolderMeta{
-			{Name: "public", Path: filepath.Join(root, "public")},
-			{Name: "fm", Path: filepath.Join(root, "fm")},
+			{Name: "public", Path: filepath.Join(root, "public"), RecycleBin: true},
+			{Name: "fm", Path: filepath.Join(root, "fm"), RecycleBin: true},
 		}
 	}
 	t.Cleanup(func() { getFolderMetaFn = old })
@@ -1091,5 +1091,110 @@ func TestHandleCopyRejectsDstInsideSrcViaSymlink(t *testing.T) {
 	entries, _ := os.ReadDir(filepath.Join(srcDir, "b"))
 	if len(entries) != 0 {
 		t.Fatalf("拒绝后 src 子树内不应有新增, got %v", entries)
+	}
+}
+
+// Task 10 review Important#1(a):前导空格绕过——resolvePoolPath 会 TrimSpace,
+// 防套娃守卫必须基于归一后路径判定," .recycle/..." 不得放行。
+func TestHandleDeleteRejectsLeadingSpaceRecyclePath(t *testing.T) {
+	root := setupFakePool(t)
+	withPublicFolderMeta(t, root)
+	admin := common.GetNASUser()
+	victim := filepath.Join(root, ".recycle", admin, "victim.txt")
+	os.MkdirAll(filepath.Dir(victim), 0700)
+	os.WriteFile(victim, []byte("recycled"), 0644)
+
+	body, _ := json.Marshal(map[string]string{"path": " .recycle/" + admin + "/victim.txt"})
+	req := httptest.NewRequest("POST", "/api/files/delete", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	handleDelete(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("前导空格 .recycle 路径应 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if _, err := os.Stat(victim); err != nil {
+		t.Fatalf("回收站内容应原样未动: %v", err)
+	}
+}
+
+// Task 10 review Important#1(b):池内符号链接绕过——public/hole → public/.recycle,
+// 删 public/hole/<admin>/v.txt 字面无 .recycle 段,真实落点在回收站内,必须 400。
+func TestHandleDeleteRejectsSymlinkIntoRecycle(t *testing.T) {
+	root := setupFakePool(t)
+	withPublicFolderMeta(t, root)
+	admin := common.GetNASUser()
+	recycle := filepath.Join(root, "public", ".recycle", admin)
+	os.MkdirAll(recycle, 0700)
+	v := filepath.Join(recycle, "v.txt")
+	os.WriteFile(v, []byte("recycled"), 0644)
+	os.Symlink(filepath.Join(root, "public", ".recycle"), filepath.Join(root, "public", "hole"))
+
+	body, _ := json.Marshal(map[string]string{"path": "public/hole/" + admin + "/v.txt"})
+	req := httptest.NewRequest("POST", "/api/files/delete", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	handleDelete(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("经池内符号链接指向回收站应 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if _, err := os.Stat(v); err != nil {
+		t.Fatalf("回收站内文件应原样未动: %v", err)
+	}
+}
+
+// Task 10 review Important#2:所属共享 RecycleBin=false 时回退池根 .recycle
+// (share 级 .recycle 对回收站页不可见且 SMB 无 hide files)。
+func TestHandleDeleteShareWithoutRecycleBinFallsBackToPoolRoot(t *testing.T) {
+	root := setupFakePool(t)
+	old := getFolderMetaFn
+	getFolderMetaFn = func() []diskmgmt.FolderMeta {
+		return []diskmgmt.FolderMeta{
+			{Name: "photos", Path: filepath.Join(root, "public", "photos"), RecycleBin: false},
+		}
+	}
+	t.Cleanup(func() { getFolderMetaFn = old })
+
+	src := filepath.Join(root, "public", "photos", "x.txt")
+	os.WriteFile(src, []byte("data"), 0644)
+	body, _ := json.Marshal(map[string]string{"path": "public/photos/x.txt"})
+	req := httptest.NewRequest("POST", "/api/files/delete", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	handleDelete(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("删除应成功, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if _, err := os.Stat(filepath.Join(root, "public", "photos", ".recycle")); err == nil {
+		t.Fatalf("RecycleBin=false 的共享内不应创建 .recycle")
+	}
+	moved := filepath.Join(root, ".recycle", common.GetNASUser(), "x.txt")
+	data, err := os.ReadFile(moved)
+	if err != nil || string(data) != "data" {
+		t.Fatalf("应回退池根 .recycle/<admin>/x.txt, err=%v got=%q", err, data)
+	}
+}
+
+// 删除符号链接本身:搬链接不解引用,链接目标原样保留。
+func TestHandleDeleteMovesSymlinkItself(t *testing.T) {
+	root := setupFakePool(t)
+	withPublicFolderMeta(t, root)
+	target := filepath.Join(root, "public", "a.txt")
+	os.WriteFile(target, []byte("target"), 0644)
+	link := filepath.Join(root, "public", "lnk")
+	os.Symlink(target, link)
+
+	body, _ := json.Marshal(map[string]string{"path": "public/lnk"})
+	req := httptest.NewRequest("POST", "/api/files/delete", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	handleDelete(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("删除符号链接应 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if _, err := os.Lstat(link); err == nil {
+		t.Fatalf("链接应已消失")
+	}
+	if data, err := os.ReadFile(target); err != nil || string(data) != "target" {
+		t.Fatalf("链接目标应原样保留, got=%q err=%v", data, err)
+	}
+	moved := filepath.Join(root, "public", ".recycle", common.GetNASUser(), "lnk")
+	if fi, err := os.Lstat(moved); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("回收站内应是链接本身, err=%v", err)
 	}
 }
