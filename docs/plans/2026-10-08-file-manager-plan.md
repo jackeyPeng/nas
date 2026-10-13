@@ -1321,6 +1321,16 @@ git commit -m "feat(filemgmt): 前端文件页 v1 — 浏览/面包屑/下载/�
 
 ### Task 14: fix-home-perms 一键模板
 
+**拍板记录(2026-10-13 Task 14 开工前,规格空白裁决)**:
+- **修复语义=只改权限属主,不做 provisioning**:递归 0700 + chown 到目标用户;**不创建缺失的默认子目录**(media/photos/documents/downloads 的创建是 EnsureUserHome/建户流程职责,修复模板不越权)。
+- **home 路径**:`filepath.Join(normalizedRoot(), username)`(filemgmt 池根函数,不硬编码 /data/nas1;与 EnsureUserHome 的 const pool 语义一致但走本模块统一入口)。
+- **校验链**(顺序):非 POST→405;username 含 `/` 或 `..` → 400(纵深防御,先于 Lookup);user.Lookup(username) 失败→400「用户不存在」;home 不存在或非目录→400「home 目录不存在」。
+- **组解析**:chown 目标 = username 用户 + **username 同名组**(EnsureUserHome 基准 chown username:username);LookupGroup(username) 失败时回退该用户主组(u.Gid)并注释说明——比 EnsureUserHome 的 SudoExec 静默失败更稳。
+- **递归实现**:复用 Task 13 的 chmodTree/chownTree 同款语义(Walk、符号链接 chmod 跳过/chown 用 Lchown);home 根本身显式 Chmod 0700 + Chown。失败即停 500 带路径,不回滚(与 Task 13 一致)。
+- **审计**:成功路径 `LogAuditRequest(r, "files", "fix-home-perms", "username=...", "success")`(design §六.3 高危清单点名项)。
+- **public 模板不做**(plan 原文「如需 public 修复另加 target 参数,实现时与用户确认」——M3 范围内不加,留用户拍板)。
+- **测试**:构造假 home(0777 乱权限+乱属主)→ fix → 递归 0700 断言(非 root 可测)+ chown 断言 root-gated skip;不存在用户/无 home/username 带斜杠 → 400;GET → 405。
+
 **Files:** Modify `perms.go` + 测试
 
 **Interfaces:** Produces `handleFixHomePerms`(POST `{username}`)— 权限基准**照抄** config_sync.go 的 EnsurePoolStructure/EnsureUserHome:home `/data/nas1/<username>` 递归 0700 + chown username:username;校验 username 是系统用户(user.Lookup)且 home 目录存在,否则 400。**不含 public 模板**(public 2775 属 EnsurePoolStructure 职责,面板已有建池流程;本端点只管用户 home——如需 public 修复另加 `{target:"public"}` 参数,实现时与用户确认)
