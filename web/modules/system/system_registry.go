@@ -230,6 +230,15 @@ func GetRegistry() RegistryReport {
 	return report
 }
 
+// fileBrowserInstalled 判断 FileBrowser 二进制是否存在。
+// beta.18 起 setup.sh 默认不装 FileBrowser（面板文件管理已取代），
+// 新装机上 FileBrowser 专属注册表项（ID 6/21/24/33）若仍按"必须存在"硬检查会导致 46/46 口径跌到 42/46；
+// 以 /usr/local/bin/filebrowser 存在性为门条件化这些项，--with-filebrowser 装过的机器维持真实检查。
+func fileBrowserInstalled() bool {
+	_, err := os.Stat("/usr/local/bin/filebrowser")
+	return err == nil
+}
+
 // RefreshRegistry re-checks all items and updates the database
 func RefreshRegistry() RegistryReport {
 	db := initRegistryDB()
@@ -297,7 +306,11 @@ func RefreshRegistry() RegistryReport {
 	checkService(3, "nfs-kernel-server")
 	checkService(4, "vsftpd")
 	checkService(5, "rclone-webdav")
-	checkService(6, "filebrowser")
+	if fileBrowserInstalled() {
+		checkService(6, "filebrowser")
+	} else {
+		updateItem(6, "pass", "未安装(面板文件管理已取代,beta.18 起默认跳过)")
+	}
 	checkService(7, "rclone-s3")
 	checkService(8, "fail2ban")
 	checkService(9, "nas-panel")
@@ -337,12 +350,20 @@ func RefreshRegistry() RegistryReport {
 
 	// 三、systemd 服务文件 (4项)
 	checkFileState(20, "/etc/systemd/system/rclone-webdav.service", true, "存在", "不存在")
-	checkFileState(21, "/etc/systemd/system/filebrowser.service", true, "存在", "不存在")
+	if fileBrowserInstalled() {
+		checkFileState(21, "/etc/systemd/system/filebrowser.service", true, "存在", "不存在")
+	} else {
+		updateItem(21, "pass", "未安装(面板文件管理已取代,beta.18 起默认跳过)")
+	}
 	checkFileState(22, "/etc/systemd/system/rclone-s3.service", true, "存在", "不存在")
 	checkFileState(23, "/etc/systemd/system/nas-panel.service", true, "存在", "不存在")
 
 	// 四、二进制文件 (2项)
-	checkFileState(24, "/usr/local/bin/filebrowser", true, "存在", "不存在")
+	if fileBrowserInstalled() {
+		checkFileState(24, "/usr/local/bin/filebrowser", true, "存在", "不存在")
+	} else {
+		updateItem(24, "pass", "未安装(面板文件管理已取代,beta.18 起默认跳过)")
+	}
 	checkFileState(25, "/usr/local/bin/nas-panel", true, "存在", "不存在")
 
 	// 五、系统用户/密码 (4项)
@@ -411,7 +432,11 @@ func RefreshRegistry() RegistryReport {
 		updateItem(31, "warn", "不存在 (首次配置同步后生成)")
 	}
 	checkFileState(32, "/opt/nas/data/operations.db", false, "已清理 (不存在)", "仍存在")
-	checkFileState(33, "/etc/filebrowser/filebrowser.db", true, "存在", "不存在")
+	if fileBrowserInstalled() {
+		checkFileState(33, "/etc/filebrowser/filebrowser.db", true, "存在", "不存在")
+	} else {
+		updateItem(33, "pass", "未安装(面板文件管理已取代,beta.18 起默认跳过)")
+	}
 
 	// 七、存储层 (6项)
 	vgsOut, _ := common.SudoOutput("/usr/sbin/vgs", "--noheadings")

@@ -6,6 +6,7 @@
 # 包含服务: Samba, NFS, FTP, WebDAV, FileBrowser, S3, NAS Web Panel
 # 安全: Fail2ban, UFW 防火墙, unattended-upgrades
 # 10步部署, 自动检测当前用户
+# 开关: --config-only 仅同步配置；--with-filebrowser 安装 FileBrowser（beta.18 起默认不装，面板文件管理已取代）
 
 set -e
 
@@ -14,10 +15,12 @@ set -e
 # 跳过 apt 安装、目录创建、FileBrowser/nas-panel 安装。
 # 用于在线升级后同步新版配置模板（幂等，用户自加段保留）。
 CONFIG_ONLY=false
+WITH_FILEBROWSER=false
 for arg in "$@"; do
     case "$arg" in
         --config-only) CONFIG_ONLY=true ;;
-        *) echo "未知参数: $arg（支持: --config-only）"; exit 1 ;;
+        --with-filebrowser) WITH_FILEBROWSER=true ;;
+        *) echo "未知参数: $arg（支持: --config-only --with-filebrowser）"; exit 1 ;;
     esac
 done
 
@@ -348,69 +351,72 @@ echo "[7/10] 安装 FileBrowser..."
 if [ "$CONFIG_ONLY" = true ]; then
     echo "  --config-only 模式跳过 FileBrowser 安装"
 elif command -v filebrowser &>/dev/null; then
-    echo "  FileBrowser 已安装，跳过"
-elif [ -n "$OFFLINE_BUNDLE" ]; then
-    echo "  从离线包安装 FileBrowser..."
-    mkdir -p /tmp/nas-offline
-    tar xzf "$OFFLINE_BUNDLE" -C /tmp/nas-offline
-    cp /tmp/nas-offline/bin/filebrowser /usr/local/bin/
-    chmod +x /usr/local/bin/filebrowser
-    rm -rf /tmp/nas-offline
-    echo "  ✓ 离线安装完成"
+    echo "  FileBrowser 已安装，保留现状（面板文件管理已取代入口；如需卸载见文档）"
+elif [ "$WITH_FILEBROWSER" != true ]; then
+    echo "  [7/10] 跳过 FileBrowser（beta.18 起默认不装，面板文件管理已取代；--with-filebrowser 可安装）"
 else
-    # 尝试从 GitHub releases 分支下载离线包（含 filebrowser + nas-panel + 配置）
-    set +e  # 下载失败不应中断整个脚本
-    download_file /tmp/filebrowser.tar.gz \
-        "https://github.com/jackeyPeng/nas/raw/releases/nas-bundle-${BUNDLE_VERSION}-${ARCH}.tar.gz" \
-        "https://ghfast.top/https://github.com/jackeyPeng/nas/raw/releases/nas-bundle-${BUNDLE_VERSION}-${ARCH}.tar.gz" \
-        "https://get.z1.sale/filebrowser/linux-${ARCH}-filebrowser.tar.gz" \
-        "https://get.z1.sale/filebroswer/linux-${ARCH}-filebrowser.tar.gz" \
-        "https://github.com/filebrowser/filebrowser/releases/download/${FILEBROWSER_VERSION}/linux-${ARCH}-filebrowser.tar.gz" \
-        "https://ghfast.top/https://github.com/filebrowser/filebrowser/releases/download/${FILEBROWSER_VERSION}/linux-${ARCH}-filebrowser.tar.gz"
-    FB_DOWNLOAD_OK=$?
-    set -e
-    if [ "$FB_DOWNLOAD_OK" -eq 0 ]; then
-        cd /tmp && tar xzf filebrowser.tar.gz
-        # 不同来源的 tar.gz 结构不同：可能直接是 filebrowser 或 linux-amd64-filebrowser/filebrowser
-        if [ -f "filebrowser" ]; then
-            mv filebrowser /usr/local/bin/
-        elif [ -f "linux-amd64-filebrowser/filebrowser" ]; then
-            mv linux-amd64-filebrowser/filebrowser /usr/local/bin/
-        elif FB_BIN=$(find . -maxdepth 2 -name filebrowser -type f | head -1) && [ -n "$FB_BIN" ]; then
-            mv "$FB_BIN" /usr/local/bin/
-        else
-            echo "  警告: 无法找到 filebrowser 二进制文件"
-        fi
-        rm -rf filebrowser.tar.gz linux-amd64-filebrowser filebrowser 2>/dev/null
-        cd - > /dev/null
+    if [ -n "$OFFLINE_BUNDLE" ]; then
+        echo "  从离线包安装 FileBrowser..."
+        mkdir -p /tmp/nas-offline
+        tar xzf "$OFFLINE_BUNDLE" -C /tmp/nas-offline
+        cp /tmp/nas-offline/bin/filebrowser /usr/local/bin/
         chmod +x /usr/local/bin/filebrowser
+        rm -rf /tmp/nas-offline
+        echo "  ✓ 离线安装完成"
+    else
+        # 尝试从 GitHub releases 分支下载离线包（含 filebrowser + nas-panel + 配置）
+        set +e  # 下载失败不应中断整个脚本
+        download_file /tmp/filebrowser.tar.gz \
+            "https://github.com/jackeyPeng/nas/raw/releases/nas-bundle-${BUNDLE_VERSION}-${ARCH}.tar.gz" \
+            "https://ghfast.top/https://github.com/jackeyPeng/nas/raw/releases/nas-bundle-${BUNDLE_VERSION}-${ARCH}.tar.gz" \
+            "https://get.z1.sale/filebrowser/linux-${ARCH}-filebrowser.tar.gz" \
+            "https://get.z1.sale/filebroswer/linux-${ARCH}-filebrowser.tar.gz" \
+            "https://github.com/filebrowser/filebrowser/releases/download/${FILEBROWSER_VERSION}/linux-${ARCH}-filebrowser.tar.gz" \
+            "https://ghfast.top/https://github.com/filebrowser/filebrowser/releases/download/${FILEBROWSER_VERSION}/linux-${ARCH}-filebrowser.tar.gz"
+        FB_DOWNLOAD_OK=$?
+        set -e
+        if [ "$FB_DOWNLOAD_OK" -eq 0 ]; then
+            cd /tmp && tar xzf filebrowser.tar.gz
+            # 不同来源的 tar.gz 结构不同：可能直接是 filebrowser 或 linux-amd64-filebrowser/filebrowser
+            if [ -f "filebrowser" ]; then
+                mv filebrowser /usr/local/bin/
+            elif [ -f "linux-amd64-filebrowser/filebrowser" ]; then
+                mv linux-amd64-filebrowser/filebrowser /usr/local/bin/
+            elif FB_BIN=$(find . -maxdepth 2 -name filebrowser -type f | head -1) && [ -n "$FB_BIN" ]; then
+                mv "$FB_BIN" /usr/local/bin/
+            else
+                echo "  警告: 无法找到 filebrowser 二进制文件"
+            fi
+            rm -rf filebrowser.tar.gz linux-amd64-filebrowser filebrowser 2>/dev/null
+            cd - > /dev/null
+            chmod +x /usr/local/bin/filebrowser
+        fi
     fi
-fi
 
-mkdir -p /etc/filebrowser
-if [ ! -f /etc/filebrowser/filebrowser.db ]; then
-    filebrowser config init --database /etc/filebrowser/filebrowser.db 2>/dev/null || true
-fi
-# 固定监听地址和端口：0.0.0.0:8081（默认 127.0.0.1:8080 会与 WebDAV 冲突且无法外部访问）
-# 注意：必须在服务停止状态下执行 config set，运行中的服务会锁数据库导致 timeout（已知坑）
-systemctl stop filebrowser 2>/dev/null || true
-if filebrowser config set \
-    --database /etc/filebrowser/filebrowser.db \
-    --address 0.0.0.0 \
-    --port 8081 \
-    --root "$DATA_DIR/nas1/public" \
-    --log /var/log/filebrowser.log >/dev/null 2>&1; then
-    echo "  ✓ FileBrowser 监听 0.0.0.0:8081"
-else
-    echo "  ✗ FileBrowser config set 失败"
-    exit 1
-fi
-filebrowser users add "$NAS_USER" "$NAS_PASS" \
-    --database /etc/filebrowser/filebrowser.db \
-    --perm.admin 2>/dev/null || filebrowser users update "$NAS_USER" --password "$NAS_PASS" \
-    --database /etc/filebrowser/filebrowser.db 2>/dev/null || true
+    mkdir -p /etc/filebrowser
+    if [ ! -f /etc/filebrowser/filebrowser.db ]; then
+        filebrowser config init --database /etc/filebrowser/filebrowser.db 2>/dev/null || true
+    fi
+    # 固定监听地址和端口：0.0.0.0:8081（默认 127.0.0.1:8080 会与 WebDAV 冲突且无法外部访问）
+    # 注意：必须在服务停止状态下执行 config set，运行中的服务会锁数据库导致 timeout（已知坑）
+    systemctl stop filebrowser 2>/dev/null || true
+    if filebrowser config set \
+        --database /etc/filebrowser/filebrowser.db \
+        --address 0.0.0.0 \
+        --port 8081 \
+        --root "$DATA_DIR/nas1/public" \
+        --log /var/log/filebrowser.log >/dev/null 2>&1; then
+        echo "  ✓ FileBrowser 监听 0.0.0.0:8081"
+    else
+        echo "  ✗ FileBrowser config set 失败"
+        exit 1
+    fi
+    filebrowser users add "$NAS_USER" "$NAS_PASS" \
+        --database /etc/filebrowser/filebrowser.db \
+        --perm.admin 2>/dev/null || filebrowser users update "$NAS_USER" --password "$NAS_PASS" \
+        --database /etc/filebrowser/filebrowser.db 2>/dev/null || true
 
-cat > /etc/systemd/system/filebrowser.service << 'FBEOF'
+    cat > /etc/systemd/system/filebrowser.service << 'FBEOF'
 [Unit]
 Description=File Browser
 After=network.target
@@ -424,21 +430,22 @@ RestartSec=10
 [Install]
 WantedBy=multi-user.target
 FBEOF
-systemctl daemon-reload
-systemctl enable filebrowser
-systemctl reset-failed filebrowser 2>/dev/null
-timeout 60 systemctl restart filebrowser || echo "  ⚠ filebrowser 重启失败（结尾注册表会标记，可稍后手动 restart）"
+    systemctl daemon-reload
+    systemctl enable filebrowser
+    systemctl reset-failed filebrowser 2>/dev/null
+    timeout 60 systemctl restart filebrowser || echo "  ⚠ filebrowser 重启失败（结尾注册表会标记，可稍后手动 restart）"
 
-# 验证 FileBrowser 端口确已生效（防 config set 静默失败）
-sleep 3
-FB_PORT_CHECK=$(ss -tln 2>/dev/null | grep -c ":8081 " || true)
-if [ "$FB_PORT_CHECK" -ge 1 ]; then
-    echo "  ✓ FileBrowser 配置完成（端口 8081 已监听）"
-else
-    echo "  ✗ FileBrowser 未监听 8081，检查: journalctl -u filebrowser"
-    echo "    常见原因: 数据库中残留旧端口配置，执行:"
-    echo "    filebrowser config set --database /etc/filebrowser/filebrowser.db --address 0.0.0.0 --port 8081"
-    exit 1
+    # 验证 FileBrowser 端口确已生效（防 config set 静默失败）
+    sleep 3
+    FB_PORT_CHECK=$(ss -tln 2>/dev/null | grep -c ":8081 " || true)
+    if [ "$FB_PORT_CHECK" -ge 1 ]; then
+        echo "  ✓ FileBrowser 配置完成（端口 8081 已监听）"
+    else
+        echo "  ✗ FileBrowser 未监听 8081，检查: journalctl -u filebrowser"
+        echo "    常见原因: 数据库中残留旧端口配置，执行:"
+        echo "    filebrowser config set --database /etc/filebrowser/filebrowser.db --address 0.0.0.0 --port 8081"
+        exit 1
+    fi
 fi
 
 # ==================== [8/10] 配置 S3 对象存储 (rclone serve s3) ====================
@@ -673,7 +680,9 @@ echo "  - Samba:       //NAS_IP/$NAS_USER (用户主目录)"
 echo "  - NFS:         mount -t nfs NAS_IP:/data/nas1/public /mnt/nas"
 echo "  - FTP:         ftp://NAS_IP/ (用户名: $NAS_USER)"
 echo "  - WebDAV:      http://NAS_IP:8080/ (用户名: $NAS_USER)"
-echo "  - FileBrowser: http://NAS_IP:8081/ (用户名: $NAS_USER)"
+if command -v filebrowser &>/dev/null; then
+    echo "  - FileBrowser: http://NAS_IP:8081/ (用户名: $NAS_USER)"
+fi
 echo "  - S3 API:       http://NAS_IP:9000 (access key: $S3_ACCESS_KEY, s3cmd --no-ssl --host=NAS_IP:9000 ls s3://public/)"
 echo "  - Web 面板:    http://NAS_IP:8090 (用户名: $NAS_USER)"
 echo ""
