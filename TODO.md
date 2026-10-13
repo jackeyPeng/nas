@@ -1,6 +1,6 @@
 # NAS 项目优化路线图
 
-> 最后更新: 2026-10-12
+> 最后更新: 2026-10-13
 >
 > 商业化 P0 已全部完成（7/7）；原 33 项 TODO 完成 23/33，另 #34 面板文件管理进行中。
 
@@ -843,17 +843,23 @@ NAS 里的视频/音乐/照片直接在浏览器播放，带媒体库海报墙�
 **描述**:  
 面板内置整池文件管理器，取代 FileBrowser 外链。设计规格 + 16 Task TDD 计划见 docs/plans/2026-10-08-file-manager-{design,plan}.md，三里程碑 M1 只读 → M2 写操作 → M3 权限修复。
 
-**已完成（M1，2026-10-12）**:
+**已完成（M1+M2，2026-10-13）**:
 - ✅ Task 1 路径安全核心 resolvePoolPath（拒绝穿越/绝对路径/符号链接逃逸，最深已存在祖先 EvalSymlinks）
 - ✅ Task 2 列目录 API（排序/属主/权限位/符号链接标注/2000 条截断）
 - ✅ Task 3 下载（ServeContent+Range）+ 目录 zip 流式打包（符号链接不跟随）
 - ✅ Task 4 文本/图片预览（SVG 拒绝防 XSS）+ 池/目录用量（du 异步 + 三态降级）
 - ✅ Task 5 前端文件页 v1（浏览/面包屑/下载/预览），导航替换 FileBrowser 外链
 - ✅ Task 6 文档同步（checklist 模块 17 + 产品手册 7.8 + CHANGELOG beta.17）
+- ✅ Task 7 mkdir + rename（validateFileName 白名单 + renameat2 NOREPLACE 防 TOCTOU + 同名 no-op）
+- ✅ Task 8 流式上传（MultipartReader 不撑内存 + 409/overwrite + 权限对齐 + O_EXCL 碰撞不误删）
+- ✅ Task 9 move + copy（同 fs renameat2 零拷贝；跨 fs copyTree+字节校验+对齐后删源；子目录递归防御 EvalSymlinks）
+- ✅ Task 10 删除进 .recycle（keeptree 与回收站页同源联动 + 防套娃真实路径判定 + RecycleBin=false 回退池根）
+- ✅ Task 11 前端 v2（多选工具栏/XHR 上传进度/移动复制选择器/删除 type-to-confirm/i18n 双语）+ 浏览器全流程 E2E 通过
+- ✅ Task 12 setup.sh FileBrowser 默认不装（--with-filebrowser 保留一版）+ 注册表 4 项条件化 + 文档同步（checklist 172 项/18 模块）
 
 **待办**:
-- [ ] M2（Task 7-12）：mkdir/rename、流式上传、move/copy、删除进 .recycle、前端写操作、setup.sh 默认不装 FileBrowser
-- [ ] M3（Task 13-16）：stat/chmod/chown、fix-home-perms 一键模板、前端 v3、生产同构机全链路验收
+- [ ] M3（Task 13-16）：stat/chmod/chown、fix-home-perms 一键模板、前端 v3 权限对话框、生产同构机全链路验收 + FileBrowser 卸载提示
+- [ ] 加固遗留：diskmgmt GetAllFolderMeta rows.Scan 错误未检查（NULL 列静默半填充）；审计 detail 用户输入转义；ownerShareOf/ownerShareOfVia 去重
 
 ---
 

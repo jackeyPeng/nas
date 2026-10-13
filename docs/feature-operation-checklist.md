@@ -1,6 +1,6 @@
 # NAS 面板 功能清单 + 操作项分类（测试验证清单）
 
-> 最后更新: 2026-10-12
+> 最后更新: 2026-10-13
 > 代码基准: /home/jacky/soft/nas（Go 后端 web/ + Alpine.js 前端 web/frontend/）
 > 用途: 逐项测试验证。每个「操作项」标注三种分类之一，测试时按行逐个过。
 >
@@ -355,7 +355,7 @@
 
 ## 17. 文件管理（FileMgmt）
 
-**功能说明**: 面板内置整池文件管理器（v1 只读基线，取代 FileBrowser 外链）。前端「文件」页：目录浏览 + 面包屑导航 + 下载 + 预览 + 用量展示。安全核心：所有 handler 入参一律池根相对路径，经 `resolvePoolPath`（filemgmt/path.go）锚定——拒绝绝对路径 / `..` 子串 / 符号链接逃逸（对最深已存在祖先 EvalSymlinks）。
+**功能说明**: 面板内置整池文件管理器（v2 写操作已落地，取代 FileBrowser；beta.18 起新装默认不装 FileBrowser）。前端「文件」页：目录浏览 + 面包屑导航 + 下载 + 预览 + 用量展示 + 多选工具栏（上传/新建/移动/复制/删除）。安全核心：所有 handler 入参一律池根相对路径，经 `resolvePoolPath`（filemgmt/path.go）锚定——拒绝绝对路径 / `..` 子串 / 符号链接逃逸（对最深已存在祖先 EvalSymlinks）；写操作双重锚定 + renameat2/mkdir O_EXCL 原子兜底。
 
 | 操作项 | 分类 | 说明 |
 |---|---|---|
@@ -366,6 +366,12 @@
 | 目录 zip 流式下载 | 只显示 | `GET /api/files/zip`，流式写 ResponseWriter；符号链接存 stub 不跟随 |
 | 文本预览 | 只显示 | 限 1MB；JSON 传输 + 前端 x-text 转义（无效 UTF-8 → U+FFFD） |
 | 图片预览 | 只显示 | 限 10MB blob URL（closePreview 防泄漏）；SVG 一律 415（防存储型 XSS） |
+| 上传（XHR 流式 + 进度条） | 用户操作 | `POST /api/files/upload?path=` multipart，MultipartReader 流式不撑内存；同名 409 + overwrite=yes 覆盖重试；磁盘满 507 清半成品；落盘按目标共享权限对齐（public 0664/其他 0600） |
+| 新建目录 | 用户操作 | `POST /api/files/mkdir` {path,name}；validateFileName 白名单；双重锚定；mode 恒 0755（显式 chmod 消 umask） |
+| 重命名 | 用户操作 | `POST /api/files/rename` {path,new_name}；renameat2(RENAME_NOREPLACE) 原子防覆盖；同名 no-op 200；池根拒绝 |
+| 移动 | 用户操作 | `POST /api/files/move` {src,dst_dir}；同 fs renameat2 零拷贝，跨 fs copyTree+字节校验+权限对齐后才删源；目标在源内部（含符号链接解析后）400 防无限递归 |
+| 复制 | 用户操作 | `POST /api/files/copy` {src,dst_dir}；递归 copyTree（符号链接拷链接本身）；新文件按目标共享对齐权限；EEXIST 不误删并发方文件 |
+| 删除（进回收站） | 用户操作 | `POST /api/files/delete` {path}；落所属共享 `.recycle/<user>/<原相对路径>` keeptree 与回收站页同源联动；目录前端 type-to-confirm；共享根/池根/.recycle 段拒绝；RecycleBin=false 回退池根 |
 | 文件访问路径锚定校验 | 系统自动 | 所有 /api/files/* 请求过 resolvePoolPath，fail-closed 拒绝池外访问 |
 
 ---
@@ -394,9 +400,9 @@
 | 分类 | 操作项数 |
 |---|---|
 | 只显示 | 58 |
-| 用户操作 | 82 |
+| 用户操作 | 88 |
 | 系统自动 | 26 |
-| **合计** | **166** |
+| **合计** | **172** |
 | 功能模块数 | 18 |
 
 > 注：「系统自动」项里，第 18 节「系统自动任务汇总」是对散落在模块 3/5/6/13/14/15/16/17 里的无人值守任务的跨模块汇总（重复计数），测试时可直接按第 18 节这张汇总表一次过完所有无人值守链路。

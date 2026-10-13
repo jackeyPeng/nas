@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 主要变化 |
 |------|------|---------|
+| v1.4.0-beta.18 | 2026-10-13 | 文件管理器 M2 写操作全量落地 — 上传(XHR 进度)/新建/重命名/移动/复制/删除(进 .recycle 与回收站页联动) 六 API + 前端多选工具栏；setup.sh 新装默认不装 FileBrowser(--with-filebrowser 保留一版)；注册表 FileBrowser 4 项按安装态条件化(保 46/46) |
 | v1.4.0-beta.17 | 2026-10-12 | 面板文件管理器 M1 v1 只读基线 — 内置「文件」页取代 FileBrowser 外链（浏览/面包屑/下载/zip 打包/预览/用量）+ resolvePoolPath 路径安全核心（穿越/符号链接逃逸 fail-closed）+ checklist 新增模块 17（166 项/18 模块，修正存量统计口径）+ 产品手册 7.8 章节 |
 | v1.4.0-beta.16 | 2026-10-08 | 文档快照 — 新增《协议服务配置详解》(docs/protocol-service-configs.md，6 协议 + 横切配置代码逐项核对)+ 修正 GenerateNFSConfig 过期注释(与 no_root_squash 默认行为对齐)。文件管理器开发前的回滚基线，不含二进制变更 |
 | v1.4.0-beta.15 | 2026-09-24 | 家用可用性优先 — NFS 默认 no_root_squash+insecure（挂载即可写、NAT 后可挂）+ public 共享 guest ok + fail2ban 放宽（ban 10 分钟/10 次）+ S3 短用户名 access key 修复 + 审计日志全覆盖加固 + rclone 同步实时进度 |
@@ -11,6 +12,52 @@
 | v1.4.0-beta.13 | 2026-09-19 | NFS 导出对所有网段开放（跨网段客户端可挂载） |
 | v1.4.0-beta.12 | 2026-09-18 | 创建向导按已选磁盘实时预估容量（选目标后预览面板 + 各方案可用容量/注意事项）+ 登录页品牌 slogan |
 | v1.4.0-beta.11 | 2026-09-18 | 当前连接展示（监控页，SMB 会话 + 各协议端口归类）+ 回收站改 per-share `.recycle/`（删除=rename 零拷贝，恢复保留目录树，旧 `#recycle` 兼容）+ 存储页 tab 切换跳动修复 |
+
+---
+
+## [2026-10-13] - 文件管理器 M2 写操作 + FileBrowser 默认退役
+
+### 版本 v1.4.0-beta.18
+
+### 新增（feat/file-manager 分支，16 Task 计划的 Task 7-12，每 Task 均经独立代码审查+修复轮）
+
+- **写操作六 API（web/modules/filemgmt）**：
+  - 上传 `POST /api/files/upload?path=[&overwrite=yes]`（upload.go）：MultipartReader 流式写盘不撑内存（32KB buffer，禁 ParseMultipartForm）；同名 409（带 conflict/written 列表）+ overwrite 覆盖；磁盘满 507 清半成品；O_EXCL 并发碰撞不误删（EEXIST→409）；落盘按目标共享权限对齐（public 0664+nasusers / 其他共享 0600+同名属主 / 无所属 0644，alignPermsDecision 纯函数 + chown 失败降级日志）
+  - 新建目录 `POST /api/files/mkdir`（mutate.go）：validateFileName 白名单（拒 `/`、`..` 子串、控制字符、>255 字节）+ 双重路径锚定断言；mode 恒 0755（显式 chmod 消 umask 影响）
+  - 重命名 `POST /api/files/rename`：renameat2(RENAME_NOREPLACE) 内核原子防 TOCTOU 覆盖；同名 no-op 200；池根拒绝 400
+  - 移动 `POST /api/files/move` {src,dst_dir}：同 fs renameat2 零拷贝；跨 fs copyTree → 字节校验 → 权限对齐 → 全部通过才删源（任何失败点源保留）；目标在源内部（含 EvalSymlinks 解析后）400——堵无限递归写满磁盘
+  - 复制 `POST /api/files/copy`：递归 copyTree（符号链接拷链接本身不跟随，目录/文件 mode 保源后经权限对齐）；失败半成品清理（EEXIST 例外不误删并发方文件）
+  - 删除 `POST /api/files/delete` {path}：os.Rename 零拷贝进所属共享 `.recycle/<user>/<原相对路径>`（keeptree，与 diskmgmt 回收站页/SMB vfs recycle 同源，restore 直接恢复原位）；同名冲突加 `.<unixnano>` 后缀；无所属共享或共享未启用回收站回退池根 `.recycle`；共享根/池根/`.recycle` 段全拒（防套娃基于解析后真实路径，堵前导空格与池内符号链接两处绕过）
+- **前端文件页 v2（Task 11）**：复选框多选（全选/单选，切目录清空）+ 工具栏（上传/新建目录/刷新 + 选中后移动/复制/删除）；上传走 XMLHttpRequest 带真实进度条（percent + loaded/total），409 confirm 后带 overwrite=yes 重试；移动/复制共用目录选择器（逐级浏览，过滤 .recycle）；删除确认展示条目列表（>10 折叠），含目录时 type-to-confirm 输入目录名；rename 后 selected 同步剔除旧名；29 个 files.* 双语键（check-i18n parity 1192 键）
+- **setup.sh FileBrowser 默认不装（spec §十一 M2 节点）**：新增 `--with-filebrowser` 开关（保留一个版本周期，beta.19 评估彻底移除）；新装默认整段跳过 [7/10]；已装机器整段不动（不重装不重配不重启）；尾部访问方式提示条件打印
+- **注册表 FileBrowser 4 项条件化**（ID 6 服务/21 systemd unit/24 二进制/33 数据库）：以 `/usr/local/bin/filebrowser` 存在性为门，未安装记 pass「未安装(面板文件管理已取代)」——全新机器保持 46/46 验收口径，--with-filebrowser 机器全真检
+
+### 安全（独立审查驱动的关键修复，全部有回归测试）
+
+- rename/move 用 renameat2(RENAME_NOREPLACE)：Lstat 预检后的 TOCTOU 窗口不再静默覆盖目标（EEXIST/ENOTEMPTY→409）
+- 上传 O_EXCL 碰撞不误删：清理责任收敛到 writePartToFile 内部（仅 copy 失败清自己建的半成品），handler 按错误类型分流 409/507
+- copy/move 目标在源内部 → 400（GNU cp 同款），containment 用 EvalSymlinks 真实路径比较——堵字面前缀与池内符号链接两种无限递归构造
+- 删除防套娃基于解析后路径判定（resolvePoolPath 归一 + EvalSymlinks），前导空格/池内链接指向 .recycle 两处实证绕过均堵死
+- 跨 fs move 字节校验通过 + 权限对齐成功后才删源；失败清目标保源
+- filemgmt 包为 Linux-only（renameat2/Stat_t），发布仅交叉编译 linux amd64/arm64 不受影响
+
+### 验收
+
+- 单测：filemgmt 96 个测试全绿（TDD，全部调真函数断言真实文件系统）；diskmgmt 回归绿
+- 浏览器全流程 E2E（本地 dev 面板 + 真实 Chrome，2026-10-13）：mkdir/上传(8MB md5 一致+进度条 DOM 实测渲染)/rename/move/copy(选择器真实点击+落盘验证)/删除文件+目录(type-to-confirm)/回收站 keeptree 落位与 API 条目可见/409 覆盖重试/审计页富 detail/i18n EN 切换全通过
+- 遗留（留 M3/同构机验收）：跨 fs 真实多盘路径、回收站页 UI restore 按钮联动、root 环境 chown 严格断言
+
+### 文档
+
+- feature-operation-checklist.md：模块 17 增至 14 项（+6 用户操作），汇总 172 项/18 模块（awk 实算）
+- nas-product-manual.md：7.8 更新 v2 能力与 FileBrowser 退役说明
+- TODO.md：#34 M2 完成勾选，M3 待办
+- 遗留加固项（记录待评估）：diskmgmt GetAllFolderMeta 的 rows.Scan 错误未检查（NULL 列会静默半填充 meta）；审计 detail 用户输入转义（M2 收尾轮）
+
+### 说明
+
+- 面板服务页仍可手动安装 FileBrowser（opt-in），已装机器升级不受影响
+- M3（Task 13-16）：stat/chmod/chown、fix-home-perms 一键模板、前端 v3 权限对话框、生产同构机全链路验收 + FileBrowser 卸载提示
 
 ---
 
