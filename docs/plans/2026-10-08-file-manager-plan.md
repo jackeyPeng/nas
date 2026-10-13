@@ -1246,13 +1246,21 @@ git commit -m "feat(filemgmt): 前端文件页 v1 — 浏览/面包屑/下载/�
 
 **Files:** Modify `mutate.go` + 测试
 
-**Interfaces:** Produces `handleDelete`(POST `{path}`);删除目标 = `ownerShareOf(abs)`(Task 1)定位所属 share → `<share.Path>/.recycle/<admin>/<unixnano>/<basename>`;无所属 share → `<poolRoot>/.recycle/<admin>/<unixnano>/<basename>`;admin 用户名 = `common.RequestUsername(r)` 的 JWT 身份(兜底 common.GetNASUser());os.Rename 零拷贝;父目录不存在则 MkdirAll(mode 0700)
+**Interfaces:** Produces `handleDelete`(POST `{path}`);删除目标 = `ownerShareOf(abs)`(Task 1)定位所属 share → `<share.Path>/.recycle/<admin>/<原相对路径...>`(keeptree,2026-10-12 拍板修订,详见节首拍板记录);无所属 share 或 share 未启用回收站 → `<poolRoot>/.recycle/<admin>/<basename>`;admin 用户名 = `common.RequestUsername(r)` 的 JWT 身份(兜底 common.GetNASUser());os.Rename 零拷贝;父目录不存在则 MkdirAll(mode 0700)
 
 - [x] Step 1: 失败测试 — 删 public 下文件后:源消失、`public/.recycle/<user>/` 下出现且内容一致;删 home(fm)下文件落 fm 的 .recycle;目录删除保留子树;池根散落文件(不属于任何 share,测试里 folders.db 空)落池根 .recycle;删除路径穿越拒;`.recycle` 自身不可删(防套娃,拒绝 path 含 `.recycle` 段)
 - [x] Step 2: 确认失败
 - [x] Step 3: 实现(注意:`.recycle/<user>` 目录名与 diskmgmt/recycle.go 的 `recycleDirName` 常量同源——import diskmgmt 用其导出常量,若未导出则在本模块定义同值并注释指向;删除后回收站页 handleRecycleList 天然可见,无需改 diskmgmt)
 - [x] Step 4: 测试绿 + build;**联动实测**:起面板删一个文件 → 存储页回收站 tab 可见可 restore
 - [x] Step 5: Commit `feat(filemgmt): 删除进 .recycle — ownerShareOf 定位所属共享,与回收站页同源联动`
+
+**修订记录(2026-10-13 Task 10 review)**:独立审查结论「需修复后合入」(Critical 0 / Important 2,reviewer 沙箱实证),拍板如下:
+- Important#1:防套娃守卫两处实证绕过——(a) 前导空格:`resolvePoolPath` 先 TrimSpace 而守卫用原始 `req.Path` 字面比较,`" .recycle/fm/x"` → 200 把池根回收站内容搬走;(b) 池内符号链接:`public/hole → public/.recycle` 时删 `public/hole/fm/v.txt` 字面无 `.recycle` 段,真实落点却在回收站内(真套娃)。**修订**:守卫改基于解析后真实路径——存在性检查(Lstat 404)前移,`filepath.EvalSymlinks(srcAbs)` 后取相对池根路径做段比较(与 Task 9 follow-up 的 containment EvalSymlinks 同款思路);字面守卫删除。补两绕过场景测试 + 删除符号链接本身(搬链接不解引用)测试。
+- Important#2:`meta.RecycleBin=false` 的共享被无条件写入 `<share.Path>/.recycle`——回收站页不可见(recycleRoots 只枚举 RecycleBin 共享)成数据孤儿,且该共享 smb.conf 无 `hide files = /.recycle/`,目录对 SMB 客户端可见。**拍板**:`found && !meta.RecycleBin` 时回退池根 `.recycle`(与无所属 share 同款路径)——面板删除永远可恢复、不在未启用回收站的共享里制造可见 .recycle、不改 diskmgmt 语义;池根回收站不进回收站页为既定语义(shell 可恢复)。补 RecycleBin=false 回退测试。
+- Minor#3(顺手修):admin 用户名进路径前校验(含 `/` 或 `..` → 400),对照 diskmgmt resolveRecyclePath 同款纵深;现 users 白名单已挡住,纯防御。
+- Minor#4:本节 Interfaces 行旧 `<unixnano>` 布局描述已随本修订同步更正(keeptree + RecycleBin 回退)。
+- Minor#5(keeptree 中间目录 0700 与 samba directory_mode 同构,接受)/Minor#6(recycleConflictFree 终止性与失败方向安全,接受)/Minor#7(测试忽略 WriteFile 错误返回、死代码 `_ = root`,不阻塞留后续)记录不改。
+- bdc6223(Task 9 follow-up)同轮审查结论「可合入」,无需动作;其 Minor(悬空链接 400 而非 404、bind mount 超威胁模型)记录接受。
 
 ### Task 11: 前端写操作(v2 UI)
 
