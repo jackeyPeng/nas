@@ -1354,12 +1354,12 @@ git commit -m "feat(filemgmt): 前端文件页 v1 — 浏览/面包屑/下载/�
 
 **Files:** Modify `index.html`、`app.js`、i18n
 
-- [ ] Step 1: 行内 ⋮ 菜单加"属性/权限":对话框回显 stat(owner/group/mode_text)+ mode 八进制输入(实时预览符号位)+ recursive 勾选 + owner/group 下拉(数据源:既有 users 模块的用户列表端点,grep `/api/users` 确认)+ 预设按钮(0644/0755/0700)
-- [ ] Step 2: 用户页(users)每个用户行加"修复 home 权限"按钮 → fix-home-perms,危险确认(type-to-confirm 输入用户名)
-- [ ] Step 3: 批量:多选后 [改权限] 对话框对每条逐一调用(前端串行 + 进度 N/M),结果汇总 toast
-- [ ] Step 4: i18n 双语 + check-i18n.py
+- [x] Step 1: 行内 ⋮ 菜单加"属性/权限":对话框回显 stat(owner/group/mode_text)+ mode 八进制输入(实时预览符号位)+ recursive 勾选 + owner/group 下拉(数据源:既有 users 模块的用户列表端点,grep `/api/users` 确认)+ 预设按钮(0644/0755/0700)
+- [x] Step 2: 用户页(users)每个用户行加"修复 home 权限"按钮 → fix-home-perms,危险确认(type-to-confirm 输入用户名)
+- [x] Step 3: 批量:多选后 [改权限] 对话框对每条逐一调用(前端串行 + 进度 N/M),结果汇总 toast
+- [x] Step 4: i18n 双语 + check-i18n.py
 - [ ] Step 5: 浏览器实测 + **SMB 端验证**:面板 chown/chmod 后,smbclient 以该用户登录验证读写行为符合预期(force user 映射下 mask 0700/0775 的实际效果)
-- [ ] Step 6: Commit `feat(filemgmt): 前端权限管理 — stat 回显/chmod chown 对话框/fix-home-perms/批量串行`
+- [x] Step 6: Commit `feat(filemgmt): 前端权限管理 — stat 回显/chmod chown 对话框/fix-home-perms/批量串行`
 
 ### Task 16: M3 文档同步 + 生产同构机全链路验收 + 发版(beta.19)
 

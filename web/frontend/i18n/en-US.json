@@ -1247,6 +1247,27 @@
     "confirm_delete": "Deleted files are moved to the recycle bin and can be restored from Storage",
     "delete_more": "and {0} more",
     "delete_type_confirm_label": "This includes a folder. Type \"{0}\" to confirm:",
-    "delete_type_confirm_ph": "Type the folder name to confirm"
+    "delete_type_confirm_ph": "Type the folder name to confirm",
+    "toolbar_perms": "Change permissions",
+    "perms_button": "Properties",
+    "perms_title": "Properties / Permissions",
+    "perms_batch_title": "Batch change permissions",
+    "perms_current": "Current: {0}  {1}",
+    "perms_batch_count": "{0} selected",
+    "perms_mode_label": "Mode (octal)",
+    "perms_mode_ph": "e.g. 0644",
+    "perms_mode_invalid": "Invalid format, must be 3-4 octal digits (e.g. 0644)",
+    "perms_recursive_label": "Apply recursively to subfolders and files",
+    "perms_recursive_batch_hint": "Recursive only applies to folders in the selection; files are always treated as non-recursive",
+    "perms_owner_label": "Owner",
+    "perms_group_label": "Group",
+    "perms_unchanged": "(unchanged)",
+    "perms_confirm_word": "confirm",
+    "perms_confirm_label": "This is a recursive change. Type \"{0}\" to confirm:",
+    "perms_batch_progress": "Processing {0}/{1}",
+    "perms_batch_summary": "{0} succeeded, {1} failed",
+    "fix_home_button": "Fix home permissions",
+    "fix_home_title": "Fix home permissions",
+    "fix_home_confirm_label": "This resets ownership/permissions for this user's home directory and its contents. Type the username \"{0}\" to confirm:"
   }
 }

@@ -469,6 +469,7 @@
                                     <td style="font-size:var(--fs-xs);color: var(--text-secondary)" x-text="user.created_at || '-'"></td>
                                     <td class="actions">
                                         <button class="btn btn-sm btn-warn" @click="showChangePassword(user.username)" x-text="$t('users.change_password')"></button>
+                                        <button class="btn-xs" @click="openFixHomeDialog(user)" x-text="$t('files.fix_home_button')"></button>
                                         <button class="btn btn-sm btn-danger" @click="deleteUser(user.username)" x-text="$t('backup.delete_backup')"></button>
                                     </td>
                                 </tr>
@@ -666,6 +667,21 @@
                                 <button class="btn btn-primary" x-show="userWizardStep < 4" @click="wizardNext()"><span x-text="$t('common.next')"></span></button>
                                 <button class="btn btn-success" x-show="userWizardStep === 4" @click="wizardSubmit()"><span x-text="$t('users.wizard_title')"></span></button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 修复 home 权限确认弹窗 -->
+                <div class="modal" x-show="fixHomeDialog.show" x-cloak @click.self="fixHomeDialog.show=false">
+                    <div class="modal-box">
+                        <h3 x-text="$t('files.fix_home_title')"></h3>
+                        <p x-text="$t('files.fix_home_confirm_label', [fixHomeDialog.username])"></p>
+                        <div class="form-group">
+                            <input type="text" x-model="fixHomeDialog.confirmText" :placeholder="fixHomeDialog.username">
+                        </div>
+                        <div class="modal-actions">
+                            <button class="btn" @click="fixHomeDialog.show=false" x-text="$t('common.cancel')"></button>
+                            <button class="btn btn-primary" @click="confirmFixHomePerms()" :disabled="fixHomeConfirmDisabled() || fixHomeDialog.saving" x-text="$t('common.save')"></button>
                         </div>
                     </div>
                 </div>
@@ -1866,6 +1882,7 @@
                         <span style="display:flex;gap:var(--sp-2)">
                             <button class="btn btn-sm" @click="openTransferDialog('move')" x-text="$t('files.toolbar_move')"></button>
                             <button class="btn btn-sm" @click="openTransferDialog('copy')" x-text="$t('files.toolbar_copy')"></button>
+                            <button class="btn btn-sm" @click="openBatchPermsDialog()" x-text="$t('files.toolbar_perms')"></button>
                             <button class="btn btn-sm btn-danger" @click="openDeleteDialog()" x-text="$t('files.toolbar_delete')"></button>
                         </span>
                     </template>
@@ -1904,6 +1921,7 @@
                                     <button class="btn-xs" @click="openRename(e)" x-text="$t('files.rename')"></button>
                                     <button class="btn-xs" @click="openTransferDialog('move', e)" x-text="$t('files.toolbar_move')"></button>
                                     <button class="btn-xs" @click="openTransferDialog('copy', e)" x-text="$t('files.toolbar_copy')"></button>
+                                    <button class="btn-xs" @click="openPermsDialog(e)" x-text="$t('files.perms_button')"></button>
                                     <button class="btn-xs btn-danger" @click="openDeleteDialog(e)" x-text="$t('files.toolbar_delete')"></button>
                                 </td>
                             </tr>
@@ -1988,6 +2006,74 @@
                         <div class="modal-actions">
                             <button class="btn" @click="filesPage.showDelete=false" x-text="$t('common.cancel')"></button>
                             <button class="btn btn-danger" @click="confirmDelete()" :disabled="deleteConfirmDisabled()" x-text="$t('files.toolbar_delete')"></button>
+                        </div>
+                    </div>
+                </div>
+                <!-- 权限对话框(单条属性 + 批量改权限共用) -->
+                <div class="modal" x-show="filesPage.permsDialog.show" x-cloak @click.self="closePermsDialog()">
+                    <div class="modal-box">
+                        <h3 x-text="filesPage.permsDialog.batchMode ? $t('files.perms_batch_title') : $t('files.perms_title')"></h3>
+                        <template x-if="!filesPage.permsDialog.batchMode">
+                            <div>
+                                <p style="font-family:monospace;font-size:var(--fs-sm)" x-text="filesPage.permsDialog.entry ? filesPage.permsDialog.entry.name : ''"></p>
+                                <p style="color:var(--text-secondary);font-size:var(--fs-xs)" x-text="$t('files.perms_current', [filesPage.permsDialog.stat ? filesPage.permsDialog.stat.owner + ':' + filesPage.permsDialog.stat.group : '', filesPage.permsDialog.stat ? filesPage.permsDialog.stat.mode_text : ''])"></p>
+                            </div>
+                        </template>
+                        <template x-if="filesPage.permsDialog.batchMode">
+                            <p x-text="$t('files.perms_batch_count', [filesPage.permsDialog.batchEntries.length])"></p>
+                        </template>
+                        <div class="form-group">
+                            <label x-text="$t('files.perms_mode_label')"></label>
+                            <input type="text" x-model="filesPage.permsDialog.modeInput" :placeholder="$t('files.perms_mode_ph')">
+                            <p style="font-size:var(--fs-xs)"
+                               :style="modeToSymbolic(filesPage.permsDialog.modeInput) ? 'color:var(--text-secondary)' : 'color:var(--danger)'"
+                               x-text="modeToSymbolic(filesPage.permsDialog.modeInput) || $t('files.perms_mode_invalid')"></p>
+                            <div style="display:flex;gap:var(--sp-1);margin-top:var(--sp-1)">
+                                <button class="btn-xs" @click="filesPage.permsDialog.modeInput='0644'">0644</button>
+                                <button class="btn-xs" @click="filesPage.permsDialog.modeInput='0755'">0755</button>
+                                <button class="btn-xs" @click="filesPage.permsDialog.modeInput='0700'">0700</button>
+                            </div>
+                        </div>
+                        <div class="form-group" x-show="filesPage.permsDialog.batchMode || (filesPage.permsDialog.stat && filesPage.permsDialog.stat.recursive_possible)">
+                            <label>
+                                <input type="checkbox" x-model="filesPage.permsDialog.recursive">
+                                <span x-text="$t('files.perms_recursive_label')"></span>
+                            </label>
+                            <p x-show="filesPage.permsDialog.batchMode" style="color:var(--text-secondary);font-size:var(--fs-xs)" x-text="$t('files.perms_recursive_batch_hint')"></p>
+                        </div>
+                        <template x-if="!filesPage.permsDialog.batchMode">
+                            <div class="form-group" style="display:flex;gap:var(--sp-3)">
+                                <div style="flex:1">
+                                    <label x-text="$t('files.perms_owner_label')"></label>
+                                    <select x-model="filesPage.permsDialog.ownerSel">
+                                        <option value="" x-text="$t('files.perms_unchanged')"></option>
+                                        <template x-for="u in users" :key="u.username">
+                                            <option :value="u.username" x-text="u.username"></option>
+                                        </template>
+                                    </select>
+                                </div>
+                                <div style="flex:1">
+                                    <label x-text="$t('files.perms_group_label')"></label>
+                                    <select x-model="filesPage.permsDialog.groupSel">
+                                        <option value="" x-text="$t('files.perms_unchanged')"></option>
+                                        <template x-for="g in userGroups" :key="g.name">
+                                            <option :value="g.name" x-text="g.name"></option>
+                                        </template>
+                                    </select>
+                                </div>
+                            </div>
+                        </template>
+                        <div class="form-group" x-show="filesPage.permsDialog.batchMode || (filesPage.permsDialog.recursive && filesPage.permsDialog.entry && filesPage.permsDialog.entry.type === 'dir')">
+                            <label x-text="$t('files.perms_confirm_label', [$t('files.perms_confirm_word')])"></label>
+                            <input type="text" x-model="filesPage.permsDialog.confirmText" :placeholder="$t('files.perms_confirm_word')">
+                        </div>
+                        <div x-show="filesPage.permsDialog.batchProgress.active" style="margin-top:var(--sp-2)">
+                            <span x-text="$t('files.perms_batch_progress', [filesPage.permsDialog.batchProgress.done, filesPage.permsDialog.batchProgress.total])"></span>
+                        </div>
+                        <p x-show="filesPage.permsDialog.error" style="color:var(--danger);font-size:var(--fs-xs)" x-text="filesPage.permsDialog.error"></p>
+                        <div class="modal-actions">
+                            <button class="btn" @click="closePermsDialog()" x-text="$t('common.cancel')"></button>
+                            <button class="btn btn-primary" @click="savePerms()" :disabled="permsConfirmDisabled() || filesPage.permsDialog.saving" x-text="$t('common.save')"></button>
                         </div>
                     </div>
                 </div>

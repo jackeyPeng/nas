@@ -1247,6 +1247,27 @@
     "confirm_delete": "删除的文件进入回收站，可在存储页恢复",
     "delete_more": "等 {0} 项",
     "delete_type_confirm_label": "此操作包含目录，请输入目录名 \"{0}\" 确认：",
-    "delete_type_confirm_ph": "输入目录名确认"
+    "delete_type_confirm_ph": "输入目录名确认",
+    "toolbar_perms": "改权限",
+    "perms_button": "属性",
+    "perms_title": "属性/权限",
+    "perms_batch_title": "批量改权限",
+    "perms_current": "当前：{0}　{1}",
+    "perms_batch_count": "已选中 {0} 项",
+    "perms_mode_label": "权限（八进制）",
+    "perms_mode_ph": "如 0644",
+    "perms_mode_invalid": "格式错误，应为 3~4 位八进制数字（如 0644）",
+    "perms_recursive_label": "递归应用到子目录和文件",
+    "perms_recursive_batch_hint": "递归仅对所选项中的目录生效，文件自动按非递归处理",
+    "perms_owner_label": "属主",
+    "perms_group_label": "属组",
+    "perms_unchanged": "（不变）",
+    "perms_confirm_word": "修改",
+    "perms_confirm_label": "此操作涉及递归修改，请输入「{0}」确认：",
+    "perms_batch_progress": "处理中 {0}/{1}",
+    "perms_batch_summary": "成功 {0} 项，失败 {1} 项",
+    "fix_home_button": "修复 home 权限",
+    "fix_home_title": "修复 home 权限",
+    "fix_home_confirm_label": "将重置该用户 home 目录及其内容的属主/权限，请输入用户名「{0}」确认："
   }
 }

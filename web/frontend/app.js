@@ -102,6 +102,13 @@ function nasPanel() {
             showTransfer: false, transferMode: '', transferEntries: [], transferPath: '', transferBreadcrumb: [], transferPickerEntries: [],
             showDelete: false, deleteEntries: [], deleteConfirmName: '', deleteRequiredName: '', deleteError: '',
             preview: { open: false, kind: '', name: '', content: '', url: '' },
+            // 权限对话框(单条属性 + 批量改权限共用,batchMode 区分)
+            permsDialog: {
+                show: false, entry: null, stat: null, modeInput: '', recursive: false,
+                ownerSel: '', groupSel: '', origOwner: '', origGroup: '',
+                confirmText: '', error: '', saving: false,
+                batchMode: false, batchEntries: [], batchProgress: { active: false, done: 0, total: 0 },
+            },
             relJoin(name) { return this.path ? this.path + '/' + name : name; },
         },
         // Shared folders
@@ -283,6 +290,8 @@ function nasPanel() {
         userGroups: [],
         groupForm: { name: '', comment: '', members: '' },
         showGroupModal: false,
+        // 修复 home 权限对话框(type-to-confirm 输入用户名)
+        fixHomeDialog: { show: false, username: '', confirmText: '', saving: false },
         permMatrix: { folders: [], users: [], matrix: {} },
         loginLogs: [],
         loginLogsLoading: false,
@@ -1411,6 +1420,142 @@ function nasPanel() {
             this.filesPage.selected = [];
             this.showToast(this.t('msg.op_success'), 'success');
             await this.loadFiles(this.filesPage.path);
+        },
+        // ═══ 权限对话框(单条属性回显 + 批量 chmod 共用) ═══
+        // modeToSymbolic('0644') -> '-rw-r--r--'(纯 JS 预览,不请求后端);非 3~4 位八进制输入返回 null
+        modeToSymbolic(mode) {
+            if (!/^[0-7]{3,4}$/.test(mode || '')) return null;
+            const perm = mode.slice(-3);
+            const bits = [['r', 4], ['w', 2], ['x', 1]];
+            let out = '-';
+            for (const digit of perm) {
+                const n = parseInt(digit, 10);
+                for (const [ch, val] of bits) out += (n & val) ? ch : '-';
+            }
+            return out;
+        },
+        async openPermsDialog(entry) {
+            if (!this.users.length) await this.loadUsers();
+            if (!this.userGroups.length) await this.loadUserGroups();
+            const data = await this.api('/files/stat?path=' + encodeURIComponent(this.filesPage.relJoin(entry.name)));
+            if (!data) return;
+            this.filesPage.permsDialog = {
+                show: true, entry, stat: data, modeInput: data.mode, recursive: false,
+                ownerSel: '', groupSel: '', origOwner: data.owner, origGroup: data.group,
+                confirmText: '', error: '', saving: false,
+                batchMode: false, batchEntries: [], batchProgress: { active: false, done: 0, total: 0 },
+            };
+        },
+        async openBatchPermsDialog() {
+            const entries = this.filesPage.selected.slice();
+            if (!entries.length) return;
+            this.filesPage.permsDialog = {
+                show: true, entry: null, stat: null, modeInput: '', recursive: false,
+                ownerSel: '', groupSel: '', origOwner: '', origGroup: '',
+                confirmText: '', error: '', saving: false,
+                batchMode: true, batchEntries: entries, batchProgress: { active: false, done: 0, total: entries.length },
+            };
+        },
+        closePermsDialog() {
+            this.filesPage.permsDialog.show = false;
+        },
+        // type-to-confirm 禁用判断:单条目录勾 recursive、或批量模式,须输入固定确认词
+        permsConfirmDisabled() {
+            const d = this.filesPage.permsDialog;
+            const needConfirm = d.batchMode || (d.recursive && d.entry && d.entry.type === 'dir');
+            if (!needConfirm) return false;
+            return d.confirmText !== this.t('files.perms_confirm_word');
+        },
+        async savePerms() {
+            const d = this.filesPage.permsDialog;
+            if (this.permsConfirmDisabled()) return;
+            if (d.batchMode) {
+                await this.saveBatchPerms();
+                return;
+            }
+            d.error = '';
+            d.saving = true;
+            try {
+                const rel = this.filesPage.relJoin(d.entry.name);
+                if (d.modeInput && d.modeInput !== d.stat.mode) {
+                    await this.fileWrite('/chmod', { path: rel, mode: d.modeInput, recursive: d.recursive });
+                }
+                const ownerChanged = d.ownerSel && d.ownerSel !== d.origOwner;
+                const groupChanged = d.groupSel && d.groupSel !== d.origGroup;
+                if (ownerChanged || groupChanged) {
+                    await this.fileWrite('/chown', {
+                        path: rel,
+                        owner: ownerChanged ? d.ownerSel : '',
+                        group: groupChanged ? d.groupSel : '',
+                        recursive: d.recursive,
+                    });
+                }
+                this.filesPage.permsDialog.show = false;
+                this.showToast(this.t('msg.op_success'), 'success');
+                await this.loadFiles(this.filesPage.path);
+            } catch (err) {
+                this.filesPage.permsDialog.error = String(err.message || err);
+            } finally {
+                this.filesPage.permsDialog.saving = false;
+            }
+        },
+        async saveBatchPerms() {
+            const d = this.filesPage.permsDialog;
+            const entries = d.batchEntries;
+            d.error = '';
+            d.saving = true;
+            this.filesPage.permsDialog.batchProgress = { active: true, done: 0, total: entries.length };
+            const failures = [];
+            for (const entry of entries) {
+                try {
+                    await this.fileWrite('/chmod', {
+                        path: this.filesPage.relJoin(entry.name),
+                        mode: d.modeInput,
+                        recursive: d.recursive && entry.type === 'dir',
+                    });
+                } catch (err) {
+                    failures.push({ name: entry.name, error: String(err.message || err) });
+                }
+                this.filesPage.permsDialog.batchProgress.done++;
+            }
+            this.filesPage.permsDialog.batchProgress.active = false;
+            this.filesPage.permsDialog.saving = false;
+            const successCount = entries.length - failures.length;
+            if (failures.length) {
+                this.filesPage.permsDialog.error = failures.map(f => f.name + ': ' + f.error).join('; ');
+                this.showToast(this.t('files.perms_batch_summary', [successCount, failures.length]), 'error');
+            } else {
+                this.filesPage.permsDialog.show = false;
+                this.showToast(this.t('files.perms_batch_summary', [successCount, 0]), 'success');
+            }
+            this.filesPage.selected = [];
+            await this.loadFiles(this.filesPage.path);
+        },
+        // ═══ 用户页:修复 home 权限(type-to-confirm 输入用户名) ═══
+        openFixHomeDialog(user) {
+            this.fixHomeDialog = { show: true, username: user.username, confirmText: '', saving: false };
+        },
+        fixHomeConfirmDisabled() {
+            return this.fixHomeDialog.confirmText !== this.fixHomeDialog.username;
+        },
+        async confirmFixHomePerms() {
+            if (this.fixHomeConfirmDisabled()) return;
+            this.fixHomeDialog.saving = true;
+            try {
+                const res = await fetch('/api/files/fix-home-perms', {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + this.token, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: this.fixHomeDialog.username }),
+                });
+                if (res.status === 401) { this.logout(); return; }
+                if (!res.ok) throw new Error(await res.text());
+                this.fixHomeDialog.show = false;
+                this.showToast(this.t('msg.op_success'), 'success');
+            } catch (err) {
+                this.showToast(String(err.message || err), 'error');
+            } finally {
+                this.fixHomeDialog.saving = false;
+            }
         },
         fmtTime(ts) {
             if (!ts) return '-';
