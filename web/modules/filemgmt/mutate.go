@@ -381,9 +381,19 @@ func resolveMoveCopyTarget(w http.ResponseWriter, src, dstDir string) (srcAbs, d
 	// Task 9 review Critical#1:目标目录不能在源内部(含源本身)——否则
 	// copyTree/递归 rename 会在新建的 dst 内看见自己继续向下自我嵌套,
 	// 失控写满磁盘(reviewer 沙箱实证)。GNU cp 同款语义:dst 恰为 src 或
-	// 是 src 的子目录都拒绝。该校验在 copyTree/os.Rename 调用之前生效,
+	// 是 src 的子目录都拒绝。该校验在 copyTree/renameat2 调用之前生效,
 	// move/copy 共用本函数,改一处两边生效。
-	if dstDirAbs == srcAbs || strings.HasPrefix(dstDirAbs, srcAbs+string(filepath.Separator)) {
+	// follow-up(Task 9 复审 Important#1):containment 用 EvalSymlinks 解析后
+	// 的真实路径比较——resolvePoolPath 放行池内符号链接且返回字面路径,
+	// 池内 link → src 子树的构造可绕过字面前缀检查(两路径此处均已确认
+	// 存在,解析必成功;解析失败保守拒绝)。
+	srcReal, errS := filepath.EvalSymlinks(srcAbs)
+	dstDirReal, errD := filepath.EvalSymlinks(dstDirAbs)
+	if errS != nil || errD != nil {
+		http.Error(w, "路径解析失败", http.StatusBadRequest)
+		return "", "", false
+	}
+	if dstDirReal == srcReal || strings.HasPrefix(dstDirReal, srcReal+string(filepath.Separator)) {
 		http.Error(w, "目标目录不能在源内部", http.StatusBadRequest)
 		return "", "", false
 	}
@@ -414,7 +424,7 @@ func resolveMoveCopyTarget(w http.ResponseWriter, src, dstDir string) (srcAbs, d
 }
 
 // handleMove — POST /api/files/move,JSON body {src, dst_dir}。
-// 同 fs 用 os.Rename 零拷贝;跨 fs 走 moveCrossFS(copy+校验+删源)。
+// 同 fs 用 renameat2(RENAME_NOREPLACE) 零拷贝;跨 fs 走 moveCrossFS(copy+校验+删源)。
 func handleMove(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

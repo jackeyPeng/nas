@@ -1051,3 +1051,45 @@ func TestHandleDeleteRejectsGet(t *testing.T) {
 		t.Fatalf("GET 应 405, got %d", rec.Code)
 	}
 }
+
+// Task 9 复审 Minor#2:同前缀异目录必须放行——src=public/ab、dst_dir=public/abc
+// 时 HasPrefix 拼接分隔符后不应误判为"目标在源内部"。
+func TestHandleMoveAllowsSamePrefixDifferentDir(t *testing.T) {
+	root := setupFakePool(t)
+	os.WriteFile(filepath.Join(root, "public", "ab"), []byte("data"), 0644)
+	os.MkdirAll(filepath.Join(root, "public", "abc"), 0755)
+
+	body, _ := json.Marshal(map[string]string{"src": "public/ab", "dst_dir": "public/abc"})
+	req := httptest.NewRequest("POST", "/api/files/move", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	handleMove(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("同前缀异目录应放行 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if _, err := os.Stat(filepath.Join(root, "public", "abc", "ab")); err != nil {
+		t.Fatalf("文件应移入 abc/: %v", err)
+	}
+}
+
+// Task 9 复审 Important#1:containment 检查须用 EvalSymlinks 真实路径——
+// 池内符号链接 dst_dir → src 子树时,字面前缀检查会被绕过导致无限递归,
+// 解析后必须 400 拒绝。
+func TestHandleCopyRejectsDstInsideSrcViaSymlink(t *testing.T) {
+	root := setupFakePool(t)
+	srcDir := filepath.Join(root, "public", "a")
+	os.MkdirAll(filepath.Join(srcDir, "b"), 0755)
+	// 池内链接:public/link → public/a/b(dst_dir 字面不在 src 内,真实路径在)
+	os.Symlink(filepath.Join(srcDir, "b"), filepath.Join(root, "public", "link"))
+
+	body, _ := json.Marshal(map[string]string{"src": "public/a", "dst_dir": "public/link"})
+	req := httptest.NewRequest("POST", "/api/files/copy", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	handleCopy(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("经符号链接指向 src 内部的 dst_dir 应 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	entries, _ := os.ReadDir(filepath.Join(srcDir, "b"))
+	if len(entries) != 0 {
+		t.Fatalf("拒绝后 src 子树内不应有新增, got %v", entries)
+	}
+}

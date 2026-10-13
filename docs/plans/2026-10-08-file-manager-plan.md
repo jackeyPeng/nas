@@ -1230,6 +1230,8 @@ git commit -m "feat(filemgmt): 前端文件页 v1 — 浏览/面包屑/下载/�
 - Minor#2:moveCrossFS 的 treeByteSize 在 copyTree 之后统计,复制期间源被并发修改会误报(失败方向安全:保留源)。本轮加注释说明接受该竞态,不改时序。
 - Minor#3:测试缺口在拍板降级许可内(字节校验失败分支/跨 fs sameFS 分支/逃逸链接 handler 层),记录留同构机验收;C1 场景测试随本轮修复补上。
 
+**Follow-up 记录(2026-10-12 复审后)**:复审结论「可合入,7/7 落实」,遗留项本轮补齐——① 复审 Important#1:C1 containment 检查改用 `filepath.EvalSymlinks` 真实路径比较(池内符号链接 dst_dir → src 子树的构造可绕过字面前缀检查导致同款无限递归;解析失败保守 400),补测试 TestHandleCopyRejectsDstInsideSrcViaSymlink;② Minor#1:两处陈旧注释 os.Rename → renameat2;③ Minor#2:补同前缀异目录放行回归测试 TestHandleMoveAllowsSamePrefixDifferentDir。复审 Minor#3(align 时序测试名超出验证力)接受现状不改。
+
 ### Task 10: 删除(进 .recycle,与回收站页联动)
 
 **拍板记录(2026-10-12 Task 10 开工前,plan Self-Review 预留验证项裁决)**:
