@@ -861,9 +861,9 @@ NAS 里的视频/音乐/照片直接在浏览器播放，带媒体库海报墙�
 - ✅ Task 15 前端 v3（属性对话框 stat 回显+八进制输入实时符号位预览+预设、批量改权限串行进度+汇总、用户页修复 home 按钮、三场景 type-to-confirm 含函数级守卫）+ 浏览器 E2E 8 项全过（抓到并修复批量确认词 UI 绕过）
 
 **待办**:
-- [ ] feat/file-manager 合回 master 与否（用户拍板）；FileBrowser 彻底移除评估（beta.19 已发布，--with-filebrowser 保留一版后评估）
-- [ ] 回收站 UI 粒度（D1 复审 Important 跟进）：回收站页只列 .recycle/<user>/ 顶层条目，UI restore 嵌套删除项走 .restored 碰撞语义不回原位（API 深层 rel_path 可精确还原）——候选：合并式恢复（dst 已存在目录时逐子项 mv）或前端目录条目下钻
-- [ ] 加固遗留：diskmgmt GetAllFolderMeta rows.Scan 错误未检查（NULL 列静默半填充）；审计 detail 用户输入转义；ownerShareOf/ownerShareOfVia 去重；resolveShareOrPoolRootPath 抽纯核心+排序单测（D1 复审 Minor）
+- [ ] feat/file-manager 合回 master（进行中）；FileBrowser 彻底移除——**评估已做（2026-10-13）：本版不移除**，beta.19 刚承诺 --with-filebrowser 保留一版；移除清单（下一发布周期执行）：setup.sh [7/10] 段+开关、services.go 安装项与 installSingleService case、注册表 5 项删除（46→41 总数变更）、versions.go FileBrowserVersion 常量、users.go changePassword 的 fb 分支、dashboard/monitor/system 服务列表与 i18n、upload-filebrowser.sh、官网/手册措辞；cleanup.sh 的 filebrowser 清理**保留**（存量机器卸载路径）
+- [x] 回收站 UI 粒度（D1 复审 Important 跟进）：✅ 29f775d 合并式恢复落地——dst 已存在目录时 mergeTreeRestore 逐子项 mv 回原位（碰撞落 .restored 不覆盖、符号链接 Lstat 语义、只删空目录禁 RemoveAll、失败即停部分恢复如实上报），独立审查「可合入」（数据安全核心命题成立：无覆盖/丢失分支，TOCTOU 与既有代码同级）；8 个真文件系统测试覆盖拍板 7 场景
+- [ ] 加固遗留：~~diskmgmt GetAllFolderMeta rows.Scan 错误未检查~~（✅ d1f3a9d 已修：坏行跳过+日志+rows.Err）；审计 detail 用户输入转义；ownerShareOf/ownerShareOfVia 去重；resolveShareOrPoolRootPath 抽纯核心+排序单测（D1 复审 Minor）；回收站合并恢复 4 条 Minor（mergeRestoreConflictFree/mergeTreeRestore 的 Lstat 错误应区分 IsNotExist 而非一律当不存在——与 filemgmt recycleConflictFree 两处一起统一加固、纳秒循环加重试上限、src目录 vs dst文件 方向与 ≥3 层递归与错误分支测试盲区、restored_to 合并语义前端对接时注意）
 
 ---
 
