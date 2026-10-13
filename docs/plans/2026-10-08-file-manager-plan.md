@@ -1335,9 +1335,9 @@ git commit -m "feat(filemgmt): 前端文件页 v1 — 浏览/面包屑/下载/�
 
 **Interfaces:** Produces `handleFixHomePerms`(POST `{username}`)— 权限基准**照抄** config_sync.go 的 EnsurePoolStructure/EnsureUserHome:home `/data/nas1/<username>` 递归 0700 + chown username:username;校验 username 是系统用户(user.Lookup)且 home 目录存在,否则 400。**不含 public 模板**(public 2775 属 EnsurePoolStructure 职责,面板已有建池流程;本端点只管用户 home——如需 public 修复另加 `{target:"public"}` 参数,实现时与用户确认)
 
-- [ ] Step 1: 失败测试 — 构造假 home(乱权限 0777/错属主)→ 调 fix → 递归 0700 + owner 正确;不存在用户 400;无 home 目录 400
-- [ ] Step 2-4: 红→实现→绿(测试环境非 root 时 chown 断言 skip,同 Task 13)
-- [ ] Step 5: Commit `feat(filemgmt): fix-home-perms 一键修复 — 与 EnsureUserHome 权限基准同源(0700 owner:owner)`
+- [x] Step 1: 失败测试 — 构造假 home(乱权限 0777/错属主)→ 调 fix → 递归 0700 + owner 正确;不存在用户 400;无 home 目录 400
+- [x] Step 2-4: 红→实现→绿(测试环境非 root 时 chown 断言 skip,同 Task 13)
+- [x] Step 5: Commit `feat(filemgmt): fix-home-perms 一键修复 — 与 EnsureUserHome 权限基准同源(0700 owner:owner)`
 
 ### Task 15: 前端 v3(改权限对话框 + 批量)
 

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 	"syscall"
 
 	"nas-panel/common"
@@ -289,4 +290,92 @@ func chownTree(root string, uid, gid int) error {
 		}
 		return nil
 	})
+}
+
+// ---------------------------------------------------------------------------
+// handleFixHomePerms
+// ---------------------------------------------------------------------------
+
+// usernameRe 校验 fix-home-perms 请求中的 username:禁止 "/" 与 ".."
+// (纵深防御,先于 user.Lookup;与 resolvePoolPath 的路径校验互补,此处只约束
+// 单个路径片段级别的安全性,不复用 resolvePoolPath——username 不是池内相对路径,
+// 而是用来拼接 home 目录名的单段标识符)。
+func validUsernameSegment(username string) bool {
+	if username == "" || username == ".." {
+		return false
+	}
+	return !strings.Contains(username, "/") && !strings.Contains(username, "..")
+}
+
+// handleFixHomePerms — POST /api/files/fix-home-perms,JSON body {username}。
+// 一键修复用户 home 目录权限属主,与 config_sync.go 的 EnsureUserHome 权限基准
+// 同源(0700 owner:owner)。只改权限/属主,不创建缺失子目录(provisioning 是
+// EnsureUserHome 的职责,本端点不越权)。
+func handleFixHomePerms(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Username string `json:"username"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "请求体不是合法 JSON", http.StatusBadRequest)
+		return
+	}
+	if !validUsernameSegment(req.Username) {
+		http.Error(w, "username 不合法", http.StatusBadRequest)
+		return
+	}
+	u, err := user.Lookup(req.Username)
+	if err != nil {
+		http.Error(w, "用户不存在", http.StatusBadRequest)
+		return
+	}
+	home := filepath.Join(normalizedRoot(), req.Username)
+	info, err := os.Stat(home)
+	if err != nil || !info.IsDir() {
+		http.Error(w, "home 目录不存在", http.StatusBadRequest)
+		return
+	}
+	uid, err := strconv.Atoi(u.Uid)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("uid 解析失败: %s", req.Username), http.StatusInternalServerError)
+		return
+	}
+	// 组解析:优先用户同名组(与 EnsureUserHome 的 chown username:username 基准
+	// 一致);LookupGroup 失败(如系统未建同名组)时回退该用户的主组(u.Gid),
+	// 比 EnsureUserHome 底层 SudoExec 静默失败更稳——至少保证 gid 落在该用户
+	// 确实所属的组上。
+	gid, err := strconv.Atoi(u.Gid)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("gid 解析失败: %s", req.Username), http.StatusInternalServerError)
+		return
+	}
+	if g, gerr := user.LookupGroup(req.Username); gerr == nil {
+		if parsedGid, perr := strconv.Atoi(g.Gid); perr == nil {
+			gid = parsedGid
+		}
+	}
+
+	if err := os.Chmod(home, 0700); err != nil {
+		http.Error(w, fmt.Sprintf("chmod %s 失败: %v", home, err), http.StatusInternalServerError)
+		return
+	}
+	if err := os.Chown(home, uid, gid); err != nil {
+		http.Error(w, fmt.Sprintf("chown %s 失败: %v", home, err), http.StatusInternalServerError)
+		return
+	}
+	if err := chmodTree(home, 0700); err != nil {
+		http.Error(w, fmt.Sprintf("递归 chmod 失败: %v", err), http.StatusInternalServerError)
+		return
+	}
+	if err := chownTree(home, uid, gid); err != nil {
+		http.Error(w, fmt.Sprintf("递归 chown 失败: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	common.LogAuditRequest(r, "files", "fix-home-perms",
+		fmt.Sprintf("username=%s", req.Username), "success")
+	common.JSONResponse(w, map[string]interface{}{"ok": true})
 }

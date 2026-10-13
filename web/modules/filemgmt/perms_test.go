@@ -570,3 +570,191 @@ func TestHandleChownSymlinkToSelfLchownNonRoot(t *testing.T) {
 		t.Fatalf("目标应仍是符号链接: err=%v", err)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// handleFixHomePerms
+// ---------------------------------------------------------------------------
+
+func fixHomeReq(body interface{}) *http.Request {
+	b, _ := json.Marshal(body)
+	return httptest.NewRequest("POST", "/api/files/fix-home-perms", bytes.NewReader(b))
+}
+
+// setupFakeHome 在池根下建 <username> 目录(username=当前运行者,保证
+// user.Lookup(username) 在测试环境必然成功),内容:子目录 + 文件 + 符号链接,
+// 权限全部故意打乱为 0777/0755 混合。返回 home 绝对路径与链接目标绝对路径
+// (用于断言链接目标 mode 不受影响)。
+func setupFakeHome(t *testing.T, root, username string) (home, linkTarget string) {
+	t.Helper()
+	home = filepath.Join(root, username)
+	if err := os.MkdirAll(filepath.Join(home, "sub"), 0777); err != nil {
+		t.Fatalf("建 home/sub 失败: %v", err)
+	}
+	if err := os.Chmod(home, 0777); err != nil {
+		t.Fatalf("chmod home 失败: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "a.txt"), []byte("x"), 0755); err != nil {
+		t.Fatalf("写 a.txt 失败: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "sub", "b.txt"), []byte("y"), 0777); err != nil {
+		t.Fatalf("写 sub/b.txt 失败: %v", err)
+	}
+	// 符号链接目标放在池根下的 public,独立于 home 子树,打乱其 mode 为 0755,
+	// 用来断言 Walk 不跟随符号链接、不改目标 mode。
+	linkTarget = filepath.Join(root, "public", "home-link-target.txt")
+	if err := os.MkdirAll(filepath.Join(root, "public"), 0755); err != nil {
+		t.Fatalf("建 public 失败: %v", err)
+	}
+	if err := os.WriteFile(linkTarget, []byte("z"), 0755); err != nil {
+		t.Fatalf("写链接目标失败: %v", err)
+	}
+	if err := os.Symlink(linkTarget, filepath.Join(home, "lnk")); err != nil {
+		t.Fatalf("建符号链接失败: %v", err)
+	}
+	return home, linkTarget
+}
+
+func TestHandleFixHomePermsRecursiveChmod(t *testing.T) {
+	root := setupFakePool(t)
+	username, err := lookupCurrentUsername()
+	if err != nil {
+		t.Skipf("无法解析当前用户名: %v", err)
+	}
+	home, linkTarget := setupFakeHome(t, root, username)
+
+	rec := httptest.NewRecorder()
+	handleFixHomePerms(rec, fixHomeReq(map[string]interface{}{"username": username}))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("fix-home-perms 应 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	for _, p := range []string{home, filepath.Join(home, "sub"), filepath.Join(home, "a.txt"), filepath.Join(home, "sub", "b.txt")} {
+		info, err := os.Stat(p)
+		if err != nil {
+			t.Fatalf("Stat(%s) 失败: %v", p, err)
+		}
+		if info.Mode().Perm() != 0700 {
+			t.Fatalf("%s mode=%o want 0700", p, info.Mode().Perm())
+		}
+	}
+
+	// 符号链接目标的 mode 必须保持原值(0755),Walk 不跟随符号链接。
+	targetInfo, err := os.Stat(linkTarget)
+	if err != nil {
+		t.Fatalf("Stat(linkTarget) 失败: %v", err)
+	}
+	if targetInfo.Mode().Perm() != 0755 {
+		t.Fatalf("符号链接目标 mode 被意外修改: got %o want 0755", targetInfo.Mode().Perm())
+	}
+}
+
+// root-gated:chown 生效断言。非 root 环境 skip(生产同构机验收必测),
+// 与 Task 13 的 TestHandleChownSingleFileRootOnly 同款模式。
+func TestHandleFixHomePermsChownRootOnly(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("非 root 环境: chown 系统调用会 EPERM,跳过生效断言(生产同构机验收必测)")
+	}
+	root := setupFakePool(t)
+	username, err := lookupCurrentUsername()
+	if err != nil {
+		t.Skipf("无法解析当前用户名: %v", err)
+	}
+	home, _ := setupFakeHome(t, root, username)
+
+	rec := httptest.NewRecorder()
+	handleFixHomePerms(rec, fixHomeReq(map[string]interface{}{"username": username}))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("fix-home-perms 应 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	wantUID, err := lookupUIDByName(username)
+	if err != nil {
+		t.Fatalf("lookupUIDByName 失败: %v", err)
+	}
+	u, err := user.Lookup(username)
+	if err != nil {
+		t.Fatalf("user.Lookup 失败: %v", err)
+	}
+	wantGID := -1
+	if g, gerr := user.LookupGroup(username); gerr == nil {
+		wantGID, _ = strconv.Atoi(g.Gid)
+	} else {
+		wantGID, _ = strconv.Atoi(u.Gid)
+	}
+
+	for _, p := range []string{home, filepath.Join(home, "sub"), filepath.Join(home, "a.txt"), filepath.Join(home, "sub", "b.txt")} {
+		info, err := os.Stat(p)
+		if err != nil {
+			t.Fatalf("Stat(%s) 失败: %v", p, err)
+		}
+		stat := info.Sys().(*syscall.Stat_t)
+		if int(stat.Uid) != wantUID {
+			t.Fatalf("%s uid=%d want=%d", p, stat.Uid, wantUID)
+		}
+		if int(stat.Gid) != wantGID {
+			t.Fatalf("%s gid=%d want=%d", p, stat.Gid, wantGID)
+		}
+	}
+}
+
+func TestHandleFixHomePermsUnknownUserRejected(t *testing.T) {
+	setupFakePool(t)
+	rec := httptest.NewRecorder()
+	handleFixHomePerms(rec, fixHomeReq(map[string]interface{}{"username": "nonexistent-user-xyz-123"}))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("不存在用户应 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleFixHomePermsNoHomeDirRejected(t *testing.T) {
+	root := setupFakePool(t)
+	username, err := lookupCurrentUsername()
+	if err != nil {
+		t.Skipf("无法解析当前用户名: %v", err)
+	}
+	// 用户存在,但池根下没有对应 home 目录(不建 home,只建 public)。
+	os.MkdirAll(filepath.Join(root, "public"), 0755)
+	rec := httptest.NewRecorder()
+	handleFixHomePerms(rec, fixHomeReq(map[string]interface{}{"username": username}))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("无 home 目录应 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleFixHomePermsUsernameWithSlashRejected(t *testing.T) {
+	setupFakePool(t)
+	rec := httptest.NewRecorder()
+	handleFixHomePerms(rec, fixHomeReq(map[string]interface{}{"username": "a/b"}))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("username 含 / 应 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleFixHomePermsUsernameDotDotRejected(t *testing.T) {
+	setupFakePool(t)
+	rec := httptest.NewRecorder()
+	handleFixHomePerms(rec, fixHomeReq(map[string]interface{}{"username": ".."}))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf(`username 为 ".." 应 400, got %d body=%s`, rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleFixHomePermsRejectsGet(t *testing.T) {
+	setupFakePool(t)
+	req := httptest.NewRequest("GET", "/api/files/fix-home-perms", nil)
+	rec := httptest.NewRecorder()
+	handleFixHomePerms(rec, req)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("GET 应 405, got %d", rec.Code)
+	}
+}
+
+// 失败即停路径:home 内放一个非 root 下属主非运行者的构造比较难在非 root 测试环境
+// 稳定构造(本进程对自己创建的文件总有权限 chmod/chown 到同值)。此处改用更可靠的
+// 构造方式——在子树中放一个本进程创建后立即移除写权限的目录,使 Walk 递归进入
+// 更深层的孙子节点时因父目录 0500(无执行？不对,目录需要 x 才能进入)导致 Stat
+// 失败。实测发现:对自建文件,chmod 本身不受已有 mode 限制(属主总可 chmod 自己
+// 拥有的文件/目录,uid 匹配即可,与当前 mode 无关),因此非 root 环境无法稳定构造
+// "chmod 失败"场景;chown 到其他用户在非 root 下必 EPERM,但这与"失败即停"要验证的
+// "递归中途失败 500 带路径"语义不完全一致(是否中途/全部失败依赖 Walk 顺序,路径
+// 断言会脆弱)。按 Task 要求"构造不了就注释说明,不强求"处理,此处不新增强行测试。

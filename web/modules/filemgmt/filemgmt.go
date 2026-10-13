@@ -7,8 +7,8 @@ import (
 )
 
 // RegisterRoutes 注册 filemgmt 模块的全部 HTTP 路由。
-// 本 Task 已注册 list/download/zip/preview/usage/mkdir/rename/upload/move/copy/delete/
-// stat/chmod/chown,后续 Task 追加 fix-home-perms。
+// 全部端点已注册:list/download/zip/preview/usage/mkdir/rename/upload/move/copy/
+// delete/stat/chmod/chown/fix-home-perms。
 func RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/files/list", common.AuthMiddleware(handleList))
 	mux.HandleFunc("/api/files/download", common.AuthMiddleware(handleDownload))
@@ -24,4 +24,5 @@ func RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/files/stat", common.AuthMiddleware(handleStat))
 	mux.HandleFunc("/api/files/chmod", common.AuthMiddleware(handleChmod))
 	mux.HandleFunc("/api/files/chown", common.AuthMiddleware(handleChown))
+	mux.HandleFunc("/api/files/fix-home-perms", common.AuthMiddleware(handleFixHomePerms))
 }
