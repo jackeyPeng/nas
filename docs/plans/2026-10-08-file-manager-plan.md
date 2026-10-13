@@ -1341,6 +1341,17 @@ git commit -m "feat(filemgmt): 前端文件页 v1 — 浏览/面包屑/下载/�
 
 ### Task 15: 前端 v3(改权限对话框 + 批量)
 
+**拍板记录(2026-10-13 Task 15 开工前,规格空白裁决)**:
+- **「⋮ 菜单」落地为行内按钮**:v2 实际 UI 是行内 btn-xs 按钮组(下载/预览/重命名/移动/复制/删除),无 ⋮ 菜单结构——在行内按钮组追加「属性」按钮打开权限对话框,不引入新菜单组件(与既有交互模式一致)。
+- **对话框数据源**:打开时 GET /api/files/stat 回显 owner/group/mode(字符串八进制)/mode_text;mode 输入框实时 JS 预览符号位(如 0644→-rw-r--r--);预设按钮 0644/0755/0700;recursive 勾选框仅 stat.recursive_possible=true(目录)时显示;owner/group 下拉数据源 = 顶层 this.users / this.userGroups(既有 loadUsers()/loadUserGroups(),对话框打开时若为空则懒加载)。
+- **单条保存语义**:mode 有填 → POST chmod;owner/group 有改动 → POST chown(只传改动项,后端空串=不变);两个请求独立,都成功才关对话框刷新列表,失败各自展示错误。
+- **批量仅 chmod**(Step 3「改权限」):多选工具栏加「改权限」按钮 → 对话框只含 mode+recursive(不显示 stat——多条无单一 stat;recursive 勾选对其中目录生效、文件自动按非递归处理);保存时前端串行逐条 POST + 进度 N/M + 结果汇总 toast(成功 X 失败 Y+失败原因列表)。批量 chown 不做(owner 变更属高危低频,单条对话框已覆盖)。
+- **危险确认(type-to-confirm)**:design §六.4 要求 recursive 操作前端确认——(a) 单条目录勾 recursive、(b) 批量(≥2 条)、(c) 用户页 fix-home-perms 三种场景必须输入确认词才能提交:(a)(b) 确认词=固定 i18n 文案「修改」(files.perms_confirm_word),(c) 确认词=该用户名(plan Step 2 原文)。非递归单条文件直接保存。复用既有 deleteConfirmName 输入框模式(delete 对话框对目录要求输名称,同款交互)。
+- **用户页 fix-home-perms 按钮**:users 列表每行加「修复 home 权限」btn-xs,全部用户可见(home 存在性由后端校验,400 错误 toast 展示);POST /api/files/fix-home-perms {username}。
+- **视觉纪律**:新 UI 一律 var(--sp-*)/var(--fs-*)/var(--radius-*) token 与 btn-xs/badge-sm 密度类,不写裸 px(nas-frontend-dev rule 6);对话框结构复用既有 files 弹窗模板(遮罩+卡片+标题+体+底部按钮)。
+- **i18n**:新键全部挂 files.* 命名空间(约 12-16 键),双语 parity,scripts/check-i18n.py 必须过;锚点式文本插入改 JSON(禁 json.dump 整文件回写,skill pitfall 18a)。
+- **Step 5 浏览器实测 + SMB 端验证由父代理执行**(不在 opencode 交付内):opencode 交付 Steps 1-4 + 自检(node --check app.js、check-i18n.py、go build 过 embed);父代理随后 build 二进制起本地 dev 服务器做浏览器 E2E(参照 Task 11 E2E 模式)+ smbclient 以目标用户验证 force user 映射下 0700/0775 实际读写效果。
+
 **Files:** Modify `index.html`、`app.js`、i18n
 
 - [ ] Step 1: 行内 ⋮ 菜单加"属性/权限":对话框回显 stat(owner/group/mode_text)+ mode 八进制输入(实时预览符号位)+ recursive 勾选 + owner/group 下拉(数据源:既有 users 模块的用户列表端点,grep `/api/users` 确认)+ 预设按钮(0644/0755/0700)
