@@ -259,12 +259,22 @@ func GetAllFolderMeta() []FolderMeta {
 	for rows.Next() {
 		var m FolderMeta
 		var rb, smb, nfs, nrs int
-		rows.Scan(&m.ID, &m.Name, &m.Path, &m.Pool, &m.Permission, &m.ValidUsers, &m.WriteUsers, &rb, &smb, &nfs, &nrs, &m.QuotaGB, &m.CreatedAt)
+		// 加固(TODO #34):检查 Scan 错误——此前 NULL 列(手工种库缺 NOT NULL DEFAULT '')
+		// 会让 Scan 中途失败但错误被吞,行以半填充零值进入结果(如 RecycleBin=false),
+		// 症状是 Name/Path 正常而依赖后续列的功能静默异常(删除误走池根回退、回收站页 shares 为空)。
+		// 现在:坏行跳过 + 日志记列级错误,fail-visible。
+		if err := rows.Scan(&m.ID, &m.Name, &m.Path, &m.Pool, &m.Permission, &m.ValidUsers, &m.WriteUsers, &rb, &smb, &nfs, &nrs, &m.QuotaGB, &m.CreatedAt); err != nil {
+			log.Printf("[CONFIG_SYNC] 跳过无法解析的 folders 行(id 未知): %v", err)
+			continue
+		}
 		m.RecycleBin = rb != 0
 		m.SambaShare = smb != 0
 		m.NFSExport = nfs != 0
 		m.NFSNoRootSquash = nrs != 0
 		result = append(result, m)
+	}
+	if err := rows.Err(); err != nil {
+		log.Printf("[CONFIG_SYNC] 遍历元数据行出错: %v", err)
 	}
 	return result
 }
