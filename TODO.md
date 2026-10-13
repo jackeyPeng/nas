@@ -838,12 +838,12 @@ NAS 里的视频/音乐/照片直接在浏览器播放，带媒体库海报墙�
 ---
 
 #### 34. 面板文件管理（取代 FileBrowser）
-**状态**: 🟡 进行中（M1 v1 只读基线已落地，feat/file-manager 分支）  
+**状态**: 🟡 进行中（M1+M2+M3 全部落地，feat/file-manager 分支；剩 Task 16 同构机验收+发版 beta.19）  
 **优先级**: 中  
 **描述**:  
 面板内置整池文件管理器，取代 FileBrowser 外链。设计规格 + 16 Task TDD 计划见 docs/plans/2026-10-08-file-manager-{design,plan}.md，三里程碑 M1 只读 → M2 写操作 → M3 权限修复。
 
-**已完成（M1+M2，2026-10-13）**:
+**已完成（M1+M2+M3，2026-10-13）**:
 - ✅ Task 1 路径安全核心 resolvePoolPath（拒绝穿越/绝对路径/符号链接逃逸，最深已存在祖先 EvalSymlinks）
 - ✅ Task 2 列目录 API（排序/属主/权限位/符号链接标注/2000 条截断）
 - ✅ Task 3 下载（ServeContent+Range）+ 目录 zip 流式打包（符号链接不跟随）
@@ -856,9 +856,12 @@ NAS 里的视频/音乐/照片直接在浏览器播放，带媒体库海报墙�
 - ✅ Task 10 删除进 .recycle（keeptree 与回收站页同源联动 + 防套娃真实路径判定 + RecycleBin=false 回退池根）
 - ✅ Task 11 前端 v2（多选工具栏/XHR 上传进度/移动复制选择器/删除 type-to-confirm/i18n 双语）+ 浏览器全流程 E2E 通过
 - ✅ Task 12 setup.sh FileBrowser 默认不装（--with-filebrowser 保留一版）+ 注册表 4 项条件化 + 文档同步（checklist 172 项/18 模块）
+- ✅ Task 13 stat/chmod/chown（mode 白名单拒 setuid/setgid/sticky、递归 Walk 符号链接 chmod 跳过/chown Lchown、池根防御、chown owner/group 可选空=不变、stat mode 字符串八进制契约）
+- ✅ Task 14 fix-home-perms 一键模板（home 递归 0700+chown 同名组回退主组、校验链含 username 纵深防御、Lstat 拒符号链接 home、不做 provisioning）
+- ✅ Task 15 前端 v3（属性对话框 stat 回显+八进制输入实时符号位预览+预设、批量改权限串行进度+汇总、用户页修复 home 按钮、三场景 type-to-confirm 含函数级守卫）+ 浏览器 E2E 8 项全过（抓到并修复批量确认词 UI 绕过）
 
 **待办**:
-- [ ] M3（Task 13-16）：stat/chmod/chown、fix-home-perms 一键模板、前端 v3 权限对话框、生产同构机全链路验收 + FileBrowser 卸载提示
+- [ ] Task 16：生产同构机全链路验收（含 smbclient force user 映射下 0700/0775 实测 = Task 15 Step 5 SMB 部分）+ 发版 beta.19 + FileBrowser 彻底移除评估
 - [ ] 加固遗留：diskmgmt GetAllFolderMeta rows.Scan 错误未检查（NULL 列静默半填充）；审计 detail 用户输入转义；ownerShareOf/ownerShareOfVia 去重
 
 ---

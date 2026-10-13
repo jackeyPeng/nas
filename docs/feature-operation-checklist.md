@@ -355,7 +355,7 @@
 
 ## 17. 文件管理（FileMgmt）
 
-**功能说明**: 面板内置整池文件管理器（v2 写操作已落地，取代 FileBrowser；beta.18 起新装默认不装 FileBrowser）。前端「文件」页：目录浏览 + 面包屑导航 + 下载 + 预览 + 用量展示 + 多选工具栏（上传/新建/移动/复制/删除）。安全核心：所有 handler 入参一律池根相对路径，经 `resolvePoolPath`（filemgmt/path.go）锚定——拒绝绝对路径 / `..` 子串 / 符号链接逃逸（对最深已存在祖先 EvalSymlinks）；写操作双重锚定 + renameat2/mkdir O_EXCL 原子兜底。
+**功能说明**: 面板内置整池文件管理器（v3 权限管理已落地，取代 FileBrowser；beta.18 起新装默认不装 FileBrowser）。前端「文件」页：目录浏览 + 面包屑导航 + 下载 + 预览 + 用量展示 + 多选工具栏（上传/新建/移动/复制/删除/改权限）+ 行内属性对话框（chmod/chown）；用户页每行「修复 home 权限」。安全核心：所有 handler 入参一律池根相对路径，经 `resolvePoolPath`（filemgmt/path.go）锚定——拒绝绝对路径 / `..` 子串 / 符号链接逃逸（对最深已存在祖先 EvalSymlinks）；写操作双重锚定 + renameat2/mkdir O_EXCL 原子兜底；权限操作 mode 白名单（^[0-7]{3,4}$ 且 ≤0777，setuid/setgid/sticky 拒绝）、递归 Walk 符号链接 chmod 跳过/chown 用 Lchown、池根拒绝、fix-home-perms home 根 Lstat 拒符号链接；面板 root 进程直接 os.Chmod/os.Chown 免 sudo（sudoers 无 chmod -R，刻意不扩）。
 
 | 操作项 | 分类 | 说明 |
 |---|---|---|
@@ -366,12 +366,17 @@
 | 目录 zip 流式下载 | 只显示 | `GET /api/files/zip`，流式写 ResponseWriter；符号链接存 stub 不跟随 |
 | 文本预览 | 只显示 | 限 1MB；JSON 传输 + 前端 x-text 转义（无效 UTF-8 → U+FFFD） |
 | 图片预览 | 只显示 | 限 10MB blob URL（closePreview 防泄漏）；SVG 一律 415（防存储型 XSS） |
+| 属性回显（stat） | 只显示 | `GET /api/files/stat?path=`，owner/group/mode（字符串八进制）/mode_text/recursive_possible；Lstat 语义（链接报自身）；池根放行 |
 | 上传（XHR 流式 + 进度条） | 用户操作 | `POST /api/files/upload?path=` multipart，MultipartReader 流式不撑内存；同名 409 + overwrite=yes 覆盖重试；磁盘满 507 清半成品；落盘按目标共享权限对齐（public 0664/其他 0600） |
 | 新建目录 | 用户操作 | `POST /api/files/mkdir` {path,name}；validateFileName 白名单；双重锚定；mode 恒 0755（显式 chmod 消 umask） |
 | 重命名 | 用户操作 | `POST /api/files/rename` {path,new_name}；renameat2(RENAME_NOREPLACE) 原子防覆盖；同名 no-op 200；池根拒绝 |
 | 移动 | 用户操作 | `POST /api/files/move` {src,dst_dir}；同 fs renameat2 零拷贝，跨 fs copyTree+字节校验+权限对齐后才删源；目标在源内部（含符号链接解析后）400 防无限递归 |
 | 复制 | 用户操作 | `POST /api/files/copy` {src,dst_dir}；递归 copyTree（符号链接拷链接本身）；新文件按目标共享对齐权限；EEXIST 不误删并发方文件 |
 | 删除（进回收站） | 用户操作 | `POST /api/files/delete` {path}；落所属共享 `.recycle/<user>/<原相对路径>` keeptree 与回收站页同源联动；目录前端 type-to-confirm；共享根/池根/.recycle 段拒绝；RecycleBin=false 回退池根 |
+| 改权限（chmod 单条，含递归） | 用户操作 | `POST /api/files/chmod` {path,mode,recursive}；mode 白名单校验；非递归符号链接拒 400；递归 Walk 跳过链接；池根拒 400；前端属性对话框八进制输入+实时符号位预览+预设按钮（0644/0755/0700）；目录递归需 type-to-confirm 确认词 |
+| 改属主（chown 单条，含递归） | 用户操作 | `POST /api/files/chown` {path,owner,group,recursive}；owner/group 可选（空=不变传 -1，至少一项）；user.Lookup/LookupGroup 校验；符号链接 Lchown 改链接本身；池根拒 400；前端 owner/group 下拉（数据源 users/user-groups 懒加载） |
+| 批量改权限 | 用户操作 | 多选后工具栏「改权限」→ 前端串行逐条 POST chmod + 进度 N/M + 成功/失败汇总 toast；单条失败不中断；递归仅对所选目录生效；批量必输确认词（函数级守卫，UI disabled 之外纵深防御） |
+| 修复 home 权限（一键模板） | 用户操作 | `POST /api/files/fix-home-perms` {username}；用户页每行按钮；home=池根/<username> 递归 0700 + chown username:同名组（缺同名组回退主组）；校验链 405→username 含 `/`或`..` 400→用户不存在 400→home 不存在/非目录/符号链接 400；不建缺失子目录（修复不做 provisioning）；前端 type-to-confirm 输入用户名 |
 | 文件访问路径锚定校验 | 系统自动 | 所有 /api/files/* 请求过 resolvePoolPath，fail-closed 拒绝池外访问 |
 
 ---
@@ -399,10 +404,10 @@
 
 | 分类 | 操作项数 |
 |---|---|
-| 只显示 | 58 |
-| 用户操作 | 88 |
+| 只显示 | 59 |
+| 用户操作 | 92 |
 | 系统自动 | 26 |
-| **合计** | **172** |
+| **合计** | **177** |
 | 功能模块数 | 18 |
 
 > 注：「系统自动」项里，第 18 节「系统自动任务汇总」是对散落在模块 3/5/6/13/14/15/16/17 里的无人值守任务的跨模块汇总（重复计数），测试时可直接按第 18 节这张汇总表一次过完所有无人值守链路。

@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 主要变化 |
 |------|------|---------|
+| v1.4.0-beta.19 | 2026-10-13 | 文件管理器 M3 权限管理全量落地 — stat/chmod/chown/fix-home-perms 四 API + 前端 v3（属性对话框八进制输入+符号位实时预览+预设、批量改权限串行进度、用户页一键修复 home 权限）；递归 Walk 免 sudo（符号链接 chmod 跳过/chown Lchown）；mode 白名单拒 setuid/setgid/sticky；三场景 type-to-confirm；FileBrowser 存量机器可经 cleanup.sh 卸载 |
 | v1.4.0-beta.18 | 2026-10-13 | 文件管理器 M2 写操作全量落地 — 上传(XHR 进度)/新建/重命名/移动/复制/删除(进 .recycle 与回收站页联动) 六 API + 前端多选工具栏；setup.sh 新装默认不装 FileBrowser(--with-filebrowser 保留一版)；注册表 FileBrowser 4 项按安装态条件化(保 46/46) |
 | v1.4.0-beta.17 | 2026-10-12 | 面板文件管理器 M1 v1 只读基线 — 内置「文件」页取代 FileBrowser 外链（浏览/面包屑/下载/zip 打包/预览/用量）+ resolvePoolPath 路径安全核心（穿越/符号链接逃逸 fail-closed）+ checklist 新增模块 17（166 项/18 模块，修正存量统计口径）+ 产品手册 7.8 章节 |
 | v1.4.0-beta.16 | 2026-10-08 | 文档快照 — 新增《协议服务配置详解》(docs/protocol-service-configs.md，6 协议 + 横切配置代码逐项核对)+ 修正 GenerateNFSConfig 过期注释(与 no_root_squash 默认行为对齐)。文件管理器开发前的回滚基线，不含二进制变更 |
@@ -12,6 +13,40 @@
 | v1.4.0-beta.13 | 2026-09-19 | NFS 导出对所有网段开放（跨网段客户端可挂载） |
 | v1.4.0-beta.12 | 2026-09-18 | 创建向导按已选磁盘实时预估容量（选目标后预览面板 + 各方案可用容量/注意事项）+ 登录页品牌 slogan |
 | v1.4.0-beta.11 | 2026-09-18 | 当前连接展示（监控页，SMB 会话 + 各协议端口归类）+ 回收站改 per-share `.recycle/`（删除=rename 零拷贝，恢复保留目录树，旧 `#recycle` 兼容）+ 存储页 tab 切换跳动修复 |
+
+---
+
+## [2026-10-13] - 文件管理器 M3 权限管理
+
+### 版本 v1.4.0-beta.19
+
+### 新增（feat/file-manager 分支，16 Task 计划的 Task 13-15，每 Task 均经独立代码审查+修复轮）
+
+- **权限四 API（web/modules/filemgmt/perms.go）**：
+  - 属性 `GET /api/files/stat?path=`：owner/group/mode（字符串八进制 "0644"）/mode_text/recursive_possible；Lstat 语义（符号链接报自身）；池根放行（只读）
+  - 改权限 `POST /api/files/chmod` {path,mode,recursive}：mode 白名单（^[0-7]{3,4}$ 且 ≤0777，setuid/setgid/sticky 拒绝）；非递归符号链接拒 400（chmod 跟随链接会误改目标）；递归 filepath.Walk 符号链接跳过；池根拒 400；失败即停 500 带路径
+  - 改属主 `POST /api/files/chown` {path,owner,group,recursive}：owner/group 均可选（空=不变传 -1，至少一项）；user.Lookup/LookupGroup 校验失败 400 含具体项；符号链接 os.Lchown 改链接本身（与递归 Walk 语义一致）；池根拒 400
+  - 修复 home `POST /api/files/fix-home-perms` {username}：home=池根/<username> 递归 0700 + chown username:同名组（LookupGroup 失败回退主组）；校验链 405→username 含 `/`或`..` 400→用户不存在 400→home 不存在/非目录/符号链接 400（Lstat fail-closed）；不创建缺失子目录（修复不做 provisioning）；权限基准与 EnsureUserHome 同源
+  - 面板 root 进程直接 os.Chmod/os.Chown/os.Lchown 免 sudo（sudoers 无 chmod -R 白名单，刻意不扩）；chmod/chown/fix-home-perms 全部纳入审计日志（高危操作富 detail）
+- **前端 v3（Task 15）**：文件行内「属性」按钮 → 对话框回显 stat + mode 八进制输入（实时符号位预览 modeToSymbolic）+ 预设按钮（0644/0755/0700）+ recursive 勾选（仅目录）+ owner/group 下拉（users/user-groups 懒加载）；单条保存 chmod/chown 独立失败各自收集错误；多选工具栏「改权限」批量串行逐条 POST + 进度 N/M + 汇总 toast；用户页每行「修复 home 权限」；三场景 type-to-confirm（单条目录递归/批量=固定确认词、修复 home=输用户名），批量确认有函数级守卫（E2E 抓到的 UI disabled 绕过）；21 个 files.* 双语键（check-i18n parity 1213 键）
+
+### 安全（独立审查驱动的关键修复，全部有回归测试）
+
+- fix-home-perms home 根 Lstat 拒符号链接（防池根下链接把递归 chmod/chown 引到池外目标）
+- 非递归 chmod 拒符号链接（防跟随链接误改池内其他目标）；递归 Walk 链接跳过/Lchown 语义全程一致
+- mode 白名单双重校验（正则+数值 ≤0777）前后端对齐：前端 ^0?[0-7]{3}$ 实时预览即拒 1755，后端独立再校验
+- stat 失败路径守卫：api() 对纯文本错误返回真值字符串，调用方按「含 mode 字段对象」判定，错误 toast 不开框（复审 I1）
+- 保存前 mode 合法性闸门（单条+批量），杜绝空/非法 mode 直发注定 400 的请求（复审 I2）
+
+### FileBrowser 退役进展
+
+- beta.18 起新装默认不装；存量已装机器升级不受影响（整段不动）。**卸载路径**：跑 `scripts/cleanup.sh`（服务停止+unit/数据库/二进制全清）或手动 `systemctl disable --now filebrowser && rm -f /usr/local/bin/filebrowser /etc/systemd/system/filebrowser.service && rm -rf /etc/filebrowser`；注册表 FileBrowser 5 项（ID 6/21/24/29/33）按二进制存在性条件化，卸载后自动记「未安装」保持 46/46 口径。beta.19 后评估彻底移除 setup.sh 的 --with-filebrowser 开关（spec §十一）
+
+### 验收
+
+- 单测：filemgmt 131 测试全绿（chown 生效断言 root-gated 3 例 skip，生产同构机验收必测）；diskmgmt 回归绿
+- 浏览器 E2E（本地 dev + /data/nas1 种池）：单条 stat 回显/预设/预览/保存落盘、批量守卫拦截与成功串行进度、递归目录 chmod 落盘+符号链接目标不变、非法 mode 400 文本展示、fix-home-perms 0777→0700 落盘、EN 确认词、审计落库、弹窗隔离——全过
+- Debian 13 生产同构机全链路验收（含 smbclient force user 映射下 0700/0775 实测）见 Task 16 记录
 
 ---
 
