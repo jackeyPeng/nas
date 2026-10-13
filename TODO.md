@@ -861,7 +861,7 @@ NAS 里的视频/音乐/照片直接在浏览器播放，带媒体库海报墙�
 - ✅ Task 15 前端 v3（属性对话框 stat 回显+八进制输入实时符号位预览+预设、批量改权限串行进度+汇总、用户页修复 home 按钮、三场景 type-to-confirm 含函数级守卫）+ 浏览器 E2E 8 项全过（抓到并修复批量确认词 UI 绕过）
 
 **待办**:
-- [ ] 发版收尾：release.sh 对外发布与否、feat/file-manager 合回 master 与否（用户拍板）；FileBrowser 彻底移除评估（beta.19 后）
+- [ ] feat/file-manager 合回 master 与否（用户拍板）；FileBrowser 彻底移除评估（beta.19 已发布，--with-filebrowser 保留一版后评估）
 - [ ] 回收站 UI 粒度（D1 复审 Important 跟进）：回收站页只列 .recycle/<user>/ 顶层条目，UI restore 嵌套删除项走 .restored 碰撞语义不回原位（API 深层 rel_path 可精确还原）——候选：合并式恢复（dst 已存在目录时逐子项 mv）或前端目录条目下钻
 - [ ] 加固遗留：diskmgmt GetAllFolderMeta rows.Scan 错误未检查（NULL 列静默半填充）；审计 detail 用户输入转义；ownerShareOf/ownerShareOfVia 去重；resolveShareOrPoolRootPath 抽纯核心+排序单测（D1 复审 Minor）
 

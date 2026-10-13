@@ -1382,7 +1382,7 @@ git commit -m "feat(filemgmt): 前端文件页 v1 — 浏览/面包屑/下载/�
 - [x] Step 1: 文档清单同 Task 6;CHANGELOG 注明 FileBrowser 卸载提示(cleanup 路径)（4528b93 + D1 修复条目补充;checklist 177 项/18 模块 awk 实算;TODO#34 M3 全落地;手册 7.8 v3 + FileBrowser 退役说明 + 删除回退伪共享语义同步）
 - [x] Step 2: **Debian 13 同构机全链路验收**(spec §十三 清单逐项打勾):2 用户 + home → 浏览/上传/下载/移动/删除/回收站 restore → chown 后 smbclient 实测 → 穿越攻击用例(`?path=../../etc/passwd`、符号链接、`..%2f`)全拒 → 审计日志逐条可查 → i18n 完整（2026-10-13 @ 测试机 Debian 13.6 裸机全新安装,详见节首验收记录;i18n 本地 check-i18n 1213 键 parity;回收站 restore 经 D1 修复后复跑通过）
 - [x] Step 3: 验收抓到缺陷:修 + 单测 + commit + 重部署重跑受影响项,全绿才 tag（D1:d7c2a12 + f34795a,重部署 f34795a 二进制后 R1-R5 复跑全绿:回退 keeptree/伪共享 list/原位 restore/穿越拒绝/clear confirm 校验/RecycleBin=true share 级回归）
-- [x] Step 4: tag v1.4.0-beta.19 + push;release.sh 与否用户拍板（tag+分支已推 Gitee=44071c3;release.sh 对外发布与合回 master 均待用户拍板——未跑,线上一键安装仍是旧版）
+- [x] Step 4: tag v1.4.0-beta.19 + push;release.sh 与否用户拍板（用户拍板「发版吧」→ 2026-10-13 已执行 release.sh beta：R2 beta 目录两架构 tarball + control 渠道 + 签名 manifest 全部上传并验证（strings=v1.4.0-beta.19/commit e1bf39f、tarball 200、latest-amd64.json sha256+sig）；Gitee prerelease id 1202587 建好、两 tarball attach 验证 302→200；官网四文件+dist 已 push=064e49b，R2 线上部署按惯例用户手工推；tag 发布前 force 移到 HEAD e1bf39f（未分发过，安全）；一键安装现已装到 beta.19。合回 master 仍待用户拍板）
 - [x] Step 5: KB 同步 + nas-storage-architecture skill 更新(新增 filemgmt 模块的坑与约定:resolvePoolPath 唯一入口、.recycle 同源、os.Chmod 免 sudo 等)（KB 5 篇 PUT+读回比对一致;skill 更新:D1 池根回退 keeptree+伪共享语义替换旧 basename 描述、权限四端点约定、前端 v3 函数级守卫/api() 纯文本陷阱、FileBrowser 状态刷新）
 
 ---
