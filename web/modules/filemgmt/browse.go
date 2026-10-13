@@ -4,12 +4,10 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
-	"os/user"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"nas-panel/common"
 )
@@ -89,18 +87,7 @@ func listDir(abs string) ([]FileEntry, bool, error) {
 		default:
 			e.Type = "other"
 		}
-		if stat, ok := info.Sys().(*syscall.Stat_t); ok {
-			if u, uerr := user.LookupId(strconv.Itoa(int(stat.Uid))); uerr == nil {
-				e.Owner = u.Username
-			} else {
-				e.Owner = strconv.Itoa(int(stat.Uid))
-			}
-			if g, gerr := user.LookupGroupId(strconv.Itoa(int(stat.Gid))); gerr == nil {
-				e.Group = g.Name
-			} else {
-				e.Group = strconv.Itoa(int(stat.Gid))
-			}
-		}
+		e.Owner, e.Group = resolveOwnerGroup(info)
 		out = append(out, e)
 	}
 	sort.Slice(out, func(i, j int) bool {

@@ -1313,11 +1313,11 @@ git commit -m "feat(filemgmt): 前端文件页 v1 — 浏览/面包屑/下载/�
 - `handleChown`(POST `{path, owner, group, recursive}`)— owner/group 必须 user.Lookup/.LookupGroup 存在的系统账号;os.Chown(uid,gid);recursive Walk;符号链接用 os.Lchown(不改目标)
 - `func parseMode(s string) (os.FileMode, error)`(纯函数,单测)
 
-- [ ] Step 1: 失败测试 — parseMode("0644")=0644 / ("755")=0755 / ("9999")err / ("rwx")err;chmod 单文件生效;chmod recursive 子树生效且符号链接目标 mode 不变;chown 到不存在用户 400;chown recursive 生效(Lchown 语义:链接本身 owner 变、目标不变);stat 回显与 os.Lstat 一致
-- [ ] Step 2: 确认失败
-- [ ] Step 3: 实现(注意:测试 chown 需要 root 才能成功——测试机跑测试是 root 则直测;非 root 环境 skip 并注释说明,生产同构机验收必测)
-- [ ] Step 4: 测试绿 + build
-- [ ] Step 5: Commit `feat(filemgmt): stat/chmod/chown — mode 白名单校验,递归 Walk 免 sudo,符号链接 Lchown`
+- [x] Step 1: 失败测试 — parseMode("0644")=0644 / ("755")=0755 / ("9999")err / ("rwx")err;chmod 单文件生效;chmod recursive 子树生效且符号链接目标 mode 不变;chown 到不存在用户 400;chown recursive 生效(Lchown 语义:链接本身 owner 变、目标不变);stat 回显与 os.Lstat 一致
+- [x] Step 2: 确认失败
+- [x] Step 3: 实现(注意:测试 chown 需要 root 才能成功——测试机跑测试是 root 则直测;非 root 环境 skip 并注释说明,生产同构机验收必测)
+- [x] Step 4: 测试绿 + build
+- [x] Step 5: Commit `feat(filemgmt): stat/chmod/chown — mode 白名单校验,递归 Walk 免 sudo,符号链接 Lchown`
 
 ### Task 14: fix-home-perms 一键模板
 
