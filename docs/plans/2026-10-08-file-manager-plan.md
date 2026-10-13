@@ -1270,8 +1270,10 @@ git commit -m "feat(filemgmt): 前端文件页 v1 — 浏览/面包屑/下载/�
 - [x] Step 2: 移动/复制对话框:简易目录选择器(loadFiles 数据复用,逐级下拉/点击选择目标目录)
 - [x] Step 3: 删除确认:展示条目数 + 名称列表,确认文案 `$t('files.confirm_delete')`("删除的文件进入回收站,可在存储页恢复");递归删除目录额外 type-to-confirm(输入目录名,对齐既有危险操作模式)
 - [x] Step 4: i18n 全部文案双语 + check-i18n.py 过
-- [ ] Step 5: 浏览器实测全流程:上传(含大文件进度)/新建/重命名/移动/复制/删除 → 回收站页恢复 → 审计日志页可见每条写操作
+- [x] Step 5: 浏览器实测全流程:上传(含大文件进度)/新建/重命名/移动/复制/删除 → 回收站页恢复 → 审计日志页可见每条写操作(2026-10-13 本地 dev 面板+真实 Chrome 完成,详见修订记录;回收站联动验证到 API 条目可见+keeptree 落位,页面 UI 恢复按钮留同构机验收)
 - [x] Step 6: Commit `feat(filemgmt): 前端写操作 — 多选工具栏/流式上传进度/移动复制选择器/删除确认`
+
+**修复轮验证记录(2026-10-13,commit 42fc45f)**:6 项修复全部真实浏览器复验通过——Important#1 进度条:state 置 42% 后 DOM 渲染「42% (42.0 MB / 100 MB)」(响应式恢复);64MB 真实上传全链路成功(XHR 完成态 100% 正常);Minor③ rename 后 selected 剔除旧名实测 ✓;Minor④ 选择器进 public 只见 [docs,media](.recycle 存在但被过滤)✓;Minor⑤ batch_partial_fail 键解析、旧键零残留 ✓;Minor①② 代码级核对(parseErrorText 兜底/fileWrite 401 照抄 api() 模式)。修复精确实现审查建议原文,以浏览器实证替代又一轮 scoped re-review(判断依据:改动 37 行全部为 reviewer 指定修法,无可自由发挥面)。
 
 **修订记录(2026-10-13 Task 11 review + E2E)**:独立审查(jsdom+真 Alpine 实证)结论「需修复后合入」,拍板如下:
 - Important#1:上传进度条全程冻结 0%——`const progress = this.filesPage.uploadProgress = {...}` 链式赋值捕获 raw 对象,onprogress 对 raw 的 mutation 绕过 Alpine 代理不触发渲染(jsdom 实证 RAW→DOM 停 0%/PROXY→更新;uploadFilesWithOverwrite 的写法是对的)。修订:赋值与取引用拆两行(`this.filesPage.uploadProgress = {...}; const progress = this.filesPage.uploadProgress;`)或 handler 内全走 `this.filesPage.uploadProgress.xxx`。
