@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Z1 4-Bay · 机箱工业设计图纸 v0.3</title>
+<style>
+  :root{
+    --ink:#2b2b2b; --dim:#6b6b66; --line:#d8d6cf; --sheet:#faf9f6;
+    --dim-line:#c0392b; --accent:#2e5e4e; --al:#e9e7e1; --tray:#3a3f44;
+    --wood:#5c4033; --led:#ffd9a0;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#eceae4;color:var(--ink);font:15px/1.65 "Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;padding:32px 20px 80px}
+  .wrap{max-width:1100px;margin:0 auto}
+  header{border-bottom:3px solid var(--ink);padding-bottom:18px;margin-bottom:8px}
+  h1{font-size:30px;letter-spacing:.5px;font-weight:800}
+  h1 small{font-size:15px;font-weight:400;color:var(--dim);margin-left:12px}
+  .meta{display:flex;gap:24px;flex-wrap:wrap;margin-top:8px;font-size:13px;color:var(--dim)}
+  .meta b{color:var(--ink);font-weight:600}
+  h2{font-size:20px;margin:44px 0 6px;padding-left:12px;border-left:5px solid var(--accent);font-weight:700}
+  h2 .no{color:var(--accent);font-family:ui-monospace,monospace;margin-right:8px}
+  .sub{color:var(--dim);font-size:13.5px;margin-bottom:16px;padding-left:17px}
+  .sheet{background:var(--sheet);border:1px solid var(--line);border-radius:10px;padding:20px;box-shadow:0 2px 10px rgba(0,0,0,.05);overflow-x:auto}
+  .views{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  @media(max-width:900px){.views{grid-template-columns:1fr}}
+  .view{background:var(--sheet);border:1px solid var(--line);border-radius:10px;padding:12px;box-shadow:0 2px 10px rgba(0,0,0,.05)}
+  .view h3{font-size:14px;font-weight:700;color:var(--accent);margin:2px 0 6px 8px;font-family:ui-monospace,monospace}
+  svg{display:block;margin:0 auto;max-width:100%;height:auto}
+  svg text{font-family:ui-monospace,"SF Mono",monospace}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;background:var(--sheet)}
+  th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+  th{background:#efeee8;font-weight:700;white-space:nowrap}
+  td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  tr.cat td{background:#e7ece9;font-weight:700;color:var(--accent)}
+  tr.total td{background:#f5efdf;font-weight:800}
+  .note{background:#f3f0e8;border-left:4px solid #b99a4f;padding:12px 16px;border-radius:0 8px 8px 0;font-size:13.5px;margin:14px 0}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  @media(max-width:900px){.grid2{grid-template-columns:1fr}}
+  .cmf{display:flex;gap:16px;flex-wrap:wrap;margin-top:10px}
+  .chip{flex:1;min-width:150px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--sheet)}
+  .chip .sw{height:72px}
+  .chip .lb{padding:8px 12px;font-size:13px}
+  .chip .lb b{display:block;font-size:14px}
+  .chip .lb span{color:var(--dim);font-family:ui-monospace,monospace;font-size:12px}
+  .renders{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:8px}
+  .renders figure{background:var(--sheet);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .renders img{width:100%;display:block;aspect-ratio:3/2;object-fit:cover;background:#ddd}
+  .renders figcaption{padding:8px 12px;font-size:12.5px;color:var(--dim)}
+  .kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin-top:6px}
+  .kv .cell{background:var(--sheet);border:1px solid var(--line);border-radius:10px;padding:12px 16px}
+  .kv .cell b{display:block;font-size:22px;color:var(--accent);font-variant-numeric:tabular-nums}
+  .kv .cell span{font-size:12.5px;color:var(--dim)}
+  footer{margin-top:56px;padding-top:16px;border-top:1px solid var(--line);font-size:12.5px;color:var(--dim)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Z1 4-Bay 家用 NAS · 机箱工业设计图纸 <small>「留白」设计语言 · ID/结构概念方案 v0.3</small></h1>
+  <div class="meta">
+    <span>版本 <b>v0.3</b></span><span>日期 <b>2026-10-15</b></span>
+    <span>比例 <b>图纸 1:1 @2px/mm</b></span><span>单位 <b>mm</b></span>
+    <span>依据 <b>HARDWARE_SPEC.md（2026-07-12 决策：4盘位 / N150 / 极简「留白」）</b></span>
+    <span>状态 <b>Phase 0 → 3D 打印验证</b></span>
+  </div>
+</header>
+
+<!-- ======================= 0. 设计概要 ======================= -->
+<h2><span class="no">§0</span>设计概要</h2>
+<div class="sheet">
+  <div class="kv">
+    <div class="cell"><b>179 × 162 × 217</b><span>外形尺寸 W×H×D（含底座，不含天线）≈ 6.3L</span></div>
+    <div class="cell"><b>4 × 3.5"</b><span>前置免工具热插拔托架，兼容 2.5" HDD/SSD</span></div>
+    <div class="cell"><b>≈ 2.1 kg</b><span>整机空重（铝壳 + 木底座）</span></div>
+    <div class="cell"><b>&lt; 25 dB</b><span>满载噪音（后置 92mm PWM ≤2000RPM）</span></div>
+    <div class="cell"><b>60 W</b><span>外置 DC 12V/5A，4 盘启动峰值余量 25%</span></div>
+    <div class="cell"><b>¥1182</b><span>量产 BOM（1000 台批价，不含硬盘/税运）</span></div>
+  </div>
+  <div class="note">
+    <b>⚠ 尺寸修訂说明（v0.3 更新）</b> — 原 HARDWARE_SPEC §6.2 方案一为 185×165×155mm（≈4.7L）。经结构核算：3.5" 硬盘本体长 147mm，加托架(12) + 背板(14) + 后置风道(25) + 壁厚(8)，<b>深度物理下限 ≈ 206mm</b>；155mm 深度只能放 2.5" 盘。另经查证（2026-10-15）：<b>市面 N150 NAS ODM 板（CWWK CW-M2 / M6 / 各 6×SATA 款）全部为 170×170mm Mini-ITX</b>，无 ≤150×140 紧凑现货板。故分两档执行：<br>
+    ① <b>原型版（Phase 0/1，本次 FreeCAD 建模对象）</b>：装 ITX 现货板，主板卧式底置 → <b>186(W) × 184(H) × 210(D) ≈ 7.2L</b>（与群晖 DS423+ 7.4L 相当）；<br>
+    ② <b>量产愿景版（本页 §1-§4 图纸所示）</b>：待自研/定制紧凑板（≤150×140）侧置板仓 → <b>179 × 162 × 217 ≈ 6.3L</b>。<br>
+    两档共用：托架/背板/风道理念/CMF/前脸设计语言。HARDWARE_SPEC.md §1、§6.2 已同步修订。
+  </div>
+  <p style="font-size:14px;margin-top:8px">
+    设计语言延续规格书已定的「留白」方向：<b>暖白喷砂阳极氧化铝一体壳 + 胡桃木底座 + 炭灰托架</b>。像家居摆件不像 IT 设备：正面只有四条盘位缝、一根暖白灯条和一枚电源键；进风格栅藏在木底座下方；螺丝全部不外露（底部硅胶垫下 + 背板内锁）。磁吸前装饰面板可换色（白 / 木纹 / 墨绿），是量产后的配件收入点。
+  </p>
+</div>
+
+<!-- ======================= 1. 三视图 ======================= -->
+<h2><span class="no">§1</span>外形三视图（标注单位 mm）</h2>
+<p class="sub">红色为尺寸线。前面板：左侧 4 盘位竖列，右侧功能列（Logo / 灯条 / 电源键 / 前置 USB / 复位孔）。</p>
+<div class="views">
+
+  <!-- FRONT -->
+  <div class="view"><h3>FRONT · 正视图</h3>
+  <svg viewBox="0 0 480 430" width="480">
+    <defs>
+      <marker id="ar" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#c0392b"/></marker>
+      <marker id="ar2" markerWidth="8" markerHeight="8" refX="1" refY="4" orient="auto"><path d="M8,0 L0,4 L8,8 z" fill="#c0392b"/></marker>
+    </defs>
+    <!-- body -->
+    <rect x="60" y="40" width="358" height="324" rx="14" fill="#f2efe9" stroke="#2b2b2b" stroke-width="2.5"/>
+    <!-- top bezel seam -->
+    <line x1="60" y1="64" x2="418" y2="64" stroke="#c9c6bd" stroke-width="1"/>
+    <!-- bay openings: x 76..316 (120mm wide), pitch 33mm=66px -->
+    <g>
+      <rect x="76" y="76" width="240" height="59" rx="4" fill="#3a3f44" stroke="#1f2225"/>
+      <rect x="76" y="142" width="240" height="59" rx="4" fill="#3a3f44" stroke="#1f2225"/>
+      <rect x="76" y="208" width="240" height="59" rx="4" fill="#3a3f44" stroke="#1f2225"/>
+      <rect x="76" y="274" width="240" height="59" rx="4" fill="#3a3f44" stroke="#1f2225"/>
+    </g>
+    <!-- tray details: latch + finger scoop + activity LED -->
+    <g fill="#565c63">
+      <rect x="82" y="96" width="18" height="19" rx="3"/><rect x="82" y="162" width="18" height="19" rx="3"/>
+      <rect x="82" y="228" width="18" height="19" rx="3"/><rect x="82" y="294" width="18" height="19" rx="3"/>
+      <path d="M270,96 q22,9.5 0,19 z"/><path d="M270,162 q22,9.5 0,19 z"/>
+      <path d="M270,228 q22,9.5 0,19 z"/><path d="M270,294 q22,9.5 0,19 z"/>
+    </g>
+    <g fill="#ffd9a0" stroke="#b98f4f" stroke-width=".8">
+      <circle cx="304" cy="105" r="4"/><circle cx="304" cy="171" r="4"/><circle cx="304" cy="237" r="4"/><circle cx="304" cy="303" r="4"/>
+    </g>
+    <g fill="#2f3438" font-size="10" text-anchor="middle">
+      <text x="196" y="110">BAY 1</text><text x="196" y="176">BAY 2</text><text x="196" y="242">BAY 3</text><text x="196" y="308">BAY 4</text>
+    </g>
+    <!-- right function column -->
+    <text x="368" y="92" font-size="20" font-weight="800" fill="#2b2b2b" text-anchor="middle" letter-spacing="1">Z1</text>
+    <rect x="364" y="110" width="8" height="180" rx="4" fill="url(#ledg)" stroke="#c9a86a" stroke-width=".8"/>
+    <defs><linearGradient id="ledg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffe9c4"/><stop offset=".5" stop-color="#ffd9a0"/><stop offset="1" stop-color="#ffe9c4"/></linearGradient></defs>
+    <circle cx="368" cy="316" r="11" fill="#e9e7e1" stroke="#2b2b2b" stroke-width="2"/>
+    <path d="M365,311 h6 v5 h3 l-6,7 v-5 h-3 z" fill="#2b2b2b"/>
+    <rect x="352" y="338" width="32" height="12" rx="2" fill="#2b2b2b"/>
+    <rect x="356" y="341" width="24" height="6" rx="1" fill="#6f767e"/>
+    <circle cx="398" cy="344" r="2.5" fill="#2b2b2b"/>
+    <!-- walnut base -->
+    <rect x="66" y="348" width="346" height="16" rx="3" fill="#5c4033" stroke="#3a271d"/>
+    <line x1="66" y1="352" x2="412" y2="352" stroke="#7a5a44" stroke-width="1" opacity=".7"/>
+    <!-- dims -->
+    <g stroke="#c0392b" stroke-width="1.2" fill="none">
+      <line x1="60" y1="22" x2="418" y2="22" marker-start="url(#ar2)" marker-end="url(#ar)"/>
+      <line x1="60" y1="30" x2="60" y2="40"/><line x1="418" y1="30" x2="418" y2="40"/>
+      <line x1="446" y1="40" x2="446" y2="364" marker-start="url(#ar2)" marker-end="url(#ar)"/>
+      <line x1="418" y1="40" x2="440" y2="40"/><line x1="418" y1="364" x2="440" y2="364"/>
+      <line x1="40" y1="76" x2="40" y2="142" marker-start="url(#ar2)" marker-end="url(#ar)"/>
+    </g>
+    <g fill="#c0392b" font-size="13" stroke="none">
+      <text x="239" y="16" text-anchor="middle">179</text>
+      <text x="456" y="206" transform="rotate(90 456 206)" text-anchor="middle">162</text>
+      <text x="30" y="112" transform="rotate(-90 30 112)" text-anchor="middle">33 节距</text>
+    </g>
+    <g font-size="11" fill="#6b6b66">
+      <text x="76" y="392">托架口 120 × 29.5 ×4</text>
+      <text x="330" y="392" fill="#c0392b">● 电源键 ⌾ USB3.0 前置备份口 · 复位孔</text>
+      <text x="76" y="412">暖白灯条（呼吸/状态）</text>
+    </g>
+  </svg></div>
+
+  <!-- REAR -->
+  <div class="view"><h3>REAR · 后视图</h3>
+  <svg viewBox="0 0 480 430" width="480">
+    <rect x="60" y="40" width="358" height="324" rx="14" fill="#e9e7e1" stroke="#2b2b2b" stroke-width="2.5"/>
+    <!-- 92mm fan grille, centered -->
+    <g stroke="#2b2b2b" fill="none">
+      <circle cx="239" cy="140" r="92" stroke-width="2" fill="#dedbd3"/>
+      <circle cx="239" cy="140" r="80" stroke-width="1" opacity=".6"/>
+      <circle cx="239" cy="140" r="62" stroke-width="1" opacity=".6"/>
+      <circle cx="239" cy="140" r="44" stroke-width="1" opacity=".6"/>
+      <circle cx="239" cy="140" r="26" stroke-width="1" opacity=".6"/>
+      <circle cx="239" cy="140" r="14" stroke-width="1.4"/>
+      <g stroke-width="1" opacity=".55">
+        <line x1="239" y1="48" x2="239" y2="232"/><line x1="147" y1="140" x2="331" y2="140"/>
+        <line x1="174" y1="75" x2="304" y2="205"/><line x1="304" y1="75" x2="174" y2="205"/>
+      </g>
+    </g>
+    <text x="239" y="256" font-size="11" fill="#6b6b66" text-anchor="middle">92mm PWM 排风扇（蜂窝防护网）</text>
+    <!-- I/O strip -->
+    <g stroke="#2b2b2b" stroke-width="1.6" fill="#dedbd3">
+      <rect x="80" y="280" width="34" height="30" rx="2"/><rect x="122" y="280" width="34" height="30" rx="2"/>
+      <rect x="170" y="282" width="26" height="12" rx="2"/><rect x="202" y="282" width="26" height="12" rx="2"/>
+      <rect x="240" y="280" width="30" height="14" rx="3"/>
+      <circle cx="292" cy="292" r="11"/>
+      <circle cx="330" cy="292" r="7"/><circle cx="356" cy="292" r="7"/>
+      <circle cx="392" cy="292" r="3"/>
+    </g>
+    <g font-size="10" fill="#2b2b2b" text-anchor="middle">
+      <text x="97" y="326">2.5GbE</text><text x="139" y="326">2.5GbE</text>
+      <text x="183" y="326">USB3</text><text x="215" y="326">USB3</text>
+      <text x="255" y="326">HDMI</text><text x="292" y="326">DC 12V</text>
+      <text x="343" y="326">ANT×2</text><text x="392" y="326">RST</text>
+    </g>
+    <!-- DC jack inner -->
+    <circle cx="292" cy="292" r="4" fill="#2b2b2b"/>
+    <!-- vents slots top -->
+    <g stroke="#b7b4ac" stroke-width="3" stroke-linecap="round">
+      <line x1="120" y1="56" x2="358" y2="56"/>
+    </g>
+    <!-- base -->
+    <rect x="66" y="348" width="346" height="16" rx="3" fill="#5c4033" stroke="#3a271d"/>
+    <!-- antenna note -->
+    <g stroke="#6b6b66" stroke-width="1" stroke-dasharray="4 3" fill="none">
+      <line x1="330" y1="285" x2="330" y2="240"/><line x1="356" y1="285" x2="356" y2="240"/>
+    </g>
+    <text x="343" y="232" font-size="10" fill="#6b6b66" text-anchor="middle">SMA 胶棒天线 ×2（可拆）</text>
+    <g stroke="#c0392b" stroke-width="1.2" fill="none">
+      <line x1="147" y1="386" x2="331" y2="386" marker-start="url(#ar2)" marker-end="url(#ar)"/>
+      <line x1="147" y1="380" x2="147" y2="392"/><line x1="331" y1="380" x2="331" y2="392"/>
+    </g>
+    <text x="239" y="410" font-size="13" fill="#c0392b" text-anchor="middle">Ø92 出风</text>
+  </svg></div>
+
+  <!-- SIDE -->
+  <div class="view"><h3>LEFT SIDE · 侧视图</h3>
+  <svg viewBox="0 0 520 430" width="520">
+    <rect x="60" y="40" width="434" height="308" rx="14" fill="#f2efe9" stroke="#2b2b2b" stroke-width="2.5"/>
+    <!-- cover seam -->
+    <path d="M60,64 H494" stroke="#c9c6bd" stroke-width="1" fill="none"/>
+    <path d="M470,64 V348" stroke="#c9c6bd" stroke-width="1" fill="none" stroke-dasharray="5 4"/>
+    <!-- side vent slots (board zone exhaust assist) -->
+    <g stroke="#d5d2ca" stroke-width="4" stroke-linecap="round">
+      <line x1="420" y1="100" x2="420" y2="300"/>
+      <line x1="436" y1="100" x2="436" y2="300"/>
+      <line x1="452" y1="100" x2="452" y2="300"/>
+    </g>
+    <text x="436" y="88" font-size="11" fill="#6b6b66" text-anchor="middle">侧出风格栅（板仓辅助）</text>
+    <!-- walnut base -->
+    <rect x="66" y="348" width="422" height="16" rx="3" fill="#5c4033" stroke="#3a271d"/>
+    <!-- hidden intake under base -->
+    <g stroke="#3a271d" stroke-width="2">
+      <line x1="120" y1="364" x2="120" y2="370"/><line x1="200" y1="364" x2="200" y2="370"/>
+      <line x1="280" y1="364" x2="280" y2="370"/><line x1="360" y1="364" x2="360" y2="370"/>
+    </g>
+    <text x="240" y="386" font-size="11" fill="#6b6b66" text-anchor="middle">底座隐藏进风口（硅胶脚垫抬高 6mm）</text>
+    <!-- dims -->
+    <g stroke="#c0392b" stroke-width="1.2" fill="none">
+      <line x1="60" y1="22" x2="494" y2="22" marker-start="url(#ar2)" marker-end="url(#ar)"/>
+      <line x1="60" y1="30" x2="60" y2="40"/><line x1="494" y1="30" x2="494" y2="40"/>
+      <line x1="508" y1="40" x2="508" y2="348" marker-start="url(#ar2)" marker-end="url(#ar)"/>
+      <line x1="494" y1="40" x2="504" y2="40"/><line x1="494" y1="348" x2="504" y2="348"/>
+    </g>
+    <text x="277" y="16" font-size="13" fill="#c0392b" text-anchor="middle">217</text>
+    <text x="516" y="194" font-size="13" fill="#c0392b" transform="rotate(90 516 194)" text-anchor="middle">154 壳体</text>
+    <g font-size="11" fill="#6b6b66"><text x="60" y="412">← 前（盘位）</text><text x="440" y="412">后（I/O）→</text></g>
+  </svg></div>
+
+  <!-- TOP -->
+  <div class="view"><h3>TOP · 俯视图</h3>
+  <svg viewBox="0 0 480 520" width="480">
+    <rect x="60" y="40" width="358" height="434" rx="14" fill="#f2efe9" stroke="#2b2b2b" stroke-width="2.5"/>
+    <!-- logo -->
+    <text x="239" y="250" font-size="34" font-weight="800" fill="#d9d6ce" text-anchor="middle" letter-spacing="4">Z1</text>
+    <!-- rear vent slots -->
+    <g stroke="#d5d2ca" stroke-width="5" stroke-linecap="round">
+      <line x1="120" y1="440" x2="358" y2="440"/>
+      <line x1="120" y1="452" x2="358" y2="452"/>
+    </g>
+    <text x="239" y="426" font-size="11" fill="#6b6b66" text-anchor="middle">顶部后缘出风格栅（辅助对流）</text>
+    <!-- magnetic panel seam -->
+    <rect x="72" y="52" width="334" height="410" rx="10" fill="none" stroke="#c9c6bd" stroke-dasharray="6 4"/>
+    <text x="239" y="76" font-size="11" fill="#6b6b66" text-anchor="middle">磁吸装饰面板分缝线（面板可整体更换配色）</text>
+    <g font-size="11" fill="#6b6b66"><text x="60" y="30">← 前</text><text x="60" y="500">← 后</text></g>
+    <g stroke="#c0392b" stroke-width="1.2" fill="none">
+      <line x1="60" y1="512" x2="418" y2="512" marker-start="url(#ar2)" marker-end="url(#ar)"/>
+      <line x1="60" y1="490" x2="60" y2="474"/><line x1="418" y1="490" x2="418" y2="474"/>
+    </g>
+    <text x="239" y="508" font-size="13" fill="#c0392b" text-anchor="middle" dy="-22"> </text>
+  </svg></div>
+</div>
+
+<!-- ======================= 2. 内部结构剖面 ======================= -->
+<h2><span class="no">§2</span>内部结构剖面（A–A 侧剖 · 风道示意）</h2>
+<p class="sub">布局：前置 4 盘位竖列 → 定制 SATA 背板 → 右侧竖装主板仓（紧凑 ODM 板 ≤150×140）→ 后置 92mm 排风。冷风从胡桃木底座下方进入，走主板仓与盘仓夹缝，由后扇抽出；硬盘区靠壳体传导 + 托架间通风缝被动散热（降噪）。</p>
+<div class="sheet">
+  <svg viewBox="0 0 560 400" width="100%" style="max-width:980px">
+    <defs>
+      <pattern id="hatch" width="6" height="6" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+        <line x1="0" y1="0" x2="0" y2="6" stroke="#b9b5aa" stroke-width="1.6"/>
+      </pattern>
+      <marker id="air" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#3f7fbf"/></marker>
+    </defs>
+    <!-- outer walls -->
+    <rect x="40" y="40" width="474" height="308" rx="10" fill="none" stroke="#2b2b2b" stroke-width="3"/>
+    <rect x="40" y="40" width="12" height="308" fill="url(#hatch)" stroke="#2b2b2b" stroke-width="1"/>
+    <rect x="502" y="40" width="12" height="308" fill="url(#hatch)" stroke="#2b2b2b" stroke-width="1"/>
+    <!-- walnut base with intake slot -->
+    <rect x="46" y="336" width="462" height="14" fill="#5c4033"/>
+    <rect x="120" y="348" width="240" height="6" fill="#faf9f6" stroke="#3a271d"/>
+    <text x="240" y="376" font-size="12" fill="#6b6b66" text-anchor="middle">胡桃木底座 · 隐藏进风口</text>
+    <!-- bays: 4 trays stacked, section shows side profile -->
+    <g>
+      <rect x="66" y="70" width="294" height="56" rx="3" fill="#e4e1d9" stroke="#565c63" stroke-width="1.6"/>
+      <rect x="66" y="132" width="294" height="56" rx="3" fill="#e4e1d9" stroke="#565c63" stroke-width="1.6"/>
+      <rect x="66" y="194" width="294" height="56" rx="3" fill="#e4e1d9" stroke="#565c63" stroke-width="1.6"/>
+      <rect x="66" y="256" width="294" height="56" rx="3" fill="#e4e1d9" stroke="#565c63" stroke-width="1.6"/>
+      <!-- HDD inside each -->
+      <g fill="#b9c2c9" stroke="#5d666d">
+        <rect x="80" y="80" width="266" height="36" rx="2"/>
+        <rect x="80" y="142" width="266" height="36" rx="2"/>
+        <rect x="80" y="204" width="266" height="36" rx="2"/>
+        <rect x="80" y="266" width="266" height="36" rx="2"/>
+      </g>
+      <g font-size="11" fill="#41474c" text-anchor="middle">
+        <text x="213" y="103">3.5" HDD ×4（免工具托架，前抽拉）</text>
+      </g>
+    </g>
+    <!-- backplane -->
+    <rect x="364" y="66" width="14" height="252" fill="#2f6b4f" stroke="#1d4231"/>
+    <text x="371" y="56" font-size="11.5" fill="#2f6b4f" text-anchor="middle">SATA 背板 ×4</text>
+    <!-- board zone -->
+    <rect x="392" y="80" width="12" height="230" fill="#27408b" stroke="#1a2c60"/>
+    <rect x="410" y="106" width="56" height="56" rx="4" fill="#cfd4da" stroke="#6d747b"/>
+    <circle cx="438" cy="134" r="20" fill="none" stroke="#6d747b" stroke-width="2"/>
+    <text x="398" y="56" font-size="11.5" fill="#27408b" text-anchor="middle">竖装主板（N150）</text>
+    <text x="438" y="182" font-size="10.5" fill="#6b6b66" text-anchor="middle">下压散热</text>
+    <!-- M.2 + memory on board -->
+    <rect x="410" y="200" width="52" height="10" rx="2" fill="#8a9199"/>
+    <rect x="410" y="220" width="52" height="10" rx="2" fill="#8a9199"/>
+    <text x="492" y="208" font-size="10" fill="#6b6b66" transform="rotate(90 492 208)">NVMe + SO-DIMM</text>
+    <!-- rear fan -->
+    <circle cx="484" cy="120" r="0" fill="none"/>
+    <rect x="462" y="86" width="26" height="150" rx="4" fill="#dedbd3" stroke="#2b2b2b" stroke-width="2"/>
+    <g stroke="#2b2b2b" stroke-width="1.4" fill="none">
+      <circle cx="475" cy="120" r="10"/><circle cx="475" cy="160" r="10"/><circle cx="475" cy="200" r="10"/>
+    </g>
+    <text x="475" y="256" font-size="11" fill="#6b6b66" text-anchor="middle">92mm 排风</text>
+    <!-- airflow arrows -->
+    <g stroke="#3f7fbf" stroke-width="2.4" fill="none" stroke-linecap="round">
+      <path d="M200,392 V360" marker-end="url(#air)"/>
+      <path d="M200,340 C200,336 230,336 300,336 C360,336 420,330 440,300 V250" marker-end="url(#air)"/>
+      <path d="M448,200 C452,160 458,150 462,140" marker-end="url(#air)"/>
+      <path d="M50,118 H64" marker-end="url(#air)"/>
+      <path d="M352,100 H364" marker-end="url(#air)" opacity=".7"/>
+      <path d="M378,160 H392" marker-end="url(#air)" opacity=".7"/>
+    </g>
+    <text x="120" y="392" font-size="11.5" fill="#3f7fbf">冷风进</text>
+    <text x="500" y="120" font-size="11.5" fill="#3f7fbf" transform="rotate(90 512 120)">热风出 →</text>
+    <!-- dim chain bottom -->
+    <g stroke="#c0392b" stroke-width="1.1" fill="none">
+      <line x1="52" y1="30" x2="502" y2="30"/>
+      <line x1="52" y1="24" x2="52" y2="36"/><line x1="360" y1="24" x2="360" y2="36"/>
+      <line x1="374" y1="24" x2="374" y2="36"/><line x1="462" y1="24" x2="462" y2="36"/>
+      <line x1="502" y1="24" x2="502" y2="36"/>
+    </g>
+    <g font-size="11.5" fill="#c0392b" text-anchor="middle">
+      <text x="206" y="20">6+147+8 盘仓 ≈161</text><text x="367" y="20">14</text><text x="418" y="20">88 板仓</text><text x="482" y="20">25+4</text>
+    </g>
+  </svg>
+  <p style="font-size:13px;color:#6b6b66;margin-top:6px">剖面尺寸链合计 ≈ 217mm（深度）。盘仓与板仓之间留 14mm 夹缝风道；主板 I/O 通过延伸支架对位后窗开孔。</p>
+</div>
+
+<!-- ======================= 3. 爆炸图 ======================= -->
+<h2><span class="no">§3</span>装配爆炸图（前 → 后装配顺序）</h2>
+<p class="sub">装配顺序自内向外：壳体 → 主板组件 → 背板 → 盘仓框架 → 托架 → 风扇/后窗 → 磁吸面板 → 木底座（最后从底部锁 6 颗螺丝，外壳无可见螺丝）。</p>
+<div class="sheet">
+  <svg viewBox="0 0 1020 340" width="100%">
+    <defs>
+      <marker id="asm" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#2e5e4e"/></marker>
+    </defs>
+    <line x1="30" y1="250" x2="990" y2="250" stroke="#2e5e4e" stroke-width="1.6" stroke-dasharray="7 5" marker-end="url(#asm)"/>
+    <!-- parts -->
+    <g font-size="12" text-anchor="middle">
+      <!-- 1 shell -->
+      <rect x="40" y="110" width="120" height="130" rx="10" fill="#f2efe9" stroke="#2b2b2b" stroke-width="2"/>
+      <text x="100" y="290" fill="#2b2b2b">① 铝挤壳体</text><text x="100" y="306" fill="#6b6b66" font-size="10.5">喷砂阳极 · 暖白</text>
+      <!-- 2 board -->
+      <rect x="185" y="120" width="14" height="110" fill="#27408b" stroke="#1a2c60"/>
+      <rect x="203" y="136" width="34" height="34" rx="3" fill="#cfd4da" stroke="#6d747b"/>
+      <text x="196" y="290" fill="#2b2b2b">② 主板组件</text><text x="196" y="306" fill="#6b6b66" font-size="10.5">N150+NVMe+内存</text>
+      <!-- 3 backplane -->
+      <rect x="270" y="118" width="10" height="114" fill="#2f6b4f" stroke="#1d4231"/>
+      <text x="280" y="290" fill="#2b2b2b">③ SATA 背板</text><text x="280" y="306" fill="#6b6b66" font-size="10.5">4口 · 浪涌保护</text>
+      <!-- 4 cage -->
+      <rect x="315" y="106" width="96" height="138" rx="4" fill="none" stroke="#565c63" stroke-width="2.4"/>
+      <line x1="315" y1="140" x2="411" y2="140" stroke="#565c63"/><line x1="315" y1="175" x2="411" y2="175" stroke="#565c63"/>
+      <line x1="315" y1="210" x2="411" y2="210" stroke="#565c63"/>
+      <text x="363" y="290" fill="#2b2b2b">④ 盘仓框架</text><text x="363" y="306" fill="#6b6b66" font-size="10.5">SECC 折弯 · 导轨</text>
+      <!-- 5 trays -->
+      <g>
+        <rect x="440" y="106" width="130" height="28" rx="3" fill="#3a3f44"/>
+        <rect x="440" y="142" width="130" height="28" rx="3" fill="#3a3f44"/>
+        <rect x="440" y="178" width="130" height="28" rx="3" fill="#3a3f44"/>
+        <rect x="440" y="214" width="130" height="28" rx="3" fill="#3a3f44"/>
+        <g fill="#565c63"><rect x="446" y="113" width="12" height="14" rx="2"/><rect x="446" y="149" width="12" height="14" rx="2"/><rect x="446" y="185" width="12" height="14" rx="2"/><rect x="446" y="221" width="12" height="14" rx="2"/></g>
+      </g>
+      <text x="505" y="290" fill="#2b2b2b">⑤ 硬盘托架 ×4</text><text x="505" y="306" fill="#6b6b66" font-size="10.5">ABS 免工具 · 铝面板</text>
+      <!-- 6 fan + rear bracket -->
+      <circle cx="635" cy="150" r="40" fill="#dedbd3" stroke="#2b2b2b" stroke-width="2"/>
+      <circle cx="635" cy="150" r="14" fill="none" stroke="#2b2b2b"/>
+      <rect x="612" y="204" width="120" height="30" rx="3" fill="#e9e7e1" stroke="#2b2b2b" stroke-width="1.6"/>
+      <text x="660" y="290" fill="#2b2b2b">⑥ 排风扇+后窗</text><text x="660" y="306" fill="#6b6b66" font-size="10.5">92mm PWM · 不锈钢</text>
+      <!-- 7 magnetic front panel -->
+      <rect x="760" y="100" width="16" height="150" rx="6" fill="#f6f4ef" stroke="#2b2b2b" stroke-width="1.8" stroke-dasharray="none"/>
+      <g fill="#b9b5aa"><circle cx="768" cy="118" r="3"/><circle cx="768" cy="232" r="3"/></g>
+      <text x="790" y="290" fill="#2b2b2b">⑦ 磁吸面板</text><text x="790" y="306" fill="#6b6b66" font-size="10.5">PC 磨砂 · 可换色</text>
+      <!-- 8 base -->
+      <rect x="830" y="222" width="150" height="18" rx="4" fill="#5c4033" stroke="#3a271d"/>
+      <g fill="#2b2b2b"><circle cx="852" cy="246" r="4"/><circle cx="958" cy="246" r="4"/></g>
+      <text x="905" y="290" fill="#2b2b2b">⑧ 胡桃木底座</text><text x="905" y="306" fill="#6b6b66" font-size="10.5">CNC · 隐藏进风 · 硅胶垫</text>
+    </g>
+    <text x="30" y="236" font-size="12" fill="#2e5e4e">装配方向 →</text>
+    <g font-size="11" fill="#6b6b66"><text x="40" y="80">外壳无可见螺丝：全部紧固件藏于底座硅胶垫下与背板内侧。LED 灯条与前置按键走弹簧顶针（pogo pin）接触，前面板免接线即可拆卸。</text></g>
+  </svg>
+</div>
+
+<!-- ======================= 4. 托架细节 ======================= -->
+<h2><span class="no">§4</span>免工具托架细节</h2>
+<div class="grid2">
+  <div class="view"><h3>托盘俯/侧剖 · TRAY DETAIL</h3>
+  <svg viewBox="0 0 500 300" width="500">
+    <!-- top view of tray -->
+    <rect x="40" y="40" width="294" height="90" rx="4" fill="#e4e1d9" stroke="#2b2b2b" stroke-width="2"/>
+    <rect x="60" y="52" width="254" height="66" rx="2" fill="#b9c2c9" stroke="#5d666d"/>
+    <text x="187" y="90" font-size="12" fill="#41474c" text-anchor="middle">3.5" HDD（侧壁卡扣销固定，免螺丝）</text>
+    <!-- snap pins -->
+    <g fill="#c0392b"><circle cx="52" cy="60" r="4"/><circle cx="52" cy="110" r="4"/><circle cx="322" cy="60" r="4"/><circle cx="322" cy="110" r="4"/></g>
+    <text x="340" y="56" font-size="10.5" fill="#c0392b">防振卡销 ×4</text>
+    <!-- 2.5 mount holes -->
+    <g fill="none" stroke="#6b6b66" stroke-width="1.4">
+      <circle cx="120" cy="118" r="3.4"/><circle cx="240" cy="118" r="3.4"/><circle cx="150" cy="52" r="3.4"/><circle cx="270" cy="52" r="3.4"/>
+    </g>
+    <text x="187" y="146" font-size="10.5" fill="#6b6b66" text-anchor="middle">底部 M3 螺孔 → 2.5" HDD/SSD（附赠转接垫）</text>
+    <!-- side profile -->
+    <rect x="40" y="176" width="294" height="58" rx="3" fill="#e4e1d9" stroke="#2b2b2b" stroke-width="2"/>
+    <rect x="60" y="184" width="254" height="42" fill="#b9c2c9" stroke="#5d666d"/>
+    <path d="M334,176 h26 v58 h-26" fill="#3a3f44" stroke="#2b2b2b"/>
+    <text x="376" y="200" font-size="10.5" fill="#6b6b66">SATA 7+15</text>
+    <text x="376" y="214" font-size="10.5" fill="#6b6b66">对接背板</text>
+    <path d="M40,205 H18 v-14 h-8" fill="none" stroke="#2b2b2b" stroke-width="2"/>
+    <text x="60" y="264" font-size="10.5" fill="#6b6b66">前端拉手 + 二级锁扣（防误拔）· 活动 LED 导光柱</text>
+    <g stroke="#c0392b" stroke-width="1.1" fill="none">
+      <line x1="40" y1="26" x2="334" y2="26" marker-start="url(#ar2)" marker-end="url(#ar)"/>
+    </g>
+    <text x="187" y="20" font-size="12" fill="#c0392b" text-anchor="middle">托架 147（配 120 铝面板外露）</text>
+  </svg></div>
+  <div class="view"><h3>锁扣动作 · LATCH ACTION</h3>
+  <svg viewBox="0 0 500 300" width="500">
+    <g stroke="#2b2b2b" stroke-width="2" fill="#e4e1d9">
+      <rect x="60" y="60" width="170" height="60" rx="4"/>
+      <path d="M230,60 q34,0 34,30 q0,30 -34,30" fill="#3a3f44"/>
+    </g>
+    <text x="145" y="95" font-size="12" text-anchor="middle" fill="#2b2b2b">锁扣合（推入到位）</text>
+    <text x="145" y="146" font-size="10.5" fill="#6b6b66" text-anchor="middle">"咔哒" 到位声 · 锁扣压住防振销</text>
+    <g stroke="#2b2b2b" stroke-width="2" fill="#e4e1d9">
+      <rect x="60" y="190" width="170" height="60" rx="4"/>
+      <path d="M230,190 q34,-26 60,-18" fill="none" stroke="#3a3f44" stroke-width="8" stroke-linecap="round"/>
+    </g>
+    <text x="145" y="225" font-size="12" text-anchor="middle" fill="#2b2b2b">拉起锁扣 → 托架弹出 8mm</text>
+    <text x="145" y="276" font-size="10.5" fill="#6b6b66" text-anchor="middle">弹出助力靠背板端弹片；单手取放</text>
+    <g stroke="#c0392b" stroke-width="1.6" fill="none">
+      <path d="M262,168 q20,-14 44,-10" marker-end="url(#ar)"/>
+    </g>
+    <text x="360" y="80" font-size="10.5" fill="#6b6b66">热插拔：背板每路 220μF 固态电容</text>
+    <text x="360" y="96" font-size="10.5" fill="#6b6b66">抑制浪涌；SATA pin11 活动灯</text>
+  </svg></div>
+</div>
+
+<!-- ======================= 5. CMF ======================= -->
+<h2><span class="no">§5</span>CMF · 色彩 / 材质 / 表面处理</h2>
+<div class="cmf">
+  <div class="chip"><div class="sw" style="background:linear-gradient(135deg,#f4f1ea,#e2ded3)"></div><div class="lb"><b>暖白 · 主推色</b><span>#F2EFE9 · 铝喷砂阳极氧化 180#</span></div></div>
+  <div class="chip"><div class="sw" style="background:linear-gradient(135deg,#33333a,#232328)"></div><div class="lb"><b>哑光黑</b><span>#2B2B2E · 同工艺 · 极客向</span></div></div>
+  <div class="chip"><div class="sw" style="background:linear-gradient(135deg,#355044,#243830)"></div><div class="lb"><b>墨绿</b><span>#2E4038 · 磁吸面板限定色</span></div></div>
+  <div class="chip"><div class="sw" style="background:linear-gradient(135deg,#7a5a44,#4a3226)"></div><div class="lb"><b>胡桃木底座</b><span>#5C4033 · CNC 实木 · 木蜡油</span></div></div>
+  <div class="chip"><div class="sw" style="background:linear-gradient(135deg,#4a5057,#2f3438)"></div><div class="lb"><b>炭灰托架</b><span>#3A3F44 · ABS 蚀纹 + 铝面板</span></div></div>
+  <div class="chip"><div class="sw" style="background:linear-gradient(135deg,#fff3dc,#ffd9a0)"></div><div class="lb"><b>暖白灯条</b><span>#FFD9A0 · 2700K 呼吸灯 · 可关</span></div></div>
+</div>
+
+<!-- ======================= 6. 渲染图 ======================= -->
+<h2><span class="no">§6</span>效果渲染图（AI 生成 · 万相 wan2.2）</h2>
+<p class="sub">用于风格对齐与电商页前期概念稿；量产外观以结构建模渲染为准。文件位于 renders/ 目录。</p>
+<div class="renders">
+  <figure><img src="renders/front34.png" alt="前 3/4 视角渲染"><figcaption>主视觉 · 前 3/4 视角棚拍（与设计规格一致：4 盘位 + 胡桃木底座 + 暖白灯条）</figcaption></figure>
+  <figure><img src="renders/hero.png" alt="家居场景渲染"><figcaption>家居氛围图 · 客厅边柜场景（AI 概念稿：盘位数量/排布为示意，以 §1 工程图为准）</figcaption></figure>
+  <figure><img src="renders/tray.png" alt="托架特写渲染"><figcaption>免工具托架抽拉特写（卖点图）</figcaption></figure>
+  <figure><img src="renders/exploded.png" alt="爆炸渲染"><figcaption>结构爆炸概念渲染（详情页技术图位）</figcaption></figure>
+</div>
+
+<!-- ======================= 7. BOM ======================= -->
+<h2><span class="no">§7</span>BOM 清单（量产版 · 1000 台批价）</h2>
+<p class="sub">同步文件：<code>BOM.csv</code>。对比 HARDWARE_SPEC §5.1 初版（¥1063）：本版补齐了定制背板、注塑托架、MCU 温控板、磁吸面板等结构件，合计 ¥1182。</p>
+<div class="sheet" style="padding:0;overflow-x:auto">
+<table>
+  <thead><tr><th>#</th><th>组件</th><th>规格</th><th class="n">数量</th><th class="n">单价 ¥</th><th class="n">小计 ¥</th><th>备注</th></tr></thead>
+  <tbody>
+    <tr class="cat"><td colspan="7">电子件</td></tr>
+    <tr><td>1</td><td>主板</td><td>ODM N150 NAS 板：6×SATA / 2×2.5GbE I226-V / M.2 NVMe + E-Key / DDR5 / DC 12V</td><td class="n">1</td><td class="n">550</td><td class="n">550</td><td>Phase 0 用 ITX 验证；量产切紧凑板 ≤150×140</td></tr>
+    <tr><td>2</td><td>内存</td><td>DDR5 SO-DIMM 8GB 4800</td><td class="n">1</td><td class="n">120</td><td class="n">120</td><td>最大 16GB</td></tr>
+    <tr><td>3</td><td>系统盘</td><td>M.2 NVMe 128GB</td><td class="n">1</td><td class="n">80</td><td class="n">80</td><td>降本项：eMMC ≈40</td></tr>
+    <tr><td>4</td><td>WiFi</td><td>MT7922 M.2 E-Key（WiFi 6E + BT5.3）</td><td class="n">1</td><td class="n">40</td><td class="n">40</td><td></td></tr>
+    <tr><td>5</td><td>天线</td><td>IPEX4 双频 8dBi 胶棒 + SMA</td><td class="n">2</td><td class="n">5</td><td class="n">10</td><td></td></tr>
+    <tr><td>6</td><td>SATA 背板</td><td>4 口定制：一体座 ×4 / 220μF 固态电容每路 / 活动 LED / 12V+5V 配电</td><td class="n">1</td><td class="n">45</td><td class="n">45</td><td>120×40mm 双面板，含打样摊销</td></tr>
+    <tr><td>7</td><td>LED 灯板</td><td>暖白灯条 + 4 路盘位导光柱</td><td class="n">1</td><td class="n">10</td><td class="n">10</td><td></td></tr>
+    <tr><td>8</td><td>MCU 温控板</td><td>风扇 PWM / LED / 前置按键</td><td class="n">1</td><td class="n">15</td><td class="n">15</td><td>可选；对接面板 hardware 模块 API</td></tr>
+    <tr><td>9</td><td>按键</td><td>电源（带灯）+ 复位针孔</td><td class="n">2</td><td class="n">3</td><td class="n">6</td><td></td></tr>
+    <tr class="cat"><td colspan="7">结构件</td></tr>
+    <tr><td>10</td><td>铝合金壳体</td><td>铝挤主体 + CNC 端盖，喷砂阳极暖白，179×162×217</td><td class="n">1</td><td class="n">75</td><td class="n">75</td><td>铝挤模 ≈1.5 万另计</td></tr>
+    <tr><td>11</td><td>胡桃木底座</td><td>CNC 179×217×8，隐藏进风 + 硅胶垫</td><td class="n">1</td><td class="n">18</td><td class="n">18</td><td></td></tr>
+    <tr><td>12</td><td>硬盘托架</td><td>ABS 注塑免工具（3.5" 卡销 + 2.5" 螺孔）</td><td class="n">4</td><td class="n">7</td><td class="n">28</td><td>注塑模 ≈4 万另计；原型 3D 打印 ≈60/个</td></tr>
+    <tr><td>13</td><td>托架铝面板</td><td>阳极铝 120×29.5，与壳同色</td><td class="n">4</td><td class="n">3</td><td class="n">12</td><td></td></tr>
+    <tr><td>14</td><td>磁吸前装饰面板</td><td>PC 磨砂 + 内埋磁铁</td><td class="n">1</td><td class="n">8</td><td class="n">8</td><td>可换色配件线</td></tr>
+    <tr><td>15</td><td>后 I/O 支架</td><td>不锈钢冲压 + 丝印</td><td class="n">1</td><td class="n">6</td><td class="n">6</td><td></td></tr>
+    <tr><td>16</td><td>紧固件包</td><td>M3 / 肩钉 / 磁垫 / 扎带</td><td class="n">1</td><td class="n">8</td><td class="n">8</td><td></td></tr>
+    <tr class="cat"><td colspan="7">散热</td></tr>
+    <tr><td>17</td><td>后置风扇</td><td>92mm PWM 静音</td><td class="n">1</td><td class="n">18</td><td class="n">18</td><td>高配上猫头鹰 NF-A9（+62）</td></tr>
+    <tr><td>18</td><td>CPU 散热</td><td>铝挤散热片 + 4010 PWM</td><td class="n">1</td><td class="n">25</td><td class="n">25</td><td>N150 6W，余量大</td></tr>
+    <tr><td>19</td><td>导热材料</td><td>硅脂 + 导热垫</td><td class="n">1</td><td class="n">4</td><td class="n">4</td><td></td></tr>
+    <tr class="cat"><td colspan="7">线材 / 外部 / 包装</td></tr>
+    <tr><td>20</td><td>SATA 线</td><td>超薄 SATA3 15cm</td><td class="n">4</td><td class="n">5</td><td class="n">20</td><td>背板直插方案则省</td></tr>
+    <tr><td>21</td><td>供电线材</td><td>DC 面板座 + 12V 配电板（12V/DC-DC 5V）</td><td class="n">1</td><td class="n">15</td><td class="n">15</td><td></td></tr>
+    <tr><td>22</td><td>前置 USB 线</td><td>USB3.0 面板线</td><td class="n">1</td><td class="n">5</td><td class="n">5</td><td></td></tr>
+    <tr><td>23</td><td>电源适配器</td><td>DC 12V 5A 60W（台达/明纬，CCC/PSE）</td><td class="n">1</td><td class="n">38</td><td class="n">38</td><td>4 盘启动峰值 ≈48W，余量 25%</td></tr>
+    <tr><td>24</td><td>彩盒包装</td><td>彩盒 + EVA + 快速指南 + 保修卡</td><td class="n">1</td><td class="n">18</td><td class="n">18</td><td></td></tr>
+    <tr><td>25</td><td>附件盒</td><td>2.5" 转接垫 ×4 / 硬盘螺丝 / 网线 0.5m / 清洁布</td><td class="n">1</td><td class="n">5</td><td class="n">5</td><td></td></tr>
+    <tr class="total"><td colspan="4">BOM 合计（不含税运）</td><td class="n"></td><td class="n">1182</td><td>+ 组装测试 30 + 物流 20 → 整机 ≈ ¥1232</td></tr>
+  </tbody>
+</table>
+</div>
+<div class="note" style="margin-top:14px">
+  <b>一次性模具投入 ≈ ¥63,000</b>：铝挤模 15,000 + 托架注塑模 40,000（一模两腔）+ CNC 夹具 8,000。按 5,000 台摊销 ≈ ¥12.6/台。定价维持规格书结论：699–799 首批零毛利换用户。
+</div>
+
+<!-- ======================= 8. 原型版布局 ======================= -->
+<h2><span class="no">§8</span>原型版（ITX 现货板 · FreeCAD 建模对象）</h2>
+<p class="sub">Phase 0/1 手板按此建模：<b>186(W) × 184(H) × 210(D) ≈ 7.2L</b>。与量产愿景版的差异只在主板布置（卧式底置 vs 侧置板仓），前脸/托架/背板/CMF 完全一致，手板验证的装配与风道结论可直接迁移。</p>
+<div class="sheet">
+  <svg viewBox="0 0 560 420" width="100%" style="max-width:980px">
+    <defs><marker id="air2" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#3f7fbf"/></marker>
+    <pattern id="hatch2" width="6" height="6" patternTransform="rotate(45)" patternUnits="userSpaceOnUse"><line x1="0" y1="0" x2="0" y2="6" stroke="#b9b5aa" stroke-width="1.6"/></pattern></defs>
+    <!-- side section: D=210 → 420px @2px/mm, H=184 → 368px, scaled 0.95 to fit -->
+    <g transform="translate(30,20) scale(0.95)">
+      <rect x="0" y="0" width="420" height="368" rx="8" fill="none" stroke="#2b2b2b" stroke-width="3"/>
+      <rect x="0" y="0" width="10" height="368" fill="url(#hatch2)" stroke="#2b2b2b"/>
+      <rect x="410" y="0" width="10" height="368" fill="url(#hatch2)" stroke="#2b2b2b"/>
+      <!-- wood base -->
+      <rect x="4" y="352" width="412" height="16" fill="#5c4033"/>
+      <rect x="100" y="366" width="220" height="6" fill="#faf9f6" stroke="#3a271d"/>
+      <!-- board deck (horizontal ITX at bottom) -->
+      <rect x="30" y="300" width="340" height="8" fill="#27408b" stroke="#1a2c60"/>
+      <rect x="180" y="256" width="64" height="44" rx="3" fill="#cfd4da" stroke="#6d747b"/>
+      <circle cx="212" cy="278" r="16" fill="none" stroke="#6d747b" stroke-width="2"/>
+      <rect x="60" y="288" width="70" height="12" rx="2" fill="#8a9199"/>
+      <text x="200" y="236" font-size="12" fill="#27408b" text-anchor="middle">Mini-ITX N150 主板卧式底置（170×170）+ 下压散热 ≤40mm</text>
+      <!-- bays 4 stacked -->
+      <g>
+        <rect x="24" y="30" width="294" height="50" rx="3" fill="#e4e1d9" stroke="#565c63" stroke-width="1.6"/>
+        <rect x="24" y="84" width="294" height="50" rx="3" fill="#e4e1d9" stroke="#565c63" stroke-width="1.6"/>
+        <rect x="24" y="138" width="294" height="50" rx="3" fill="#e4e1d9" stroke="#565c63" stroke-width="1.6"/>
+        <rect x="24" y="192" width="294" height="50" rx="3" fill="#e4e1d9" stroke="#565c63" stroke-width="1.6"/>
+        <g fill="#b9c2c9" stroke="#5d666d">
+          <rect x="38" y="38" width="266" height="34" rx="2"/><rect x="38" y="92" width="266" height="34" rx="2"/>
+          <rect x="38" y="146" width="266" height="34" rx="2"/><rect x="38" y="200" width="266" height="34" rx="2"/>
+        </g>
+      </g>
+      <text x="170" y="22" font-size="12" fill="#41474c" text-anchor="middle">4× 免工具托架（与量产愿景版同模具）</text>
+      <!-- backplane -->
+      <rect x="322" y="26" width="12" height="220" fill="#2f6b4f" stroke="#1d4231"/>
+      <text x="328" y="18" font-size="11.5" fill="#2f6b4f" text-anchor="middle">SATA 背板</text>
+      <!-- rear fan -->
+      <rect x="352" y="90" width="46" height="120" rx="4" fill="#dedbd3" stroke="#2b2b2b" stroke-width="2"/>
+      <g stroke="#2b2b2b" stroke-width="1.4" fill="none"><circle cx="375" cy="120" r="9"/><circle cx="375" cy="150" r="9"/><circle cx="375" cy="180" r="9"/></g>
+      <text x="375" y="230" font-size="11.5" fill="#6b6b66" text-anchor="middle">92mm 排风</text>
+      <!-- rear IO below fan -->
+      <rect x="352" y="252" width="46" height="44" rx="3" fill="#e9e7e1" stroke="#2b2b2b" stroke-width="1.6"/>
+      <text x="375" y="316" font-size="10.5" fill="#6b6b66" text-anchor="middle">后窗 I/O</text>
+      <!-- airflow -->
+      <g stroke="#3f7fbf" stroke-width="2.4" fill="none" stroke-linecap="round">
+        <path d="M210,398 V376" marker-end="url(#air2)"/>
+        <path d="M210,346 C210,330 300,330 340,300 C356,288 360,260 362,214" marker-end="url(#air2)"/>
+        <path d="M14,60 H24" marker-end="url(#air2)"/>
+        <path d="M318,140 H352" marker-end="url(#air2)" opacity=".7"/>
+      </g>
+      <text x="120" y="404" font-size="11.5" fill="#3f7fbf">底座进风 → 掠过主板 → 后扇出</text>
+    </g>
+  </svg>
+  <table style="margin-top:10px">
+    <thead><tr><th>原型版参数</th><th>数值</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>外形</td><td>186 × 184 × 210 mm ≈ 7.2L</td><td>壁厚 2.5（FDM 手板 3.0）</td></tr>
+      <tr><td>主板区</td><td>底置卧式，净高 40mm</td><td>ITX 170×170 + 下压散热 ≤40mm（如利民 AX-90 或 4010 风扇散热片）</td></tr>
+      <tr><td>盘仓</td><td>4×33 节距，托架与量产版同规格</td><td>托架手板先打印，量产开注塑模复用</td></tr>
+      <tr><td>背板位</td><td>D≈171，立式 4 口</td><td>嘉立创打样 120×40 双面板</td></tr>
+      <tr><td>风道</td><td>底座进风 → 主板 → 92mm 后排风；盘仓前置进风缝辅助</td><td>盘温目标 ≤45°C @满载</td></tr>
+      <tr><td>打印拆分</td><td>主壳(倒置打印 186×210×184) / 底板 / 托架×4 / 背板支架 / 风扇架</td><td>220 床身可容纳；主壳建议 PETG，托架 PLA+</td></tr>
+    </tbody>
+  </table>
+  <p style="font-size:13px;color:#6b6b66;margin-top:8px">模型与 STL：<code>cad/z1-4bay-prototype.FCStd</code>（FreeCAD 1.0 参数化）、<code>cad/stl/*.stl</code>、<code>cad/assembly.step</code>。建模脚本 <code>cad/build_model.py</code> 可重跑。</p>
+</div>
+
+<!-- ======================= 9. 下一步 ======================= -->
+<h2><span class="no">§9</span>验证清单 / 下一步</h2>
+<div class="sheet">
+  <ol style="padding-left:22px;font-size:14px">
+    <li><b>结构建模</b>：FreeCAD/Fusion360 按本图纸建 1:1 模型 → 导出 STL（对应 PURCHASE_LIST §八的 3D 打印采购项）。</li>
+    <li><b>Phase 0 手板</b>：PLA 打印壳 + 托架，装入 ODM N150 板（先确认板型尺寸 ≤150×140 或改用加深原型壳），验证装配公差与走线。</li>
+    <li><b>热验证</b>：4 盘满载 + iperf3 + 转码压力，测 CPU/盘温与噪音；目标盘温 ≤45°C、噪音 ≤25dB@1m。</li>
+    <li><b>背板打样</b>：嘉立创 4 层小批量（5 片起），验证热插拔浪涌与 LED 链路。</li>
+    <li><b>软件对接</b>：MCU 温控板暴露串口/I2C → 接入 nas-panel 的 hardware/monitor 模块（GET /api/hardware/profile 已预留平台识别）。</li>
+  </ol>
+</div>
+
+<footer>
+  Z1 4-Bay Enclosure Design Sheet v0.2 · 生成于 2026-10-15 · 图纸为 ID 概念方案，公差/圆角以结构建模为准 · 渲染图由 DashScope 万相生成（概念参考，非承诺外观）<br>
+  文件：docs/design/z1-4bay/{ Z1-4Bay-机箱设计图.html · BOM.csv · renders/*.png }
+</footer>
+</div>
+</body>
+</html>
