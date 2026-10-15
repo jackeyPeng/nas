@@ -368,6 +368,7 @@
 | 图片预览 | 只显示 | 限 10MB blob URL（closePreview 防泄漏）；SVG 一律 415（防存储型 XSS） |
 | 属性回显（stat） | 只显示 | `GET /api/files/stat?path=`，owner/group/mode（字符串八进制）/mode_text/recursive_possible；Lstat 语义（链接报自身）；池根放行 |
 | 上传（XHR 流式 + 进度条） | 用户操作 | `POST /api/files/upload?path=` multipart，MultipartReader 流式不撑内存；同名 409 + overwrite=yes 覆盖重试；磁盘满 507 清半成品；落盘按目标共享权限对齐（public 0664/其他 0600） |
+| 目录上传（webkitdirectory） | 用户操作 | 前端 filename 携带 webkitRelativePath 子路径；后端自解析 Content-Disposition 取原始值，逐段过 validateFileName 消毒（拒 `..`/绝对路径/空段/控制字符/超长）；缺失父目录逐段 Mkdir 0755+显式 chmod（并发 EEXIST 重查视同已存在），既有目录一律不动；409 冲突与 written 用完整相对路径，overwrite 重试不拍平；浏览器限制：空子目录不上传 |
 | 新建目录 | 用户操作 | `POST /api/files/mkdir` {path,name}；validateFileName 白名单；双重锚定；mode 恒 0755（显式 chmod 消 umask） |
 | 重命名 | 用户操作 | `POST /api/files/rename` {path,new_name}；renameat2(RENAME_NOREPLACE) 原子防覆盖；同名 no-op 200；池根拒绝 |
 | 移动 | 用户操作 | `POST /api/files/move` {src,dst_dir}；同 fs renameat2 零拷贝，跨 fs copyTree+字节校验+权限对齐后才删源；目标在源内部（含符号链接解析后）400 防无限递归 |
@@ -405,9 +406,9 @@
 | 分类 | 操作项数 |
 |---|---|
 | 只显示 | 59 |
-| 用户操作 | 92 |
+| 用户操作 | 93 |
 | 系统自动 | 26 |
-| **合计** | **177** |
+| **合计** | **178** |
 | 功能模块数 | 18 |
 
 > 注：「系统自动」项里，第 18 节「系统自动任务汇总」是对散落在模块 3/5/6/13/14/15/16/17 里的无人值守任务的跨模块汇总（重复计数），测试时可直接按第 18 节这张汇总表一次过完所有无人值守链路。

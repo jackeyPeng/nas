@@ -17,6 +17,20 @@
 
 ---
 
+## [未发布] - 目录上传 + 仪表盘假告警修复（master，beta.20 之后）
+
+### 新增
+- **文件管理页「上传目录」**（TODO #35，749402d）：webkitdirectory input 携带 webkitRelativePath，前端 FormData filename 带完整子路径（409 覆盖重试同样保留，不拍平）；后端自解析 Content-Disposition 取原始 filename（stdlib `Part.FileName()` 会 `filepath.Base` 剥路径，且并无 `FullFileName` 方法——已核实），`sanitizeUploadRelPath` 逐段过 validateFileName（拒 `..`/`.`/绝对路径/空段/控制字符/>255B），`ensureUploadParents` 缺失父目录逐段 Mkdir 0755+显式 chmod 消 umask，**既有目录权限一律不动**，中间段撞非目录 400；双重锚定/409 冲突 body/审计与单文件上传同款语义；穿越用例（`../pwn`）由旧「stdlib 剥路径后巧合 200」改为显式 400 拒绝；浏览器限制：空子目录不随 webkitdirectory 上传。新增/改写 9 个后端测试全绿
+- 审查加固（854ac3e）：ensureUploadParents 并发 Mkdir EEXIST 重查视同已存在（目录 continue 不 chmod/非目录 400，对齐 handleMkdir 先例）；umask 测试改 0077 真正锁住显式 chmod；消毒拒绝表驱动测试补全树零残留断言
+
+### 修复
+- **仪表盘「N 个服务 · M 个异常」假告警**（87a772c）：serviceSummary 把 `not-installed` 的可选服务（FileBrowser，beta.19 起默认不装）计入异常，全新安装恒显「1 个异常」；现过滤 not-installed（不计异常也不计总数），failed/inactive/unknown 仍如实计入——与 beta.20 install.sh 条件化、服务页徽章四态同族收尾
+
+### 验收
+- 两台 Debian 13 测试机重置后 install.sh 纯用户路径直装 control 渠道 beta.20 → 替换本段二进制（854ac3e）；57 建池 merge 4×50G；Chrome 实机 E2E：仪表盘「7 个服务 · 全部正常」、目录上传全链路（嵌套 3 文件树/内容一致/新目录 0755）、409 冲突提示含完整相对路径 + 覆盖重试子路径不拍平（无散落文件）
+
+---
+
 ## [2026-10-15] - 回收站合并式恢复 + 读取加固
 
 ### 版本 v1.4.0-beta.20

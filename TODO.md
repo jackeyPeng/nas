@@ -863,15 +863,16 @@ NAS 里的视频/音乐/照片直接在浏览器播放，带媒体库海报墙�
 **待办**:
 - [x] ~~feat/file-manager 合回 master~~（✅ 2026-10-13 快进合并已推）；FileBrowser 彻底移除——**评估已做（2026-10-13）：beta.19/20 不移除**，--with-filebrowser 承诺保留一版；移除清单（下一发布周期执行）：setup.sh [7/10] 段+开关、services.go 安装项与 installSingleService case、注册表 5 项删除（46→41 总数变更）、versions.go FileBrowserVersion 常量、users.go changePassword 的 fb 分支、dashboard/monitor/system 服务列表与 i18n、upload-filebrowser.sh、官网/手册措辞；cleanup.sh 的 filebrowser 清理**保留**（存量机器卸载路径）
 - [x] 回收站 UI 粒度（D1 复审 Important 跟进）：✅ 29f775d 合并式恢复落地——dst 已存在目录时 mergeTreeRestore 逐子项 mv 回原位（碰撞落 .restored 不覆盖、符号链接 Lstat 语义、只删空目录禁 RemoveAll、失败即停部分恢复如实上报），独立审查「可合入」（数据安全核心命题成立：无覆盖/丢失分支，TOCTOU 与既有代码同级）；8 个真文件系统测试覆盖拍板 7 场景
-- [ ] 加固遗留：~~diskmgmt GetAllFolderMeta rows.Scan 错误未检查~~（✅ d1f3a9d 已修：坏行跳过+日志+rows.Err）；审计 detail 用户输入转义；ownerShareOf/ownerShareOfVia 去重；resolveShareOrPoolRootPath 抽纯核心+排序单测（D1 复审 Minor）；回收站合并恢复 4 条 Minor（mergeRestoreConflictFree/mergeTreeRestore 的 Lstat 错误应区分 IsNotExist 而非一律当不存在——与 filemgmt recycleConflictFree 两处一起统一加固、纳秒循环加重试上限、src目录 vs dst文件 方向与 ≥3 层递归与错误分支测试盲区、restored_to 合并语义前端对接时注意）
+- [ ] 加固遗留：~~diskmgmt GetAllFolderMeta rows.Scan 错误未检查~~（✅ d1f3a9d 已修：坏行跳过+日志+rows.Err）；审计 detail 用户输入转义；ownerShareOf/ownerShareOfVia 去重；resolveShareOrPoolRootPath 抽纯核心+排序单测（D1 复审 Minor）；回收站合并恢复 4 条 Minor（mergeRestoreConflictFree/mergeTreeRestore 的 Lstat 错误应区分 IsNotExist 而非一律当不存在——与 filemgmt recycleConflictFree 两处一起统一加固、纳秒循环加重试上限、src目录 vs dst文件 方向与 ≥3 层递归与错误分支测试盲区、restored_to 合并语义前端对接时注意）；目录上传复审 2 Minor（resolvePoolPath TrimSpace 与首/尾空格文件名组合触发双重锚定 500——宜 400，属既有 quirk 但 webkitRelativePath 的 Windows 尾随空格目录名更易撞；dashboard unknown 状态计入 down 但服务列表徽章按 info 显示的口径不一致 + not-installed 判定依赖 systemd is-active exit 4 语义、部分版本对不存在 unit 返回 exit 3 会标 failed 复现假告警）；handleUpload 错误类型判断用 strings.Contains 字符串匹配（宜 sentinel error）
 
 ---
 
 #### 35. 文件管理页目录上传（webkitdirectory）
-**状态**: ✅ 已完成（目录上传，webkitdirectory + FullFileName 逐段消毒）  
+**状态**: ✅ 已完成（749402d + 审查加固 854ac3e；双机部署 + Chrome E2E 全过）  
 **优先级**: 中  
 **描述**:  
-「存储 → 打开文件管理 → 上传」目前只能传文件（input multiple）。增加「上传目录」：前端 `webkitdirectory` input 携带 `webkitRelativePath`（FormData filename 带子路径），后端 upload handler 用 `Part.FullFileName()` 取原始相对路径、逐段 validateFileName 消毒、缺失父目录逐段创建（已存在目录权限一律不动）、双重锚定与 409/overwrite/权限对齐语义不变。浏览器限制：空目录不会随 webkitdirectory 上传。
+「存储 → 打开文件管理 → 上传」目前只能传文件（input multiple）。增加「上传目录」：前端 `webkitdirectory` input 携带 `webkitRelativePath`（FormData filename 带子路径），后端 upload handler 用 `Part.FullFileName()` 取原始相对路径、逐段 validateFileName 消毒、缺失父目录逐段创建（已存在目录权限一律不动）、双重锚定与 409/overwrite/权限对齐语义不变。浏览器限制：空目录不会随 webkitdirectory 上传。  
+**落地偏差**: Go stdlib 并无 `Part.FullFileName()`（`FileName()` 固定 filepath.Base 剥路径）——改自解析 Content-Disposition 取原始 filename，语义等价（独立审查确认无绕过面）。连带把穿越旧测试从「stdlib 剥离后巧合 200」改为显式 400 拒绝。
 
 ---
 
@@ -880,11 +881,11 @@ NAS 里的视频/音乐/照片直接在浏览器播放，带媒体库海报墙�
 | 类别 | 总数 | 已完成 | 进行中 | 待办 |
 |------|------|--------|--------|------|
 | 高优先级 | 3 | 3 | 0 | 0 |
-| 中优先级 | 18 | 14 | 3 | 1 |
+| 中优先级 | 18 | 15 | 2 | 1 |
 | 低优先级 | 14 | 6 | 0 | 8 |
-| **合计** | **35** | **23** | **3** | **9** |
+| **合计** | **35** | **24** | **2** | **9** |
 
-**完成率**: 65.7%（23/35）
+**完成率**: 68.6%（24/35）
 
 > 注：#10 HTTPS 证书配置已完成；#13 多语言 i18n 已完成（970 keys 全站）；#28 系统定期诊断已完成；#11 官网已部署上线；#26 存储四层模型重构已完成；#27 一键安装流程已完成；#12 移动设备支持 PWA + 响应式已落地（进行中）；#34 面板文件管理 M1 只读基线已落地（进行中，取代 FileBrowser）；#23 BT下载、#24 多媒体播放规划为插件（依赖 #21 插件系统）。
 
