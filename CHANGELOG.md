@@ -16,6 +16,20 @@
 
 ---
 
+## [未发布] - beta.19 后续修复（已双机验收，待下一版发布）
+
+### 修复（master，tag v1.4.0-beta.19 之后）
+
+- **回收站合并式恢复**（29f775d，D1 复审 Important 跟进）：restore 时目标位置已存在同名目录 → 不再整树旁落 `.restored`，改为逐子项合并恢复回原位（子项碰撞才落 `.restored` 后缀不覆盖既有数据；符号链接 Lstat 语义；只删空的回收站源目录）。默认配置下「删除嵌套文件 → 回收站页 UI 恢复」现在精确回原位。独立审查「可合入」，两台测试机实机 5 项断言全过
+- **folders.db 读取加固**（d1f3a9d）：GetAllFolderMeta 检查 rows.Scan/rows.Err——NULL 列等坏行跳过+日志，不再静默半填充零值（曾致删除误走池根回退、回收站页 shares 为空，本地手工种库 E2E 因此误判产品 bug）
+- **install.sh FileBrowser 条件化补漏**（d78cbce，双机部署抓出）：beta.18 只改了 setup.sh——install.sh 的 banner、服务状态循环（未安装的 filebrowser 打 ✗ 并误置 VERIFY_OK=false）、访问方式 URL 三处补齐与 setup.sh 相同的安装态条件化，全新安装不再报「验证未通过」假警告
+
+### 验收
+
+- 两台 Debian 13 测试机重置后全新安装（install.sh 一条命令 + master 二进制）→ 建池 merge 4×50G → 各 34 项断言（27 API/文件系统 + 7 SMB）全 PASS 零 FAIL；注册表 46/46
+
+---
+
 ## [2026-10-13] - 文件管理器 M3 权限管理
 
 ### 版本 v1.4.0-beta.19

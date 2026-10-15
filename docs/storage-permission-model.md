@@ -1,6 +1,6 @@
 # 存储与权限模型 — 实现现状梳理
 
-> 更新: 2026-09-15 · 对应代码: web/modules/diskmgmt + web/modules/users
+> 更新: 2026-10-14 · 对应代码: web/modules/diskmgmt + web/modules/users + web/modules/filemgmt
 > 本文描述**实际实现**，非设计愿景。与 docs/permission-model-discussion.md（SMB 按用户模型讨论稿）互补。
 > 各协议服务的配置细节（smb.conf/exports/vsftpd/rclone unit/横切配置）见 docs/protocol-service-configs.md（2026-10-08 代码核对版）。
 
@@ -87,7 +87,7 @@ UI tag 诚实标注：SMB 蓝（按用户）、NFS 灰（网段）、DAV/S3 黄�
 - NFS 按用户：协议不支持，网段级是上限。
 - FTP 文件夹矩阵：vsftpd 单 root 架构限制（换 proftpd 是独立项目）。
 - WebDAV/S3 按文件夹隔离：需多实例（TODO #29）。
-- 回收站集中式：跨设备移动退化为 copy+delete（TODO #25）。
+- 回收站条目粒度：回收站页按 `.recycle/<用户>/` **顶层条目**列举（keeptree 子树随条目整体恢复）；原位已有同名目录时走合并式恢复（29f775d，逐子项回原位、碰撞落 `.restored` 不覆盖）；共享未开回收站时面板删除回退池根 `.recycle`，经「(池根 xxx)」伪共享条目可见可恢复（D1 修复）。
 
 ## 八、已知问题（待修，按风险排序）
 
@@ -99,3 +99,4 @@ UI tag 诚实标注：SMB 蓝（按用户）、NFS 灰（网段）、DAV/S3 黄�
 6. **P3 — listAllUsers 只含 Samba+FTP 用户**：仅 WebDAV(htpasswd) 用户不在物化展开范围内。
 7. **P3 — SyncAllConfigs 无全局互斥**：并发编辑可能交错生成配置（单管理员家庭场景风险低）。
 8. **P3 — 创建/更新即时生效、删除走 pending 队列**：行为不一致，删除提示"已加入待应用队列"但改权限立即 reload smbd。
+9. ~~**P2 — GetAllFolderMeta 静默半填充**~~ ✅ 已修（2026-10-14 commit d1f3a9d）：rows.Scan 错误此前被吞——手工种库/损坏库的 NULL 列会让行以零值半填充进入结果（Name/Path 正常而 RecycleBin 等后续字段静默丢失，删除误走池根回退、回收站页 shares 为空）。现在坏行跳过+日志、rows.Err 检查，fail-visible。

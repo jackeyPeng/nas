@@ -1,6 +1,6 @@
 # NAS 面板 功能清单 + 操作项分类（测试验证清单）
 
-> 最后更新: 2026-10-13
+> 最后更新: 2026-10-14
 > 代码基准: /home/jacky/soft/nas（Go 后端 web/ + Alpine.js 前端 web/frontend/）
 > 用途: 逐项测试验证。每个「操作项」标注三种分类之一，测试时按行逐个过。
 >
@@ -140,7 +140,7 @@
 | 操作项 | 分类 | 说明 |
 |---|---|---|
 | 回收站条目列表（按共享筛选） | 只显示 | `GET /api/disk/recycle[?share=]`；新布局 .recycle/<user>/ + 旧 #recycle 兼容（「旧版」徽章）；shares 含「(池根 xxx)」伪共享（面板删除的池根回退条目可见可恢复，D1 修复） |
-| 恢复条目 | 用户操作 | `POST /api/disk/recycle/restore`；rename 零拷贝回原路径，冲突加 .restored 后缀 |
+| 恢复条目 | 用户操作 | `POST /api/disk/recycle/restore`；rename 零拷贝回原路径；原位已有同名目录时**合并式恢复**（逐子项回原位，子项碰撞才落 .restored 后缀不覆盖数据）；非目录碰撞加 .restored 后缀 |
 | 彻底删除条目 | 用户操作 | `POST /api/disk/recycle/delete`（confirm=yes） |
 | 清空共享回收站 | 用户操作 | `POST /api/disk/recycle/clear`（confirm_name=共享名，服务端校验） |
 | Samba 删除文件进回收站 | 系统自动 | vfs_recycle：repository=.recycle/%U，keeptree，对 SMB 客户端隐藏 |
