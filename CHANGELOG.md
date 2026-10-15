@@ -23,6 +23,7 @@
 - **回收站合并式恢复**（29f775d，D1 复审 Important 跟进）：restore 时目标位置已存在同名目录 → 不再整树旁落 `.restored`，改为逐子项合并恢复回原位（子项碰撞才落 `.restored` 后缀不覆盖既有数据；符号链接 Lstat 语义；只删空的回收站源目录）。默认配置下「删除嵌套文件 → 回收站页 UI 恢复」现在精确回原位。独立审查「可合入」，两台测试机实机 5 项断言全过
 - **folders.db 读取加固**（d1f3a9d）：GetAllFolderMeta 检查 rows.Scan/rows.Err——NULL 列等坏行跳过+日志，不再静默半填充零值（曾致删除误走池根回退、回收站页 shares 为空，本地手工种库 E2E 因此误判产品 bug）
 - **install.sh FileBrowser 条件化补漏**（d78cbce，双机部署抓出）：beta.18 只改了 setup.sh——install.sh 的 banner、服务状态循环（未安装的 filebrowser 打 ✗ 并误置 VERIFY_OK=false）、访问方式 URL 三处补齐与 setup.sh 相同的安装态条件化，全新安装不再报「验证未通过」假警告
+- **服务管理页状态徽章恒显示 Running**（b134808）：徽章文字此前写死「运行中」只有颜色随状态变（pitfall 37 同型），未安装服务也显示 Running；改为按 active 四态映射文字+颜色（运行中/未安装/失败/已停止），复用既有 i18n 键
 
 ### 验收
 
