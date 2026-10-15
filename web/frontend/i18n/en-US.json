@@ -1223,6 +1223,7 @@
     "select_all": "Select all",
     "selected_count": "{0} selected",
     "toolbar_upload": "Upload",
+    "toolbar_upload_dir": "Upload Folder",
     "toolbar_mkdir": "New folder",
     "toolbar_refresh": "Refresh",
     "toolbar_move": "Move",

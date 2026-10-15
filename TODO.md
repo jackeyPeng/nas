@@ -868,7 +868,7 @@ NAS 里的视频/音乐/照片直接在浏览器播放，带媒体库海报墙�
 ---
 
 #### 35. 文件管理页目录上传（webkitdirectory）
-**状态**: 🟡 进行中（feat 分支开发中）  
+**状态**: ✅ 已完成（目录上传，webkitdirectory + FullFileName 逐段消毒）  
 **优先级**: 中  
 **描述**:  
 「存储 → 打开文件管理 → 上传」目前只能传文件（input multiple）。增加「上传目录」：前端 `webkitdirectory` input 携带 `webkitRelativePath`（FormData filename 带子路径），后端 upload handler 用 `Part.FullFileName()` 取原始相对路径、逐段 validateFileName 消毒、缺失父目录逐段创建（已存在目录权限一律不动）、双重锚定与 409/overwrite/权限对齐语义不变。浏览器限制：空目录不会随 webkitdirectory 上传。

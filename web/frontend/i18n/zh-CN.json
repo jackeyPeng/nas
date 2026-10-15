@@ -1223,6 +1223,7 @@
     "select_all": "全选",
     "selected_count": "已选中 {0} 项",
     "toolbar_upload": "上传",
+    "toolbar_upload_dir": "上传目录",
     "toolbar_mkdir": "新建目录",
     "toolbar_refresh": "刷新",
     "toolbar_move": "移动",

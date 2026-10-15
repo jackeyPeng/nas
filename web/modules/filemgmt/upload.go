@@ -7,11 +7,14 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"mime"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"os/user"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"nas-panel/common"
 	"nas-panel/modules/diskmgmt"
@@ -115,6 +118,94 @@ func lookupGID(name string) (int, bool) {
 	return gid, true
 }
 
+// partFullFileName 返回 part 的 Content-Disposition filename 原始参数值,不经
+// stdlib Part.FileName() 的 filepath.Base() 剥路径处理。
+//
+// 偏差说明(对照任务设计 "part.FileName() → part.FullFileName()"):Go 标准库
+// mime/multipart.Part 并不存在 FullFileName() 方法——已直接读取本机 Go 1.26
+// stdlib 源码(mime/multipart/multipart.go)确认,该类型自始至终只有 FileName()
+// 一个方法,其实现固定调用 filepath.Base()(RFC 7578 §4.2 要求),从未有保留原始
+// 路径的变体方法。为达成设计意图(part filename 携带子路径、单段名行为与现状
+// 一致),改为直接解析 part.Header 的 Content-Disposition 头取原始 filename 参数
+// (与 Part.FileName() 内部用的同一个 mime.ParseMediaType 解析器,仅不做 Base()
+// 剥离)。multipart 请求体 wire format、CreateFormFile 构造方式、单段文件名的
+// 行为均与设计原意完全一致,只是取值的 Go 内部机制不同。
+func partFullFileName(part *multipart.Part) string {
+	cd := part.Header.Get("Content-Disposition")
+	if cd == "" {
+		return ""
+	}
+	_, params, err := mime.ParseMediaType(cd)
+	if err != nil {
+		return ""
+	}
+	return params["filename"]
+}
+
+// sanitizeUploadRelPath 校验并净化目录上传携带的子路径 filename(partFullFileName
+// 原值,webkitRelativePath 风格,如 "d1/d2/a.txt")。
+//
+// 拒绝:空串、以 "/" 开头(绝对路径)、任何空段(连续 "//" 或尾随 "/")。
+// 按 "/" 切段,每段过 validateFileName(既有白名单:拒 "."、".."、控制字符、>255 字节;
+// 段内不可能再含 "/",故 validateFileName 的"不含/"校验在此总是通过)。
+// 反斜杠不做特殊处理(Linux 文件名合法字符,浏览器不会发)。
+// 返回净化后按 "/" 重新拼接的相对路径。
+func sanitizeUploadRelPath(relFile string) (string, error) {
+	if relFile == "" {
+		return "", fmt.Errorf("文件名不能为空")
+	}
+	if strings.HasPrefix(relFile, "/") {
+		return "", fmt.Errorf("文件名不能是绝对路径")
+	}
+	segments := strings.Split(relFile, "/")
+	for _, seg := range segments {
+		if seg == "" {
+			return "", fmt.Errorf("文件名不能包含空路径段")
+		}
+		if err := validateFileName(seg); err != nil {
+			return "", fmt.Errorf("路径段 %q 不合法: %w", seg, err)
+		}
+	}
+	return strings.Join(segments, "/"), nil
+}
+
+// ensureUploadParents 为 cleaned(已经过 sanitizeUploadRelPath 净化的相对路径)的
+// 父目录链逐段创建:dirAbs/seg1、dirAbs/seg1/seg2…
+//
+//   - 段不存在 → os.Mkdir(0755) + 显式 os.Chmod(0755)(消解 umask,与 handleMkdir
+//     "mode 恒 0755"一致)。
+//   - 段已存在且为目录 → 一律不动,尤其不 chmod 已有目录(上传合并不改既有数据权限)。
+//   - 段已存在但非目录 → 返回带段路径的错误,调用方映射 400。
+//   - Mkdir 失败(并发/权限等)→ 返回带路径的错误,调用方映射 500。
+func ensureUploadParents(dirAbs, cleaned string) error {
+	segments := strings.Split(cleaned, "/")
+	parents := segments[:len(segments)-1]
+	if len(parents) == 0 {
+		return nil
+	}
+	cur := dirAbs
+	for _, seg := range parents {
+		cur = filepath.Join(cur, seg)
+		info, err := os.Lstat(cur)
+		if err == nil {
+			if !info.IsDir() {
+				return fmt.Errorf("上传路径与现有非目录冲突: %s", cur)
+			}
+			continue
+		}
+		if !os.IsNotExist(err) {
+			return fmt.Errorf("检查目录失败: %s: %w", cur, err)
+		}
+		if merr := os.Mkdir(cur, 0755); merr != nil {
+			return fmt.Errorf("创建目录失败: %s: %w", cur, merr)
+		}
+		if cerr := os.Chmod(cur, 0755); cerr != nil {
+			return fmt.Errorf("设置目录权限失败: %s: %w", cur, cerr)
+		}
+	}
+	return nil
+}
+
 // handleUpload — POST /api/files/upload?path=<目标目录>[&overwrite=yes],multipart/form-data。
 // 用 r.MultipartReader() 逐 part 流式写盘,不走 ParseMultipartForm/FormFile(禁止把整包撑进内存)。
 func handleUpload(w http.ResponseWriter, r *http.Request) {
@@ -160,29 +251,42 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		filename := part.FileName()
-		if filename == "" {
+		relFile := partFullFileName(part)
+		if relFile == "" {
 			// 普通表单字段(非文件 part),跳过。
 			part.Close()
 			continue
 		}
-		if err := validateFileName(filename); err != nil {
+		cleaned, serr := sanitizeUploadRelPath(relFile)
+		if serr != nil {
 			part.Close()
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			http.Error(w, serr.Error(), http.StatusBadRequest)
 			return
 		}
 
-		targetRel := filepath.Join(rel, filename)
+		targetRel := filepath.Join(rel, cleaned)
 		targetAbs, rerr := resolvePoolPath(targetRel)
 		if rerr != nil {
 			part.Close()
 			http.Error(w, rerr.Error(), http.StatusBadRequest)
 			return
 		}
-		// 双重路径锚定一致性断言,对照 mutate.go handleMkdir。
-		if targetAbs != filepath.Join(dirAbs, filename) {
+		// 双重路径锚定一致性断言,对照 mutate.go handleMkdir(cleaned 已不含 ..,
+		// Join 语义与 resolvePoolPath 一致)。
+		if targetAbs != filepath.Join(dirAbs, cleaned) {
 			part.Close()
 			http.Error(w, "路径解析不一致", http.StatusInternalServerError)
+			return
+		}
+
+		// 缺失父目录逐段创建(目录上传场景);已存在目录权限一律不动。
+		if perr := ensureUploadParents(dirAbs, cleaned); perr != nil {
+			part.Close()
+			if strings.Contains(perr.Error(), "上传路径与现有非目录冲突") {
+				http.Error(w, perr.Error(), http.StatusBadRequest)
+				return
+			}
+			http.Error(w, perr.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -190,7 +294,7 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
 			part.Close()
 			// 拍板决策 1:多 part 冲突语义——立即停止,响应体注明冲突文件名
 			// 与已写入的文件名列表;已写入的 part 不回滚。
-			writeUploadConflictBody(w, filename, written, totalBytes)
+			writeUploadConflictBody(w, cleaned, written, totalBytes)
 			return
 		}
 
@@ -202,7 +306,7 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
 			if errors.Is(werr, fs.ErrExist) {
 				// OpenFile(O_EXCL) 碰撞:文件非我所建(并发方已创建),
 				// 与 Lstat 预检同款 409 JSON body,不得 Remove 并发方文件。
-				writeUploadConflictBody(w, filename, written, totalBytes)
+				writeUploadConflictBody(w, cleaned, written, totalBytes)
 				return
 			}
 			http.Error(w, werr.Error(), http.StatusInsufficientStorage)
@@ -215,7 +319,7 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		written = append(written, filename)
+		written = append(written, cleaned)
 		totalBytes += n
 	}
 

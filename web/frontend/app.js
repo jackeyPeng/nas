@@ -1206,6 +1206,9 @@ function nasPanel() {
         selectUploadFiles() {
             this.$refs.fileUploadInput.click();
         },
+        selectUploadDir() {
+            this.$refs.dirUploadInput.click();
+        },
         // 上传/批量操作失败 responseText 可能是 JSON({"error":"..."})或纯文本,统一解析取 .error,解析失败兜底原文
         parseErrorText(text) {
             try {
@@ -1218,7 +1221,9 @@ function nasPanel() {
             const files = Array.from(input.files || []);
             if (!files.length) return;
             const form = new FormData();
-            files.forEach(file => form.append('files', file, file.name));
+            // 目录上传(webkitdirectory)时 file.webkitRelativePath 携带子路径(如 "d1/a.txt"),
+            // 后端按该 filename 逐段消毒并建父目录;普通文件该属性为空串,回退 file.name,行为不变。
+            files.forEach(file => form.append('files', file, file.webkitRelativePath || file.name));
             // Important#1 修复:先赋值到 filesPage.uploadProgress,再取引用,确保 progress 是 Alpine 响应式代理
             // 而非链式赋值 `const progress = this.filesPage.uploadProgress = {...}` 捕获到的 raw 对象
             this.filesPage.uploadProgress = { active: true, percent: 0, loaded: 0, total: files.reduce((sum, file) => sum + file.size, 0) };
@@ -1266,7 +1271,8 @@ function nasPanel() {
         },
         uploadFilesWithOverwrite(files) {
             const form = new FormData();
-            files.forEach(file => form.append('files', file, file.name));
+            // 409 重试同样要保留子路径,否则目录上传冲突重试会把文件拍平到目标目录。
+            files.forEach(file => form.append('files', file, file.webkitRelativePath || file.name));
             const xhr = new XMLHttpRequest();
             xhr.open('POST', '/api/files/upload?path=' + encodeURIComponent(this.filesPage.path) + '&overwrite=yes');
             xhr.setRequestHeader('Authorization', 'Bearer ' + this.token);

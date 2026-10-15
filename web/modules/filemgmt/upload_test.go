@@ -155,10 +155,14 @@ func TestHandleUploadTargetPathIsFile(t *testing.T) {
 	}
 }
 
-// 计划修订记录(2026-10-12 Task 8):Go stdlib multipart.Part.FileName() 内置 filepath.Base()
-// 剥路径——"../evil" 取出即 "evil"(合法名),穿越语义由 stdlib Base() + resolvePoolPath
-// 双重兜底(剥完的名只会落在目标目录内);validateFileName 拦全名 ".." 作纵深防御。
-func TestHandleUploadStripsTraversalFilename(t *testing.T) {
+// 计划修订记录(TASK-DU,2026-10-15):Go stdlib mime/multipart.Part 并无
+// FullFileName() 方法(已核实本机 go1.26 stdlib 源码),改为直接解析
+// Content-Disposition 头取原始 filename(partFullFileName,不经 Part.FileName()
+// 的 filepath.Base() 剥路径)。因此 "../pwn" 不再被 stdlib 静默剥成单段名
+// "pwn",而是被 sanitizeUploadRelPath 按 "/" 切成 [".." , "pwn"] 两段,".."
+// 段触发 validateFileName 拒绝 → 400。新语义比旧版"剥路径后放行"更严格:
+// 穿越尝试直接拒绝,而不是依赖剥离后巧合落在目标目录内。
+func TestHandleUploadRejectsTraversalFilename(t *testing.T) {
 	root := setupFakePool(t)
 	// 注意:夹具 public/ 里已有指向池外的 evil 符号链接(browse 测试用),
 	// 上传名避开它——若撞上,resolvePoolPath 会以"符号链接指向池外"正确拒绝。
@@ -169,11 +173,11 @@ func TestHandleUploadStripsTraversalFilename(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handleUpload(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("../pwn 经 FileName() 剥为 pwn 应 200 落在目标目录内, got %d body=%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("../pwn 含 .. 段应被 sanitizeUploadRelPath 拒 400, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	if _, err := os.Stat(filepath.Join(root, "public", "pwn")); err != nil {
-		t.Fatalf("pwn 应落在 public/ 内: %v", err)
+	if _, err := os.Stat(filepath.Join(root, "public", "pwn")); err == nil {
+		t.Fatalf("pwn 不应落在 public/ 内(请求已被拒绝)")
 	}
 	if _, err := os.Stat(filepath.Join(filepath.Dir(root), "pwn")); err == nil {
 		t.Fatalf("池外不应出现 pwn 文件")
@@ -593,5 +597,301 @@ func TestHandleUploadPermsWithOrdinaryShareFolderMeta(t *testing.T) {
 	}
 	if gotGID != wantGID {
 		t.Fatalf("root 环境 chown 后 gid 应为 photos(%d), got %d", wantGID, gotGID)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// TASK-DU: 目录上传(webkitdirectory + FullFileName 逐段消毒)
+// ---------------------------------------------------------------------------
+
+// buildMultipartMulti 构造含多个文件 part 的 multipart/form-data body,字段名统一为 "files"。
+// 用 CreateFormFile 保留斜杠(只转义引号/反斜杠),模拟前端 webkitRelativePath 携带的子路径 filename。
+func buildMultipartMulti(t *testing.T, filenames []string, contents [][]byte) (*bytes.Buffer, string) {
+	t.Helper()
+	if len(filenames) != len(contents) {
+		t.Fatalf("filenames/contents 长度不一致")
+	}
+	buf := &bytes.Buffer{}
+	mw := multipart.NewWriter(buf)
+	for i, name := range filenames {
+		fw, err := mw.CreateFormFile("files", name)
+		if err != nil {
+			t.Fatalf("CreateFormFile(%q): %v", name, err)
+		}
+		if _, err := fw.Write(contents[i]); err != nil {
+			t.Fatalf("写入 part(%q) 失败: %v", name, err)
+		}
+	}
+	if err := mw.Close(); err != nil {
+		t.Fatalf("关闭 multipart writer 失败: %v", err)
+	}
+	return buf, mw.FormDataContentType()
+}
+
+// TestSanitizeUploadRelPathAcceptsNested 覆盖消毒函数对合法多段相对路径的放行,
+// 并断言返回值已按 "/" 重新拼接(净化后的相对路径)。
+func TestSanitizeUploadRelPathAcceptsNested(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"a.txt", "a.txt"},
+		{"d1/a.txt", "d1/a.txt"},
+		{"d1/d2/b.txt", "d1/d2/b.txt"},
+	}
+	for _, c := range cases {
+		got, err := sanitizeUploadRelPath(c.in)
+		if err != nil {
+			t.Fatalf("sanitizeUploadRelPath(%q) 应合法, got err=%v", c.in, err)
+		}
+		if got != c.want {
+			t.Fatalf("sanitizeUploadRelPath(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// TestSanitizeUploadRelPathRejectsTableDriven 表驱动覆盖所有拒绝场景。
+func TestSanitizeUploadRelPathRejectsTableDriven(t *testing.T) {
+	longSeg := make([]byte, 256)
+	for i := range longSeg {
+		longSeg[i] = 'x'
+	}
+	cases := []struct {
+		name string
+		in   string
+	}{
+		{"空串", ""},
+		{"前导斜杠(绝对路径)", "/etc/passwd"},
+		{"空段(中间)", "a//b"},
+		{"空段(尾随斜杠)", "a/"},
+		{"段为..", "d1/../x"},
+		{"段为.", "d1/./x"},
+		{"段含控制字符", "d1/\x01x"},
+		{"段过长(>255字节)", "d1/" + string(longSeg)},
+	}
+	for _, c := range cases {
+		if got, err := sanitizeUploadRelPath(c.in); err == nil {
+			t.Fatalf("%s: sanitizeUploadRelPath(%q) 应被拒, got %q", c.name, c.in, got)
+		}
+	}
+}
+
+// TestHandleUploadNestedCreatesDirTree 嵌套创建:单请求两个 part(d1/a.txt、d1/d2/b.txt)→
+// 目录树建出、内容一致、文件权限按 getFolderMetaFn 注入的共享对齐(public → 0664)。
+func TestHandleUploadNestedCreatesDirTree(t *testing.T) {
+	root := setupFakePool(t)
+	old := getFolderMetaFn
+	getFolderMetaFn = func() []diskmgmt.FolderMeta {
+		return []diskmgmt.FolderMeta{{Name: "public", Path: filepath.Join(root, "public")}}
+	}
+	t.Cleanup(func() { getFolderMetaFn = old })
+
+	contentA := []byte("content a")
+	contentB := []byte("content b")
+	body, ct := buildMultipartMulti(t, []string{"d1/a.txt", "d1/d2/b.txt"}, [][]byte{contentA, contentB})
+
+	req := httptest.NewRequest("POST", "/api/files/upload?path=public", body)
+	req.Header.Set("Content-Type", ct)
+	rec := httptest.NewRecorder()
+	handleUpload(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("嵌套上传应 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	gotA, err := os.ReadFile(filepath.Join(root, "public", "d1", "a.txt"))
+	if err != nil {
+		t.Fatalf("d1/a.txt 未落盘: %v", err)
+	}
+	if !bytes.Equal(gotA, contentA) {
+		t.Fatalf("d1/a.txt 内容不一致, got %q want %q", gotA, contentA)
+	}
+	gotB, err := os.ReadFile(filepath.Join(root, "public", "d1", "d2", "b.txt"))
+	if err != nil {
+		t.Fatalf("d1/d2/b.txt 未落盘: %v", err)
+	}
+	if !bytes.Equal(gotB, contentB) {
+		t.Fatalf("d1/d2/b.txt 内容不一致, got %q want %q", gotB, contentB)
+	}
+
+	for _, p := range []string{filepath.Join(root, "public", "d1", "a.txt"), filepath.Join(root, "public", "d1", "d2", "b.txt")} {
+		info, err := os.Stat(p)
+		if err != nil {
+			t.Fatalf("stat %s: %v", p, err)
+		}
+		if info.Mode().Perm() != 0664 {
+			t.Fatalf("%s mode=%o, want 0664(public 共享对齐)", p, info.Mode().Perm())
+		}
+	}
+}
+
+// TestHandleUploadNewDirModeIs0755 新建目录 mode 显式 0755(chmod 后断言,umask 无关)。
+func TestHandleUploadNewDirModeIs0755(t *testing.T) {
+	root := setupFakePool(t)
+	oldUmask := syscall.Umask(0022) // 制造非零 umask,验证 handler 显式 chmod 消解其影响
+	t.Cleanup(func() { syscall.Umask(oldUmask) })
+
+	body, ct := buildMultipartMulti(t, []string{"newdir/leaf.txt"}, [][]byte{[]byte("x")})
+	req := httptest.NewRequest("POST", "/api/files/upload?path=public", body)
+	req.Header.Set("Content-Type", ct)
+	rec := httptest.NewRecorder()
+	handleUpload(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("上传应 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	info, err := os.Stat(filepath.Join(root, "public", "newdir"))
+	if err != nil {
+		t.Fatalf("newdir 未创建: %v", err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("newdir 应为目录")
+	}
+	if info.Mode().Perm() != 0755 {
+		t.Fatalf("新建目录 mode=%o, want 0755", info.Mode().Perm())
+	}
+}
+
+// TestHandleUploadExistingDirPermsUntouched 已存在目录权限不动:预建 d1 为 0700 →
+// 上传 d1/a.txt → d1 仍 0700(ensureUploadParents 对已存在目录绝不 chmod)。
+func TestHandleUploadExistingDirPermsUntouched(t *testing.T) {
+	root := setupFakePool(t)
+	preexisting := filepath.Join(root, "public", "d1")
+	if err := os.Mkdir(preexisting, 0700); err != nil {
+		t.Fatalf("预建 d1 失败: %v", err)
+	}
+
+	body, ct := buildMultipartMulti(t, []string{"d1/a.txt"}, [][]byte{[]byte("x")})
+	req := httptest.NewRequest("POST", "/api/files/upload?path=public", body)
+	req.Header.Set("Content-Type", ct)
+	rec := httptest.NewRecorder()
+	handleUpload(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("上传应 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	info, err := os.Stat(preexisting)
+	if err != nil {
+		t.Fatalf("stat d1 失败: %v", err)
+	}
+	if info.Mode().Perm() != 0700 {
+		t.Fatalf("既有目录权限应未被改动, mode=%o, want 0700", info.Mode().Perm())
+	}
+}
+
+// TestHandleUploadMiddleSegmentCollidesWithFile 中间段撞既有文件:预建文件 f.txt →
+// 上传 f.txt/x.txt → 400,f.txt 无损。
+func TestHandleUploadMiddleSegmentCollidesWithFile(t *testing.T) {
+	root := setupFakePool(t)
+	fPath := filepath.Join(root, "public", "f.txt")
+	original := []byte("i am a file not a dir")
+	if err := os.WriteFile(fPath, original, 0644); err != nil {
+		t.Fatalf("预建 f.txt 失败: %v", err)
+	}
+
+	body, ct := buildMultipartMulti(t, []string{"f.txt/x.txt"}, [][]byte{[]byte("x")})
+	req := httptest.NewRequest("POST", "/api/files/upload?path=public", body)
+	req.Header.Set("Content-Type", ct)
+	rec := httptest.NewRecorder()
+	handleUpload(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("中间段撞既有文件应 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	data, err := os.ReadFile(fPath)
+	if err != nil {
+		t.Fatalf("f.txt 应仍存在: %v", err)
+	}
+	if !bytes.Equal(data, original) {
+		t.Fatalf("f.txt 内容应未被改动, got %q want %q", data, original)
+	}
+}
+
+// TestHandleUploadSanitizeRejectTableDriven 消毒拒绝表驱动(经完整 handler 路径,
+// 断言均为 400,且目标目录内无任何残留写入)。
+func TestHandleUploadSanitizeRejectTableDriven(t *testing.T) {
+	longSeg := make([]byte, 256)
+	for i := range longSeg {
+		longSeg[i] = 'y'
+	}
+	cases := []struct {
+		name     string
+		filename string
+	}{
+		{"段为..", "d1/../x.txt"},
+		{"段为.", "d1/./x.txt"},
+		{"前导斜杠", "/etc/x.txt"},
+		{"空段", "a//b.txt"},
+		{"尾随斜杠", "a/"},
+		{"控制字符段", "d1/\x01bad.txt"},
+		{"段过长", "d1/" + string(longSeg)},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			root := setupFakePool(t)
+			body, ct := buildMultipartMulti(t, []string{c.filename}, [][]byte{[]byte("x")})
+			req := httptest.NewRequest("POST", "/api/files/upload?path=public", body)
+			req.Header.Set("Content-Type", ct)
+			rec := httptest.NewRecorder()
+			handleUpload(rec, req)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("%s: 应 400, got %d body=%s", c.name, rec.Code, rec.Body.String())
+			}
+			_ = root
+		})
+	}
+}
+
+// TestHandleUploadNestedConflictFullRelPath 冲突:目标子路径文件已存在 → 409 且
+// body conflict 含完整相对路径;overwrite=yes → 覆盖成功。
+func TestHandleUploadNestedConflictFullRelPath(t *testing.T) {
+	root := setupFakePool(t)
+	if err := os.MkdirAll(filepath.Join(root, "public", "d1"), 0755); err != nil {
+		t.Fatalf("预建 d1 失败: %v", err)
+	}
+	original := []byte("existing nested content")
+	if err := os.WriteFile(filepath.Join(root, "public", "d1", "a.txt"), original, 0644); err != nil {
+		t.Fatalf("预建冲突文件失败: %v", err)
+	}
+
+	body, ct := buildMultipartMulti(t, []string{"d1/a.txt"}, [][]byte{[]byte("new content")})
+	req := httptest.NewRequest("POST", "/api/files/upload?path=public", body)
+	req.Header.Set("Content-Type", ct)
+	rec := httptest.NewRecorder()
+	handleUpload(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("嵌套路径冲突应 409, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("响应非 JSON: %v", err)
+	}
+	if resp["conflict"] != "d1/a.txt" {
+		t.Fatalf("conflict 应为完整相对路径 d1/a.txt, got %v", resp["conflict"])
+	}
+	data, err := os.ReadFile(filepath.Join(root, "public", "d1", "a.txt"))
+	if err != nil {
+		t.Fatalf("原文件应仍存在: %v", err)
+	}
+	if !bytes.Equal(data, original) {
+		t.Fatalf("原文件内容应未被改动, got %q want %q", data, original)
+	}
+
+	// overwrite=yes 覆盖成功
+	body2, ct2 := buildMultipartMulti(t, []string{"d1/a.txt"}, [][]byte{[]byte("overwritten content")})
+	req2 := httptest.NewRequest("POST", "/api/files/upload?path=public&overwrite=yes", body2)
+	req2.Header.Set("Content-Type", ct2)
+	rec2 := httptest.NewRecorder()
+	handleUpload(rec2, req2)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("overwrite=yes 应 200, got %d body=%s", rec2.Code, rec2.Body.String())
+	}
+	data2, err := os.ReadFile(filepath.Join(root, "public", "d1", "a.txt"))
+	if err != nil {
+		t.Fatalf("覆盖后文件应存在: %v", err)
+	}
+	if string(data2) != "overwritten content" {
+		t.Fatalf("覆盖后内容不符, got %q", data2)
 	}
 }

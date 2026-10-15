@@ -1875,7 +1875,9 @@
                 </div>
                 <div style="display:flex;align-items:center;gap:var(--sp-2);flex-wrap:wrap;margin-bottom:var(--sp-3)">
                     <input x-ref="fileUploadInput" type="file" multiple style="display:none" @change="uploadFiles($event.target)">
+                    <input x-ref="dirUploadInput" type="file" webkitdirectory multiple style="display:none" @change="uploadFiles($event.target)">
                     <button class="btn btn-sm btn-primary" @click="selectUploadFiles()" x-text="$t('files.toolbar_upload')"></button>
+                    <button class="btn btn-sm" @click="selectUploadDir()" x-text="$t('files.toolbar_upload_dir')"></button>
                     <button class="btn btn-sm" @click="openMkdir()" x-text="$t('files.toolbar_mkdir')"></button>
                     <button class="btn btn-sm" @click="loadFiles(filesPage.path)" x-text="$t('files.toolbar_refresh')"></button>
                     <span x-show="filesPage.selected.length" class="badge-sm" style="background:var(--primary-light);color:var(--primary)" x-text="$t('files.selected_count', [filesPage.selected.length])"></span>
