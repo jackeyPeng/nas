@@ -197,6 +197,14 @@ func ensureUploadParents(dirAbs, cleaned string) error {
 			return fmt.Errorf("检查目录失败: %s: %w", cur, err)
 		}
 		if merr := os.Mkdir(cur, 0755); merr != nil {
+			if os.IsExist(merr) {
+				// 并发上传同树:对方先建。重查——是目录则视同已存在(不 chmod,
+				// 与「既有目录一律不动」语义一致),非目录则走冲突 400。
+				if info2, lerr := os.Lstat(cur); lerr == nil && info2.IsDir() {
+					continue
+				}
+				return fmt.Errorf("上传路径与现有非目录冲突: %s", cur)
+			}
 			return fmt.Errorf("创建目录失败: %s: %w", cur, merr)
 		}
 		if cerr := os.Chmod(cur, 0755); cerr != nil {

@@ -728,7 +728,7 @@ func TestHandleUploadNestedCreatesDirTree(t *testing.T) {
 // TestHandleUploadNewDirModeIs0755 新建目录 mode 显式 0755(chmod 后断言,umask 无关)。
 func TestHandleUploadNewDirModeIs0755(t *testing.T) {
 	root := setupFakePool(t)
-	oldUmask := syscall.Umask(0022) // 制造非零 umask,验证 handler 显式 chmod 消解其影响
+	oldUmask := syscall.Umask(0077) // 0077 下 Mkdir(0755) 无显式 chmod 只得 0700——能真正锁住「chmod 消解 umask」行为(0022 测不出来,0755 本就不含 group/other 写位)
 	t.Cleanup(func() { syscall.Umask(oldUmask) })
 
 	body, ct := buildMultipartMulti(t, []string{"newdir/leaf.txt"}, [][]byte{[]byte("x")})
@@ -837,7 +837,32 @@ func TestHandleUploadSanitizeRejectTableDriven(t *testing.T) {
 			if rec.Code != http.StatusBadRequest {
 				t.Fatalf("%s: 应 400, got %d body=%s", c.name, rec.Code, rec.Body.String())
 			}
-			_ = root
+			// 拒绝发生在任何写盘/建目录之前:全树与 setupFakePool 初始状态完全一致,零残留
+			got := map[string]bool{}
+			filepath.Walk(root, func(p string, info os.FileInfo, err error) error {
+				if err != nil {
+					return nil // evil 符号链接指向池外,Lstat 语义下 Walk 不跟随,不应报错;兜底跳过
+				}
+				rel, _ := filepath.Rel(root, p)
+				got[rel] = true
+				return nil
+			})
+			for _, want := range []string{".", "public", "public/photos", "public/evil", "fm"} {
+				if !got[want] {
+					t.Fatalf("%s: 初始条目 %s 意外消失", c.name, want)
+				}
+			}
+			if len(got) != 5 {
+				extra := []string{}
+				for k := range got {
+					switch k {
+					case ".", "public", "public/photos", "public/evil", "fm":
+					default:
+						extra = append(extra, k)
+					}
+				}
+				t.Fatalf("%s: 400 后出现残留写入: %v", c.name, extra)
+			}
 		})
 	}
 }
