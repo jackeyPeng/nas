@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 主要变化 |
 |------|------|---------|
+| v1.4.0-beta.20 | 2026-10-15 | beta.19 后续修复 — 回收站合并式恢复（原位已有同名目录时逐子项合并回原位，替代整树 .restored 旁落）+ folders.db 读取加固（坏行跳过+日志，不再静默半填充）+ install.sh FileBrowser 条件化补漏（全新安装不再报假「验证未通过」）+ 服务管理页状态徽章四态修复；两台 Debian 13 测试机重置后全新安装完整验收（各 34 项断言全 PASS） |
 | v1.4.0-beta.19 | 2026-10-13 | 文件管理器 M3 权限管理全量落地 — stat/chmod/chown/fix-home-perms 四 API + 前端 v3（属性对话框八进制输入+符号位实时预览+预设、批量改权限串行进度、用户页一键修复 home 权限）；递归 Walk 免 sudo（符号链接 chmod 跳过/chown Lchown）；mode 白名单拒 setuid/setgid/sticky；三场景 type-to-confirm；FileBrowser 存量机器可经 cleanup.sh 卸载 |
 | v1.4.0-beta.18 | 2026-10-13 | 文件管理器 M2 写操作全量落地 — 上传(XHR 进度)/新建/重命名/移动/复制/删除(进 .recycle 与回收站页联动) 六 API + 前端多选工具栏；setup.sh 新装默认不装 FileBrowser(--with-filebrowser 保留一版)；注册表 FileBrowser 4 项按安装态条件化(保 46/46) |
 | v1.4.0-beta.17 | 2026-10-12 | 面板文件管理器 M1 v1 只读基线 — 内置「文件」页取代 FileBrowser 外链（浏览/面包屑/下载/zip 打包/预览/用量）+ resolvePoolPath 路径安全核心（穿越/符号链接逃逸 fail-closed）+ checklist 新增模块 17（166 项/18 模块，修正存量统计口径）+ 产品手册 7.8 章节 |
@@ -16,9 +17,11 @@
 
 ---
 
-## [未发布] - beta.19 后续修复（已双机验收，待下一版发布）
+## [2026-10-15] - 回收站合并式恢复 + 读取加固
 
-### 修复（master，tag v1.4.0-beta.19 之后）
+### 版本 v1.4.0-beta.20
+
+### 修复（tag v1.4.0-beta.19 之后）
 
 - **回收站合并式恢复**（29f775d，D1 复审 Important 跟进）：restore 时目标位置已存在同名目录 → 不再整树旁落 `.restored`，改为逐子项合并恢复回原位（子项碰撞才落 `.restored` 后缀不覆盖既有数据；符号链接 Lstat 语义；只删空的回收站源目录）。默认配置下「删除嵌套文件 → 回收站页 UI 恢复」现在精确回原位。独立审查「可合入」，两台测试机实机 5 项断言全过
 - **folders.db 读取加固**（d1f3a9d）：GetAllFolderMeta 检查 rows.Scan/rows.Err——NULL 列等坏行跳过+日志，不再静默半填充零值（曾致删除误走池根回退、回收站页 shares 为空，本地手工种库 E2E 因此误判产品 bug）
@@ -27,7 +30,7 @@
 
 ### 验收
 
-- 两台 Debian 13 测试机重置后全新安装（install.sh 一条命令 + master 二进制）→ 建池 merge 4×50G → 各 34 项断言（27 API/文件系统 + 7 SMB）全 PASS 零 FAIL；注册表 46/46
+- 两台 Debian 13 测试机重置后全新安装（install.sh 一条命令 + 本版二进制 0125d54）→ 建池 merge 4×50G → 各 34 项断言（27 API/文件系统 + 7 SMB）全 PASS 零 FAIL；注册表 46/46；nas-release「两台全过」口径满足
 
 ---
 
