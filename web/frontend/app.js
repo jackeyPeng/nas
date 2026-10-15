@@ -615,7 +615,9 @@ function nasPanel() {
         },
 
         get serviceSummary() {
-            const svcs = this.dashboard.services || [];
+            // not-installed = 可选服务未装(如 FileBrowser,beta.19 起默认不装),
+            // 不是异常也不计入总数,否则全新安装仪表盘恒显「1 个异常」假告警。
+            const svcs = (this.dashboard.services || []).filter(s => s.active !== 'not-installed');
             const down = svcs.filter(s => s.active !== 'active').length;
             return { total: svcs.length, down };
         },
