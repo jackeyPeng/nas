@@ -153,7 +153,7 @@ Samba、NFS 都是内核级服务（NFS 直接在内核空间运行），用 Doc
 | nfs-kernel-server   | 1:2.8.3-1               | NFS 内核服务端         | ~3 MB          |
 | nfs-common          | 1:2.8.3-1               | NFS 通用工具           | ~3 MB          |
 | vsftpd              | 3.0.5-0.2               | FTP 服务器             | ~1.5 MB        |
-| rclone              | 1.74.4 (.deb)           | WebDAV + S3 服务 (serve 模式) | ~30 MB |
+| rclone              | 1.75.2 (.deb)           | WebDAV + S3 服务 (serve 模式) | ~30 MB |
 | filebrowser         | v2.63.17                | Web 文件管理器          | ~15 MB (单文件)|
 | rpcbind             | 1.2.7-1                 | RPC 端口映射 (NFS 依赖)| ~0.5 MB        |
 | xfsprogs            | 6.15.0-1                | XFS 文件系统工具        | ~5 MB          |
@@ -457,13 +457,13 @@ sudo systemctl start filebrowser
 ```bash
 # 下载并安装 rclone .deb 包（推荐，速度快）
 cd /tmp
-curl -fsSL -o rclone.deb https://get.z1.sale/releases/rclone-v1.74.4-linux-amd64.deb
+curl -fsSL -o rclone.deb https://get.z1.sale/releases/rclone-v1.75.2-linux-amd64.deb
 sudo dpkg -i rclone.deb
 rm rclone.deb
 
 # 验证安装
 rclone version
-# 期望输出: rclone v1.74.4
+# 期望输出: rclone v1.75.2
 
 # 创建环境配置文件（详见 7.5 节）
 sudo cp /opt/nas/configs/rclone-s3.service /etc/systemd/system/
@@ -830,7 +830,7 @@ chown <NAS_USER>:<NAS_USER> /etc/rclone-htpasswd
 **简介：** rclone serve s3 是 rclone 内置的 S3 兼容对象存储服务模式，直接以 `/data` 为根目录，每个子目录自动映射为一个 S3 bucket。无需额外 Web 管理控制台，适合对接云存储、应用开发和备份场景。
 
 **安装位置：** `/usr/bin/rclone`（通过 .deb 包安装）
-**版本：** rclone v1.74.4
+**版本：** rclone v1.75.2
 **数据目录：** `/data`（每个子目录即一个 bucket）
 **许可证：** MIT
 
@@ -892,12 +892,12 @@ WantedBy=multi-user.target
 # 1. 下载并安装 rclone .deb 包
 # 方式 1：自有文件服务器（推荐，速度快）
 cd /tmp
-curl -fsSL -o rclone.deb https://get.z1.sale/releases/rclone-v1.74.4-linux-amd64.deb
+curl -fsSL -o rclone.deb https://get.z1.sale/releases/rclone-v1.75.2-linux-amd64.deb
 sudo dpkg -i rclone.deb
 rm rclone.deb
 
 # 方式 2：官方地址（需要能访问 rclone.org）
-# curl -fsSL -o rclone.deb https://rclone.org/downloads/rclone-v1.74.4-linux-amd64.deb
+# curl -fsSL -o rclone.deb https://rclone.org/downloads/rclone-v1.75.2-linux-amd64.deb
 # sudo dpkg -i rclone.deb
 
 # 验证

@@ -18,7 +18,10 @@
 
 ---
 
-## [未发布] - 注册表存储项池模式感知（master，beta.21 之后）
+## [未发布] - 注册表存储项池模式感知 + rclone v1.75.2（master，beta.21 之后）
+
+### 变更
+- **rclone 升级 v1.75.2**（setup.sh 下载 pin 1.74.4→1.75.2 三 URL + 手册版本表/命令同步）：deb 已上传 R2（releases/rclone-v1.75.2-linux-amd64.deb，公网 200 验证）；两台 Debian 13 测试机实机升级验证——WebDAV PROPFIND 207/GET/PUT 落盘、S3 s3cmd 全链路（mb/put/ls/get/rm/rb）、面板 rclone 状态页正确上报 v1.75.2、服务重启后双 active；升级后双机完整验收各 34 项断言全 PASS（57 merge 池 / 48 向导建 RAID1 池——#36 池模式判定经真实建池流程复验 46/46）。已知 quirk（非本次引入，1.74.4 同款）：rclone 自身作 s3 客户端连 rclone serve s3 报 InvalidBucketName，标准客户端 s3cmd 正常
 
 ### 修复
 - **系统健康注册表存储层 6 项按池模式感知**（TODO #36，d359836 + 审查修复 96b02f6）：此前 34 VG/35 LV/36 PV/37 RAID/38 磁盘签名按 merge/LVM 模式硬编码——RAID 模式池（mdadm+XFS 直挂）机器上健康的 md0 恒 fail、LVM 三项恒 warn，46/46 永远达不成。新增纯函数 detectPoolMode（按 /data/nas1 挂载源判 raid/lvm/none/other）+ parseMdstat（阵列名/级别/槽位/降级/resync）+ storageItemStates 四模式判定表：RAID 池 34-36 pass「LVM 不适用」、37 查阵列健康（降级 fail/无阵列矛盾 fail/健康 pass 列出全部阵列含 resync 进度）、38 分模式文案；none 模式保留「LVM 存在但未挂载」诊断信号（pass+提示）；merge 模式语义不变（md 残留仍 fail）。39 恢复挂载计数文案。22+2 组表驱动测试；实机验证：RAID1 池测试机 46/46 全 pass（含 XFS 上目录上传/回收站合并恢复/SMB 隔离 34 项验收全过）、merge 池测试机 46/46 无回归
