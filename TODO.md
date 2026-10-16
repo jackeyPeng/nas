@@ -877,7 +877,7 @@ NAS 里的视频/音乐/照片直接在浏览器播放，带媒体库海报墙�
 ---
 
 #### 36. 注册表存储项按池模式感知（RAID 池机器恒 fail/warn）
-**状态**: ⏳ 待办  
+**状态**: ✅ 已完成（池模式感知：detectPoolMode/parseMdstat + 34-39 判定表）  
 **优先级**: 中  
 **描述**:  
 系统健康注册表 46 项中，存储层 6 项（34 VG/35 LV/36 PV/37 RAID/38 磁盘签名/39 池挂载）按「merge/LVM 模式」硬编码判定：37 项对任何 `/dev/md*` 无条件 fail（system_registry.go `updateItem(37,"fail",…)`），34-36 无 LVM 即 warn，38 只认 LVM 签名。**RAID 模式池（mdadm+XFS 直挂）机器上 md0 是健康正态却恒 fail、LVM 三项恒 warn、38 恒 warn——46/46 永远达不成**（2026-10-16 在测试机 48 实测暴露：RAID1 池 resync 中，注册表 42/1/3）。修法：判定前先取实际池类型（diskmgmt 池信息/挂载源），按 merge/raid 分别定义各项期望态；无池时维持现行「未创建」语义。属 beta.18 引入注册表时的设计缺口，非某次发布回归。
