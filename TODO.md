@@ -863,7 +863,7 @@ NAS 里的视频/音乐/照片直接在浏览器播放，带媒体库海报墙�
 **待办**:
 - [x] ~~feat/file-manager 合回 master~~（✅ 2026-10-13 快进合并已推）；FileBrowser 彻底移除——**评估已做（2026-10-13）：beta.19/20 不移除**，--with-filebrowser 承诺保留一版；移除清单（下一发布周期执行）：setup.sh [7/10] 段+开关、services.go 安装项与 installSingleService case、注册表 5 项删除（46→41 总数变更）、versions.go FileBrowserVersion 常量、users.go changePassword 的 fb 分支、dashboard/monitor/system 服务列表与 i18n、upload-filebrowser.sh、官网/手册措辞；cleanup.sh 的 filebrowser 清理**保留**（存量机器卸载路径）
 - [x] 回收站 UI 粒度（D1 复审 Important 跟进）：✅ 29f775d 合并式恢复落地——dst 已存在目录时 mergeTreeRestore 逐子项 mv 回原位（碰撞落 .restored 不覆盖、符号链接 Lstat 语义、只删空目录禁 RemoveAll、失败即停部分恢复如实上报），独立审查「可合入」（数据安全核心命题成立：无覆盖/丢失分支，TOCTOU 与既有代码同级）；8 个真文件系统测试覆盖拍板 7 场景
-- [ ] 加固遗留：~~diskmgmt GetAllFolderMeta rows.Scan 错误未检查~~（✅ d1f3a9d 已修：坏行跳过+日志+rows.Err）；审计 detail 用户输入转义；ownerShareOf/ownerShareOfVia 去重；resolveShareOrPoolRootPath 抽纯核心+排序单测（D1 复审 Minor）；回收站合并恢复 4 条 Minor（mergeRestoreConflictFree/mergeTreeRestore 的 Lstat 错误应区分 IsNotExist 而非一律当不存在——与 filemgmt recycleConflictFree 两处一起统一加固、纳秒循环加重试上限、src目录 vs dst文件 方向与 ≥3 层递归与错误分支测试盲区、restored_to 合并语义前端对接时注意）；目录上传复审 2 Minor（resolvePoolPath TrimSpace 与首/尾空格文件名组合触发双重锚定 500——宜 400，属既有 quirk 但 webkitRelativePath 的 Windows 尾随空格目录名更易撞；dashboard unknown 状态计入 down 但服务列表徽章按 info 显示的口径不一致 + not-installed 判定依赖 systemd is-active exit 4 语义、部分版本对不存在 unit 返回 exit 3 会标 failed 复现假告警）；handleUpload 错误类型判断用 strings.Contains 字符串匹配（宜 sentinel error）
+- [ ] 加固遗留：~~diskmgmt GetAllFolderMeta rows.Scan 错误未检查~~（✅ d1f3a9d 已修：坏行跳过+日志+rows.Err）；审计 detail 用户输入转义；ownerShareOf/ownerShareOfVia 去重；resolveShareOrPoolRootPath 抽纯核心+排序单测（D1 复审 Minor）；回收站合并恢复 4 条 Minor（mergeRestoreConflictFree/mergeTreeRestore 的 Lstat 错误应区分 IsNotExist 而非一律当不存在——与 filemgmt recycleConflictFree 两处一起统一加固、纳秒循环加重试上限、src目录 vs dst文件 方向与 ≥3 层递归与错误分支测试盲区、restored_to 合并语义前端对接时注意）；目录上传复审 2 Minor（resolvePoolPath TrimSpace 与首/尾空格文件名组合触发双重锚定 500——宜 400，属既有 quirk 但 webkitRelativePath 的 Windows 尾随空格目录名更易撞；dashboard unknown 状态计入 down 但服务列表徽章按 info 显示的口径不一致 + not-installed 判定依赖 systemd is-active exit 4 语义、部分版本对不存在 unit 返回 exit 3 会标 failed 复现假告警）；handleUpload 错误类型判断用 strings.Contains 字符串匹配（宜 sentinel error）；注册表池模式判定复审 3 Minor（parseMdstat header 正则对 `active (auto-read-only) raid1` 变体会把括号串当 Level、raid0/linear 无槽位行时文案显示空 []——均纯外观；detectPoolMode 前缀面：/dev/mapper/ 涵盖 dm-crypt/multipath 会误归 lvm、LVM 经 /dev/vg-x/lv-y 符号链接挂载会落 other——NAS 语境低风险；poolDevice 回退取 df 序第一个 nasN，多池形态时需改显式池配置读取——已有注释标记）
 
 ---
 
@@ -877,7 +877,7 @@ NAS 里的视频/音乐/照片直接在浏览器播放，带媒体库海报墙�
 ---
 
 #### 36. 注册表存储项按池模式感知（RAID 池机器恒 fail/warn）
-**状态**: ✅ 已完成（池模式感知：detectPoolMode/parseMdstat + 34-39 判定表）  
+**状态**: ✅ 已完成（d359836 池模式感知：detectPoolMode/parseMdstat/storageItemStates 判定表 + 96b02f6 审查修复；实机验证：RAID 池机器 46/46、merge 机器无回归 46/46）  
 **优先级**: 中  
 **描述**:  
 系统健康注册表 46 项中，存储层 6 项（34 VG/35 LV/36 PV/37 RAID/38 磁盘签名/39 池挂载）按「merge/LVM 模式」硬编码判定：37 项对任何 `/dev/md*` 无条件 fail（system_registry.go `updateItem(37,"fail",…)`），34-36 无 LVM 即 warn，38 只认 LVM 签名。**RAID 模式池（mdadm+XFS 直挂）机器上 md0 是健康正态却恒 fail、LVM 三项恒 warn、38 恒 warn——46/46 永远达不成**（2026-10-16 在测试机 48 实测暴露：RAID1 池 resync 中，注册表 42/1/3）。修法：判定前先取实际池类型（diskmgmt 池信息/挂载源），按 merge/raid 分别定义各项期望态；无池时维持现行「未创建」语义。属 beta.18 引入注册表时的设计缺口，非某次发布回归。
@@ -889,11 +889,11 @@ NAS 里的视频/音乐/照片直接在浏览器播放，带媒体库海报墙�
 | 类别 | 总数 | 已完成 | 进行中 | 待办 |
 |------|------|--------|--------|------|
 | 高优先级 | 3 | 3 | 0 | 0 |
-| 中优先级 | 19 | 15 | 2 | 2 |
+| 中优先级 | 19 | 16 | 2 | 1 |
 | 低优先级 | 14 | 6 | 0 | 8 |
-| **合计** | **36** | **24** | **2** | **10** |
+| **合计** | **36** | **25** | **2** | **9** |
 
-**完成率**: 66.7%（24/36）
+**完成率**: 69.4%（25/36）
 
 > 注：#10 HTTPS 证书配置已完成；#13 多语言 i18n 已完成（970 keys 全站）；#28 系统定期诊断已完成；#11 官网已部署上线；#26 存储四层模型重构已完成；#27 一键安装流程已完成；#12 移动设备支持 PWA + 响应式已落地（进行中）；#34 面板文件管理 M1 只读基线已落地（进行中，取代 FileBrowser）；#23 BT下载、#24 多媒体播放规划为插件（依赖 #21 插件系统）。
 
