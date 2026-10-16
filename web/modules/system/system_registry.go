@@ -236,11 +236,16 @@ type storageState struct {
 
 // storageItemStates computes the pool-mode-aware verdicts for registry
 // items 34-39 (LVM VG/LV/PV, RAID arrays, disk signature, pool mount).
-func storageItemStates(mode string, hasVG, hasLV, hasPV bool, mdCount int, arrays []MdArray, hasSig bool, mounted bool) map[int]storageState {
+func storageItemStates(mode string, hasVG, hasLV, hasPV bool, mdCount int, arrays []MdArray, hasSig bool, mountCount int) map[int]storageState {
 	states := make(map[int]storageState)
 
 	// 34/35/36: LVM VG/LV/PV
 	lvmNames := map[int]string{34: "VG", 35: "LV", 36: "PV"}
+	lvmNoneTexts := map[int]string{
+		34: "无 LVM 卷组 (存储池未创建或非 LVM 模式)",
+		35: "无 LVM 逻辑卷 (存储池未创建或非 LVM 模式)",
+		36: "无 LVM 物理卷 (存储池未创建或非 LVM 模式)",
+	}
 	lvmPresent := map[int]bool{34: hasVG, 35: hasLV, 36: hasPV}
 	for id, present := range lvmPresent {
 		switch mode {
@@ -253,11 +258,12 @@ func storageItemStates(mode string, hasVG, hasLV, hasPV bool, mdCount int, array
 		case "raid":
 			states[id] = storageState{"pass", "RAID 模式池，LVM 不适用"}
 		case "none":
-			states[id] = storageState{"warn", "无 LVM 卷组 (存储池未创建或非 LVM 模式)"}
-			if id == 35 {
-				states[id] = storageState{"warn", "无 LVM 逻辑卷 (存储池未创建或非 LVM 模式)"}
-			} else if id == 36 {
-				states[id] = storageState{"warn", "无 LVM 物理卷 (存储池未创建或非 LVM 模式)"}
+			// 池未挂载不等于 LVM 不存在：VG/LV/PV 在而未挂载是有价值的
+			// 诊断信号（mount 失败/待重启），保持旧版「存在即 pass」语义。
+			if present {
+				states[id] = storageState{"pass", "存在 " + lvmNames[id] + "（但池未挂载）"}
+			} else {
+				states[id] = storageState{"warn", lvmNoneTexts[id]}
 			}
 		default: // other
 			states[id] = storageState{"warn", "非标准池模式(设备直挂)，LVM 不适用"}
@@ -288,12 +294,16 @@ func storageItemStates(mode string, hasVG, hasLV, hasPV bool, mdCount int, array
 			if degraded {
 				states[37] = storageState{"fail", degradedDetail}
 			} else {
-				a := arrays[0]
-				detail := fmt.Sprintf("RAID 模式池使用中: %s %s [%s]", a.Name, a.Level, strings.Trim(a.Slots, "[]"))
-				if a.Resync != "" {
-					detail += fmt.Sprintf("(resync %s)", a.Resync)
+				// 列出全部健康阵列（多阵列机器不只报第一个）
+				parts := make([]string, 0, len(arrays))
+				for _, a := range arrays {
+					s := fmt.Sprintf("%s %s [%s]", a.Name, a.Level, strings.Trim(a.Slots, "[]"))
+					if a.Resync != "" {
+						s += fmt.Sprintf("(resync %s)", a.Resync)
+					}
+					parts = append(parts, s)
 				}
-				states[37] = storageState{"pass", detail}
+				states[37] = storageState{"pass", "RAID 模式池使用中: " + strings.Join(parts, "; ")}
 			}
 		}
 	case "none":
@@ -320,7 +330,8 @@ func storageItemStates(mode string, hasVG, hasLV, hasPV bool, mdCount int, array
 		}
 	case "raid":
 		if hasSig {
-			states[38] = storageState{"pass", "数据盘已有 RAID 成员签名"}
+			// hasSig 是「任一数据盘有任一 wipefs 签名」的既有粗检查，文案不过度承诺成员签名类型
+			states[38] = storageState{"pass", "数据盘已有签名 (RAID 模式预期为 linux_raid_member)"}
 		} else {
 			states[38] = storageState{"warn", "数据盘无签名"}
 		}
@@ -339,8 +350,8 @@ func storageItemStates(mode string, hasVG, hasLV, hasPV bool, mdCount int, array
 	}
 
 	// 39: pool mount — mode-independent
-	if mounted {
-		states[39] = storageState{"pass", "存储池已挂载"}
+	if mountCount > 0 {
+		states[39] = storageState{"pass", fmt.Sprintf("存储池已挂载 (%d 个)", mountCount)}
 	} else {
 		states[39] = storageState{"warn", "存储池 /data/nas1 未挂载 (待配置)"}
 	}
@@ -672,8 +683,9 @@ func RefreshRegistry() RegistryReport {
 			poolDevice = m["device"]
 		}
 	}
-	mounted := dataDiskMounts > 0
-
+	// 模式判定只认 /data/nas1 的挂载源；nas1 未挂载时回退取 df 序第一个
+	// /data/nasN（GNU df 按挂载点排序，实际为最小 nasN）。单池产品形态下
+	// 无歧义；未来支持多池时需改为显式读取池配置（见 TODO #34 遗留）。
 	poolMode := detectPoolMode(poolDevice)
 
 	var mdArrays []MdArray
@@ -682,7 +694,7 @@ func RefreshRegistry() RegistryReport {
 		mdArrays = parseMdstat(string(mdContent))
 	}
 
-	states := storageItemStates(poolMode, hasVG, hasLV, hasPV, mdCount, mdArrays, hasSignatures, mounted)
+	states := storageItemStates(poolMode, hasVG, hasLV, hasPV, mdCount, mdArrays, hasSignatures, dataDiskMounts)
 	for _, id := range []int{34, 35, 36, 38, 39} {
 		updateItem(id, states[id].status, states[id].detail)
 	}
