@@ -134,7 +134,7 @@ func handleInstallServices(w http.ResponseWriter, r *http.Request) {
 
 		// WebDAV with htpasswd auth
 		common.SudoExec("bash", "-c", fmt.Sprintf("htpasswd -cb /etc/rclone-htpasswd %s %s", nasUser, nasPass))
-		common.SudoExec("sh", "-c", "cat > /etc/systemd/system/rclone-webdav.service << 'UNIT'\n[Unit]\nDescription=Rclone WebDAV Server\nAfter=network.target\n[Service]\nType=simple\nExecStart=/usr/bin/rclone serve webdav /data --addr :8080 --htpasswd /etc/rclone-htpasswd\nRestart=on-failure\n[Install]\nWantedBy=multi-user.target\nUNIT")
+		common.SudoExec("sh", "-c", "cat > /etc/systemd/system/rclone-webdav.service << 'UNIT'\n[Unit]\nDescription=Rclone WebDAV Server\nAfter=network.target\n[Service]\nType=simple\nExecStart=/usr/bin/rclone serve webdav /data/nas1/public --addr :8080 --htpasswd /etc/rclone-htpasswd\nRestart=on-failure\n[Install]\nWantedBy=multi-user.target\nUNIT")
 		common.SudoExec("systemctl", "daemon-reload")
 		common.SudoExec("systemctl", "enable", "rclone-webdav")
 		common.SudoExec("systemctl", "reset-failed", "rclone-webdav")
@@ -142,7 +142,7 @@ func handleInstallServices(w http.ResponseWriter, r *http.Request) {
 		steps = append(steps, "WebDAV 已启动")
 
 		// S3 with auth-key
-		common.SudoExec("sh", "-c", fmt.Sprintf("cat > /etc/systemd/system/rclone-s3.service << 'UNIT'\n[Unit]\nDescription=Rclone S3 Server\nAfter=network.target\n[Service]\nType=simple\nExecStart=/usr/bin/rclone serve s3 /data --addr :9000 --auth-key %s,%s\nRestart=on-failure\n[Install]\nWantedBy=multi-user.target\nUNIT", common.S3AccessKey(nasUser), nasPass))
+		common.SudoExec("sh", "-c", fmt.Sprintf("cat > /etc/systemd/system/rclone-s3.service << 'UNIT'\n[Unit]\nDescription=Rclone S3 Server\nAfter=network.target\n[Service]\nType=simple\nExecStart=/usr/bin/rclone serve s3 /data/nas1/public --addr :9000 --auth-key %s,%s\nRestart=on-failure\n[Install]\nWantedBy=multi-user.target\nUNIT", common.S3AccessKey(nasUser), nasPass))
 		common.SudoExec("systemctl", "enable", "rclone-s3")
 		common.SudoExec("systemctl", "reset-failed", "rclone-s3")
 		common.SudoExec("systemctl", "start", "rclone-s3")
@@ -230,7 +230,7 @@ func installSingleService(name string) (string, error) {
 		nasUser := common.GetNASUser()
 		nasPass, _ := common.ReadEnvFile(common.GetEnvFilePath(), "NAS_PASS")
 		common.SudoExec("bash", "-c", fmt.Sprintf("htpasswd -cb /etc/rclone-htpasswd %s %s", nasUser, nasPass))
-		common.SudoExec("sh", "-c", "cat > /etc/systemd/system/rclone-webdav.service << 'UNIT'\n[Unit]\nDescription=Rclone WebDAV Server\nAfter=network.target\n[Service]\nType=simple\nExecStart=/usr/bin/rclone serve webdav /data --addr :8080 --htpasswd /etc/rclone-htpasswd\nRestart=on-failure\n[Install]\nWantedBy=multi-user.target\nUNIT")
+		common.SudoExec("sh", "-c", "cat > /etc/systemd/system/rclone-webdav.service << 'UNIT'\n[Unit]\nDescription=Rclone WebDAV Server\nAfter=network.target\n[Service]\nType=simple\nExecStart=/usr/bin/rclone serve webdav /data/nas1/public --addr :8080 --htpasswd /etc/rclone-htpasswd\nRestart=on-failure\n[Install]\nWantedBy=multi-user.target\nUNIT")
 		common.SudoExec("systemctl", "daemon-reload")
 		common.SudoExec("systemctl", "enable", "rclone-webdav")
 		common.SudoExec("systemctl", "reset-failed", "rclone-webdav")
@@ -244,7 +244,7 @@ func installSingleService(name string) (string, error) {
 		}
 		nasUser := common.GetNASUser()
 		nasPass, _ := common.ReadEnvFile(common.GetEnvFilePath(), "NAS_PASS")
-		common.SudoExec("sh", "-c", fmt.Sprintf("cat > /etc/systemd/system/rclone-s3.service << 'UNIT'\n[Unit]\nDescription=Rclone S3 Server\nAfter=network.target\n[Service]\nType=simple\nExecStart=/usr/bin/rclone serve s3 /data --addr :9000 --auth-key %s,%s\nRestart=on-failure\n[Install]\nWantedBy=multi-user.target\nUNIT", common.S3AccessKey(nasUser), nasPass))
+		common.SudoExec("sh", "-c", fmt.Sprintf("cat > /etc/systemd/system/rclone-s3.service << 'UNIT'\n[Unit]\nDescription=Rclone S3 Server\nAfter=network.target\n[Service]\nType=simple\nExecStart=/usr/bin/rclone serve s3 /data/nas1/public --addr :9000 --auth-key %s,%s\nRestart=on-failure\n[Install]\nWantedBy=multi-user.target\nUNIT", common.S3AccessKey(nasUser), nasPass))
 		common.SudoExec("systemctl", "daemon-reload")
 		common.SudoExec("systemctl", "enable", "rclone-s3")
 		common.SudoExec("systemctl", "reset-failed", "rclone-s3")

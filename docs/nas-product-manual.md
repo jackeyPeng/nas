@@ -376,7 +376,7 @@ After=network.target
 [Service]
 Type=simple
 User=<NAS_USER>
-ExecStart=/usr/bin/rclone serve webdav /data --addr :8080 --htpasswd /etc/rclone-htpasswd
+ExecStart=/usr/bin/rclone serve webdav /data/nas1/public --addr :8080 --htpasswd /etc/rclone-htpasswd
 Restart=on-failure
 RestartSec=10
 
@@ -465,8 +465,8 @@ rm rclone.deb
 rclone version
 # 期望输出: rclone v1.75.2
 
-# 创建环境配置文件（详见 7.5 节）
-sudo cp /opt/nas/configs/rclone-s3.service /etc/systemd/system/
+# 创建 S3 服务 unit（模板见 7.5 节，写入 /etc/systemd/system/rclone-s3.service；
+# 产品一键安装/面板「服务管理」页安装会自动生成，无需手工创建）
 
 # 启动服务
 sudo systemctl daemon-reload
@@ -775,7 +775,7 @@ After=network.target
 [Service]
 Type=simple
 User=<NAS_USER>
-ExecStart=/usr/bin/rclone serve webdav /data \
+ExecStart=/usr/bin/rclone serve webdav /data/nas1/public \
     --addr :8080 \
     --htpasswd /etc/rclone-htpasswd
 Restart=on-failure
@@ -790,7 +790,7 @@ WantedBy=multi-user.target
 | 参数              | 说明                                         |
 |-------------------|----------------------------------------------|
 | `serve webdav`    | rclone 的 WebDAV 服务模式                     |
-| `/data`           | 共享根目录，暴露整个 /data 树                  |
+| `/data/nas1/public` | WebDAV 根目录＝public 共享（产品默认，与 setup.sh 一致；不暴露用户 home） |
 | `--addr :8080`    | 监听 8080 端口                                |
 | `--htpasswd`      | 使用 Apache htpasswd 文件进行认证（推荐）      |
 | `Restart=on-failure` | 进程异常退出后自动重启                     |
@@ -827,11 +827,11 @@ chown <NAS_USER>:<NAS_USER> /etc/rclone-htpasswd
 
 ### 7.5 rclone — S3 对象存储
 
-**简介：** rclone serve s3 是 rclone 内置的 S3 兼容对象存储服务模式，直接以 `/data` 为根目录，每个子目录自动映射为一个 S3 bucket。无需额外 Web 管理控制台，适合对接云存储、应用开发和备份场景。
+**简介：** rclone serve s3 是 rclone 内置的 S3 兼容对象存储服务模式，产品默认以 `/data/nas1/public`（public 共享）为根目录，其下每个子目录自动映射为一个 S3 bucket。无需额外 Web 管理控制台，适合对接云存储、应用开发和备份场景。
 
 **安装位置：** `/usr/bin/rclone`（通过 .deb 包安装）
 **版本：** rclone v1.75.2
-**数据目录：** `/data`（每个子目录即一个 bucket）
+**数据目录：** `/data/nas1/public`（每个子目录即一个 bucket；不暴露用户 home）
 **许可证：** MIT
 
 **Systemd 服务文件：** `/etc/systemd/system/rclone-s3.service`
@@ -855,7 +855,7 @@ Type=simple
 User=<NAS_USER>
 Group=<NAS_USER>
 EnvironmentFile=/etc/rclone/s3-env
-ExecStart=/usr/bin/rclone serve s3 /data --addr :9000 --auth-key ${RCLONE_S3_AUTH_KEY}
+ExecStart=/usr/bin/rclone serve s3 /data/nas1/public --addr :9000 --auth-key ${RCLONE_S3_AUTH_KEY}
 Restart=always
 RestartSec=5
 LimitNOFILE=65536
@@ -873,9 +873,10 @@ WantedBy=multi-user.target
 - **S3 access key（`<S3_ACCESS_KEY>`）**：默认等于 `NAS_USER`，但 rclone serve s3 内嵌的
   gofakes3 库会拒绝短于 3 字符的 access key（一律返回 `InvalidAccessKeyId`），
   因此用户名不足 3 字符时（如 `fm`）自动加 `z1-` 前缀（→ `z1-fm`）。
-  实际值以 `/etc/rclone/s3-env` 的 `RCLONE_S3_ACCESS_KEY` 为准；
-  面板改密时会自动同步该文件与 rclone-s3.service 并重启服务
-- rclone serve s3 以 `/data` 为根目录，`/data` 下的每个子目录自动成为 S3 bucket（如 `shared`、`backups`、`media` 等）
+  产品安装的密钥直接写在 rclone-s3.service 的 `--auth-key` 参数里，
+  面板改密时自动 sed 改写该 unit 并重启服务；手动部署变体用
+  `/etc/rclone/s3-env` 的 `RCLONE_S3_ACCESS_KEY`（EnvironmentFile 注入）
+- rclone serve s3 以 `/data/nas1/public` 为根目录（产品默认，setup.sh/面板安装一致），public 下的每个子目录自动成为 S3 bucket（如 `shared`、`backups`、`media` 等）；手动部署变体如以其他目录为根，请自行评估暴露面
 - 内网环境下也可使用匿名模式（不带 `--auth-key`），允许无认证访问
 
 **端口说明：**

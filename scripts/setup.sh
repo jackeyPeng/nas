@@ -451,9 +451,9 @@ fi
 # ==================== [8/10] 配置 S3 对象存储 (rclone serve s3) ====================
 echo ""
 echo "[8/10] 配置 S3 对象存储 (rclone serve s3)..."
-# 安装/升级 rclone（需要 1.62+ 才有 serve s3 子命令）
+# 安装/升级 rclone（锁定 v1.75.2：低于 1.75 即升级到 pin 版本；serve s3 的功能下限是 1.62）
 RCLONE_VERSION=$(rclone version 2>/dev/null | head -1 | grep -oP 'v\K[0-9]+\.[0-9]+' | head -1)
-if [ -z "$RCLONE_VERSION" ] || [ "$(echo "$RCLONE_VERSION < 1.62" | bc 2>/dev/null || echo 1)" = "1" ]; then
+if [ -z "$RCLONE_VERSION" ] || [ "$(echo "$RCLONE_VERSION < 1.75" | bc 2>/dev/null || echo 1)" = "1" ]; then
     echo "  升级 rclone..."
     if download_file /tmp/rclone-latest.deb \
         "https://get.z1.sale/releases/rclone-v1.75.2-linux-amd64.deb" \
@@ -462,7 +462,7 @@ if [ -z "$RCLONE_VERSION" ] || [ "$(echo "$RCLONE_VERSION < 1.62" | bc 2>/dev/nu
         sudo dpkg -i /tmp/rclone-latest.deb 2>/dev/null || true
         echo "  ✓ rclone 已升级到 $(rclone version | head -1)"
     else
-        echo "  ⚠ rclone 升级失败，S3 服务可能不可用（需要 rclone 1.62+）"
+        echo "  ⚠ rclone 升级失败，S3 服务可能不可用（需要 rclone 1.62+，锁定版本 v1.75.2）"
     fi
 fi
 
