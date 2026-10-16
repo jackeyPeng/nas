@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 主要变化 |
 |------|------|---------|
+| v1.4.0-beta.22 | 2026-10-16 | rclone 安全升级 v1.75.2（修 serve webdav 路径遍历 GHSA-44pm-2q5p-fm63 等命中我方暴露面的高危项 + Go 1.26.9 HTTP/2 CVE；新装必落 pin 版本；服务页重装路径 serve 根对齐 /data/nas1/public 消除越权隐患）+ 系统健康注册表存储层 6 项按池模式感知（RAID 池机器不再恒 fail，46/46 可达）；双机重置重装完整验收（merge/RAID1 各 35 项断言全 PASS） |
 | v1.4.0-beta.21 | 2026-10-15 | 文件管理页新增「上传目录」— webkitdirectory 整目录树保留子路径上传（后端 Content-Disposition 原始 filename 逐段消毒、缺失父目录逐段 0755 创建、既有目录权限一律不动、409 覆盖重试不拍平、并发 EEXIST 加固）；穿越用例（`../pwn`）由 stdlib 剥路径后巧合放行改为显式 400 拒绝；修复仪表盘把未安装的可选服务（FileBrowser）计入异常导致全新安装恒显「1 个异常」假告警；两台 Debian 13 测试机部署 + Chrome 实机 E2E 全过 |
 | v1.4.0-beta.20 | 2026-10-15 | beta.19 后续修复 — 回收站合并式恢复（原位已有同名目录时逐子项合并回原位，替代整树 .restored 旁落）+ folders.db 读取加固（坏行跳过+日志，不再静默半填充）+ install.sh FileBrowser 条件化补漏（全新安装不再报假「验证未通过」）+ 服务管理页状态徽章四态修复；两台 Debian 13 测试机重置后全新安装完整验收（各 34 项断言全 PASS） |
 | v1.4.0-beta.19 | 2026-10-13 | 文件管理器 M3 权限管理全量落地 — stat/chmod/chown/fix-home-perms 四 API + 前端 v3（属性对话框八进制输入+符号位实时预览+预设、批量改权限串行进度、用户页一键修复 home 权限）；递归 Walk 免 sudo（符号链接 chmod 跳过/chown Lchown）；mode 白名单拒 setuid/setgid/sticky；三场景 type-to-confirm；FileBrowser 存量机器可经 cleanup.sh 卸载 |
@@ -18,9 +19,12 @@
 
 ---
 
-## [未发布] - 注册表存储项池模式感知 + rclone v1.75.2（master，beta.21 之后）
+## [2026-10-16] - 注册表池模式感知 + rclone v1.75.2 安全升级
+
+### 版本 v1.4.0-beta.22
 
 ### 变更
+- **rclone v1.75.2 升级审计修复**（12ed66e）：setup.sh 升级门槛 1.62→1.75（此前发行版 rclone ≥1.62 的机器永远不会升到 pin 版本；现全新安装必落 v1.75.2，双机重装实证）；services.go 服务页重装路径的 WebDAV/S3 serve 根 `/data`→`/data/nas1/public`×4（对齐 setup.sh 产品语义，消除重装后越权暴露全部用户 home 的隐患）；手册 7.4/7.5 根目录/参数表/S3 密钥同步描述对齐产品实际（改密 sed unit 的 `--auth-key` 而非 s3-env），步骤 9 移除对不存在的 configs/rclone-s3.service 模板引用
 - **rclone 升级 v1.75.2**（setup.sh 下载 pin 1.74.4→1.75.2 三 URL + 手册版本表/命令同步）：deb 已上传 R2（releases/rclone-v1.75.2-linux-amd64.deb，公网 200 验证）；两台 Debian 13 测试机实机升级验证——WebDAV PROPFIND 207/GET/PUT 落盘、S3 s3cmd 全链路（mb/put/ls/get/rm/rb）、面板 rclone 状态页正确上报 v1.75.2、服务重启后双 active；升级后双机完整验收各 34 项断言全 PASS（57 merge 池 / 48 向导建 RAID1 池——#36 池模式判定经真实建池流程复验 46/46）。已知 quirk（非本次引入，1.74.4 同款）：rclone 自身作 s3 客户端连 rclone serve s3 报 InvalidBucketName，标准客户端 s3cmd 正常
 - **升级安全动机（1.74.4→1.75.2 跨三个版本，命中我方暴露面）**：serve webdav 越出服务目录的路径遍历（GHSA-44pm-2q5p-fm63，直接打在 rclone-webdav :8080 上，为本轮最高危项）；serve s3 presigned URL 可被变成复制任意对象（GHSA-w3h7-jxxq-vfrp）+ multipart 缓冲上限被超大 part size 绕过（GHSA-qjw8-8hmp-c3m6，DoS 向）+ 客户端声明 part size 内存耗尽（GHSA-2p48-j3qc-rx9f，1.75.1）；随 Go 1.26.9 消除 HTTP/2 服务端 CVE（HPACK 竞态崩溃 CVE-2026-97032 / Trailer 头内存耗尽 CVE-2026-78659 / Range 头无大小限制 CVE-2026-78667）。行为变化：OPTIONS 请求现要求认证（GHSA-gj73-fh6v-92fj），双机实测 WebDAV/s3cmd 客户端均不受影响；serve s3 新增 --multipart-max-uploads / --multipart-streaming-buffer-total / --metadata-max-objects 三个内存限制参数，默认值生效、无需改 unit。附带收益：s3 multipart 改流式直通后端（内存占用大降）+ 对象列表惰性分页（深层目录翻页变快）
 
