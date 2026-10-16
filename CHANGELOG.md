@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 主要变化 |
 |------|------|---------|
+| v1.4.0-beta.21 | 2026-10-15 | 文件管理页新增「上传目录」— webkitdirectory 整目录树保留子路径上传（后端 Content-Disposition 原始 filename 逐段消毒、缺失父目录逐段 0755 创建、既有目录权限一律不动、409 覆盖重试不拍平、并发 EEXIST 加固）；穿越用例（`../pwn`）由 stdlib 剥路径后巧合放行改为显式 400 拒绝；修复仪表盘把未安装的可选服务（FileBrowser）计入异常导致全新安装恒显「1 个异常」假告警；两台 Debian 13 测试机部署 + Chrome 实机 E2E 全过 |
 | v1.4.0-beta.20 | 2026-10-15 | beta.19 后续修复 — 回收站合并式恢复（原位已有同名目录时逐子项合并回原位，替代整树 .restored 旁落）+ folders.db 读取加固（坏行跳过+日志，不再静默半填充）+ install.sh FileBrowser 条件化补漏（全新安装不再报假「验证未通过」）+ 服务管理页状态徽章四态修复；两台 Debian 13 测试机重置后全新安装完整验收（各 34 项断言全 PASS） |
 | v1.4.0-beta.19 | 2026-10-13 | 文件管理器 M3 权限管理全量落地 — stat/chmod/chown/fix-home-perms 四 API + 前端 v3（属性对话框八进制输入+符号位实时预览+预设、批量改权限串行进度、用户页一键修复 home 权限）；递归 Walk 免 sudo（符号链接 chmod 跳过/chown Lchown）；mode 白名单拒 setuid/setgid/sticky；三场景 type-to-confirm；FileBrowser 存量机器可经 cleanup.sh 卸载 |
 | v1.4.0-beta.18 | 2026-10-13 | 文件管理器 M2 写操作全量落地 — 上传(XHR 进度)/新建/重命名/移动/复制/删除(进 .recycle 与回收站页联动) 六 API + 前端多选工具栏；setup.sh 新装默认不装 FileBrowser(--with-filebrowser 保留一版)；注册表 FileBrowser 4 项按安装态条件化(保 46/46) |
@@ -17,7 +18,9 @@
 
 ---
 
-## [未发布] - 目录上传 + 仪表盘假告警修复（master，beta.20 之后）
+## [2026-10-15] - 目录上传 + 仪表盘假告警修复
+
+### 版本 v1.4.0-beta.21
 
 ### 新增
 - **文件管理页「上传目录」**（TODO #35，749402d）：webkitdirectory input 携带 webkitRelativePath，前端 FormData filename 带完整子路径（409 覆盖重试同样保留，不拍平）；后端自解析 Content-Disposition 取原始 filename（stdlib `Part.FileName()` 会 `filepath.Base` 剥路径，且并无 `FullFileName` 方法——已核实），`sanitizeUploadRelPath` 逐段过 validateFileName（拒 `..`/`.`/绝对路径/空段/控制字符/>255B），`ensureUploadParents` 缺失父目录逐段 Mkdir 0755+显式 chmod 消 umask，**既有目录权限一律不动**，中间段撞非目录 400；双重锚定/409 冲突 body/审计与单文件上传同款语义；穿越用例（`../pwn`）由旧「stdlib 剥路径后巧合 200」改为显式 400 拒绝；浏览器限制：空子目录不随 webkitdirectory 上传。新增/改写 9 个后端测试全绿
