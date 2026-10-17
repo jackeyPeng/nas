@@ -206,11 +206,11 @@
                 <!-- 配置一致性告警 -->
                 <div x-show="configIssues.has_issues" style="background: var(--warn-light);border:1px solid #f59e0b;border-radius:var(--radius-md);padding:var(--sp-3) var(--sp-4);margin-bottom:var(--sp-4)">
                     <div style="display:flex;justify-content:space-between;align-items:center">
-                        <span style="font-weight:600;color: var(--warn)">⚠️ <span x-text="$t('dashboard.config_inconsistent_banner')"></span><span x-text="configIssues.issues.length"></span> <span x-text="$t('dashboard.items')"></span></span>
+                        <span style="font-weight:600;color: var(--warn)">⚠️ <span x-text="$t('dashboard.config_inconsistent_banner')"></span><span x-text="(configIssues.issues || []).length"></span> <span x-text="$t('dashboard.items')"></span></span>
                         <button class="btn btn-sm btn-warn" @click="syncConfigs()" x-text="$t('dashboard.fix_config')"></button>
                     </div>
                     <div style="margin-top:6px;font-size:var(--fs-xs);color: var(--warn)">
-                        <template x-for="issue in configIssues.issues" :key="issue">
+                        <template x-for="issue in (configIssues.issues || [])" :key="issue">
                             <div x-text="issue"></div>
                         </template>
                     </div>
@@ -499,8 +499,8 @@
                                 <tr>
                                     <td style="font-weight:600" x-text="g.name"></td>
                                     <td x-text="g.gid"></td>
-                                    <td style="font-size:var(--fs-xs)" x-text="g.members.join(', ') || '-'"></td>
-                                    <td x-text="g.members.length"></td>
+                                    <td style="font-size:var(--fs-xs)" x-text="(g.members || []).join(', ') || '-'"></td>
+                                    <td x-text="(g.members || []).length"></td>
                                     <td class="actions">
                                         <button class="btn btn-sm btn-danger" @click="deleteGroup(g.name)" x-text="$t('backup.delete_backup')"></button>
                                     </td>

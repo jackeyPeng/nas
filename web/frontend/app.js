@@ -587,7 +587,7 @@ function nasPanel() {
             if (sdata && sdata.overview) this.storageOverview = sdata.overview;
             // Check config consistency
             const cdata = await this.api('/disk/config/check');
-            if (cdata) this.configIssues = cdata;
+            if (cdata) this.configIssues = { has_issues: !!cdata.has_issues, issues: cdata.issues || [] };
             // 最近告警摘要（失败静默，不阻塞面板）
             this.loadRecentAlerts().catch(() => {});
             this.dashboardLoaded = true;
@@ -2535,7 +2535,7 @@ function nasPanel() {
             if (data) {
                 this.showToast(this.t('msg.config_sync_done'), 'success');
                 const cdata = await this.api('/disk/config/check');
-                if (cdata) this.configIssues = cdata;
+                if (cdata) this.configIssues = { has_issues: !!cdata.has_issues, issues: cdata.issues || [] };
             }
         },
 

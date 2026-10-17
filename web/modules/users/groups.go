@@ -114,7 +114,7 @@ func listGroups() []UserGroup {
 			continue
 		}
 
-		var members []string
+		members := []string{}
 		if membersStr != "" {
 			for _, m := range strings.Split(membersStr, ",") {
 				m = strings.TrimSpace(m)

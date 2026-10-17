@@ -1257,7 +1257,7 @@
     "perms_batch_count": "已选中 {0} 项",
     "perms_mode_label": "权限（八进制）",
     "perms_mode_ph": "如 0644",
-    "perms_mode_invalid": "格式错误，应为 3~4 位八进制数字（如 0644）",
+    "perms_mode_invalid": "格式错误：仅支持常规权限位（3 位八进制，可带前导 0，如 0644；不支持 setuid/setgid/sticky）",
     "perms_recursive_label": "递归应用到子目录和文件",
     "perms_recursive_batch_hint": "递归仅对所选项中的目录生效，文件自动按非递归处理",
     "perms_owner_label": "属主",

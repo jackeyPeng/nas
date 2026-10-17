@@ -1257,7 +1257,7 @@
     "perms_batch_count": "{0} selected",
     "perms_mode_label": "Mode (octal)",
     "perms_mode_ph": "e.g. 0644",
-    "perms_mode_invalid": "Invalid format, must be 3-4 octal digits (e.g. 0644)",
+    "perms_mode_invalid": "Invalid format: standard permission bits only (3 octal digits with optional leading 0, e.g. 0644; setuid/setgid/sticky not supported)",
     "perms_recursive_label": "Apply recursively to subfolders and files",
     "perms_recursive_batch_hint": "Recursive only applies to folders in the selection; files are always treated as non-recursive",
     "perms_owner_label": "Owner",

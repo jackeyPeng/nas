@@ -335,6 +335,7 @@ User=$NAS_USER
 ExecStart=/usr/bin/rclone serve webdav $DATA_DIR/nas1/public --addr :8080 --htpasswd /etc/rclone-htpasswd
 Restart=on-failure
 RestartSec=10
+SuccessExitStatus=143
 
 [Install]
 WantedBy=multi-user.target
@@ -493,6 +494,7 @@ EnvironmentFile=/etc/rclone/s3-env
 ExecStart=/usr/bin/rclone serve s3 $DATA_DIR/nas1/public --addr :9000 --auth-key $S3_ACCESS_KEY,$NAS_PASS
 Restart=on-failure
 RestartSec=10
+SuccessExitStatus=143
 
 [Install]
 WantedBy=multi-user.target

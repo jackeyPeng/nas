@@ -772,6 +772,9 @@ func generateManagedBlock(metas []FolderMeta, configType string) string {
 // handleConfigCheck returns consistency issues
 func handleConfigCheck(w http.ResponseWriter, r *http.Request) {
 	issues := CheckConfigConsistency()
+	if issues.Issues == nil {
+		issues.Issues = []string{} // nil slice 会序列化成 null,前端模板 .length 崩溃
+	}
 	common.JSONResponse(w, map[string]interface{}{
 		"has_issues": issues.HasIssues,
 		"issues":     issues.Issues,
