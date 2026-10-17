@@ -106,17 +106,24 @@ func emitHealthEvent(c Check) {
 
 // checkSystem：核心服务运行状态。
 func checkSystem() Check {
-	services := dashboard.GetServices()
-	total := len(services)
-	active, failed, notInstalled := 0, 0, 0
+	return systemCheckFrom(dashboard.GetServices())
+}
+
+// systemCheckFrom：纯函数版本的系统服务检查，便于单测。
+// 口径与前端仪表盘一致：not-installed 为可选服务未安装，不计入 total。
+func systemCheckFrom(services []map[string]interface{}) Check {
+	total := 0
+	active, failed := 0, 0
 	for _, s := range services {
+		if s["active"] == "not-installed" {
+			continue
+		}
+		total++
 		switch s["active"] {
 		case "active":
 			active++
 		case "failed":
 			failed++
-		case "not-installed":
-			notInstalled++
 		}
 	}
 
@@ -125,9 +132,9 @@ func checkSystem() Check {
 	case failed > 0:
 		c.Status = "error"
 		c.Detail = fmt.Sprintf("%d/%d 服务运行中，%d 个异常", active, total, failed)
-	case notInstalled > 0:
+	case total == 0:
 		c.Status = "warn"
-		c.Detail = fmt.Sprintf("%d/%d 服务运行中，%d 个未安装", active, total, notInstalled)
+		c.Detail = "未检测到已安装的 NAS 服务"
 	default:
 		c.Status = "ok"
 		c.Detail = fmt.Sprintf("%d/%d 服务全部运行中", active, total)
