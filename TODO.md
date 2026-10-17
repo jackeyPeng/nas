@@ -296,13 +296,11 @@ VitePress 静态官网，已部署上线 https://www.z1.sale。
 - ✅ 技术选型：VitePress 静态站点
 - ✅ 独立仓库: gitee.com/gitdogcat/nas-website
 - ✅ 页面内容：首页 / 产品介绍 / 功能特性 / 软件下载 / 服务支持 / 开源社区 / 关于我们
-- ✅ 功能特性页与面板模块同步（11 个模块，含远端同步、防火墙新页面）
-
-**待办**:
-- [ ] 部署上线（Gitee Pages / Cloudflare Pages / 自建 nginx）
-- [ ] 配置自定义域名
-- [ ] Web 面板截图更新到功能特性页
-- [ ] CI 自动同步 Release 版本信息，下载链接指向 file.abwen.com
+- ✅ 功能特性页与面板模块同步（12 个模块，含远端同步、防火墙新页面）
+- ✅ 部署上线：Cloudflare R2 静态托管 + CDN（www.z1.sale，2026-10 已验证 200）
+- ✅ 自定义域名：z1.sale（www/get 两个子域，get.z1.sale 分发安装脚本与二进制）
+- ✅ Web 面板截图更新到功能特性页（2026-10-17：12 模块真实截图×中英双语，演示环境数据，内网信息替换为示例地址，webp+懒加载）
+- ✅ ~~CI 自动同步 Release 版本信息，下载链接指向 file.abwen.com~~（已过时并被现行方案取代：版本历史由发版流程同步官网四文件+dist 重建；下载分发统一走 get.z1.sale R2 渠道，不再使用 file.abwen.com）
 
 ---
 
