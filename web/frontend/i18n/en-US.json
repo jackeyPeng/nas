@@ -920,7 +920,7 @@
     "locked": "Vault is locked, try again later",
     "attempts_left": "Incorrect passphrase, {0} attempts left",
     "not_setup": "Vault is not set up yet",
-    "passphrase_too_short": "Passphrase must be at least 8 characters",
+    "passphrase_too_short": "Passphrase must be at least 12 characters",
     "passphrase_mismatch": "Passphrases do not match",
     "old_passphrase_wrong": "Old passphrase is incorrect",
     "passphrase_changed": "Passphrase changed successfully",
@@ -932,7 +932,9 @@
     "migrate_title": "Migrate Legacy Vault Data",
     "migrate_desc": "{0} legacy credentials will be decrypted and re-encrypted with your current vault passphrase. Legacy data will be cleared afterward; this cannot be undone.",
     "migrate_confirm": "Start Migration",
-    "migration_done": "Migration complete, legacy data cleared"
+    "migration_done": "Migration complete, legacy data cleared",
+    "migration_failed": "Migration aborted: failed to migrate this legacy item; old data kept, please retry",
+    "reencrypt_abort": "Change cancelled: this item could not be decrypted with the current passphrase; nothing was modified"
   },
   "pwgen": {
     "title": "Password Generator",

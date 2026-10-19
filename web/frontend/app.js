@@ -3049,10 +3049,22 @@ function nasPanel() {
         // 直接 fetch（不走 api() helper）：解锁失败时需要读取 attempts_left / locked_remaining_seconds 等非 200 响应体字段
         async vaultFetch(path, options = {}) {
             const opts = { ...options, headers: { 'Authorization': 'Bearer ' + this.token, ...(options.headers || {}) } };
-            const res = await fetch('/api/vault' + path, opts);
-            if (res.status === 401) { this.logout(); return { ok: false, status: 401, data: null }; }
+            let res;
+            try {
+                res = await fetch('/api/vault' + path, opts);
+            } catch (e) {
+                // 审查 M5：断网/DNS 失败不再产生 unhandled rejection，调用方按 !ok 处理
+                return { ok: false, status: 0, data: null };
+            }
             let data = null;
             try { data = await res.json(); } catch (e) {}
+            // 401 分两种：JSON 业务错误（如 unlock 口令错误，带 error 字段）原样返回；
+            // 纯文本 401 是 AuthMiddleware 会话过期 → 登出。此前把 unlock 的口令错误
+            // 401 也当会话过期，输错一次保险箱口令就被踢回登录页（E2E 抓出）。
+            if (res.status === 401 && !(data && typeof data.error === 'string')) {
+                this.logout();
+                return { ok: false, status: 401, data: null };
+            }
             return { ok: res.ok, status: res.status, data };
         },
 
@@ -3093,7 +3105,7 @@ function nasPanel() {
         },
 
         async vaultSetup() {
-            if (this.vaultSetupForm.passphrase.length < 8) { this.showToast(this.t('vault.passphrase_too_short'), 'error'); return; }
+            if (this.vaultSetupForm.passphrase.length < 12) { this.showToast(this.t('vault.passphrase_too_short'), 'error'); return; }
             if (this.vaultSetupForm.passphrase !== this.vaultSetupForm.confirm) { this.showToast(this.t('vault.passphrase_mismatch'), 'error'); return; }
             this.vaultLoading = true;
             try {
@@ -3163,6 +3175,8 @@ function nasPanel() {
             this.vaultRevealId = null;
             if (this.vaultRevealTimer) { clearTimeout(this.vaultRevealTimer); this.vaultRevealTimer = null; }
             if (this.vaultIdleTimer) { clearTimeout(this.vaultIdleTimer); this.vaultIdleTimer = null; }
+            // 审查 M4：锁定倒计时 interval 一并清理，离开页面后不再空转 30 分钟
+            if (this.vaultLockedTimer) { clearInterval(this.vaultLockedTimer); this.vaultLockedTimer = null; }
             this.showVaultForm = false;
             this.showChangePassphrase = false;
             this.showLegacyMigration = false;
@@ -3274,7 +3288,7 @@ function nasPanel() {
         async submitChangePassphrase() {
             this.resetVaultIdleTimer();
             const f = this.changePassphraseForm;
-            if (f.newPassphrase.length < 8) { this.showToast(this.t('vault.passphrase_too_short'), 'error'); return; }
+            if (f.newPassphrase.length < 12) { this.showToast(this.t('vault.passphrase_too_short'), 'error'); return; }
             if (f.newPassphrase !== f.confirm) { this.showToast(this.t('vault.passphrase_mismatch'), 'error'); return; }
             this.changePassphraseLoading = true;
             try {
@@ -3295,8 +3309,19 @@ function nasPanel() {
                 const newVerify = await window.ZkVault.verificationHash(f.newPassphrase, newSaltBytes, newIterations);
 
                 const reencrypted = [];
-                for (const item of this.vaultItems) {
-                    const encrypted = await window.ZkVault.encryptJSON(newKey, { secret: item.secret, notes: item.notes || '' });
+                // 实时拉取全部条目并用旧钥解密（审查 I4）：不用内存缓存，避免其它设备新增
+                // 条目漏重加密后永久无法解密；任一条解密失败 → 中止，绝不回写空内容毁数据
+                const { ok: iok, data: idata } = await this.vaultFetch('/items');
+                if (!iok || !idata) { this.showToast(this.t('msg.network_error'), 'error'); return; }
+                for (const item of (idata.items || [])) {
+                    let obj;
+                    try {
+                        obj = await window.ZkVault.decryptJSON(oldKey, item.encrypted);
+                    } catch (e) {
+                        this.showToast(this.t('vault.reencrypt_abort') + ` (#${item.id} ${item.name})`, 'error');
+                        return;
+                    }
+                    const encrypted = await window.ZkVault.encryptJSON(newKey, obj);
                     reencrypted.push({ id: item.id, encrypted });
                 }
 
@@ -3330,18 +3355,28 @@ function nasPanel() {
             this.resetVaultIdleTimer();
             this.legacyMigrating = true;
             try {
+                // 失败即停（审查 C1）：任何一条 reveal/create 失败立即中断且绝不 purge，
+                // 旧表数据原样保留可重试——此前 continue+无条件 purge 会永久丢失失败条目的明文
                 for (const legacy of this.vaultLegacyItems) {
                     const { ok, data } = await this.vaultFetch('/legacy/reveal', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: `id=${legacy.id}` });
-                    if (!ok || !data || typeof data.secret !== 'string') continue;
+                    if (!ok || !data || typeof data.secret !== 'string') {
+                        this.showToast(this.t('vault.migration_failed') + ` (#${legacy.id} ${legacy.name})`, 'error');
+                        return;
+                    }
                     const encrypted = await window.ZkVault.encryptJSON(this.vaultMasterKey, { secret: data.secret, notes: legacy.note || '' });
-                    await this.vaultFetch('/create', {
+                    const created = await this.vaultFetch('/create', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                         body: `name=${encodeURIComponent(legacy.name)}&category=${encodeURIComponent(legacy.category || '')}` +
                             `&url=&username=&notes_preview=${encodeURIComponent((legacy.note || '').slice(0, 40))}&encrypted=${encodeURIComponent(encrypted)}`
                     });
+                    if (!created.ok) {
+                        this.showToast(this.t('vault.migration_failed') + ` (#${legacy.id} ${legacy.name})`, 'error');
+                        return;
+                    }
                 }
-                await this.vaultFetch('/legacy/purge', { method: 'POST' });
+                const { ok: pok, data: pdata } = await this.vaultFetch('/legacy/purge', { method: 'POST' });
+                if (!pok) { this.showToast((pdata && pdata.error) || this.t('msg.network_error'), 'error'); return; }
                 this.showLegacyMigration = false;
                 this.vaultLegacyItems = [];
                 this.showToast(this.t('vault.migration_done'), 'success');
@@ -3376,10 +3411,14 @@ function nasPanel() {
             if (!groups.length) { this.showToast(this.t('pwgen.need_one_type'), 'error'); return; }
             const length = Math.min(64, Math.max(8, this.pwgen.length || 16));
             const all = groups.join('');
+            // rejection sampling（审查 I2）：丢弃超出 max 整数倍上界的采样，消除模偏差
             const randInt = (max) => {
+                if (max <= 1) return 0;
+                const limit = Math.floor(0x100000000 / max) * max;
                 const buf = new Uint32Array(1);
-                crypto.getRandomValues(buf);
-                return buf[0] % max;
+                let x;
+                do { crypto.getRandomValues(buf); x = buf[0]; } while (x >= limit);
+                return x % max;
             };
             const chars = [];
             // 保证每类字符至少出现一次
@@ -3397,20 +3436,27 @@ function nasPanel() {
             if (this.pwgenHistory.length > 20) this.pwgenHistory.pop();
         },
 
-        // 六档强度：0 很弱 - 5 极强（综合长度与字符种类数）
+        // 熵估算（审查 M2）：bits = len × log2(poolSize)
+        passwordEntropyBits(len, poolSize) {
+            if (!len || poolSize <= 1) return 0;
+            return len * (Math.log(poolSize) / Math.LN2);
+        },
+
+        // 六档强度：0 很弱 - 5 极强（<40 / <60 / <80 / <100 / <128 / ≥128 bits）
         pwgenStrength(value) {
             if (!value) return 0;
-            let kinds = 0;
-            if (/[A-Z]/.test(value)) kinds++;
-            if (/[a-z]/.test(value)) kinds++;
-            if (/[0-9]/.test(value)) kinds++;
-            if (/[^A-Za-z0-9]/.test(value)) kinds++;
-            let score = 0;
-            if (value.length >= 8) score++;
-            if (value.length >= 12) score++;
-            if (value.length >= 16) score++;
-            score += Math.max(0, kinds - 1);
-            return Math.min(5, score);
+            let pool = 0;
+            if (/[A-Z]/.test(value)) pool += 26;
+            if (/[a-z]/.test(value)) pool += 26;
+            if (/[0-9]/.test(value)) pool += 10;
+            if (/[^A-Za-z0-9]/.test(value)) pool += 23;
+            const bits = this.passwordEntropyBits(value.length, pool);
+            if (bits < 40) return 0;
+            if (bits < 60) return 1;
+            if (bits < 80) return 2;
+            if (bits < 100) return 3;
+            if (bits < 128) return 4;
+            return 5;
         },
 
         pwgenStrengthLabel(level) {

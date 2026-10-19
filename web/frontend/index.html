@@ -2590,11 +2590,11 @@
                         <p style="color:var(--danger);font-size:var(--fs-sm);margin-bottom:var(--sp-4)" x-text="$t('vault.no_recovery_warning')"></p>
                         <div class="form-group">
                             <label x-text="$t('vault.new_passphrase')"></label>
-                            <input type="password" x-model="vaultSetupForm.passphrase" class="port-input" style="width:100%" autocomplete="new-password">
+                            <input type="password" x-model="vaultSetupForm.passphrase" class="port-input" style="width:100%" autocomplete="new-password" minlength="12">
                         </div>
                         <div class="form-group">
                             <label x-text="$t('vault.confirm_passphrase')"></label>
-                            <input type="password" x-model="vaultSetupForm.confirm" class="port-input" style="width:100%" autocomplete="new-password" @keyup.enter="vaultSetup()">
+                            <input type="password" x-model="vaultSetupForm.confirm" class="port-input" style="width:100%" autocomplete="new-password" minlength="12" @keyup.enter="vaultSetup()">
                         </div>
                         <button class="btn btn-primary btn-block" @click="vaultSetup()" :disabled="vaultLoading" x-text="$t('vault.setup_btn')"></button>
                         <template x-if="vaultLegacyCount > 0">
@@ -2689,8 +2689,8 @@
                     <div class="modal-box">
                         <h3 x-text="$t('vault.change_passphrase')"></h3>
                         <div class="form-group"><label x-text="$t('vault.old_passphrase')"></label><input type="password" x-model="changePassphraseForm.oldPassphrase" class="port-input" style="width:100%"></div>
-                        <div class="form-group"><label x-text="$t('vault.new_passphrase')"></label><input type="password" x-model="changePassphraseForm.newPassphrase" class="port-input" style="width:100%"></div>
-                        <div class="form-group"><label x-text="$t('vault.confirm_passphrase')"></label><input type="password" x-model="changePassphraseForm.confirm" class="port-input" style="width:100%"></div>
+                        <div class="form-group"><label x-text="$t('vault.new_passphrase')"></label><input type="password" x-model="changePassphraseForm.newPassphrase" class="port-input" style="width:100%" minlength="12"></div>
+                        <div class="form-group"><label x-text="$t('vault.confirm_passphrase')"></label><input type="password" x-model="changePassphraseForm.confirm" class="port-input" style="width:100%" minlength="12"></div>
                         <div class="modal-actions">
                             <button class="btn" @click="showChangePassphrase = false" x-text="$t('common.cancel')"></button>
                             <button class="btn btn-primary" @click="submitChangePassphrase()" :disabled="changePassphraseLoading" x-text="$t('common.confirm')"></button>
@@ -2742,7 +2742,7 @@
                         <label style="display:flex;align-items:center;gap:var(--sp-2)"><input type="checkbox" x-model="pwgen.digits"> <span x-text="$t('pwgen.digits')"></span></label>
                         <label style="display:flex;align-items:center;gap:var(--sp-2)"><input type="checkbox" x-model="pwgen.symbols"> <span x-text="$t('pwgen.symbols')"></span></label>
                     </div>
-                    <button class="btn btn-primary btn-block" @click="pwgenGenerate()" x-text="$t('pwgen.generate')"></button>
+                    <button class="btn btn-primary btn-block" @click="pwgenGenerate()" :disabled="pwgenCharPool().length === 0" x-text="$t('pwgen.generate')"></button>
                 </div>
 
                 <h3 style="margin-top:var(--sp-6)" x-show="pwgenHistory.length">📋 <span x-text="$t('pwgen.history')"></span></h3>

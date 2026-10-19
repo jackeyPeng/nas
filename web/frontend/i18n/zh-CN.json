@@ -920,7 +920,7 @@
     "locked": "保险箱已锁定，请稍后再试",
     "attempts_left": "口令错误，剩余 {0} 次尝试机会",
     "not_setup": "保险箱尚未初始化",
-    "passphrase_too_short": "口令至少 8 位",
+    "passphrase_too_short": "口令至少 12 位",
     "passphrase_mismatch": "两次输入的口令不一致",
     "old_passphrase_wrong": "旧口令不正确",
     "passphrase_changed": "口令修改成功",
@@ -932,7 +932,9 @@
     "migrate_title": "迁移旧版保险箱数据",
     "migrate_desc": "共 {0} 条旧版凭据将被解密并用当前保险箱口令重新加密，迁移完成后旧版数据将被清空，此操作不可撤销。",
     "migrate_confirm": "开始迁移",
-    "migration_done": "迁移完成，旧版数据已清空"
+    "migration_done": "迁移完成，旧版数据已清空",
+    "migration_failed": "迁移中断：该旧条目迁移失败，旧数据已保留，请重试",
+    "reencrypt_abort": "修改已取消：该条目无法用当前口令解密，为防数据损坏未做任何变更"
   },
   "pwgen": {
     "title": "密码生成器",

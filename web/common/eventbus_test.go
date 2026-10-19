@@ -89,7 +89,11 @@ func TestEventBusSubscribe(t *testing.T) {
 	ch := Subscribe()
 	defer Unsubscribe(ch)
 
+	// flaky 根治：等 goroutine 的 Emit+Drain 完整结束再返回，
+	// 否则 Drain 的库写入会与 t.TempDir 清理竞态（directory not empty）
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		time.Sleep(10 * time.Millisecond)
 		EmitEvent("sub", EventInfo, "sub.test", nil, "")
 		DrainEventsForTest()
@@ -102,6 +106,7 @@ func TestEventBusSubscribe(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("subscriber did not receive event")
 	}
+	<-done
 }
 
 func TestEventBusEmitBeforeInitIsNoop(t *testing.T) {

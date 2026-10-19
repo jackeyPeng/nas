@@ -552,8 +552,8 @@ func TestIsLocked(t *testing.T) {
 	if isLocked("", now) {
 		t.Error("空字符串不应算锁定")
 	}
-	if isLocked("not-a-time", now) {
-		t.Error("坏数据不应算锁定（fail open 到未锁定，由上层 verify_hash 比对兜底）")
+	if !isLocked("not-a-time", now) {
+		t.Error("坏数据应视为锁定中（fail-safe，审查 M3：宁可多锁不可漏放）")
 	}
 	future := now.Add(time.Hour).Format(time.RFC3339)
 	if !isLocked(future, now) {
@@ -597,5 +597,44 @@ func TestParseChangePassItems(t *testing.T) {
 	empty, err := parseChangePassItems("")
 	if err != nil || empty != nil {
 		t.Errorf("空字符串应返回 nil, nil, got %v %v", empty, err)
+	}
+}
+
+// 审查 I4：change-passphrase 提交的条目必须恰好覆盖 owner 全部条目——
+// 少交（如旧标签页拿缓存只交一部分）应 400 拒绝，且 meta 与密文均不变。
+func TestChangePassphraseCoverageMismatch(t *testing.T) {
+	mux := setupTest(t)
+	bearer := authHeader(t, "alice")
+	setupVault(t, mux, bearer)
+	createItem(t, mux, bearer, "item-1", "enc-1")
+	createItem(t, mux, bearer, "item-2", "enc-2")
+
+	rec := doGet(t, mux, "/api/vault/items", bearer)
+	body := jsonBody(t, rec)
+	first := body["items"].([]interface{})[0].(map[string]interface{})
+	id1 := int(first["id"].(float64))
+	enc0 := first["encrypted"].(string)
+
+	payload, _ := json.Marshal([]changePassItem{{ID: id1, Encrypted: "new-enc"}})
+	rec = doForm(t, mux, http.MethodPost, "/api/vault/change-passphrase", bearer, url.Values{
+		"salt":        {strings.Repeat("c", 32)},
+		"verify_hash": {strings.Repeat("d", 64)},
+		"iterations":  {"700000"},
+		"items":       {string(payload)},
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("覆盖校验应 400 拒绝, got %d", rec.Code)
+	}
+	// 旧口令仍有效（meta 未动）
+	rec = doForm(t, mux, http.MethodPost, "/api/vault/unlock", bearer, url.Values{"verify_hash": {validHash}})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("拒绝后旧口令应仍有效, got %d", rec.Code)
+	}
+	// 密文未被覆盖
+	rec = doGet(t, mux, "/api/vault/items", bearer)
+	body = jsonBody(t, rec)
+	enc := body["items"].([]interface{})[0].(map[string]interface{})["encrypted"].(string)
+	if enc != enc0 {
+		t.Fatalf("密文不应被改动: got %s, want %s", enc, enc0)
 	}
 }

@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -44,10 +45,10 @@ const (
 	maxFailed     = 5
 	lockDuration  = 30 * time.Minute
 
-	maxNameLen    = 200
-	maxFieldLen   = 200
-	maxEncLen     = 128 * 1024 // 128KB
-	maxNotesLen   = 200
+	maxNameLen  = 200
+	maxFieldLen = 200
+	maxEncLen   = 128 * 1024 // 128KB
+	maxNotesLen = 200
 )
 
 var (
@@ -227,7 +228,8 @@ func isLocked(lockedUntil string, now time.Time) bool {
 	}
 	t, err := time.Parse(time.RFC3339, lockedUntil)
 	if err != nil {
-		return false
+		// fail-safe：字段损坏/无法解析时视为锁定中（审查 M3），宁可多锁不可漏放
+		return true
 	}
 	return now.Before(t)
 }
@@ -313,6 +315,11 @@ func handleVaultSetup(w http.ResponseWriter, r *http.Request) {
 	_, err := db.Exec(`INSERT INTO vault_meta (owner, salt, verify_hash, iterations, failed, locked_until) VALUES (?, ?, ?, ?, 0, NULL)`,
 		owner, salt, verifyHash, iterations)
 	if err != nil {
+		// 并发双 setup 的 TOCTOU（审查 M7）：主键冲突归一为 409，而非 500
+		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
+			http.Error(w, `{"error":"保险箱已初始化"}`, http.StatusConflict)
+			return
+		}
 		http.Error(w, fmt.Sprintf(`{"error":%q}`, "初始化失败: "+err.Error()), http.StatusInternalServerError)
 		return
 	}
@@ -357,7 +364,16 @@ func handleVaultUnlock(w http.ResponseWriter, r *http.Request) {
 	match := subtle.ConstantTimeCompare([]byte(verifyHash), []byte(meta.VerifyHash)) == 1
 
 	if !match {
-		failed := meta.Failed + 1
+		// 原子自增（审查 I1）：并发失败请求不再共享旧计数，防止稀释 5 次锁定阈值
+		if _, err := db.Exec(`UPDATE vault_meta SET failed = failed + 1 WHERE owner = ?`, owner); err != nil {
+			http.Error(w, fmt.Sprintf(`{"error":%q}`, "更新失败计数出错: "+err.Error()), http.StatusInternalServerError)
+			return
+		}
+		var failed int
+		if err := db.QueryRow(`SELECT failed FROM vault_meta WHERE owner = ?`, owner).Scan(&failed); err != nil {
+			http.Error(w, fmt.Sprintf(`{"error":%q}`, "读取失败计数出错: "+err.Error()), http.StatusInternalServerError)
+			return
+		}
 		if failed >= maxFailed {
 			lockedUntil := now.Add(lockDuration).Format(time.RFC3339)
 			db.Exec(`UPDATE vault_meta SET failed = 0, locked_until = ? WHERE owner = ?`, lockedUntil, owner)
@@ -368,16 +384,13 @@ func handleVaultUnlock(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintf(w, `{"error":"连续失败次数过多，已锁定 30 分钟","locked_remaining_seconds":%d}`, int(lockDuration.Seconds()))
 			return
 		}
-		db.Exec(`UPDATE vault_meta SET failed = ? WHERE owner = ?`, failed, owner)
 		common.LogAuditRequest(r, "VAULT", "解锁失败", "", "failed")
 		attemptsLeft := maxFailed - failed
 		http.Error(w, fmt.Sprintf(`{"error":"口令错误","attempts_left":%d}`, attemptsLeft), http.StatusUnauthorized)
 		return
 	}
 
-	if meta.Failed != 0 {
-		db.Exec(`UPDATE vault_meta SET failed = 0 WHERE owner = ?`, owner)
-	}
+	db.Exec(`UPDATE vault_meta SET failed = 0 WHERE owner = ?`, owner)
 	common.LogAuditRequest(r, "VAULT", "解锁保险箱", "", "success")
 	common.JSONResponse(w, map[string]interface{}{"ok": true})
 }
@@ -605,6 +618,18 @@ func handleVaultChangePassphrase(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
+
+	// 覆盖校验（审查 I4）：提交条目必须恰好覆盖 owner 全部条目，
+	// 防止旧标签页用过期缓存重加密导致其它设备新增的条目永久无法解密
+	var total int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM vault_items WHERE owner = ?`, owner).Scan(&total); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, "统计条目失败: "+err.Error()), http.StatusInternalServerError)
+		return
+	}
+	if len(items) != total {
+		http.Error(w, fmt.Sprintf(`{"error":"条目数不一致（提交 %d / 服务器 %d），请刷新后重试"}`, len(items), total), http.StatusBadRequest)
+		return
+	}
 
 	for _, it := range items {
 		if len(it.Encrypted) == 0 || len(it.Encrypted) > maxEncLen {
