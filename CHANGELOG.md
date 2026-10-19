@@ -22,6 +22,7 @@
 ## [未发布]
 
 ### 修复
+- **Chrome 深度巡检 5 项修复**（9aae591 + 8ee333e，第五轮双机重置部署 + 全 UI 走查发现）：①仪表盘 `configIssues.issues` 为 null 时模板 `.length` 崩溃（后端 config/check nil slice→`[]` + 前端赋值归一化双保险）②用户页空成员组 `g.members` null 连环 TypeError（后端 groups.go 初始化 `[]string{}` + 模板 `|| []` 守卫）③**面板停止的服务显示「失败」红色徽章 + 健康检查假告警**——双层根因：rclone serve 收 SIGTERM 退 143 被 systemd 标 failed（两 unit 加 `SuccessExitStatus=143`，setup.sh/services.go 重装路径/在役机原地三处同步）+ `GetServices` 把 is-active exit 3（inactive 已停止）一律映射 failed（抽纯函数 `classifyServiceActive` 四态归一，8 用例；健康检查新增「N 个已停止」warn 分支修「2/3 全部运行中」自相矛盾文案，3 用例；已停止徽章红→黄 badge-warn）④权限报错文案「3~4 位八进制」与实际校验（4 位 setuid 本就拒绝）矛盾，中英对齐。浏览器复测：登录 0 console 错误、UI 停止→黄色「已停止」+ 健康页「6/7 服务运行中，1 个已停止」、UI 合并式恢复/目录删除 type-to-confirm/批量守卫/递归 chmod 落盘/真实 webkitdirectory 目录上传全树落盘（含中文名）全过；最终二进制双机完整验收各 34 项全 PASS
 - **健康中心系统服务检查口径与仪表盘对齐**（95160da）：`checkSystem` 不再把 not-installed（FileBrowser 等 beta.18 起默认不装的可选服务）计为 warn——此前默认安装的机器健康中心恒显「7/8 服务运行中，1 个未安装」警告、仪表盘「最近告警」常驻该事件（beta.21 只修了仪表盘统计侧，健康中心侧漏网）；已安装服务数为 0 时仍 warn「未检测到已安装的 NAS 服务」；抽纯函数 `systemCheckFrom` + 表驱动单测 5 例，`CGO_ENABLED=0 go test ./...` 全绿；已部署两台测试机（.57/.48）实机验证健康中心显示「所有系统运行正常」
 
 ## [2026-10-16] - 注册表池模式感知 + rclone v1.75.2 安全升级
