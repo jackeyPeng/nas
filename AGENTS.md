@@ -34,7 +34,7 @@ nas/
 ├── scripts/              # 部署运维：setup.sh、install.sh、upgrade.sh、release.sh、
 │                         #   backup-data.sh、check-i18n.py、gen-sbom.py ...
 ├── configs/              # systemd unit 等配置模板
-├── third_party/          # 第三方组件（filebrowser 等）+ THIRD_PARTY_LICENSES.md
+├── third_party/          # 第三方组件 SBOM（gen-sbom.py 生成）+ THIRD_PARTY_LICENSES.md
 └── docs/                 # 架构文档、产品手册、plans/、COLLAB.md
 ```
 

@@ -348,13 +348,19 @@ echo "[7/10] 清理遗留 FileBrowser..."
 if command -v filebrowser &>/dev/null || [ -f /etc/systemd/system/filebrowser.service ]; then
     systemctl stop filebrowser 2>/dev/null || true
     systemctl disable filebrowser 2>/dev/null || true
+    FB_BACKUP=""
     if [ -d /etc/filebrowser ]; then
         mkdir -p /var/backups
-        tar czf "/var/backups/filebrowser-$(date +%F).tar.gz" -C /etc filebrowser
+        FB_BACKUP="/var/backups/filebrowser-$(date +%F).tar.gz"
+        tar czf "$FB_BACKUP" -C /etc filebrowser || { echo "  ⚠ 配置备份失败（磁盘空间？），继续移除"; FB_BACKUP=""; }
     fi
-    rm -rf /etc/filebrowser /usr/local/bin/filebrowser /etc/systemd/system/filebrowser.service /var/log/filebrowser.log
+    rm -rf /etc/filebrowser /usr/local/bin/filebrowser /usr/bin/filebrowser /etc/systemd/system/filebrowser.service /var/log/filebrowser.log
     systemctl daemon-reload
-    echo "  ✓ 已移除遗留 FileBrowser，配置备份在 /var/backups/filebrowser-$(date +%F).tar.gz"
+    if [ -n "$FB_BACKUP" ]; then
+        echo "  ✓ 已移除遗留 FileBrowser，配置备份在 $FB_BACKUP"
+    else
+        echo "  ✓ 已移除遗留 FileBrowser"
+    fi
 else
     echo "  未检测到遗留 FileBrowser，跳过"
 fi

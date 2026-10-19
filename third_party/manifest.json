@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-24T05:26:55.646025+00:00",
+  "generated_at": "2026-10-19T06:27:13.044714+00:00",
   "project": "Z1 / Abwen NAS (nas-panel)",
   "project_license": "AGPL-3.0-only",
   "components": [
@@ -135,13 +135,6 @@
       "license": "MIT",
       "type": "third-party-binary",
       "homepage": "https://alpinejs.dev"
-    },
-    {
-      "name": "FileBrowser",
-      "version": "2.x",
-      "license": "Apache-2.0",
-      "type": "third-party-binary",
-      "homepage": "https://filebrowser.org"
     },
     {
       "name": "rclone",
