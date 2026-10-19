@@ -305,12 +305,13 @@ func handleUserAction(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
 			return
 		}
-		services := map[string]bool{}
-		for _, svc := range []string{"samba", "ftp", "webdav"} {
-			services[svc] = r.FormValue(svc) == "true"
+		services := parseServiceToggles(r)
+		if len(services) == 0 {
+			http.Error(w, `{"error":"至少提供一个服务字段 (samba/ftp/webdav=true|false)"}`, http.StatusBadRequest)
+			return
 		}
 		if err := updateUserServices(username, services); err != nil {
-			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
+			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
 			return
 		}
 		common.JSONResponse(w, map[string]interface{}{"message": "服务权限已更新"})

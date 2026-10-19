@@ -176,24 +176,80 @@ func isValidUsername(name string) bool {
 	return true
 }
 
-// updateUserServices 更新已有用户的服务开关
+// parseServiceToggles 只解析请求中明确出现的服务字段。
+// 缺失字段 = 不变更（前端快捷开关一次只发一个字段，若把缺失当 false
+// 会导致「开 FTP 顺手关掉 Samba/WebDAV」的静默互斥）。
+func parseServiceToggles(r *http.Request) map[string]bool {
+	services := map[string]bool{}
+	for _, svc := range []string{"samba", "ftp", "webdav"} {
+		if v := r.FormValue(svc); v != "" {
+			services[svc] = v == "true"
+		}
+	}
+	return services
+}
+
+// updateUserServices 更新已有用户的服务开关（只处理 services 中明确给出的键）
 func updateUserServices(username string, services map[string]bool) error {
-	if services["samba"] {
-		enableSambaUser(username)
-	} else {
-		disableSambaUser(username)
+	// 只处理请求中明确给出的服务；未提及的保持原状
+	if on, ok := services["samba"]; ok {
+		if on {
+			// smbpasswd -e 只能启用密码库中已有的账户；后补开启的用户
+			// 不在库里会静默失败（UI 报成功但 SMB 拒绝登录）。改密流程
+			// (changePassword) 会 smbpasswd -a 同步，故指引用户先重置密码。
+			if !inSambaPasswd(username) {
+				return fmt.Errorf("用户 %s 不在 Samba 密码库：请先在用户页为该用户修改一次密码（会自动同步 Samba/WebDAV），再开启服务", username)
+			}
+			if err := enableSambaUser(username); err != nil {
+				return err
+			}
+		} else {
+			if err := disableSambaUser(username); err != nil {
+				return err
+			}
+		}
 	}
-	if services["ftp"] {
-		enableFTPUser(username)
-	} else {
-		disableFTPUser(username)
+	if on, ok := services["ftp"]; ok {
+		if on {
+			if err := enableFTPUser(username); err != nil {
+				return err
+			}
+		} else {
+			if err := disableFTPUser(username); err != nil {
+				return err
+			}
+		}
 	}
-	if services["webdav"] {
-		enableWebDAVUser(username)
-	} else {
-		disableWebDAVUser(username)
+	if on, ok := services["webdav"]; ok {
+		if on {
+			// WebDAV 认证只认 /etc/rclone-htpasswd；条目由 changePassword 写入。
+			// 不在文件里时开启是空操作（401），明确拒绝并指引改密。
+			if !inHtpasswd(username) {
+				return fmt.Errorf("用户 %s 不在 WebDAV 密码文件：请先在用户页为该用户修改一次密码（会自动同步 Samba/WebDAV），再开启服务", username)
+			}
+		} else {
+			if err := disableWebDAVUser(username); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
+}
+
+// inSambaPasswd 判断用户是否已有 Samba 密码库记录。
+func inSambaPasswd(username string) bool {
+	out, _ := common.SudoOutput("bash", "-c",
+		fmt.Sprintf("pdbedit -L 2>/dev/null | grep -c '^%s:'", shellQuote(username)))
+	n := strings.TrimSpace(out)
+	return n != "" && n != "0"
+}
+
+// inHtpasswd 判断用户是否已有 WebDAV htpasswd 记录。
+func inHtpasswd(username string) bool {
+	out, _ := common.SudoOutput("bash", "-c",
+		fmt.Sprintf("grep -c '^%s:' /etc/rclone-htpasswd 2>/dev/null", shellQuote(username)))
+	n := strings.TrimSpace(out)
+	return n != "" && n != "0"
 }
 
 // --- Samba 服务开关 ---
@@ -272,8 +328,7 @@ func addWebDAVUser(username, password string) error {
 }
 
 func enableWebDAVUser(username string) error {
-	// 重新添加 htpasswd 条目（密码无法恢复，需要用户重新设置）
-	// 这里只是标记启用，实际密码需要用户重新设置
+	// htpasswd 条目已存在性由 updateUserServices 前置检查；此处无需动作
 	return nil
 }
 
