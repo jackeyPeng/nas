@@ -116,9 +116,10 @@ Debian is a registered trademark of Software in the Public Interest, Inc. Other 
 |---|---|---|
 | Alpine.js | 前端响应式框架（本地内嵌） Frontend framework (embedded) | MIT |
 | golang-jwt, modernc SQLite 等 | 面板运行库 Panel runtime libraries | MIT |
+| ZkVault 加密内核（@noble/hashes、@noble/ciphers 预构建） ZkVault crypto kernel (prebuilt from @noble/hashes & @noble/ciphers) | 凭证保险箱浏览器端零知识加解密 Browser-side zero-knowledge encryption for the credential vault | MIT |
 
 ---
 
 *Z1 NAS · https://www.z1.sale · 基于 Debian 13 / Built on Debian 13*
 
-*最后更新 / Last updated: 2026-08-28*
+*最后更新 / Last updated: 2026-10-19*

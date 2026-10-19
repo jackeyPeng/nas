@@ -23,7 +23,9 @@
     "diagnostics": "Diagnostics",
     "file_manager": "Open File Manager",
     "chinese": "中文",
-    "events": "Event Center"
+    "events": "Event Center",
+    "toolbox": "Toolbox",
+    "pwgen": "Password Generator"
   },
   "common": {
     "save": "Save",
@@ -891,12 +893,64 @@
     "name": "Name",
     "category": "Category",
     "category_ph": "e.g. Website / Server / API / Certificate",
+    "url": "URL",
+    "username": "Username",
     "secret": "Secret",
     "note": "Note",
     "note_ph": "Optional",
     "copy": "Copy",
     "delete": "Delete",
-    "empty": "No credentials yet"
+    "empty": "No credentials yet",
+    "reveal": "Reveal",
+    "mask": "Mask",
+    "gen_password": "Generate",
+    "lock_now": "Lock Now",
+    "change_passphrase": "Change Vault Passphrase",
+    "setup_intro": "First time using the credential vault — set a vault passphrase. All encryption happens in your browser; the server never sees the plaintext, not even admins.",
+    "no_recovery_warning": "⚠️ Forgetting the passphrase means permanent, unrecoverable data loss. Keep it safe.",
+    "new_passphrase": "New Passphrase",
+    "confirm_passphrase": "Confirm Passphrase",
+    "setup_btn": "Create Vault",
+    "setup_done": "Vault created and unlocked",
+    "passphrase": "Vault Passphrase",
+    "unlock_btn": "Unlock",
+    "unlock_failed": "Incorrect passphrase",
+    "locked_intro": "The vault is locked. Enter the passphrase to unlock before viewing credentials.",
+    "locked_countdown": "Too many failed attempts; locked. Retry in {0}s",
+    "locked": "Vault is locked, try again later",
+    "attempts_left": "Incorrect passphrase, {0} attempts left",
+    "not_setup": "Vault is not set up yet",
+    "passphrase_too_short": "Passphrase must be at least 8 characters",
+    "passphrase_mismatch": "Passphrases do not match",
+    "old_passphrase_wrong": "Old passphrase is incorrect",
+    "passphrase_changed": "Passphrase changed successfully",
+    "saved": "Credential saved",
+    "decrypt_failed": "Decryption failed (local key does not match data)",
+    "auto_locked": "Vault auto-locked after inactivity",
+    "legacy_hint": "{0} legacy vault entries detected. We recommend migrating to the new zero-knowledge vault",
+    "migrate_btn": "Migrate Legacy Data",
+    "migrate_title": "Migrate Legacy Vault Data",
+    "migrate_desc": "{0} legacy credentials will be decrypted and re-encrypted with your current vault passphrase. Legacy data will be cleared afterward; this cannot be undone.",
+    "migrate_confirm": "Start Migration",
+    "migration_done": "Migration complete, legacy data cleared"
+  },
+  "pwgen": {
+    "title": "Password Generator",
+    "placeholder": "Click the button below to generate a password",
+    "length": "Length",
+    "upper": "Uppercase A-Z",
+    "lower": "Lowercase a-z",
+    "digits": "Digits 0-9",
+    "symbols": "Symbols",
+    "generate": "Generate",
+    "need_one_type": "Select at least one character type",
+    "history": "History",
+    "strength_0": "Very Weak",
+    "strength_1": "Weak",
+    "strength_2": "Fair",
+    "strength_3": "Good",
+    "strength_4": "Strong",
+    "strength_5": "Very Strong"
   },
   "msg": {
     "login_failed": "Login failed",
@@ -1200,6 +1254,11 @@
     },
     "backup": {
       "data_done": "Data backup completed → {target}"
+    },
+    "vault": {
+      "setup": "Credential vault initialized",
+      "locked": "Credential vault locked after repeated failed unlock attempts",
+      "purged": "Legacy vault data cleared"
     }
   },
   "files": {

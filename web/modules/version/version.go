@@ -111,6 +111,7 @@ func handleComponents(w http.ResponseWriter, r *http.Request) {
 	// ── 网页管理 ──────────────────────────────────────
 	comps = append(comps, Component{"nas-panel", "网页管理", DisplayVersion,
 		"管理面板 · 端口 8090 · 构建 " + BuildTime + " · " + GitCommit})
+	comps = append(comps, Component{"ZkVault 加密内核 · MIT", "网页管理", "1.0.0", "凭证保险箱浏览器端零知识加解密（PBKDF2+AES-256-GCM，基于 @noble/hashes + @noble/ciphers 预构建）"})
 
 	// ── 系统防护 ──────────────────────────────────────
 	f2bVer := firstMatch(cmdVersion("fail2ban-client", "version"), regexp.MustCompile(`(\d+\.\S+)`))
@@ -251,6 +252,7 @@ func buildNoticeSections() []NoticeSection {
 				{Label: "unattended-upgrades · GPL-2.0", Text: "自动安全更新 / Automatic security updates"},
 				{Label: "Alpine.js · MIT", Text: "前端响应式框架（本地内嵌） / Frontend framework (embedded)"},
 				{Label: "golang-jwt / modernc SQLite · MIT", Text: "面板运行库 / Panel runtime libraries"},
+				{Label: "ZkVault 加密内核 · MIT", Text: "凭证保险箱浏览器端零知识加解密（基于 @noble/hashes + @noble/ciphers 预构建） / Browser-side zero-knowledge encryption for the credential vault (prebuilt from @noble/hashes & @noble/ciphers)"},
 			},
 		},
 	}

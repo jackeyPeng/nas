@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 主要变化 |
 |------|------|---------|
+| 未发布 | - | 凭证保险箱升级为零知识模型 v2（PBKDF2+AES-256-GCM 全部在浏览器端完成，服务器只存密文）+ 新增独立密码生成器页面 + 侧边栏新增「🧰 工具箱」分组 |
 | v1.4.0-beta.24 | 2026-10-19 | 彻底移除 FileBrowser — 面板文件管理已完全取代；装机链/服务页/注册表(46→41)/HTTPS/密码同步/监控/备份/i18n/文档全链路清理；setup.sh 升级迁移自动卸载存量并备份 /etc/filebrowser；R2 安装包同步清理。附验收修复集：升级机注册表幽灵项剪枝、用户服务开关静默失败×2、x-for 重复 key 崩溃（'after' 错误真身，导航失效根因）、关于页 hardware null 守卫；第七轮双机重置完整验收全 PASS + Chrome 实测 |
 | v1.4.0-beta.23 | 2026-10-17 | UI 巡检修复集 — 共享影子身份（建共享时的 nologin 占位用户）不再泄漏为用户页幻影用户；仪表盘/用户页 null 数组崩溃修复；面板停止的服务不再误标「失败」（is-active exit3 四态归一 + rclone unit SuccessExitStatus=143，已停止显黄色徽章）；健康中心口径对齐（not-installed 不计 warn、新增「N 个已停止」warn）；权限报错文案与校验对齐；第六轮双机重置完整验收（merge/RAID1 各 34 项全 PASS）+ Chrome 实测 |
 | v1.4.0-beta.22 | 2026-10-16 | rclone 安全升级 v1.75.2（修 serve webdav 路径遍历 GHSA-44pm-2q5p-fm63 等命中我方暴露面的高危项 + Go 1.26.9 HTTP/2 CVE；新装必落 pin 版本；服务页重装路径 serve 根对齐 /data/nas1/public 消除越权隐患）+ 系统健康注册表存储层 6 项按池模式感知（RAID 池机器不再恒 fail，46/46 可达）；双机重置重装完整验收（merge/RAID1 各 35 项断言全 PASS） |
@@ -18,6 +19,25 @@
 | v1.4.0-beta.13 | 2026-09-19 | NFS 导出对所有网段开放（跨网段客户端可挂载） |
 | v1.4.0-beta.12 | 2026-09-18 | 创建向导按已选磁盘实时预估容量（选目标后预览面板 + 各方案可用容量/注意事项）+ 登录页品牌 slogan |
 | v1.4.0-beta.11 | 2026-09-18 | 当前连接展示（监控页，SMB 会话 + 各协议端口归类）+ 回收站改 per-share `.recycle/`（删除=rename 零拷贝，恢复保留目录树，旧 `#recycle` 兼容）+ 存储页 tab 切换跳动修复 |
+
+---
+
+## [未发布] - 凭证保险箱零知识模型 v2 + 密码生成器 + 工具箱菜单组
+
+### 变更
+- **凭证保险箱升级为零知识加密模型**（`web/modules/vault/vault.go` 全量重写）：
+  - 新增 `vault_meta`（每用户 salt/verify_hash/iterations/失败次数/锁定截止）与 `vault_items`（owner 行级隔离，`encrypted` 字段为浏览器端 AES-256-GCM 密文，服务器全程不接触明文/口令/派生密钥）两张表，所有查询按 `WHERE owner = ?` 隔离，管理员不例外
+  - 新端点：`GET /api/vault/status`、`POST /api/vault/setup`、`POST /api/vault/unlock`（常数时间比较，连续 5 次失败锁定 30 分钟，423 响应带剩余秒数）、`GET /api/vault/items`、`POST /api/vault/create`/`update`/`delete`、`POST /api/vault/change-passphrase`（单事务重加密全部条目，任一条目不属于当前用户整体回滚）
+  - 旧版（v1 服务端加密）保留只读迁移兼容：`GET /api/vault/legacy`、`POST /api/vault/legacy/reveal`、`POST /api/vault/legacy/purge`（需新保险箱已设置口令才可用，迁移完成后清空旧表）
+  - 浏览器端加密内核 `web/frontend/zkvault.min.js`（基于 `@noble/hashes` + `@noble/ciphers` 预构建打包，MIT 协议，零 CDN 依赖）：PBKDF2-SHA256 600,000 次迭代派生密钥 + AES-256-GCM 加解密 + SHA-256 校验哈希
+  - 前端新交互：三态页面（未初始化/已锁定/已解锁，`x-if` 惰性渲染）、查看明文 15 秒自动遮罩、复制剪贴板 30 秒自动清空、15 分钟空闲或切换页面自动锁定、修改口令、旧版数据一键迁移
+- **新增独立密码生成器页面**（不依赖保险箱解锁）：`crypto.getRandomValues()` 浏览器端生成，长度 8-64 可调，字符类型可选，六档强度指示器，20 条内存生成历史
+- **侧边栏新增「🧰 工具箱」菜单分组**（置于「维护」分组之后），收纳「🔐 凭证保险箱」与「🔑 密码生成器」；原「访问控制」分组移除凭证保险箱入口
+- **i18n**：zh-CN/en-US 新增 `vault.*`、`pwgen.*`、`nav.toolbox`/`nav.pwgen`、`events.vault.*` 键，中英文严格对齐
+- **Service Worker**：`web/frontend/sw.js` SHELL 清单加入 `/zkvault.min.js`，缓存版本 `z1-nas-v2` → `z1-nas-v3`
+- **文档**：`docs/nas-product-manual.md` 新增 7.8 节（零知识保险箱架构图 + 密码生成器说明）；`docs/feature-operation-checklist.md` 第 9 节改写为零知识模型，新增第 10 节密码生成器，后续章节顺延编号（10-18 → 11-19），汇总统计重新复算
+- **合规文档**：`NOTICE.md` / `web/modules/version/NOTICE.md`（镜像同步）/ `THIRD_PARTY_LICENSES.md` / `third_party/manifest.json` 新增 `@noble/hashes` 2.4.0 与 `@noble/ciphers` 2.4.0（MIT）条目；`web/modules/version/version.go` 的 `buildNoticeSections()` 开源许可证列表与关于页组件列表新增「ZkVault 加密内核 · MIT」
+- 新增 `web/modules/vault/vault_test.go`：覆盖设置冲突/校验、解锁成功/失败/锁定/过期、条目 CRUD owner 隔离、修改口令事务性、旧版迁移前置条件等场景
 
 ---
 

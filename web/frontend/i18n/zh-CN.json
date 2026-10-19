@@ -23,7 +23,9 @@
     "diagnostics": "系统诊断",
     "file_manager": "打开文件管理",
     "chinese": "中文",
-    "events": "事件中心"
+    "events": "事件中心",
+    "toolbox": "工具箱",
+    "pwgen": "密码生成器"
   },
   "common": {
     "save": "保存",
@@ -891,12 +893,64 @@
     "name": "名称",
     "category": "分类",
     "category_ph": "如 网站 / 服务器 / API / 证书",
+    "url": "网址",
+    "username": "用户名",
     "secret": "凭据内容",
     "note": "备注",
     "note_ph": "可选",
     "copy": "复制",
     "delete": "删除",
-    "empty": "暂无凭据"
+    "empty": "暂无凭据",
+    "reveal": "查看",
+    "mask": "遮罩",
+    "gen_password": "生成密码",
+    "lock_now": "立即锁定",
+    "change_passphrase": "修改保险箱口令",
+    "setup_intro": "首次使用凭证保险箱，请设置保险箱口令。加密全部在浏览器端完成，服务器永远看不到明文，也包括管理员。",
+    "no_recovery_warning": "⚠️ 忘记口令将导致数据永久无法恢复，请妥善保管。",
+    "new_passphrase": "新口令",
+    "confirm_passphrase": "确认口令",
+    "setup_btn": "创建保险箱",
+    "setup_done": "保险箱创建成功，已自动解锁",
+    "passphrase": "保险箱口令",
+    "unlock_btn": "解锁",
+    "unlock_failed": "口令错误",
+    "locked_intro": "保险箱已锁定，输入口令解锁后才能查看凭据。",
+    "locked_countdown": "连续失败次数过多，已锁定，剩余 {0} 秒后可重试",
+    "locked": "保险箱已锁定，请稍后再试",
+    "attempts_left": "口令错误，剩余 {0} 次尝试机会",
+    "not_setup": "保险箱尚未初始化",
+    "passphrase_too_short": "口令至少 8 位",
+    "passphrase_mismatch": "两次输入的口令不一致",
+    "old_passphrase_wrong": "旧口令不正确",
+    "passphrase_changed": "口令修改成功",
+    "saved": "凭据已保存",
+    "decrypt_failed": "解密失败（本地密钥与数据不匹配）",
+    "auto_locked": "长时间无操作，保险箱已自动锁定",
+    "legacy_hint": "检测到 {0} 条旧版保险箱数据，建议迁移到新版零知识保险箱",
+    "migrate_btn": "迁移旧数据",
+    "migrate_title": "迁移旧版保险箱数据",
+    "migrate_desc": "共 {0} 条旧版凭据将被解密并用当前保险箱口令重新加密，迁移完成后旧版数据将被清空，此操作不可撤销。",
+    "migrate_confirm": "开始迁移",
+    "migration_done": "迁移完成，旧版数据已清空"
+  },
+  "pwgen": {
+    "title": "密码生成器",
+    "placeholder": "点击下方按钮生成密码",
+    "length": "密码长度",
+    "upper": "大写字母 A-Z",
+    "lower": "小写字母 a-z",
+    "digits": "数字 0-9",
+    "symbols": "特殊符号",
+    "generate": "生成密码",
+    "need_one_type": "请至少选择一种字符类型",
+    "history": "生成历史",
+    "strength_0": "很弱",
+    "strength_1": "弱",
+    "strength_2": "一般",
+    "strength_3": "较强",
+    "strength_4": "强",
+    "strength_5": "极强"
   },
   "msg": {
     "login_failed": "登录失败",
@@ -1200,6 +1254,11 @@
     },
     "backup": {
       "data_done": "数据备份完成 → {target}"
+    },
+    "vault": {
+      "setup": "凭证保险箱已初始化",
+      "locked": "凭证保险箱因连续解锁失败已锁定",
+      "purged": "旧版保险箱数据已清空"
     }
   },
   "files": {

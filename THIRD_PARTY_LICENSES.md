@@ -93,6 +93,35 @@ THE SOFTWARE.
 
 Source: https://github.com/golang-jwt/jwt
 
+## @noble/hashes & @noble/ciphers (MIT License)
+
+凭证保险箱浏览器端零知识加解密内核（`web/frontend/zkvault.min.js`，预构建打包，PBKDF2-SHA256 + AES-256-GCM）基于以下两个库构建，不接入网络、不依赖 CDN。
+
+```
+Copyright (c) 2022 Paul Miller (https://paulmillr.com)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+```
+
+Homepage: https://github.com/paulmillr/noble-hashes · https://github.com/paulmillr/noble-ciphers
+Source (npm): @noble/hashes@2.4.0, @noble/ciphers@2.4.0
+
 ## 系统组件许可证
 
 以下 Debian 系统包由 apt 安装，各自遵循其许可证：

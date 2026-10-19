@@ -1,0 +1,48 @@
+// ZkVault bundle entry — 零知识保险箱浏览器加密内核（@noble/hashes + @noble/ciphers，MIT）
+// 暴露 window.ZkVault：PBKDF2-SHA256 派生 + AES-256-GCM 加解密 + 安全随机。
+// 信封格式与 WebCrypto 互通：base64( IV(12B) || ciphertext || tag(16B) )
+import { pbkdf2Async } from '@noble/hashes/pbkdf2.js';
+import { sha256 } from '@noble/hashes/sha2.js';
+import { randomBytes, bytesToHex } from '@noble/hashes/utils.js';
+import { gcm } from '@noble/ciphers/aes.js';
+
+export const ZkVault = {
+  version: '1.0.0',
+
+  randomBytes(n) { return randomBytes(n); },
+  randomHex(n) { return bytesToHex(randomBytes(n)); },
+
+  // 派生主密钥：PBKDF2-SHA256，返回 32 字节 Uint8Array
+  async deriveKey(passphrase, saltBytes, iterations) {
+    const enc = new TextEncoder().encode(passphrase);
+    return pbkdf2Async(sha256, enc, saltBytes, { c: iterations, dkLen: 32 });
+  },
+
+  // 验证哈希：SHA-256(派生密钥) 的 hex —— 服务器只存这个，永不见口令
+  async verificationHash(passphrase, saltBytes, iterations) {
+    const key = await this.deriveKey(passphrase, saltBytes, iterations);
+    return bytesToHex(sha256(key));
+  },
+
+  // 加密：明文 JSON 字符串 → base64(IV||ct||tag)
+  async encryptJSON(keyBytes, obj) {
+    const plaintext = new TextEncoder().encode(JSON.stringify(obj));
+    const iv = randomBytes(12);
+    const ct = gcm(keyBytes, iv).encrypt(plaintext); // noble: 输出含 16B tag 尾缀
+    const out = new Uint8Array(iv.length + ct.length);
+    out.set(iv, 0); out.set(ct, iv.length);
+    return btoa(String.fromCharCode(...out));
+  },
+
+  // 解密：base64(IV||ct||tag) → 对象；篡改/错钥抛异常
+  async decryptJSON(keyBytes, b64) {
+    const raw = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+    if (raw.length < 29) throw new Error('ciphertext too short');
+    const iv = raw.slice(0, 12);
+    const ct = raw.slice(12);
+    const plaintext = gcm(keyBytes, iv).decrypt(ct);
+    return JSON.parse(new TextDecoder().decode(plaintext));
+  },
+
+  sha256Hex(bytes) { return bytesToHex(sha256(bytes)); },
+};

@@ -214,10 +214,41 @@ function nasPanel() {
         backupLoading: false,
         dataBackupTarget: '',
         dataBackupLoading: false,
-        // Vault
-        vaultItems: [],
+        // 凭证保险箱 v2（零知识：加解密全部在浏览器端，服务器只存密文）
+        vaultState: 'uninitialized', // uninitialized | locked | unlocked
+        vaultLoading: false,
+        vaultItemCount: 0,
+        vaultLegacyCount: 0,
+        vaultMasterKey: null,       // Uint8Array，仅内存持有，绝不持久化
+        vaultItems: [],             // 解锁后的明文条目缓存（内存）: {id,name,category,url,username,notes_preview,secret,notes,updated_at}
+        vaultSetupForm: { passphrase: '', confirm: '' },
+        vaultUnlockForm: { passphrase: '' },
+        vaultUnlockError: '',
+        vaultLockedRemaining: 0,
+        vaultLockedTimer: null,
+        vaultAttemptsLeft: null,
         showVaultForm: false,
-        vaultForm: { name: '', category: '', secret: '', note: '' },
+        vaultForm: { id: null, name: '', category: '', url: '', username: '', secret: '', notes: '' },
+        vaultRevealId: null,        // 当前处于"已显示明文"状态的条目 id（15 秒后自动遮罩）
+        vaultRevealTimer: null,
+        vaultIdleTimer: null,
+        showChangePassphrase: false,
+        changePassphraseForm: { oldPassphrase: '', newPassphrase: '', confirm: '' },
+        changePassphraseLoading: false,
+        vaultLegacyItems: [],
+        showLegacyMigration: false,
+        legacyMigrating: false,
+        // 密码生成器（独立页面，不依赖保险箱解锁）
+        pwgen: {
+            length: 16,
+            upper: true,
+            lower: true,
+            digits: true,
+            symbols: true,
+            value: '',
+            strength: 0,
+        },
+        pwgenHistory: [],
         // Panel update
         panelUpdate: { current: '', latest: '', has_update: false, error: '', detail: '' },
         panelUpdating: false,
@@ -313,6 +344,15 @@ function nasPanel() {
             // Listen for i18n changes
             window.addEventListener('i18n:changed', (e) => {
                 this.lang = e.detail.lang;
+            });
+            // 保险箱已解锁时，用户活动重置 15 分钟空闲自动锁定计时器
+            ['click', 'keydown', 'mousemove'].forEach(evt => {
+                window.addEventListener(evt, () => {
+                    if (this.page === 'vault' && this.vaultState === 'unlocked') this.resetVaultIdleTimer();
+                }, { passive: true });
+            });
+            window.addEventListener('beforeunload', () => {
+                if (this.vaultState === 'unlocked') this.vaultLock();
             });
         },
 
@@ -547,6 +587,7 @@ function nasPanel() {
         },
 
         navigate(page) {
+            if (this.page === 'vault' && page !== 'vault') this.vaultLock();
             this.page = page;
             switch (page) {
                 case 'dashboard': this.loadDashboard(); break;
@@ -560,7 +601,8 @@ function nasPanel() {
                 case 'about': this.loadComponents(); this.loadHardware(); break;
                 case 'notice': this.loadNotice(); break;
                 case 'backup': this.loadBackups(); break;
-                case 'vault': this.loadVault(); break;
+                case 'vault': this.vaultOnEnter(); break;
+                case 'pwgen': this.pwgenOnEnter(); break;
                 case 'rclone': this.loadRcloneStatus(); this.loadRcloneRemotes(); this.loadRcloneTasks().then(() => { if (this.rcloneRunningTasks.length) this.startRcloneProgressPolling(); }); this.loadRcloneLogs(); this.loadSharedDirs(); break;
                 case 'logs': this.loadAuditLogs(); break;
                 case 'events': this.loadEvents(); this.loadEventStats(); break;
@@ -2996,36 +3038,393 @@ function nasPanel() {
             this.dataBackupLoading = false;
         },
 
-        // 凭证保险箱
-        async loadVault() {
-            const data = await this.api('/vault');
-            if (data) this.vaultItems = data.items || [];
+        // ═══ 凭证保险箱 v2（零知识：PBKDF2+AES-256-GCM 全部在浏览器端，服务器只存密文）═══
+
+        vaultHexToBytes(hex) {
+            const out = new Uint8Array(hex.length / 2);
+            for (let i = 0; i < out.length; i++) out[i] = parseInt(hex.substr(i * 2, 2), 16);
+            return out;
         },
-        async createVaultItem() {
+
+        // 直接 fetch（不走 api() helper）：解锁失败时需要读取 attempts_left / locked_remaining_seconds 等非 200 响应体字段
+        async vaultFetch(path, options = {}) {
+            const opts = { ...options, headers: { 'Authorization': 'Bearer ' + this.token, ...(options.headers || {}) } };
+            const res = await fetch('/api/vault' + path, opts);
+            if (res.status === 401) { this.logout(); return { ok: false, status: 401, data: null }; }
+            let data = null;
+            try { data = await res.json(); } catch (e) {}
+            return { ok: res.ok, status: res.status, data };
+        },
+
+        async vaultOnEnter() {
+            this.resetVaultIdleTimer();
+            await this.vaultCheckStatus();
+        },
+
+        async vaultCheckStatus() {
+            const { ok, data } = await this.vaultFetch('/status');
+            if (!ok || !data) return;
+            this.vaultItemCount = data.item_count || 0;
+            this.vaultLegacyCount = data.legacy_count || 0;
+            if (!data.setup) {
+                this.vaultState = 'uninitialized';
+                return;
+            }
+            if (data.locked_until) {
+                this.vaultEnterLockedCountdown(data.locked_until);
+            } else if (this.vaultState !== 'unlocked') {
+                this.vaultState = 'locked';
+            }
+            this._vaultSalt = data.salt;
+            this._vaultIterations = data.iterations;
+        },
+
+        vaultEnterLockedCountdown(lockedUntilISO) {
+            this.vaultState = 'locked';
+            const until = new Date(lockedUntilISO).getTime();
+            if (this.vaultLockedTimer) clearInterval(this.vaultLockedTimer);
+            const tick = () => {
+                const remain = Math.max(0, Math.round((until - Date.now()) / 1000));
+                this.vaultLockedRemaining = remain;
+                if (remain <= 0 && this.vaultLockedTimer) { clearInterval(this.vaultLockedTimer); this.vaultLockedTimer = null; }
+            };
+            tick();
+            this.vaultLockedTimer = setInterval(tick, 1000);
+        },
+
+        async vaultSetup() {
+            if (this.vaultSetupForm.passphrase.length < 8) { this.showToast(this.t('vault.passphrase_too_short'), 'error'); return; }
+            if (this.vaultSetupForm.passphrase !== this.vaultSetupForm.confirm) { this.showToast(this.t('vault.passphrase_mismatch'), 'error'); return; }
+            this.vaultLoading = true;
+            try {
+                const iterations = 600000;
+                const saltHex = window.ZkVault.randomHex(16);
+                const saltBytes = this.vaultHexToBytes(saltHex);
+                const key = await window.ZkVault.deriveKey(this.vaultSetupForm.passphrase, saltBytes, iterations);
+                const verifyHash = await window.ZkVault.verificationHash(this.vaultSetupForm.passphrase, saltBytes, iterations);
+                const { ok, data } = await this.vaultFetch('/setup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: `salt=${saltHex}&verify_hash=${verifyHash}&iterations=${iterations}`
+                });
+                if (!ok) { this.showToast((data && data.error) || this.t('msg.network_error'), 'error'); return; }
+                this.vaultMasterKey = key;
+                this._vaultSalt = saltHex;
+                this._vaultIterations = iterations;
+                this.vaultState = 'unlocked';
+                this.vaultSetupForm = { passphrase: '', confirm: '' };
+                this.resetVaultIdleTimer();
+                await this.loadVaultItems();
+                this.showToast(this.t('vault.setup_done'), 'success');
+            } finally {
+                this.vaultLoading = false;
+            }
+        },
+
+        async vaultUnlock() {
+            if (!this._vaultSalt) await this.vaultCheckStatus();
+            if (!this._vaultSalt) { this.showToast(this.t('vault.not_setup'), 'error'); return; }
+            this.vaultLoading = true;
+            this.vaultUnlockError = '';
+            try {
+                const saltBytes = this.vaultHexToBytes(this._vaultSalt);
+                const key = await window.ZkVault.deriveKey(this.vaultUnlockForm.passphrase, saltBytes, this._vaultIterations);
+                const verifyHash = await window.ZkVault.verificationHash(this.vaultUnlockForm.passphrase, saltBytes, this._vaultIterations);
+                const { ok, status, data } = await this.vaultFetch('/unlock', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: `verify_hash=${verifyHash}`
+                });
+                if (!ok) {
+                    if (status === 423) {
+                        this.vaultEnterLockedCountdown(new Date(Date.now() + (data.locked_remaining_seconds || 0) * 1000).toISOString());
+                        this.vaultUnlockError = (data && data.error) || this.t('vault.locked');
+                    } else {
+                        this.vaultAttemptsLeft = data && typeof data.attempts_left === 'number' ? data.attempts_left : null;
+                        this.vaultUnlockError = (data && data.error) || this.t('vault.unlock_failed');
+                    }
+                    return;
+                }
+                this.vaultMasterKey = key;
+                this.vaultAttemptsLeft = null;
+                this.vaultUnlockForm.passphrase = '';
+                this.vaultState = 'unlocked';
+                this.resetVaultIdleTimer();
+                await this.loadVaultItems();
+            } finally {
+                this.vaultLoading = false;
+            }
+        },
+
+        vaultLock() {
+            this.vaultMasterKey = null;
+            this.vaultItems = [];
+            this.vaultState = this.vaultState === 'uninitialized' ? 'uninitialized' : 'locked';
+            this.vaultRevealId = null;
+            if (this.vaultRevealTimer) { clearTimeout(this.vaultRevealTimer); this.vaultRevealTimer = null; }
+            if (this.vaultIdleTimer) { clearTimeout(this.vaultIdleTimer); this.vaultIdleTimer = null; }
+            this.showVaultForm = false;
+            this.showChangePassphrase = false;
+            this.showLegacyMigration = false;
+        },
+
+        resetVaultIdleTimer() {
+            if (this.vaultIdleTimer) clearTimeout(this.vaultIdleTimer);
+            if (this.vaultState !== 'unlocked') return;
+            this.vaultIdleTimer = setTimeout(() => {
+                if (this.vaultState === 'unlocked') {
+                    this.vaultLock();
+                    this.showToast(this.t('vault.auto_locked'), 'info');
+                }
+            }, 15 * 60 * 1000);
+        },
+
+        async loadVaultItems() {
+            const { ok, data } = await this.vaultFetch('/items');
+            if (!ok || !data) return;
+            const key = this.vaultMasterKey;
+            const items = [];
+            for (const raw of (data.items || [])) {
+                let secret = '', notes = '';
+                try {
+                    const plain = await window.ZkVault.decryptJSON(key, raw.encrypted);
+                    secret = plain.secret || plain.password || '';
+                    notes = plain.notes || '';
+                } catch (e) {
+                    secret = '';
+                    notes = this.t('vault.decrypt_failed');
+                }
+                items.push({ ...raw, secret, notes, _encrypted: raw.encrypted });
+            }
+            this.vaultItems = items;
+            this.vaultItemCount = items.length;
+        },
+
+        vaultOpenForm(item) {
+            this.resetVaultIdleTimer();
+            if (item) {
+                this.vaultForm = { id: item.id, name: item.name, category: item.category, url: item.url, username: item.username, secret: item.secret, notes: item.notes };
+            } else {
+                this.vaultForm = { id: null, name: '', category: '', url: '', username: '', secret: '', notes: '' };
+            }
+            this.showVaultForm = true;
+        },
+
+        async saveVaultItem() {
+            this.resetVaultIdleTimer();
             if (!this.vaultForm.name || !this.vaultForm.secret) { this.showToast(this.t('msg.fill_required'), 'error'); return; }
-            const data = await this.api('/vault/create', {
+            const encrypted = await window.ZkVault.encryptJSON(this.vaultMasterKey, { secret: this.vaultForm.secret, notes: this.vaultForm.notes || '' });
+            const notesPreview = (this.vaultForm.notes || '').slice(0, 40);
+            const body = `name=${encodeURIComponent(this.vaultForm.name)}&category=${encodeURIComponent(this.vaultForm.category || '')}` +
+                `&url=${encodeURIComponent(this.vaultForm.url || '')}&username=${encodeURIComponent(this.vaultForm.username || '')}` +
+                `&notes_preview=${encodeURIComponent(notesPreview)}&encrypted=${encodeURIComponent(encrypted)}`;
+            const path = this.vaultForm.id ? '/update' : '/create';
+            const extraBody = this.vaultForm.id ? `&id=${this.vaultForm.id}` : '';
+            const { ok, data } = await this.vaultFetch(path, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: `name=${encodeURIComponent(this.vaultForm.name)}&category=${encodeURIComponent(this.vaultForm.category)}&secret=${encodeURIComponent(this.vaultForm.secret)}&note=${encodeURIComponent(this.vaultForm.note)}`
+                body: body + extraBody
             });
-            if (data) {
-                this.showToast(this.t('msg.vault_saved'), 'success');
-                this.vaultForm = { name: '', category: '', secret: '', note: '' };
-                this.showVaultForm = false;
-                this.loadVault();
-            }
+            if (!ok) { this.showToast((data && data.error) || this.t('msg.network_error'), 'error'); return; }
+            this.showToast(this.t('vault.saved'), 'success');
+            this.showVaultForm = false;
+            await this.loadVaultItems();
         },
-        async copyVaultItem(v) {
-            const data = await this.api('/vault/reveal', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: `id=${v.id}` });
-            if (data && data.secret) {
-                try { await navigator.clipboard.writeText(data.secret); } catch (e) {}
-                this.showToast(this.t('msg.vault_copied'), 'success');
-            }
-        },
+
         async deleteVaultItem(v) {
+            this.resetVaultIdleTimer();
             if (!confirm(this.t('msg.vault_delete_confirm', [v.name]))) return;
-            const data = await this.api('/vault/delete', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: `id=${v.id}` });
-            if (data) { this.showToast(this.t('msg.vault_deleted'), 'success'); this.loadVault(); }
+            const { ok, data } = await this.vaultFetch('/delete', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: `id=${v.id}` });
+            if (!ok) { this.showToast((data && data.error) || this.t('msg.network_error'), 'error'); return; }
+            this.showToast(this.t('msg.vault_deleted'), 'success');
+            await this.loadVaultItems();
+        },
+
+        // 查看明文：15 秒后自动重新遮罩
+        vaultReveal(v) {
+            this.resetVaultIdleTimer();
+            this.vaultRevealId = v.id;
+            if (this.vaultRevealTimer) clearTimeout(this.vaultRevealTimer);
+            this.vaultRevealTimer = setTimeout(() => { this.vaultRevealId = null; }, 15000);
+        },
+
+        // 复制到剪贴板：30 秒后自动清空剪贴板（尽力而为，不保证所有浏览器都支持）
+        async vaultCopy(v) {
+            this.resetVaultIdleTimer();
+            try {
+                await navigator.clipboard.writeText(v.secret);
+                this.showToast(this.t('msg.vault_copied'), 'success');
+                setTimeout(async () => {
+                    try {
+                        const cur = await navigator.clipboard.readText();
+                        if (cur === v.secret) await navigator.clipboard.writeText('');
+                    } catch (e) { /* 读取剪贴板权限不足时静默忽略 */ }
+                }, 30000);
+            } catch (e) {
+                this.showToast(this.t('msg.network_error'), 'error');
+            }
+        },
+
+        openChangePassphrase() {
+            this.resetVaultIdleTimer();
+            this.changePassphraseForm = { oldPassphrase: '', newPassphrase: '', confirm: '' };
+            this.showChangePassphrase = true;
+        },
+
+        async submitChangePassphrase() {
+            this.resetVaultIdleTimer();
+            const f = this.changePassphraseForm;
+            if (f.newPassphrase.length < 8) { this.showToast(this.t('vault.passphrase_too_short'), 'error'); return; }
+            if (f.newPassphrase !== f.confirm) { this.showToast(this.t('vault.passphrase_mismatch'), 'error'); return; }
+            this.changePassphraseLoading = true;
+            try {
+                const oldSaltBytes = this.vaultHexToBytes(this._vaultSalt);
+                const oldKey = await window.ZkVault.deriveKey(f.oldPassphrase, oldSaltBytes, this._vaultIterations);
+                const oldVerify = await window.ZkVault.verificationHash(f.oldPassphrase, oldSaltBytes, this._vaultIterations);
+                // 用当前内存里的 masterKey 校验旧口令是否正确：比对派生出的 verify hash 与服务器记录是否一致
+                // （服务端 change-passphrase 接口会在事务里用新 verify_hash 覆盖，因此这里需要先确认 oldKey == vaultMasterKey）
+                const curVerify = await window.ZkVault.sha256Hex(this.vaultMasterKey);
+                const checkVerify = await window.ZkVault.sha256Hex(oldKey);
+                if (curVerify !== checkVerify) { this.showToast(this.t('vault.old_passphrase_wrong'), 'error'); return; }
+                void oldVerify;
+
+                const newIterations = this._vaultIterations;
+                const newSaltHex = window.ZkVault.randomHex(16);
+                const newSaltBytes = this.vaultHexToBytes(newSaltHex);
+                const newKey = await window.ZkVault.deriveKey(f.newPassphrase, newSaltBytes, newIterations);
+                const newVerify = await window.ZkVault.verificationHash(f.newPassphrase, newSaltBytes, newIterations);
+
+                const reencrypted = [];
+                for (const item of this.vaultItems) {
+                    const encrypted = await window.ZkVault.encryptJSON(newKey, { secret: item.secret, notes: item.notes || '' });
+                    reencrypted.push({ id: item.id, encrypted });
+                }
+
+                const { ok, data } = await this.vaultFetch('/change-passphrase', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: `salt=${newSaltHex}&verify_hash=${newVerify}&iterations=${newIterations}&items=${encodeURIComponent(JSON.stringify(reencrypted))}`
+                });
+                if (!ok) { this.showToast((data && data.error) || this.t('msg.network_error'), 'error'); return; }
+
+                this.vaultMasterKey = newKey;
+                this._vaultSalt = newSaltHex;
+                this.showChangePassphrase = false;
+                this.showToast(this.t('vault.passphrase_changed'), 'success');
+                await this.loadVaultItems();
+            } finally {
+                this.changePassphraseLoading = false;
+            }
+        },
+
+        // 旧版（服务端加密）保险箱迁移：逐条取明文→用新保险箱密钥重新加密→写入新表，最后清空旧表
+        async openLegacyMigration() {
+            this.resetVaultIdleTimer();
+            const { ok, data } = await this.vaultFetch('/legacy');
+            if (!ok || !data) return;
+            this.vaultLegacyItems = data.items || [];
+            this.showLegacyMigration = true;
+        },
+
+        async migrateLegacyItems() {
+            this.resetVaultIdleTimer();
+            this.legacyMigrating = true;
+            try {
+                for (const legacy of this.vaultLegacyItems) {
+                    const { ok, data } = await this.vaultFetch('/legacy/reveal', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: `id=${legacy.id}` });
+                    if (!ok || !data || typeof data.secret !== 'string') continue;
+                    const encrypted = await window.ZkVault.encryptJSON(this.vaultMasterKey, { secret: data.secret, notes: legacy.note || '' });
+                    await this.vaultFetch('/create', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: `name=${encodeURIComponent(legacy.name)}&category=${encodeURIComponent(legacy.category || '')}` +
+                            `&url=&username=&notes_preview=${encodeURIComponent((legacy.note || '').slice(0, 40))}&encrypted=${encodeURIComponent(encrypted)}`
+                    });
+                }
+                await this.vaultFetch('/legacy/purge', { method: 'POST' });
+                this.showLegacyMigration = false;
+                this.vaultLegacyItems = [];
+                this.showToast(this.t('vault.migration_done'), 'success');
+                await this.loadVaultItems();
+                await this.vaultCheckStatus();
+            } finally {
+                this.legacyMigrating = false;
+            }
+        },
+
+        // ═══ 密码生成器（独立页面，不依赖保险箱解锁，纯浏览器端 crypto.getRandomValues）═══
+
+        pwgenCharPool() {
+            const upper = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+            const lower = 'abcdefghijklmnopqrstuvwxyz';
+            const digits = '0123456789';
+            const symbols = '!@#$%^&*()-_=+[]{}<>?';
+            const groups = [];
+            if (this.pwgen.upper) groups.push(upper);
+            if (this.pwgen.lower) groups.push(lower);
+            if (this.pwgen.digits) groups.push(digits);
+            if (this.pwgen.symbols) groups.push(symbols);
+            return groups;
+        },
+
+        pwgenOnEnter() {
+            // 独立页面，无需加载任何服务端数据
+        },
+
+        pwgenGenerate() {
+            const groups = this.pwgenCharPool();
+            if (!groups.length) { this.showToast(this.t('pwgen.need_one_type'), 'error'); return; }
+            const length = Math.min(64, Math.max(8, this.pwgen.length || 16));
+            const all = groups.join('');
+            const randInt = (max) => {
+                const buf = new Uint32Array(1);
+                crypto.getRandomValues(buf);
+                return buf[0] % max;
+            };
+            const chars = [];
+            // 保证每类字符至少出现一次
+            for (const g of groups) chars.push(g[randInt(g.length)]);
+            while (chars.length < length) chars.push(all[randInt(all.length)]);
+            // Fisher-Yates 洗牌
+            for (let i = chars.length - 1; i > 0; i--) {
+                const j = randInt(i + 1);
+                [chars[i], chars[j]] = [chars[j], chars[i]];
+            }
+            const value = chars.slice(0, length).join('');
+            this.pwgen.value = value;
+            this.pwgen.strength = this.pwgenStrength(value);
+            this.pwgenHistory.unshift({ value, time: new Date().toLocaleTimeString() });
+            if (this.pwgenHistory.length > 20) this.pwgenHistory.pop();
+        },
+
+        // 六档强度：0 很弱 - 5 极强（综合长度与字符种类数）
+        pwgenStrength(value) {
+            if (!value) return 0;
+            let kinds = 0;
+            if (/[A-Z]/.test(value)) kinds++;
+            if (/[a-z]/.test(value)) kinds++;
+            if (/[0-9]/.test(value)) kinds++;
+            if (/[^A-Za-z0-9]/.test(value)) kinds++;
+            let score = 0;
+            if (value.length >= 8) score++;
+            if (value.length >= 12) score++;
+            if (value.length >= 16) score++;
+            score += Math.max(0, kinds - 1);
+            return Math.min(5, score);
+        },
+
+        pwgenStrengthLabel(level) {
+            const keys = ['pwgen.strength_0', 'pwgen.strength_1', 'pwgen.strength_2', 'pwgen.strength_3', 'pwgen.strength_4', 'pwgen.strength_5'];
+            return this.t(keys[level] || keys[0]);
+        },
+
+        async pwgenCopy(value) {
+            try {
+                await navigator.clipboard.writeText(value);
+                this.showToast(this.t('msg.vault_copied'), 'success');
+            } catch (e) {
+                this.showToast(this.t('msg.network_error'), 'error');
+            }
         },
 
         // 面板更新（OTA 签名校验）

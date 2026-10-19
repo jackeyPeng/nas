@@ -137,9 +137,6 @@
                         <li :class="{active: page === 'firewall'}" @click="navigate('firewall')">
                             <span style="margin-left:var(--sp-5)">🛡️</span> <span x-text="$t('nav.firewall')"></span>
                         </li>
-                        <li :class="{active: page === 'vault'}" @click="navigate('vault')">
-                            <span style="margin-left:var(--sp-5)">🔑</span> <span x-text="$t('nav.vault')"></span>
-                        </li>
                     </div>
                 </template>
 
@@ -183,6 +180,22 @@
                         </li>
                         <li :class="{active: page === 'events'}" @click="navigate('events')">
                             <span style="margin-left:var(--sp-5)">🔔</span> <span x-text="$t('nav.events')"></span>
+                        </li>
+                    </div>
+                </template>
+
+                <!-- 工具箱 -->
+                <li class="nav-group" @click="navGroup = (navGroup === 'toolbox' ? '' : 'toolbox')">
+                    <span style="flex:1">🧰 <span x-text="$t('nav.toolbox')"></span></span>
+                    <span style="font-size:var(--fs-xs);color: var(--text-muted)" x-text="navGroup==='toolbox' ? '▼' : '▶'"></span>
+                </li>
+                <template x-if="navGroup === 'toolbox'">
+                    <div>
+                        <li :class="{active: page === 'vault'}" @click="navigate('vault')">
+                            <span style="margin-left:var(--sp-5)">🔐</span> <span x-text="$t('nav.vault')"></span>
+                        </li>
+                        <li :class="{active: page === 'pwgen'}" @click="navigate('pwgen')">
+                            <span style="margin-left:var(--sp-5)">🔑</span> <span x-text="$t('nav.pwgen')"></span>
                         </li>
                     </div>
                 </template>
@@ -2557,38 +2570,191 @@
                 <p style="color:var(--text-light);font-size:var(--fs-xs);margin-top:var(--sp-2)"><span x-text="$t('backup.data_backup_hint')"></span></p>
             </div>
 
-            <!-- 凭证保险箱 -->
-            <div x-show="page === 'vault'" class="page" x-init="if(page==='vault') loadVault()" x-transition.opacity.duration.300ms">
+            <!-- 凭证保险箱 v2（零知识） -->
+            <div x-show="page === 'vault'" class="page" x-transition.opacity.duration.300ms>
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--sp-4)">
-                    <h2 style="margin:0">🔑 <span x-text="$t('vault.title')"></span></h2>
-                    <button class="btn btn-primary" @click="showVaultForm = !showVaultForm" x-text="showVaultForm ? $t('vault.cancel') : $t('vault.add')"></button>
+                    <h2 style="margin:0">🔐 <span x-text="$t('vault.title')"></span></h2>
+                    <template x-if="vaultState === 'unlocked'">
+                        <div style="display:flex;gap:var(--sp-2)">
+                            <button class="btn btn-sm" @click="openChangePassphrase()" x-text="$t('vault.change_passphrase')"></button>
+                            <button class="btn btn-sm" @click="vaultLock()" x-text="$t('vault.lock_now')"></button>
+                            <button class="btn btn-primary" @click="vaultOpenForm(null)" x-text="$t('vault.add')"></button>
+                        </div>
+                    </template>
                 </div>
 
-                <div x-show="showVaultForm" style="background: var(--card-bg);border:1px solid var(--border);border-radius:var(--radius);padding:var(--sp-4);margin-bottom:var(--sp-4)">
-                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-3)">
-                        <div><label style="font-size:var(--fs-sm);color: var(--text-secondary)" x-text="$t('vault.name')"></label><input type="text" x-model="vaultForm.name" class="port-input" style="width:100%"></div>
-                        <div><label style="font-size:var(--fs-sm);color: var(--text-secondary)" x-text="$t('vault.category')"></label><input type="text" x-model="vaultForm.category" class="port-input" style="width:100%" :placeholder="$t('vault.category_ph')"></div>
-                        <div style="grid-column:1/-1"><label style="font-size:var(--fs-sm);color: var(--text-secondary)" x-text="$t('vault.secret')"></label><input type="password" x-model="vaultForm.secret" class="port-input" style="width:100%"></div>
-                        <div style="grid-column:1/-1"><label style="font-size:var(--fs-sm);color: var(--text-secondary)" x-text="$t('vault.note')"></label><input type="text" x-model="vaultForm.note" class="port-input" style="width:100%" :placeholder="$t('vault.note_ph')"></div>
+                <!-- 未初始化：首次设置口令 -->
+                <template x-if="vaultState === 'uninitialized'">
+                    <div style="max-width:480px;background: var(--card-bg);border:1px solid var(--border);border-radius:var(--radius);padding:var(--sp-5)">
+                        <p style="color:var(--text-light);margin-bottom:var(--sp-3)" x-text="$t('vault.setup_intro')"></p>
+                        <p style="color:var(--danger);font-size:var(--fs-sm);margin-bottom:var(--sp-4)" x-text="$t('vault.no_recovery_warning')"></p>
+                        <div class="form-group">
+                            <label x-text="$t('vault.new_passphrase')"></label>
+                            <input type="password" x-model="vaultSetupForm.passphrase" class="port-input" style="width:100%" autocomplete="new-password">
+                        </div>
+                        <div class="form-group">
+                            <label x-text="$t('vault.confirm_passphrase')"></label>
+                            <input type="password" x-model="vaultSetupForm.confirm" class="port-input" style="width:100%" autocomplete="new-password" @keyup.enter="vaultSetup()">
+                        </div>
+                        <button class="btn btn-primary btn-block" @click="vaultSetup()" :disabled="vaultLoading" x-text="$t('vault.setup_btn')"></button>
+                        <template x-if="vaultLegacyCount > 0">
+                            <p style="margin-top:var(--sp-3);font-size:var(--fs-sm);color:var(--text-light)" x-text="$t('vault.legacy_hint', [vaultLegacyCount])"></p>
+                        </template>
                     </div>
-                    <button class="btn btn-primary" style="margin-top:var(--sp-3)" @click="createVaultItem()" x-text="$t('common.save')"></button>
+                </template>
+
+                <!-- 已锁定：输入口令解锁 -->
+                <template x-if="vaultState === 'locked'">
+                    <div style="max-width:420px;background: var(--card-bg);border:1px solid var(--border);border-radius:var(--radius);padding:var(--sp-5)">
+                        <p style="color:var(--text-light);margin-bottom:var(--sp-4)" x-text="$t('vault.locked_intro')"></p>
+                        <template x-if="vaultLockedRemaining > 0">
+                            <p style="color:var(--danger);margin-bottom:var(--sp-3)" x-text="$t('vault.locked_countdown', [vaultLockedRemaining])"></p>
+                        </template>
+                        <template x-if="vaultLockedRemaining <= 0">
+                            <div>
+                                <div class="form-group">
+                                    <label x-text="$t('vault.passphrase')"></label>
+                                    <input type="password" x-model="vaultUnlockForm.passphrase" class="port-input" style="width:100%" autocomplete="current-password" @keyup.enter="vaultUnlock()">
+                                </div>
+                                <p class="error" x-show="vaultUnlockError" x-text="vaultUnlockError"></p>
+                                <p x-show="vaultAttemptsLeft !== null" style="color:var(--warn);font-size:var(--fs-sm)" x-text="$t('vault.attempts_left', [vaultAttemptsLeft])"></p>
+                                <button class="btn btn-primary btn-block" @click="vaultUnlock()" :disabled="vaultLoading" x-text="$t('vault.unlock_btn')"></button>
+                            </div>
+                        </template>
+                    </div>
+                </template>
+
+                <!-- 已解锁：条目列表 -->
+                <template x-if="vaultState === 'unlocked'">
+                    <div>
+                        <template x-if="vaultLegacyCount > 0">
+                            <div style="background: var(--warn-light);border:1px solid #f59e0b;border-radius:var(--radius-md);padding:var(--sp-3) var(--sp-4);margin-bottom:var(--sp-4);display:flex;justify-content:space-between;align-items:center">
+                                <span style="color:var(--warn)">⚠️ <span x-text="$t('vault.legacy_hint', [vaultLegacyCount])"></span></span>
+                                <button class="btn btn-sm btn-warn" @click="openLegacyMigration()" x-text="$t('vault.migrate_btn')"></button>
+                            </div>
+                        </template>
+
+                        <table class="table">
+                            <thead><tr><th x-text="$t('vault.name')"></th><th x-text="$t('vault.category')"></th><th x-text="$t('vault.username')"></th><th x-text="$t('vault.secret')"></th><th></th></tr></thead>
+                            <tbody>
+                                <template x-for="v in vaultItems" :key="v.id">
+                                    <tr>
+                                        <td x-text="v.name"></td>
+                                        <td x-text="v.category" style="font-size:var(--fs-xs);color: var(--text-muted)"></td>
+                                        <td x-text="v.username" style="font-size:var(--fs-xs);color: var(--text-muted)"></td>
+                                        <td>
+                                            <span x-show="vaultRevealId !== v.id" style="font-family:monospace">••••••••</span>
+                                            <span x-show="vaultRevealId === v.id" x-text="v.secret" style="font-family:monospace"></span>
+                                        </td>
+                                        <td class="actions">
+                                            <button class="btn btn-sm" @click="vaultReveal(v)" x-show="vaultRevealId !== v.id" x-text="$t('vault.reveal')"></button>
+                                            <button class="btn btn-sm" @click="vaultRevealId = null" x-show="vaultRevealId === v.id" x-text="$t('vault.mask')"></button>
+                                            <button class="btn btn-sm btn-success" @click="vaultCopy(v)" x-text="$t('vault.copy')"></button>
+                                            <button class="btn btn-sm" @click="vaultOpenForm(v)" x-text="$t('common.edit')"></button>
+                                            <button class="btn btn-sm btn-danger" @click="deleteVaultItem(v)" x-text="$t('vault.delete')"></button>
+                                        </td>
+                                    </tr>
+                                </template>
+                                <tr x-show="!vaultItems.length"><td colspan="5" class="empty-cell"><div class="empty-state empty-state--inline"><span class="empty-state__icon">🔐</span><span class="empty-state__title" x-text="$t('vault.empty')"></span></div></td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </template>
+
+                <!-- 新增/编辑条目弹窗 -->
+                <div class="modal" x-show="showVaultForm" x-cloak>
+                    <div class="modal-box" style="width:480px">
+                        <h3 x-text="vaultForm.id ? $t('common.edit') : $t('vault.add')"></h3>
+                        <div class="form-group"><label x-text="$t('vault.name')"></label><input type="text" x-model="vaultForm.name" class="port-input" style="width:100%"></div>
+                        <div class="form-group"><label x-text="$t('vault.category')"></label><input type="text" x-model="vaultForm.category" class="port-input" style="width:100%" :placeholder="$t('vault.category_ph')"></div>
+                        <div class="form-group"><label x-text="$t('vault.url')"></label><input type="text" x-model="vaultForm.url" class="port-input" style="width:100%" placeholder="https://"></div>
+                        <div class="form-group"><label x-text="$t('vault.username')"></label><input type="text" x-model="vaultForm.username" class="port-input" style="width:100%"></div>
+                        <div class="form-group">
+                            <label x-text="$t('vault.secret')"></label>
+                            <div style="display:flex;gap:var(--sp-2)">
+                                <input type="text" x-model="vaultForm.secret" class="port-input" style="flex:1;font-family:monospace">
+                                <button class="btn btn-sm" type="button" @click="vaultForm.secret = (pwgenGenerate(), pwgen.value)" x-text="$t('vault.gen_password')"></button>
+                            </div>
+                        </div>
+                        <div class="form-group"><label x-text="$t('vault.note')"></label><input type="text" x-model="vaultForm.notes" class="port-input" style="width:100%" :placeholder="$t('vault.note_ph')"></div>
+                        <div class="modal-actions">
+                            <button class="btn" @click="showVaultForm = false" x-text="$t('common.cancel')"></button>
+                            <button class="btn btn-primary" @click="saveVaultItem()" x-text="$t('common.save')"></button>
+                        </div>
+                    </div>
                 </div>
 
-                <table class="table">
-                    <thead><tr><th x-text="$t('vault.name')"></th><th x-text="$t('vault.category')"></th><th x-text="$t('vault.note')"></th><th></th></tr></thead>
+                <!-- 修改口令弹窗 -->
+                <div class="modal" x-show="showChangePassphrase" x-cloak>
+                    <div class="modal-box">
+                        <h3 x-text="$t('vault.change_passphrase')"></h3>
+                        <div class="form-group"><label x-text="$t('vault.old_passphrase')"></label><input type="password" x-model="changePassphraseForm.oldPassphrase" class="port-input" style="width:100%"></div>
+                        <div class="form-group"><label x-text="$t('vault.new_passphrase')"></label><input type="password" x-model="changePassphraseForm.newPassphrase" class="port-input" style="width:100%"></div>
+                        <div class="form-group"><label x-text="$t('vault.confirm_passphrase')"></label><input type="password" x-model="changePassphraseForm.confirm" class="port-input" style="width:100%"></div>
+                        <div class="modal-actions">
+                            <button class="btn" @click="showChangePassphrase = false" x-text="$t('common.cancel')"></button>
+                            <button class="btn btn-primary" @click="submitChangePassphrase()" :disabled="changePassphraseLoading" x-text="$t('common.confirm')"></button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 旧版迁移弹窗 -->
+                <div class="modal" x-show="showLegacyMigration" x-cloak>
+                    <div class="modal-box" style="width:480px">
+                        <h3 x-text="$t('vault.migrate_title')"></h3>
+                        <p style="color:var(--text-light);margin-bottom:var(--sp-3)" x-text="$t('vault.migrate_desc', [vaultLegacyItems.length])"></p>
+                        <ul style="margin-left:var(--sp-5);margin-bottom:var(--sp-4);color:var(--text-light)">
+                            <template x-for="it in vaultLegacyItems" :key="it.id">
+                                <li x-text="it.name"></li>
+                            </template>
+                        </ul>
+                        <div class="modal-actions">
+                            <button class="btn" @click="showLegacyMigration = false" x-text="$t('common.cancel')"></button>
+                            <button class="btn btn-primary" @click="migrateLegacyItems()" :disabled="legacyMigrating" x-text="$t('vault.migrate_confirm')"></button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 密码生成器（独立工具，不依赖保险箱） -->
+            <div x-show="page === 'pwgen'" class="page" x-transition.opacity.duration.300ms>
+                <h2 style="margin-bottom:var(--sp-4)">🔑 <span x-text="$t('pwgen.title')"></span></h2>
+                <div style="max-width:640px;background: var(--card-bg);border:1px solid var(--border);border-radius:var(--radius);padding:var(--sp-5)">
+                    <div style="display:flex;gap:var(--sp-2);margin-bottom:var(--sp-4)">
+                        <input type="text" readonly x-model="pwgen.value" class="port-input" style="flex:1;font-family:monospace;font-size:var(--fs-base)" :placeholder="$t('pwgen.placeholder')">
+                        <button class="btn btn-sm btn-success" @click="pwgenCopy(pwgen.value)" :disabled="!pwgen.value" x-text="$t('vault.copy')"></button>
+                    </div>
+                    <div x-show="pwgen.value" style="margin-bottom:var(--sp-4)">
+                        <div style="height:6px;border-radius:3px;background:var(--border-light);overflow:hidden">
+                            <div :style="'height:100%;width:' + ((pwgen.strength + 1) * 100 / 6) + '%;background:' + (['#dc2626','#f59e0b','#f59e0b','#10b981','#10b981','#059669'][pwgen.strength] || '#dc2626')"></div>
+                        </div>
+                        <p style="font-size:var(--fs-xs);color:var(--text-muted);margin-top:var(--sp-1)" x-text="pwgenStrengthLabel(pwgen.strength)"></p>
+                    </div>
+
+                    <div class="form-group">
+                        <label x-text="$t('pwgen.length')"></label>
+                        <input type="range" min="8" max="64" x-model.number="pwgen.length" style="width:100%">
+                        <span style="font-size:var(--fs-sm);color:var(--text-light)" x-text="pwgen.length"></span>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-2);margin-bottom:var(--sp-4)">
+                        <label style="display:flex;align-items:center;gap:var(--sp-2)"><input type="checkbox" x-model="pwgen.upper"> <span x-text="$t('pwgen.upper')"></span></label>
+                        <label style="display:flex;align-items:center;gap:var(--sp-2)"><input type="checkbox" x-model="pwgen.lower"> <span x-text="$t('pwgen.lower')"></span></label>
+                        <label style="display:flex;align-items:center;gap:var(--sp-2)"><input type="checkbox" x-model="pwgen.digits"> <span x-text="$t('pwgen.digits')"></span></label>
+                        <label style="display:flex;align-items:center;gap:var(--sp-2)"><input type="checkbox" x-model="pwgen.symbols"> <span x-text="$t('pwgen.symbols')"></span></label>
+                    </div>
+                    <button class="btn btn-primary btn-block" @click="pwgenGenerate()" x-text="$t('pwgen.generate')"></button>
+                </div>
+
+                <h3 style="margin-top:var(--sp-6)" x-show="pwgenHistory.length">📋 <span x-text="$t('pwgen.history')"></span></h3>
+                <table class="table" x-show="pwgenHistory.length" style="max-width:640px">
                     <tbody>
-                        <template x-for="v in vaultItems" :key="v.id">
+                        <template x-for="(h, idx) in pwgenHistory" :key="idx">
                             <tr>
-                                <td x-text="v.name"></td>
-                                <td x-text="v.category"></td>
-                                <td x-text="v.note" style="font-size:var(--fs-xs);color: var(--text-muted)"></td>
-                                <td class="actions">
-                                    <button class="btn btn-sm btn-success" @click="copyVaultItem(v)" x-text="$t('vault.copy')"></button>
-                                    <button class="btn btn-sm btn-danger" @click="deleteVaultItem(v)" x-text="$t('vault.delete')"></button>
-                                </td>
+                                <td style="font-family:monospace" x-text="h.value"></td>
+                                <td style="font-size:var(--fs-xs);color:var(--text-muted);white-space:nowrap" x-text="h.time"></td>
+                                <td class="actions"><button class="btn btn-sm btn-success" @click="pwgenCopy(h.value)" x-text="$t('vault.copy')"></button></td>
                             </tr>
                         </template>
-                        <tr x-show="!vaultItems.length"><td colspan="4" class="empty-cell"><div class="empty-state empty-state--inline"><span class="empty-state__icon">🔐</span><span class="empty-state__title" x-text="$t('vault.empty')"></span></div></td></tr>
                     </tbody>
                 </table>
             </div>
@@ -3360,6 +3526,7 @@
             </div>
         </div>
 </div>
+<script src="zkvault.min.js" defer></script>
 <script src="app.js"></script>
 </body>
 </html>
