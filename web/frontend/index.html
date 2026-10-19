@@ -2361,7 +2361,8 @@
                             · <span x-text="components.panel?.version || ''" :title="'完整构建号'"></span>
                         </div>
                     </div>
-                    <div x-show="hardware" style="margin-bottom:var(--sp-4);padding:var(--sp-4);background:var(--card-bg-alt);border:1px solid var(--border);border-radius:var(--radius);">
+                    <template x-if="hardware">
+                    <div style="margin-bottom:var(--sp-4);padding:var(--sp-4);background:var(--card-bg-alt);border:1px solid var(--border);border-radius:var(--radius);">
                         <div style="display:flex;align-items:center;flex-wrap:wrap;gap:var(--sp-3);margin-bottom:var(--sp-3);">
                             <span style="font-size:var(--fs-base);font-weight:700;color:var(--text)">🖥️ <span x-text="$t('hardware.title')"></span></span>
                             <span class="badge-xs" style="background:var(--primary-bg);color:var(--primary);font-weight:600" x-text="hwProfileLabel(hardware.profile, hardware.profile_label)"></span>
@@ -2429,6 +2430,7 @@
                             </div>
                         </div>
                     </div>
+                    </template>
                     <template x-for="cat in componentCategories" :key="cat">
                         <div style="margin-bottom:var(--sp-4)">
                             <div style="font-size:var(--fs-sm);font-weight:600;color: var(--text-secondary);margin-bottom:6px;padding:0 var(--sp-2)" x-text="catLabel(cat)"></div>
