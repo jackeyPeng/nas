@@ -564,7 +564,7 @@
                             </tr>
                         </thead>
                         <tbody>
-                            <template x-for="log in loginLogs" :key="log.time + log.user">
+                            <template x-for="(log, li) in loginLogs" :key="log.time + log.user + '#' + li">
                                 <tr>
                                     <td style="font-size:var(--fs-xs)" x-text="log.time"></td>
                                     <td style="font-family:monospace" x-text="log.user"></td>
@@ -1702,7 +1702,7 @@
                     </div>
                     <div style="font-size:var(--fs-base);font-weight:600;color: var(--text-secondary);margin-bottom:var(--sp-3)" x-text="$t('logs.title')"></div>
                     <div style="background: var(--card-bg);border:1px solid var(--border);border-radius:var(--radius-lg);padding:var(--sp-3);max-height:400px;overflow-y:auto">
-                        <template x-for="op in (operationsLog||[])" :key="op.time">
+                        <template x-for="(op, oi) in (operationsLog||[])" :key="op.time + '#' + oi">
                             <div style="display:flex;align-items:flex-start;gap:var(--sp-3);padding:var(--sp-2) 0;border-bottom:1px solid var(--border-light);font-size:var(--fs-sm)">
                                 <span style="font-size:var(--fs-base);color: var(--text-light);white-space:nowrap;min-width:130px" x-text="op.time?.substring(0,16)"></span>
                                 <span class="badge" :style="op.action==='error'?'background: var(--danger-light);color: var(--danger)':op.action==='warning'?'background: var(--warn-light);color: var(--warn)':'background: var(--success-light);color: var(--success)'" style="min-width:50px;text-align:center;font-size:var(--fs-xs)" x-text="$t('common.failed')"></span>
