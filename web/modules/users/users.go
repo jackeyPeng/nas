@@ -24,9 +24,51 @@ type NASUser struct {
 	CreatedAt   string          `json:"created_at"`             // 创建时间（私有目录 ctime）
 }
 
-// getUsers 返回增强版用户列表：系统用户 ∩ NAS 服务用户
+// isShareIdentity 判定「共享影子身份」：diskmgmt 创建共享文件夹时会
+// useradd -M -s /usr/sbin/nologin -g <同名组> 建占位用户（目录属主/force group 用，
+// 见 pending_ops.go），它不是可登录可管理的真实用户，不应出现在用户页。
+// 特征 = nologin 类 shell + 主组与用户名同名；面板真实用户一律 /bin/bash（create.go）。
+func isShareIdentity(name, shell, primaryGroup string) bool {
+	switch shell {
+	case "/usr/sbin/nologin", "/usr/bin/nologin", "/bin/false":
+		return primaryGroup != "" && primaryGroup == name
+	}
+	return false
+}
+
+// gidToGroupName 读取 /etc/group 建 gid→组名映射。
+func gidToGroupName() map[string]string {
+	m := map[string]string{}
+	if data, err := common.ExecOutput("cat", "/etc/group"); err == nil {
+		for _, line := range strings.Split(data, "\n") {
+			parts := strings.Split(strings.TrimSpace(line), ":")
+			if len(parts) >= 3 {
+				m[parts[2]] = parts[0]
+			}
+		}
+	}
+	return m
+}
+
+// shareIdentityNames 返回全部共享影子身份用户名集合。
+func shareIdentityNames() map[string]bool {
+	res := map[string]bool{}
+	gids := gidToGroupName()
+	if data, err := common.ExecOutput("cat", "/etc/passwd"); err == nil {
+		for _, line := range strings.Split(data, "\n") {
+			parts := strings.Split(strings.TrimSpace(line), ":")
+			if len(parts) >= 7 && isShareIdentity(parts[0], parts[6], gids[parts[3]]) {
+				res[parts[0]] = true
+			}
+		}
+	}
+	return res
+}
+
+// getUsers 返回增强版用户列表：系统用户 ∩ NAS 服务用户（共享影子身份除外）
 func getUsers() []NASUser {
 	userMap := map[string]*NASUser{}
+	gids := gidToGroupName()
 
 	// Include all Linux users (UID >= 1000, filter system accounts)
 	if data, err := common.ExecOutput("cat", "/etc/passwd"); err == nil {
@@ -41,6 +83,10 @@ func getUsers() []NASUser {
 				name := parts[0]
 				// Skip common system-ish accounts
 				if name == "nobody" || name == "nogroup" {
+					continue
+				}
+				// Skip 共享影子身份（建共享时的占位用户，非真实用户）
+				if len(parts) >= 7 && isShareIdentity(name, parts[6], gids[parts[3]]) {
 					continue
 				}
 				getOrCreate(userMap, name)

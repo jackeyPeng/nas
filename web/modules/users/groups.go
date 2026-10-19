@@ -94,6 +94,9 @@ func listGroups() []UserGroup {
 		return groups
 	}
 
+	// 共享影子身份的同名组不展示（diskmgmt 建共享时 groupadd 的占位组）
+	shadow := shareIdentityNames()
+
 	for _, line := range strings.Split(data, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
@@ -106,6 +109,11 @@ func listGroups() []UserGroup {
 		name := parts[0]
 		gid := parts[2]
 		membersStr := parts[3]
+
+		// 共享影子身份同名组跳过
+		if shadow[name] {
+			continue
+		}
 
 		// 只列 GID >= 1000 的用户组（排除系统组；nogroup gid=65534 也排除）
 		gidNum := 0
