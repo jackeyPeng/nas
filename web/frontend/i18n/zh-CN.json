@@ -1203,7 +1203,7 @@
     }
   },
   "files": {
-    "pool_root": "池根",
+    "pool_root": "根目录",
     "name": "名称",
     "size": "大小",
     "owner": "属主",

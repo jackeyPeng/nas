@@ -114,19 +114,19 @@ func TestBuildRecycleRootsInjectsPseudoPoolRootEntry(t *testing.T) {
 		metaWithPool("photos", "/data/nas1/photos", "/data/nas1", false),
 	}
 	roots := buildRecycleRoots(metas)
-	key := "(池根 nas1)"
+	key := "(根目录 nas1)"
 	if roots[key] != "/data/nas1" {
 		t.Errorf("应注入池根伪共享 %q=/data/nas1, got %v", key, roots)
 	}
 }
 
 func TestBuildRecycleRootsRealShareTakesPriorityOverPseudo(t *testing.T) {
-	// 真实共享恰好同名「(池根 nas1)」时，真实共享的 path 优先，不被伪条目覆盖。
+	// 真实共享恰好同名「(根目录 nas1)」时，真实共享的 path 优先，不被伪条目覆盖。
 	metas := []FolderMeta{
-		metaWithPool("(池根 nas1)", "/data/nas1/special", "/data/nas1", true),
+		metaWithPool("(根目录 nas1)", "/data/nas1/special", "/data/nas1", true),
 	}
 	roots := buildRecycleRoots(metas)
-	if roots["(池根 nas1)"] != "/data/nas1/special" {
+	if roots["(根目录 nas1)"] != "/data/nas1/special" {
 		t.Errorf("真实共享应优先于伪条目, got %v", roots)
 	}
 }
@@ -138,10 +138,10 @@ func TestBuildRecycleRootsDistinctPoolsEachGetOneEntry(t *testing.T) {
 		metaWithPool("docs", "/data/nas2/docs", "/data/nas2", false),
 	}
 	roots := buildRecycleRoots(metas)
-	if roots["(池根 nas1)"] != "/data/nas1" {
+	if roots["(根目录 nas1)"] != "/data/nas1" {
 		t.Errorf("nas1 伪条目缺失或错误, got %v", roots)
 	}
-	if roots["(池根 nas2)"] != "/data/nas2" {
+	if roots["(根目录 nas2)"] != "/data/nas2" {
 		t.Errorf("nas2 伪条目缺失或错误, got %v", roots)
 	}
 	if roots["movies"] != "/data/nas1/movies" {
@@ -150,7 +150,7 @@ func TestBuildRecycleRootsDistinctPoolsEachGetOneEntry(t *testing.T) {
 	// nas1 只应有一条伪条目，不因两个 FolderMeta 同池而重复/冲突
 	count := 0
 	for k := range roots {
-		if k == "(池根 nas1)" {
+		if k == "(根目录 nas1)" {
 			count++
 		}
 	}
@@ -163,7 +163,7 @@ func TestPoolRootForPseudoShareHit(t *testing.T) {
 	metas := []FolderMeta{
 		metaWithPool("movies", "/data/nas1/movies", "/data/nas1", true),
 	}
-	path, ok := poolRootForPseudoShare("(池根 nas1)", metas)
+	path, ok := poolRootForPseudoShare("(根目录 nas1)", metas)
 	if !ok || path != "/data/nas1" {
 		t.Errorf("应命中池根伪共享, got path=%q ok=%v", path, ok)
 	}
@@ -176,7 +176,7 @@ func TestPoolRootForPseudoShareMiss(t *testing.T) {
 	if _, ok := poolRootForPseudoShare("movies", metas); ok {
 		t.Error("真实共享名不应被 poolRootForPseudoShare 命中")
 	}
-	if _, ok := poolRootForPseudoShare("(池根 nas2)", metas); ok {
+	if _, ok := poolRootForPseudoShare("(根目录 nas2)", metas); ok {
 		t.Error("不存在的池不应命中")
 	}
 	if _, ok := poolRootForPseudoShare("", metas); ok {
@@ -190,10 +190,10 @@ func TestPoolRootForPseudoShareMalformedPseudoNameFallsThroughToOriginalPath(t *
 	metas := []FolderMeta{
 		metaWithPool("movies", "/data/nas1/movies", "/data/nas1", true),
 	}
-	if _, ok := poolRootForPseudoShare("(池根 ../nas1)", metas); ok {
+	if _, ok := poolRootForPseudoShare("(根目录 ../nas1)", metas); ok {
 		t.Error("非法伪名不应命中,应走原 findShareMetaPath 拒绝路径")
 	}
-	if _, ok := poolRootForPseudoShare("(池根 nas1", metas); ok {
+	if _, ok := poolRootForPseudoShare("(根目录 nas1", metas); ok {
 		t.Error("格式不完整的伪名不应命中")
 	}
 }

@@ -1203,7 +1203,7 @@
     }
   },
   "files": {
-    "pool_root": "Pool root",
+    "pool_root": "Root directory",
     "name": "Name",
     "size": "Size",
     "owner": "Owner",

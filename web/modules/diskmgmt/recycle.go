@@ -43,7 +43,7 @@ func RegisterRecycleRoutes(mux *http.ServeMux) {
 
 // buildRecycleRoots 是 recycleRoots 的纯函数核心：先建真实共享 map
 // （RecycleBin=true），再对 metas 的全部 distinct Pool 值注入池根伪共享条目
-// （key="(池根 <base(pool)>)"，value=pool），仅当该 key 尚不存在时注入——
+// （key="(根目录 <base(pool)>)"，value=pool），仅当该 key 尚不存在时注入——
 // 真实共享优先。
 //
 // D1 修复(2026-10-13 同构机验收):默认 recycle_bin=0 的共享删除走池根 .recycle
@@ -61,7 +61,7 @@ func buildRecycleRoots(metas []FolderMeta) map[string]string {
 		if m.Pool == "" {
 			continue
 		}
-		key := fmt.Sprintf("(池根 %s)", filepath.Base(m.Pool))
+		key := fmt.Sprintf("(根目录 %s)", filepath.Base(m.Pool))
 		if _, exists := roots[key]; !exists {
 			roots[key] = m.Pool
 		}
@@ -76,7 +76,7 @@ func recycleRoots() map[string]string {
 }
 
 // poolRootForPseudoShare 判断 share 是否为某 distinct pool 的伪共享名
-// （"(池根 <base(pool)>)"），命中则返回该 pool 路径。
+// （"(根目录 <base(pool)>)"），命中则返回该 pool 路径。
 func poolRootForPseudoShare(share string, metas []FolderMeta) (string, bool) {
 	if share == "" {
 		return "", false
@@ -87,7 +87,7 @@ func poolRootForPseudoShare(share string, metas []FolderMeta) (string, bool) {
 			continue
 		}
 		seen[m.Pool] = true
-		if fmt.Sprintf("(池根 %s)", filepath.Base(m.Pool)) == share {
+		if fmt.Sprintf("(根目录 %s)", filepath.Base(m.Pool)) == share {
 			return m.Pool, true
 		}
 	}
@@ -216,7 +216,7 @@ func findShareMetaPath(share string) (string, error) {
 
 // resolveShareOrPoolRootPath 先按真实共享名查 findShareMetaPath，未命中再查
 // 池根伪共享名——与 buildRecycleRoots 的「真实共享优先」注入顺序保持一致
-// （若管理员真建了名为「(池根 xxx)」的共享，list 展示真实共享，restore/delete/
+// （若管理员真建了名为「(根目录 xxx)」的共享，list 展示真实共享，restore/delete/
 // clear 也必须解析到同一路径，不能伪名抢先后不一致）。错误语义不变：两处都
 // 未命中 → 共享不存在 400。restore/delete/clear 三个 handler 共用。
 func resolveShareOrPoolRootPath(share string) (string, error) {

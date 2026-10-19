@@ -1897,7 +1897,7 @@
                     </div>
                     <progress max="100" :value="filesPage.uploadProgress.percent" style="width:100%"></progress>
                 </div>
-                <table class="table-dense" style="width:100%">
+                <table class="table table-dense" style="width:100%">
                     <thead><tr>
                         <th><input type="checkbox" :title="$t('files.select_all')" :checked="filesPage.entries.length > 0 && filesPage.selected.length === filesPage.entries.length" @change="toggleAllFiles()"></th>
                         <th x-text="$t('files.name')"></th><th x-text="$t('files.size')"></th>
@@ -1908,17 +1908,17 @@
                         <template x-for="e in filesPage.entries" :key="e.name">
                             <tr>
                                 <td><input type="checkbox" :checked="isFileSelected(e)" @change="toggleFileSelection(e)"></td>
-                                <td>
+                                <td :data-label="$t('files.name')">
                                     <a href="#" x-show="e.type==='dir'" @click.prevent="loadFiles(filesPage.relJoin(e.name))" style="color:var(--text-primary);text-decoration:none">📁 <span x-text="e.name"></span></a>
                                     <span x-show="e.type==='file'">📄 <span x-text="e.name"></span></span>
                                     <span x-show="e.type==='symlink'" :title="e.target">🔗 <span x-text="e.name"></span> → <span x-text="e.target" style="color:var(--text-light)"></span></span>
                                     <span x-show="e.type==='other'">• <span x-text="e.name"></span></span>
                                 </td>
-                                <td x-text="e.type==='dir' ? '—' : formatSize(e.size)"></td>
-                                <td x-text="e.owner + ':' + e.group"></td>
-                                <td><code x-text="e.mode_text"></code></td>
-                                <td x-text="fmtTime(e.mtime)"></td>
-                                <td style="white-space:nowrap">
+                                <td x-text="e.type==='dir' ? '—' : formatSize(e.size)" :data-label="$t('files.size')"></td>
+                                <td x-text="e.owner + ':' + e.group" :data-label="$t('files.owner')"></td>
+                                <td :data-label="$t('files.mode')"><code x-text="e.mode_text"></code></td>
+                                <td x-text="fmtTime(e.mtime)" :data-label="$t('files.mtime')"></td>
+                                <td style="white-space:nowrap" :data-label="$t('files.actions')">
                                     <button class="btn-xs" x-show="e.type!=='dir'" @click="downloadFile(e)" x-text="$t('files.download')"></button>
                                     <button class="btn-xs" x-show="previewable(e)" @click="previewFile(e)" x-text="$t('files.preview')"></button>
                                     <button class="btn-xs" @click="openRename(e)" x-text="$t('files.rename')"></button>
