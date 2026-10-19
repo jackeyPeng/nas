@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 主要变化 |
 |------|------|---------|
+| v1.4.0-beta.23 | 2026-10-17 | UI 巡检修复集 — 共享影子身份（建共享时的 nologin 占位用户）不再泄漏为用户页幻影用户；仪表盘/用户页 null 数组崩溃修复；面板停止的服务不再误标「失败」（is-active exit3 四态归一 + rclone unit SuccessExitStatus=143，已停止显黄色徽章）；健康中心口径对齐（not-installed 不计 warn、新增「N 个已停止」warn）；权限报错文案与校验对齐；第六轮双机重置完整验收（merge/RAID1 各 34 项全 PASS）+ Chrome 实测 |
 | v1.4.0-beta.22 | 2026-10-16 | rclone 安全升级 v1.75.2（修 serve webdav 路径遍历 GHSA-44pm-2q5p-fm63 等命中我方暴露面的高危项 + Go 1.26.9 HTTP/2 CVE；新装必落 pin 版本；服务页重装路径 serve 根对齐 /data/nas1/public 消除越权隐患）+ 系统健康注册表存储层 6 项按池模式感知（RAID 池机器不再恒 fail，46/46 可达）；双机重置重装完整验收（merge/RAID1 各 35 项断言全 PASS） |
 | v1.4.0-beta.21 | 2026-10-15 | 文件管理页新增「上传目录」— webkitdirectory 整目录树保留子路径上传（后端 Content-Disposition 原始 filename 逐段消毒、缺失父目录逐段 0755 创建、既有目录权限一律不动、409 覆盖重试不拍平、并发 EEXIST 加固）；穿越用例（`../pwn`）由 stdlib 剥路径后巧合放行改为显式 400 拒绝；修复仪表盘把未安装的可选服务（FileBrowser）计入异常导致全新安装恒显「1 个异常」假告警；两台 Debian 13 测试机部署 + Chrome 实机 E2E 全过 |
 | v1.4.0-beta.20 | 2026-10-15 | beta.19 后续修复 — 回收站合并式恢复（原位已有同名目录时逐子项合并回原位，替代整树 .restored 旁落）+ folders.db 读取加固（坏行跳过+日志，不再静默半填充）+ install.sh FileBrowser 条件化补漏（全新安装不再报假「验证未通过」）+ 服务管理页状态徽章四态修复；两台 Debian 13 测试机重置后全新安装完整验收（各 34 项断言全 PASS） |
@@ -19,11 +20,17 @@
 
 ---
 
-## [未发布]
+## [2026-10-17] - UI 巡检修复集 + 共享影子身份过滤
+
+### 版本 v1.4.0-beta.23
 
 ### 修复
-- **Chrome 深度巡检 5 项修复**（9aae591 + 8ee333e，第五轮双机重置部署 + 全 UI 走查发现）：①仪表盘 `configIssues.issues` 为 null 时模板 `.length` 崩溃（后端 config/check nil slice→`[]` + 前端赋值归一化双保险）②用户页空成员组 `g.members` null 连环 TypeError（后端 groups.go 初始化 `[]string{}` + 模板 `|| []` 守卫）③**面板停止的服务显示「失败」红色徽章 + 健康检查假告警**——双层根因：rclone serve 收 SIGTERM 退 143 被 systemd 标 failed（两 unit 加 `SuccessExitStatus=143`，setup.sh/services.go 重装路径/在役机原地三处同步）+ `GetServices` 把 is-active exit 3（inactive 已停止）一律映射 failed（抽纯函数 `classifyServiceActive` 四态归一，8 用例；健康检查新增「N 个已停止」warn 分支修「2/3 全部运行中」自相矛盾文案，3 用例；已停止徽章红→黄 badge-warn）④权限报错文案「3~4 位八进制」与实际校验（4 位 setuid 本就拒绝）矛盾，中英对齐。浏览器复测：登录 0 console 错误、UI 停止→黄色「已停止」+ 健康页「6/7 服务运行中，1 个已停止」、UI 合并式恢复/目录删除 type-to-confirm/批量守卫/递归 chmod 落盘/真实 webkitdirectory 目录上传全树落盘（含中文名）全过；最终二进制双机完整验收各 34 项全 PASS
-- **健康中心系统服务检查口径与仪表盘对齐**（95160da）：`checkSystem` 不再把 not-installed（FileBrowser 等 beta.18 起默认不装的可选服务）计为 warn——此前默认安装的机器健康中心恒显「7/8 服务运行中，1 个未安装」警告、仪表盘「最近告警」常驻该事件（beta.21 只修了仪表盘统计侧，健康中心侧漏网）；已安装服务数为 0 时仍 warn「未检测到已安装的 NAS 服务」；抽纯函数 `systemCheckFrom` + 表驱动单测 5 例，`CGO_ENABLED=0 go test ./...` 全绿；已部署两台测试机（.57/.48）实机验证健康中心显示「所有系统运行正常」
+- **共享影子身份不再泄漏到用户页/用户组页**（cc7c53a，Chrome 巡检发现）：建共享文件夹时 pending_ops 会 `useradd -M -s nologin -g 同名` 建占位用户（目录属主/force group 用，设计如此），但它此前出现在用户列表里成为幻影用户（如验收共享 rbtest 显示为可管理用户）。现按「nologin 类 shell + 同名主组」特征过滤（isShareIdentity 纯函数 + 8 用例；面板真实用户一律 /bin/bash 不受影响），users/user-groups 两 API 同步过滤；passwd 中身份保留（共享属主语义不变）
+- **Chrome 深度巡检 5 项修复**（9aae591 + 8ee333e，第五轮双机重置部署 + 全 UI 走查发现）：①仪表盘 `configIssues.issues` 为 null 时模板 `.length` 崩溃（后端 config/check nil slice→`[]` + 前端赋值归一化双保险）②用户页空成员组 `g.members` null 连环 TypeError（后端 groups.go 初始化 `[]string{}` + 模板 `|| []` 守卫）③**面板停止的服务显示「失败」红色徽章 + 健康检查假告警**——双层根因：rclone serve 收 SIGTERM 退 143 被 systemd 标 failed（两 unit 加 `SuccessExitStatus=143`，setup.sh/services.go 重装路径/在役机原地三处同步）+ `GetServices` 把 is-active exit 3（inactive 已停止）一律映射 failed（抽纯函数 `classifyServiceActive` 四态归一，8 用例；健康检查新增「N 个已停止」warn 分支修「2/3 全部运行中」自相矛盾文案，3 用例；已停止徽章红→黄 badge-warn）④权限报错文案「3~4 位八进制」与实际校验（4 位 setuid 本就拒绝）矛盾，中英对齐。浏览器复测：登录 0 console 错误、UI 停止→黄色「已停止」+ 健康页「6/7 服务运行中，1 个已停止」、UI 合并式恢复/目录删除 type-to-confirm/批量守卫/递归 chmod 落盘/真实 webkitdirectory 目录上传全树落盘（含中文名）全过
+- **健康中心系统服务检查口径与仪表盘对齐**（95160da）：`checkSystem` 不再把 not-installed（FileBrowser 等 beta.18 起默认不装的可选服务）计为 warn——此前默认安装的机器健康中心恒显「7/8 服务运行中，1 个未安装」警告、仪表盘「最近告警」常驻该事件（beta.21 只修了仪表盘统计侧，健康中心侧漏网）；已安装服务数为 0 时仍 warn「未检测到已安装的 NAS 服务」；抽纯函数 `systemCheckFrom` + 表驱动单测，`CGO_ENABLED=0 go test ./...` 全绿
+
+### 验收
+- 第六轮双机重置部署（install.sh 直装 control beta.22 + rclone 1.75.2 门槛自动升级 → 替换 rc 二进制 cc7c53a）：57 merge 4×50G / 48 向导 RAID1；**双机各 34 项断言全 PASS**（注册表 46/46 双布局、目录上传建树、穿越拒、回收站合并恢复、chmod/chown/fix-home、SMB 隔离全套）；Chrome 实测：仪表盘 0 console 错误、服务停止→黄色已停止徽章+健康 warn 文案、影子身份过滤后用户/组列表纯净（users=[alice,bob,fm]）
 
 ## [2026-10-16] - 注册表池模式感知 + rclone v1.75.2 安全升级
 
