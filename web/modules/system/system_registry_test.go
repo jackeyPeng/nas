@@ -1,10 +1,68 @@
 package system
 
 import (
+	"database/sql"
 	"reflect"
 	"strings"
 	"testing"
 )
+
+// TestSyncRegistryMetaPrunesRetired 锁定升级场景：目录删项后（如 FileBrowser
+// ID 6/21/24/29/33 随 beta.24 移除），旧 registry.db 里的残留行必须被
+// syncRegistryMeta 剪除，否则 GetRegistry 永远返回幽灵项（46 而非 41）。
+func TestSyncRegistryMetaPrunesRetired(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`CREATE TABLE registry (
+		id INTEGER PRIMARY KEY,
+		category TEXT NOT NULL DEFAULT '',
+		name TEXT NOT NULL,
+		status TEXT NOT NULL DEFAULT 'pending',
+		detail TEXT NOT NULL DEFAULT '',
+		description TEXT NOT NULL DEFAULT '',
+		checked_at TEXT NOT NULL DEFAULT ''
+	)`); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	// 模拟 beta.23 时代旧库：FileBrowser 幽灵行 + 旧文案的合法行（带旧状态）
+	db.Exec(`INSERT INTO registry (id, category, name, status, detail, description) VALUES
+		(6, '服务', 'filebrowser — 网页文件管理', 'pass', '未安装(面板文件管理已取代)', '端口 8081')`)
+	db.Exec(`INSERT INTO registry (id, category, name, status, detail) VALUES
+		(1, '服务', 'smbd — 旧文案', 'pass', 'active + enabled')`)
+
+	syncRegistryMeta(db)
+
+	// FileBrowser 幽灵行必须被剪除
+	var ghost int
+	db.QueryRow(`SELECT COUNT(*) FROM registry WHERE id=6`).Scan(&ghost)
+	if ghost != 0 {
+		t.Errorf("retired item id=6 not pruned (rows=%d)", ghost)
+	}
+	// 总行数 == 当前目录数（41）
+	var total int
+	db.QueryRow(`SELECT COUNT(*) FROM registry`).Scan(&total)
+	if want := len(allRegistryItems()); total != want {
+		t.Errorf("registry rows = %d, want %d (catalog size)", total, want)
+	}
+	// 合法行：名称同步为 canonical，旧状态保留（剪枝不清状态）
+	var name, status string
+	db.QueryRow(`SELECT name, status FROM registry WHERE id=1`).Scan(&name, &status)
+	canonical := ""
+	for _, it := range allRegistryItems() {
+		if it.ID == 1 {
+			canonical = it.Name
+		}
+	}
+	if name != canonical {
+		t.Errorf("id=1 name = %q, want canonical %q", name, canonical)
+	}
+	if status != "pass" {
+		t.Errorf("id=1 status = %q, want preserved pass", status)
+	}
+}
 
 // TestAllRegistryItemsNoFileBrowser 锁定 FileBrowser 彻底移除：注册表应为
 // 41 项（46 - 5 个 FileBrowser 专属项），且任何 item 的 Name/Description

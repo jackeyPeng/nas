@@ -368,13 +368,22 @@ func seedRegistry(db *sql.DB) {
 // Status/detail are preserved so upgraded machines don't lose their last check result,
 // but renamed/redescribed items reflect the current model. New items are inserted as pending.
 func syncRegistryMeta(db *sql.DB) {
-	for _, item := range allRegistryItems() {
+	items := allRegistryItems()
+	for _, item := range items {
 		db.Exec(`INSERT INTO registry (id, category, name, status, detail, description, checked_at)
 			VALUES (?, ?, ?, 'pending', '', ?, '')
 			ON CONFLICT(id) DO UPDATE SET category=excluded.category, name=excluded.name, description=excluded.description`,
 			item.ID, item.Category, item.Name, item.Description,
 		)
 	}
+	// 剪除已从目录退役的条目（如 FileBrowser ID 6/21/24/29/33，beta.24 移除）：
+	// 升级后旧 registry.db 的残留行不再被任何检查刷新，会变成幽灵项永远出现在报告里。
+	// ID 全部来自代码内目录常量，拼接无注入面。
+	ids := make([]string, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, fmt.Sprintf("%d", item.ID))
+	}
+	db.Exec("DELETE FROM registry WHERE id NOT IN (" + strings.Join(ids, ",") + ")")
 }
 
 // GetRegistry returns all registry items with current status
