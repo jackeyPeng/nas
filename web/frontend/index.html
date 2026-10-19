@@ -368,7 +368,7 @@
                                 <td x-text="svcDesc(svc.name, svc.description)"></td>
                                 <td>
                                     <span class="badge"
-                                          :class="svc.active === 'active' ? 'badge-ok' : (svc.active === 'not-installed' || svc.active === 'unknown' ? 'badge-info' : 'badge-err')"
+                                          :class="svc.active === 'active' ? 'badge-ok' : (svc.active === 'not-installed' || svc.active === 'unknown' ? 'badge-info' : (svc.active === 'failed' ? 'badge-err' : 'badge-warn'))"
                                           x-text="svc.active === 'active' ? $t('common.running') : (svc.active === 'not-installed' || svc.active === 'unknown' ? $t('common.not_installed') : (svc.active === 'failed' ? $t('common.failed') : $t('dashboard.stopped')))"></span>
                                     <span x-show="svc.enabled" class="badge badge-info" style="margin-left:var(--sp-1)" x-text="$t('common.auto_start')"></span>
                                 </td>

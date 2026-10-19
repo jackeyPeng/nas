@@ -51,8 +51,24 @@ func TestSystemCheckFrom(t *testing.T) {
 			services: []map[string]interface{}{
 				svc("active"), svc("active"), svc("unknown"),
 			},
-			wantStat: "ok",
-			wantDet:  "2/3 服务全部运行中",
+			wantStat: "warn",
+			wantDet:  "2/3 服务运行中，1 个已停止",
+		},
+		{
+			name: "有 inactive(已停止)",
+			services: []map[string]interface{}{
+				svc("active"), svc("active"), svc("inactive"), svc("not-installed"),
+			},
+			wantStat: "warn",
+			wantDet:  "2/3 服务运行中，1 个已停止",
+		},
+		{
+			name: "failed 优先于 inactive",
+			services: []map[string]interface{}{
+				svc("active"), svc("failed"), svc("inactive"),
+			},
+			wantStat: "error",
+			wantDet:  "1/3 服务运行中，1 个异常",
 		},
 	}
 

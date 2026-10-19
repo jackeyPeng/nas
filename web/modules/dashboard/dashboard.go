@@ -96,23 +96,41 @@ func GetSystemInfo() SystemInfo {
 	return info
 }
 
+// classifyServiceActive — systemctl is-active 的 stdout+err 归一为面板四态。
+// exit 0: stdout 即状态(active);exit 3: inactive(已停止)或 failed;
+// exit 4 或 unknown: 单元不存在 → not-installed。
+// 旧实现把 exit 3 一律映射 failed,导致面板停止的服务显示「失败」+健康假告警。
+func classifyServiceActive(stdout, errText string) string {
+	state := strings.TrimSpace(stdout)
+	if errText == "" {
+		if state == "" {
+			return "unknown"
+		}
+		return state // active
+	}
+	if strings.Contains(errText, "exit status 4") || state == "unknown" || state == "" {
+		return "not-installed"
+	}
+	switch state {
+	case "failed":
+		return "failed"
+	case "inactive":
+		return "inactive"
+	default:
+		return state // activating / deactivating 等瞬态原样上报
+	}
+}
+
 // GetServices returns all NAS services with their status
 func GetServices() []map[string]interface{} {
 	var result []map[string]interface{}
 	for _, svc := range NasServices {
-		active := "unknown"
-		// Check if unit file exists
 		out, err := common.ExecOutput("systemctl", "is-active", svc.Name)
-		if err == nil {
-			active = strings.TrimSpace(out)
-		} else {
-			// Check if error is "not found" (exit code 4) vs "failed" (exit code 3)
-			if strings.Contains(out, "inactive") && strings.Contains(err.Error(), "exit status 4") {
-				active = "not-installed"
-			} else if strings.Contains(err.Error(), "exit status 3") {
-				active = "failed" // service exists but not running
-			}
+		errText := ""
+		if err != nil {
+			errText = err.Error()
 		}
+		active := classifyServiceActive(out, errText)
 		enabled := false
 		if enOut, enErr := common.ExecOutput("systemctl", "is-enabled", svc.Name); enErr == nil {
 			en := strings.TrimSpace(enOut)

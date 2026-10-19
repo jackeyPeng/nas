@@ -135,6 +135,10 @@ func systemCheckFrom(services []map[string]interface{}) Check {
 	case total == 0:
 		c.Status = "warn"
 		c.Detail = "未检测到已安装的 NAS 服务"
+	case active < total:
+		// 有已停止(inactive)的服务：不是异常但值得提醒，避免「N/M 全部运行中」自相矛盾
+		c.Status = "warn"
+		c.Detail = fmt.Sprintf("%d/%d 服务运行中，%d 个已停止", active, total, total-active)
 	default:
 		c.Status = "ok"
 		c.Detail = fmt.Sprintf("%d/%d 服务全部运行中", active, total)
