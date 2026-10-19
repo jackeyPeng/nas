@@ -88,16 +88,15 @@ func countAllItems() int {
 	return len(allRegistryItems())
 }
 
-// allRegistryItems returns the complete list of 46 registry items
+// allRegistryItems returns the complete list of 41 registry items
 func allRegistryItems() []RegistryItem {
 	items := []RegistryItem{
-		// 一、系统服务 (9项)
+		// 一、系统服务 (8项)
 		{ID: 1, Category: "服务", Name: "smbd — Samba 文件共享", Description: "端口 139/445，systemd 服务"},
 		{ID: 2, Category: "服务", Name: "nmbd — NetBIOS 名称解析", Description: "端口 137/138，systemd 服务"},
 		{ID: 3, Category: "服务", Name: "nfs-kernel-server — NFS 服务", Description: "端口 2049，systemd 服务"},
 		{ID: 4, Category: "服务", Name: "vsftpd — FTP 服务", Description: "端口 21 + 被动 30000-31000"},
 		{ID: 5, Category: "服务", Name: "rclone-webdav — WebDAV", Description: "端口 8080，rclone serve webdav"},
-		{ID: 6, Category: "服务", Name: "filebrowser — 网页文件管理", Description: "端口 8081，独立二进制"},
 		{ID: 7, Category: "服务", Name: "rclone-s3 — S3 对象存储", Description: "端口 9000，rclone serve s3"},
 		{ID: 8, Category: "服务", Name: "fail2ban — 入侵防护", Description: "SSH + FTP 暴力破解防护"},
 		{ID: 9, Category: "服务", Name: "nas-panel — 管理面板", Description: "端口 8090，Go 单二进制"},
@@ -114,27 +113,23 @@ func allRegistryItems() []RegistryItem {
 		{ID: 18, Category: "配置", Name: "/etc/sudoers.d/nas-panel", Description: "sudo 免密命令白名单"},
 		{ID: 19, Category: "配置", Name: "/etc/fstab — /data/nas1 条目", Description: "应有存储池挂载条目"},
 
-		// 三、systemd 服务文件 (4项)
+		// 三、systemd 服务文件 (3项)
 		{ID: 20, Category: "systemd", Name: "rclone-webdav.service", Description: "/etc/systemd/system/"},
-		{ID: 21, Category: "systemd", Name: "filebrowser.service", Description: "/etc/systemd/system/"},
 		{ID: 22, Category: "systemd", Name: "rclone-s3.service", Description: "/etc/systemd/system/"},
 		{ID: 23, Category: "systemd", Name: "nas-panel.service", Description: "/etc/systemd/system/"},
 
-		// 四、二进制文件 (2项)
-		{ID: 24, Category: "二进制", Name: "/usr/local/bin/filebrowser", Description: "FileBrowser 可执行文件"},
+		// 四、二进制文件 (1项)
 		{ID: 25, Category: "二进制", Name: "/usr/local/bin/nas-panel", Description: "NAS 管理面板可执行文件"},
 
-		// 五、系统用户/密码 (4项)
+		// 五、系统用户/密码 (3项)
 		{ID: 26, Category: "用户", Name: "系统用户密码", Description: "passwd -S，用于 FTP/SSH 登录"},
 		{ID: 27, Category: "用户", Name: "Samba 用户密码", Description: "smbpasswd，用于 SMB 共享"},
 		{ID: 28, Category: "用户", Name: "WebDAV 认证", Description: "htpasswd，用于 rclone webdav"},
-		{ID: 29, Category: "用户", Name: "FileBrowser 用户", Description: "FileBrowser 数据库中的 admin 用户"},
 
-		// 六、面板状态文件 (4项)
+		// 六、面板状态文件 (3项)
 		{ID: 30, Category: "状态", Name: "folders.db — 共享文件夹元数据", Description: "/opt/nas/data/，应有 public + home 记录"},
 		{ID: 31, Category: "状态", Name: ".last_reload — 配置重载时间戳", Description: "/opt/nas/data/，应存在"},
 		{ID: 32, Category: "状态", Name: "operations.db — 操作日志", Description: "/opt/nas/data/，重置后应删除"},
-		{ID: 33, Category: "状态", Name: "filebrowser.db — FileBrowser 数据库", Description: "/etc/filebrowser/，重置后保留"},
 
 		// 七、存储层 (6项，按池模式感知判定)
 		{ID: 34, Category: "存储", Name: "LVM 卷组 (VG)", Description: "vgs --noheadings，按池模式判定：LVM 模式应存在，RAID/其他模式不适用"},
@@ -427,15 +422,6 @@ func GetRegistry() RegistryReport {
 	return report
 }
 
-// fileBrowserInstalled 判断 FileBrowser 二进制是否存在。
-// beta.18 起 setup.sh 默认不装 FileBrowser（面板文件管理已取代），
-// 新装机上 FileBrowser 专属注册表项（ID 6/21/24/29/33）若仍按"必须存在"硬检查会导致 46/46 口径跌落；
-// 以 /usr/local/bin/filebrowser 存在性为门条件化这些项，--with-filebrowser 装过的机器维持真实检查。
-func fileBrowserInstalled() bool {
-	_, err := os.Stat("/usr/local/bin/filebrowser")
-	return err == nil
-}
-
 // RefreshRegistry re-checks all items and updates the database
 func RefreshRegistry() RegistryReport {
 	db := initRegistryDB()
@@ -497,17 +483,12 @@ func RefreshRegistry() RegistryReport {
 		}
 	}
 
-	// 一、系统服务 (9项)
+	// 一、系统服务 (8项)
 	checkService(1, "smbd")
 	checkService(2, "nmbd")
 	checkService(3, "nfs-kernel-server")
 	checkService(4, "vsftpd")
 	checkService(5, "rclone-webdav")
-	if fileBrowserInstalled() {
-		checkService(6, "filebrowser")
-	} else {
-		updateItem(6, "pass", "未安装(面板文件管理已取代,beta.18 起默认跳过)")
-	}
 	checkService(7, "rclone-s3")
 	checkService(8, "fail2ban")
 	checkService(9, "nas-panel")
@@ -545,25 +526,15 @@ func RefreshRegistry() RegistryReport {
 		updateItem(19, "warn", "存储池未创建，待配置 /data/nas1 挂载")
 	}
 
-	// 三、systemd 服务文件 (4项)
+	// 三、systemd 服务文件 (3项)
 	checkFileState(20, "/etc/systemd/system/rclone-webdav.service", true, "存在", "不存在")
-	if fileBrowserInstalled() {
-		checkFileState(21, "/etc/systemd/system/filebrowser.service", true, "存在", "不存在")
-	} else {
-		updateItem(21, "pass", "未安装(面板文件管理已取代,beta.18 起默认跳过)")
-	}
 	checkFileState(22, "/etc/systemd/system/rclone-s3.service", true, "存在", "不存在")
 	checkFileState(23, "/etc/systemd/system/nas-panel.service", true, "存在", "不存在")
 
-	// 四、二进制文件 (2项)
-	if fileBrowserInstalled() {
-		checkFileState(24, "/usr/local/bin/filebrowser", true, "存在", "不存在")
-	} else {
-		updateItem(24, "pass", "未安装(面板文件管理已取代,beta.18 起默认跳过)")
-	}
+	// 四、二进制文件 (1项)
 	checkFileState(25, "/usr/local/bin/nas-panel", true, "存在", "不存在")
 
-	// 五、系统用户/密码 (4项)
+	// 五、系统用户/密码 (3项)
 	nasUser := os.Getenv("NAS_USER")
 	if nasUser == "" {
 		nasUser = common.GetNASUser()
@@ -593,23 +564,7 @@ func RefreshRegistry() RegistryReport {
 		updateItem(28, "fail", "未配置")
 	}
 
-	if !fileBrowserInstalled() {
-		updateItem(29, "pass", "未安装(面板文件管理已取代,beta.18 起默认跳过)")
-	} else if _, err := os.Stat("/etc/filebrowser/filebrowser.db"); err == nil {
-		// FileBrowser API 无法区分"用户不存在"和"密码错误"
-		// 检查数据库文件存在且 filebrowser 服务运行中 = 用户应已创建
-		fbActive, _ := common.ExecOutput("systemctl", "is-active", "filebrowser")
-		fbInfo, _ := os.Stat("/etc/filebrowser/filebrowser.db")
-		if strings.TrimSpace(fbActive) == "active" && fbInfo != nil && fbInfo.Size() > 4096 {
-			updateItem(29, "pass", "已创建 ("+nasUser+")")
-		} else {
-			updateItem(29, "warn", "服务未运行或数据库异常")
-		}
-	} else {
-		updateItem(29, "fail", "FileBrowser 数据库不存在")
-	}
-
-	// 六、面板状态文件 (4项)
+	// 六、面板状态文件 (3项)
 	// 30. folders.db — 应有 public + home 记录
 	if _, err := os.Stat("/opt/nas/data/folders.db"); err == nil {
 		var folderCount int
@@ -631,11 +586,6 @@ func RefreshRegistry() RegistryReport {
 		updateItem(31, "warn", "不存在 (首次配置同步后生成)")
 	}
 	checkFileState(32, "/opt/nas/data/operations.db", false, "已清理 (不存在)", "仍存在")
-	if fileBrowserInstalled() {
-		checkFileState(33, "/etc/filebrowser/filebrowser.db", true, "存在", "不存在")
-	} else {
-		updateItem(33, "pass", "未安装(面板文件管理已取代,beta.18 起默认跳过)")
-	}
 
 	// 七、存储层 (6项) — 按池模式感知判定
 	vgsOut, _ := common.SudoOutput("/usr/sbin/vgs", "--noheadings")

@@ -26,7 +26,6 @@ var NasServices = []ServiceDef{
 	{Name: "nfs-kernel-server", DisplayName: "NFS", Port: "2049", Description: "Linux 文件共享"},
 	{Name: "vsftpd", DisplayName: "FTP", Port: "21", Description: "文件传输协议"},
 	{Name: "rclone-webdav", DisplayName: "WebDAV", Port: "8080", Description: "WebDAV 文件服务"},
-	{Name: "filebrowser", DisplayName: "FileBrowser", Port: "8081", Description: "Web 文件管理"},
 	{Name: "rclone-s3", DisplayName: "S3 对象存储", Port: "9000", Description: "S3 兼容对象存储 (rclone serve s3)"},
 	{Name: "fail2ban", DisplayName: "Fail2ban", Port: "-", Description: "入侵防护"},
 }

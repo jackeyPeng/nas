@@ -35,7 +35,6 @@
 - **NFS** — Linux 设备高速访问（端口 2049）
 - **FTP** — vsftpd 传统文件传输（端口 21）
 - **WebDAV** — rclone serve WebDAV 服务（端口 8080）
-- **FileBrowser** — Web 文件管理界面（端口 8081）
 - **S3 API (rclone)** — S3 兼容对象存储，bucket 自动映射目录（端口 9000）
 - **NAS Web Panel** — Web 管理面板（端口 8090）
 
@@ -44,7 +43,7 @@
 | 模块 | 功能 |
 |------|------|
 | 仪表盘 | 系统信息、CPU/内存/磁盘使用率、服务一览 |
-| 服务管理 | 8 个服务启动/停止/重启、查看日志 |
+| 服务管理 | 7 个服务启动/停止/重启、查看日志 |
 | 用户管理 | 添加/删除用户、修改密码（联动 Samba/系统/htpasswd） |
 | 存储信息 | 磁盘使用、目录大小、Samba 配置、NFS 导出、SMART 状态 |
 | 防火墙 | UFW 状态查看、端口允许/拒绝 |
@@ -79,7 +78,6 @@ nas/
 │   ├── vsftpd.userlist # FTP 用户白名单
 │   ├── jail.local      # Fail2ban 规则
 │   ├── rclone-webdav.service
-│   ├── filebrowser.service
 │   ├── nas-panel.service
 │   └── rclone-s3.service
 ├── scripts/            # 管理脚本
@@ -231,7 +229,7 @@ sudo bash /opt/nas/scripts/restore-config.sh /data/backups/config-20260710-16335
 | 类别 | 内容 |
 |------|------|
 | 系统配置 | smb.conf / exports / nfs.conf / vsftpd.conf / jail.local / rclone-htpasswd / rclone s3-env / sudoers |
-| 服务文件 | rclone-webdav / filebrowser / rclone-s3 / nas-panel .service |
+| 服务文件 | rclone-webdav / rclone-s3 / nas-panel .service |
 | 项目配置 | .env / configs/ 目录 |
 | 用户数据 | Samba passdb.tdb / FTP 白名单 / 系统用户列表 |
 | 定时任务 | crontab（监控告警 + 定期备份） |
@@ -245,7 +243,6 @@ sudo bash /opt/nas/scripts/restore-config.sh /data/backups/config-20260710-16335
 | NFS | mount -t nfs NAS_IP:/data/shared /mnt/nas | 按 IP 控制 |
 | FTP | ftp://NAS_IP/ | <NAS_USER> / <NAS_PASS> |
 | WebDAV | http://NAS_IP:8080/ | <NAS_USER> / <NAS_PASS> |
-| FileBrowser | http://NAS_IP:8081/ | <NAS_USER> / <NAS_PASS> |
 | S3 API | http://NAS_IP:9000 | <NAS_USER> / <NAS_PASS> |
 | Web 面板 | http://NAS_IP:8090 | <NAS_USER> / <NAS_PASS> |
 
@@ -284,7 +281,7 @@ sudo /opt/nas/scripts/remove-user.sh <用户名> [--delete-data]
 
 | 层 | 技术 | 说明 |
 |----|------|------|
-| NAS 服务 | Samba / NFS / vsftpd / rclone / FileBrowser | 全部原生 systemd 服务，不使用 Docker |
+| NAS 服务 | Samba / NFS / vsftpd / rclone | 全部原生 systemd 服务，不使用 Docker |
 | Web 面板后端 | Go 1.25 + go:embed | 单二进制，内嵌前端，内存占用 <3MB |
 | Web 面板前端 | Alpine.js + 原生 CSS | 无构建工具，浅色主题 |
 | 认证 | JWT | 24 小时有效期 |
@@ -330,7 +327,6 @@ Web 面板采用模块化架构，添加新功能只需：
 - **本项目代码**: GNU AGPLv3 (见 [LICENSE](LICENSE))
 - **第三方组件**: 见 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)
   - rclone (MIT) — WebDAV + S3 服务
-  - FileBrowser (Apache 2.0) — Web 文件管理
   - Alpine.js (MIT) — 前端响应式框架
   - Go JWT (MIT) — 认证
   - Samba/NFS/vsftpd/Fail2ban/UFW 等 — 各自开源许可证

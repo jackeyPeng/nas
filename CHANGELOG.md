@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 主要变化 |
 |------|------|---------|
+| 未发布 | — | 彻底移除 FileBrowser — 装机链/服务页/系统注册表(46→41)/HTTPS/密码同步/监控/备份/i18n/文档全链路清理，面板内置文件管理器完全取代 |
 | v1.4.0-beta.23 | 2026-10-17 | UI 巡检修复集 — 共享影子身份（建共享时的 nologin 占位用户）不再泄漏为用户页幻影用户；仪表盘/用户页 null 数组崩溃修复；面板停止的服务不再误标「失败」（is-active exit3 四态归一 + rclone unit SuccessExitStatus=143，已停止显黄色徽章）；健康中心口径对齐（not-installed 不计 warn、新增「N 个已停止」warn）；权限报错文案与校验对齐；第六轮双机重置完整验收（merge/RAID1 各 34 项全 PASS）+ Chrome 实测 |
 | v1.4.0-beta.22 | 2026-10-16 | rclone 安全升级 v1.75.2（修 serve webdav 路径遍历 GHSA-44pm-2q5p-fm63 等命中我方暴露面的高危项 + Go 1.26.9 HTTP/2 CVE；新装必落 pin 版本；服务页重装路径 serve 根对齐 /data/nas1/public 消除越权隐患）+ 系统健康注册表存储层 6 项按池模式感知（RAID 池机器不再恒 fail，46/46 可达）；双机重置重装完整验收（merge/RAID1 各 35 项断言全 PASS） |
 | v1.4.0-beta.21 | 2026-10-15 | 文件管理页新增「上传目录」— webkitdirectory 整目录树保留子路径上传（后端 Content-Disposition 原始 filename 逐段消毒、缺失父目录逐段 0755 创建、既有目录权限一律不动、409 覆盖重试不拍平、并发 EEXIST 加固）；穿越用例（`../pwn`）由 stdlib 剥路径后巧合放行改为显式 400 拒绝；修复仪表盘把未安装的可选服务（FileBrowser）计入异常导致全新安装恒显「1 个异常」假告警；两台 Debian 13 测试机部署 + Chrome 实机 E2E 全过 |
@@ -17,6 +18,26 @@
 | v1.4.0-beta.13 | 2026-09-19 | NFS 导出对所有网段开放（跨网段客户端可挂载） |
 | v1.4.0-beta.12 | 2026-09-18 | 创建向导按已选磁盘实时预估容量（选目标后预览面板 + 各方案可用容量/注意事项）+ 登录页品牌 slogan |
 | v1.4.0-beta.11 | 2026-09-18 | 当前连接展示（监控页，SMB 会话 + 各协议端口归类）+ 回收站改 per-share `.recycle/`（删除=rename 零拷贝，恢复保留目录树，旧 `#recycle` 兼容）+ 存储页 tab 切换跳动修复 |
+
+---
+
+## [未发布]
+
+### 彻底移除 FileBrowser
+
+- **装机链**：`scripts/setup.sh` 移除 `--with-filebrowser` 安装开关、`FILEBROWSER_VERSION` 变量与离线安装包文案；原「安装 FileBrowser」步骤改为升级迁移逻辑——检测存量机器上的 filebrowser 服务/二进制，自动 `systemctl stop/disable`，将 `/etc/filebrowser` 备份为 `/var/backups/filebrowser-$(date +%F).tar.gz`，再清理残留文件并 `daemon-reload`；同步移除 ufw 8081 放行规则与 sudoers 中 filebrowser 的 NOPASSWD 项
+- **服务管理页**：`web/modules/services/services.go` 移除「安装全部服务」中的 FileBrowser 安装块与 `installSingleService` 的 `filebrowser` 特判分支
+- **系统注册表**：`web/modules/system/system_registry.go` 移除 5 个 FileBrowser 相关检查项（原 ID 6/21/24/29/33，不重编号）及 `fileBrowserInstalled()` 辅助函数与全部调用点；总项数 46→41
+- **HTTPS**：`web/modules/system/https.go` 移除 FileBrowser 证书应用分支与 `applyFileBrowserTLS()`
+- **密码同步**：`web/modules/users/users.go` 移除修改密码时同步 FileBrowser 密码的逻辑
+- **监控**：`web/modules/dashboard/dashboard.go`、`web/modules/monitor/connections.go` 移除 FileBrowser 服务定义与端口映射
+- **版本信息**：`web/modules/version/version.go` 移除 FileBrowser 组件与许可证条目；`web/common/versions.go` 移除 `FileBrowserVersion`
+- **运维脚本**：`scripts/install.sh`、`scripts/monitor.sh`、`scripts/backup-config.sh`、`scripts/restore-config.sh` 移除全部 filebrowser 服务/配置引用；`scripts/upload-filebrowser.sh` 删除
+- **前端 + i18n**：`web/frontend/app.js`、`web/frontend/i18n/{en-US,zh-CN}.json` 移除全部 FileBrowser 相关文案与映射，中英文 key 保持对齐
+- **文档**：`docs/nas-product-manual.md`、`docs/feature-operation-checklist.md`、`docs/protocol-service-configs.md`、`docs/storage-permission-model.md` 移除全部 FileBrowser 章节/表格/端口说明
+- **升级迁移**：存量旧机器执行新版 `setup.sh` 时会自动卸载残留 FileBrowser 并备份其配置目录，不影响已有数据
+- **`scripts/cleanup.sh` 保持不变**：仍保留全部 FileBrowser 卸载条目，作为唯一允许引用 filebrowser 的脚本，供手动清理残留使用
+- R2 上的 FileBrowser 历史发布产物保留，兼容仍在运行旧版面板的机器
 
 ---
 

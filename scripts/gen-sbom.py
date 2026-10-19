@@ -29,7 +29,6 @@ SYSTEM_COMPONENTS = [
     ("unattended-upgrades", "Debian", "GPL-2.0-or-later", "system-package", "https://wiki.debian.org/UnattendedUpgrades"),
     ("apache2-utils", "Debian", "Apache-2.0", "system-package", "https://httpd.apache.org"),
     ("rclone", "1.74.4", "MIT", "third-party-binary", "https://rclone.org"),
-    ("FileBrowser", "2.x", "Apache-2.0", "third-party-binary", "https://filebrowser.org"),
     ("Alpine.js", "3.x", "MIT", "third-party-binary", "https://alpinejs.dev"),
 ]
 

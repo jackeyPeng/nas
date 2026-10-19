@@ -147,40 +147,6 @@ func handleInstallServices(w http.ResponseWriter, r *http.Request) {
 		common.SudoExec("systemctl", "reset-failed", "rclone-s3")
 		common.SudoExec("systemctl", "start", "rclone-s3")
 		steps = append(steps, "S3 已启动")
-
-		// FileBrowser (版本来自 common.FileBrowserVersion，单一事实源)
-		fbScript := fmt.Sprintf(`
-			ARCH=$(uname -m | sed "s/x86_64/amd64/;s/aarch64/arm64/")
-			FB_VER="%s"
-			DL_ERR=""
-			curl -fsSL --connect-timeout 10 --max-time 600 "https://github.com/filebrowser/filebrowser/releases/download/${FB_VER}/linux-${ARCH}-filebrowser.tar.gz" -o /tmp/fb.tar.gz 2>/tmp/fb.err || DL_ERR="github: $(cat /tmp/fb.err)"
-			if [ ! -f /tmp/fb.tar.gz ]; then
-				curl -fsSL --connect-timeout 10 --max-time 30 "https://get.z1.sale/filebrowser/linux-${ARCH}-filebrowser.tar.gz" -o /tmp/fb.tar.gz 2>/tmp/fb.err || DL_ERR="${DL_ERR}; get.z1.sale: $(cat /tmp/fb.err)"
-			fi
-			if [ ! -f /tmp/fb.tar.gz ]; then
-				# 旧拼写 key（filebroswer）兜底：已装机器的旧面板/缓存仍可能只有这个
-				curl -fsSL --connect-timeout 10 --max-time 30 "https://get.z1.sale/filebroswer/linux-${ARCH}-filebrowser.tar.gz" -o /tmp/fb.tar.gz 2>/tmp/fb.err || DL_ERR="${DL_ERR}; get.z1.sale(legacy): $(cat /tmp/fb.err)"
-			fi
-			if [ ! -f /tmp/fb.tar.gz ]; then
-				curl -fsSL --connect-timeout 10 --max-time 30 "https://file.abwen.com/control/filebrowser_${FB_VER}_linux_${ARCH}.tar.gz" -o /tmp/fb.tar.gz 2>/tmp/fb.err || DL_ERR="${DL_ERR}; file.abwen.com: $(cat /tmp/fb.err)"
-			fi
-			if [ -f /tmp/fb.tar.gz ]; then tar xzf /tmp/fb.tar.gz -C /usr/local/bin filebrowser && chmod +x /usr/local/bin/filebrowser && echo "ok"; else echo "FAIL:${DL_ERR}"; fi
-		`, common.FileBrowserVersion)
-		out, _ = common.SudoExec("bash", "-c", fbScript)
-		if strings.TrimSpace(out) == "ok" {
-			common.SudoExec("mkdir", "-p", "/etc/filebrowser")
-			common.SudoExec("/usr/local/bin/filebrowser", "config", "init", "--database", "/etc/filebrowser/filebrowser.db")
-			common.SudoExec("/usr/local/bin/filebrowser", "config", "set", "--database", "/etc/filebrowser/filebrowser.db", "--address", "0.0.0.0", "--port", "8081", "--root", "/data", "--log", "/var/log/filebrowser.log")
-			common.SudoExec("/usr/local/bin/filebrowser", "users", "add", nasUser, nasPass, "--database", "/etc/filebrowser/filebrowser.db", "--perm.admin")
-			common.SudoExec("sh", "-c", "cat > /etc/systemd/system/filebrowser.service << 'UNIT'\n[Unit]\nDescription=FileBrowser\nAfter=network.target\n[Service]\nType=simple\nExecStart=/usr/local/bin/filebrowser --database /etc/filebrowser/filebrowser.db\nRestart=on-failure\n[Install]\nWantedBy=multi-user.target\nUNIT")
-			common.SudoExec("systemctl", "daemon-reload")
-			common.SudoExec("systemctl", "enable", "filebrowser")
-			common.SudoExec("systemctl", "reset-failed", "filebrowser")
-			common.SudoExec("systemctl", "start", "filebrowser")
-			steps = append(steps, "FileBrowser 已启动")
-		} else {
-			steps = append(steps, "FileBrowser 下载失败")
-		}
 	}
 
 	common.JSONResponse(w, map[string]interface{}{
@@ -250,40 +216,6 @@ func installSingleService(name string) (string, error) {
 		common.SudoExec("systemctl", "reset-failed", "rclone-s3")
 		common.SudoExec("systemctl", "start", "rclone-s3")
 		return "S3 已安装并启动", nil
-
-	case "filebrowser":
-		nasUser := common.GetNASUser()
-		nasPass, _ := common.ReadEnvFile(common.GetEnvFilePath(), "NAS_PASS")
-		out, _ := common.SudoExec("bash", "-c", `
-			ARCH=$(uname -m | sed "s/x86_64/amd64/;s/aarch64/arm64/")
-			DL_ERR=""
-			curl -fsSL --connect-timeout 10 --max-time 600 "https://github.com/filebrowser/filebrowser/releases/download/v2.63.17/linux-${ARCH}-filebrowser.tar.gz" -o /tmp/fb.tar.gz 2>/tmp/fb.err || DL_ERR="github: $(cat /tmp/fb.err)"
-			if [ ! -f /tmp/fb.tar.gz ]; then
-				curl -fsSL --connect-timeout 10 --max-time 30 "https://get.z1.sale/filebroswer/linux-${ARCH}-filebrowser.tar.gz" -o /tmp/fb.tar.gz 2>/tmp/fb.err || DL_ERR="${DL_ERR}; get.z1.sale: $(cat /tmp/fb.err)"
-			fi
-			if [ ! -f /tmp/fb.tar.gz ]; then
-				curl -fsSL --connect-timeout 10 --max-time 30 "https://file.abwen.com/control/filebrowser_v2.63.17_linux_${ARCH}.tar.gz" -o /tmp/fb.tar.gz 2>/tmp/fb.err || DL_ERR="${DL_ERR}; file.abwen.com: $(cat /tmp/fb.err)"
-			fi
-			if [ -f /tmp/fb.tar.gz ]; then tar xzf /tmp/fb.tar.gz -C /usr/local/bin filebrowser && chmod +x /usr/local/bin/filebrowser && echo "ok"; else echo "FAIL:${DL_ERR}"; fi
-		`)
-		if strings.TrimSpace(out) != "ok" {
-			errMsg := "FileBrowser download failed"
-			if strings.HasPrefix(strings.TrimSpace(out), "FAIL:") {
-				errMsg = strings.TrimPrefix(strings.TrimSpace(out), "FAIL:")
-			}
-			return "", fmt.Errorf("%s", errMsg)
-		}
-		// Initialize FileBrowser
-		common.SudoExec("mkdir", "-p", "/etc/filebrowser")
-		common.SudoExec("/usr/local/bin/filebrowser", "config", "init", "--database", "/etc/filebrowser/filebrowser.db")
-		common.SudoExec("/usr/local/bin/filebrowser", "config", "set", "--database", "/etc/filebrowser/filebrowser.db", "--address", "0.0.0.0", "--port", "8081", "--root", "/data", "--log", "/var/log/filebrowser.log")
-		common.SudoExec("/usr/local/bin/filebrowser", "users", "add", nasUser, nasPass, "--database", "/etc/filebrowser/filebrowser.db", "--perm.admin")
-		common.SudoExec("sh", "-c", "cat > /etc/systemd/system/filebrowser.service << 'UNIT'\n[Unit]\nDescription=FileBrowser\nAfter=network.target\n[Service]\nType=simple\nExecStart=/usr/local/bin/filebrowser --database /etc/filebrowser/filebrowser.db\nRestart=on-failure\n[Install]\nWantedBy=multi-user.target\nUNIT")
-		common.SudoExec("systemctl", "daemon-reload")
-		common.SudoExec("systemctl", "enable", "filebrowser")
-		common.SudoExec("systemctl", "reset-failed", "filebrowser")
-		common.SudoExec("systemctl", "start", "filebrowser")
-		return "FileBrowser 已安装并启动", nil
 
 	case "fail2ban":
 		out, err := common.SudoExec("apt-get", "install", "-y", "-qq", "fail2ban")

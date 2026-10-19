@@ -36,29 +36,6 @@ THE SOFTWARE.
 Homepage: https://rclone.org
 Source: https://github.com/rclone/rclone
 
-## FileBrowser (Apache License 2.0)
-
-FileBrowser 用于 Web 文件管理界面。
-
-```
-Copyright 2013-2024 FileBrowser Contributors
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-```
-
-Homepage: https://filebrowser.org
-Source: https://github.com/filebrowser/filebrowser
-
 ## Alpine.js (MIT License)
 
 Alpine.js 用于 Web 面板前端响应式数据绑定。

@@ -393,11 +393,6 @@ func changePassword(username, password string) error {
 		common.SudoExec("sed", "-i", fmt.Sprintf("s/^NAS_PASS=.*/NAS_PASS=%s/", password),
 			common.GetEnvFilePath())
 
-		// Update FileBrowser password
-		common.SudoExec("filebrowser", "users", "update", username,
-			"--password", password,
-			"--database", "/etc/filebrowser/filebrowser.db")
-
 		// Update rclone-s3 auth-key (ExecStart embeds access_key,secret literally)
 		s3Key := common.S3AccessKey(username)
 		common.SudoExec("bash", "-c", fmt.Sprintf(

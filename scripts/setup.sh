@@ -3,29 +3,27 @@
 # 用于在新机器上部署完整的 NAS 系统
 # 用法: sudo ./setup.sh
 #
-# 包含服务: Samba, NFS, FTP, WebDAV, FileBrowser, S3, NAS Web Panel
+# 包含服务: Samba, NFS, FTP, WebDAV, S3, NAS Web Panel
 # 安全: Fail2ban, UFW 防火墙, unattended-upgrades
 # 10步部署, 自动检测当前用户
-# 开关: --config-only 仅同步配置；--with-filebrowser 安装 FileBrowser（beta.18 起默认不装，面板文件管理已取代）
+# 开关: --config-only 仅同步配置
 
 set -e
 
 # ==================== 模式解析 ====================
 # --config-only: 只重生成托管配置（Samba/NFS/FTP/WebDAV/S3/防火墙），
-# 跳过 apt 安装、目录创建、FileBrowser/nas-panel 安装。
+# 跳过 apt 安装、目录创建、nas-panel 安装。
 # 用于在线升级后同步新版配置模板（幂等，用户自加段保留）。
 CONFIG_ONLY=false
-WITH_FILEBROWSER=false
 for arg in "$@"; do
     case "$arg" in
         --config-only) CONFIG_ONLY=true ;;
-        --with-filebrowser) WITH_FILEBROWSER=true ;;
-        *) echo "未知参数: $arg（支持: --config-only --with-filebrowser）"; exit 1 ;;
+        *) echo "未知参数: $arg（支持: --config-only）"; exit 1 ;;
     esac
 done
 
 # ==================== 架构检测 ====================
-# 将 uname -m 映射为 FileBrowser/rclone 使用的架构名
+# 将 uname -m 映射为 rclone 使用的架构名
 detect_arch() {
     local arch
     arch=$(uname -m)
@@ -74,15 +72,13 @@ if [ -z "$NAS_USER" ] || [ "$NAS_USER" = "root" ]; then
 fi
 DATA_DIR="/data"
 NAS_DIR="/opt/nas"
-# 与 web/common/versions.go 的 FileBrowserVersion 保持一致（单一事实源在 Go 常量，改版本两处一起改）
-FILEBROWSER_VERSION="v2.63.17"
 BUNDLE_VERSION="v1.0.0"
 
 # 获取脚本所在目录的绝对路径（仓库根目录）
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # ==================== 离线包检测 ====================
-# 离线包包含 FileBrowser、nas-panel 二进制及所有配置文件
+# 离线包包含 nas-panel 二进制及所有配置文件
 # 放在仓库根目录或 /tmp 下即可自动检测
 OFFLINE_BUNDLE=""
 for path in \
@@ -98,7 +94,7 @@ for path in \
 done
 
 if [ -n "$OFFLINE_BUNDLE" ]; then
-    echo "   将使用离线包安装 FileBrowser 和 nas-panel"
+    echo "   将使用离线包安装 nas-panel"
     echo ""
 fi
 
@@ -131,7 +127,7 @@ if [ -z "$NAS_PASS" ]; then
     exit 1
 fi
 if [ ${#NAS_PASS} -lt 12 ]; then
-    echo "错误: NAS_PASS 至少需要 12 位（FileBrowser 强制要求）"
+    echo "错误: NAS_PASS 至少需要 12 位（面板密码策略）"
     exit 1
 fi
 
@@ -346,107 +342,21 @@ systemctl reset-failed rclone-webdav 2>/dev/null
 timeout 60 systemctl restart rclone-webdav || echo "  ⚠ rclone-webdav 重启失败（结尾注册表会标记，可稍后手动 restart）"
 echo "  ✓ WebDAV 配置完成"
 
-# ==================== [7/10] 安装 FileBrowser ====================
+# ==================== [7/10] 清理遗留 FileBrowser（升级迁移） ====================
 echo ""
-echo "[7/10] 安装 FileBrowser..."
-if [ "$CONFIG_ONLY" = true ]; then
-    echo "  --config-only 模式跳过 FileBrowser 安装"
-elif command -v filebrowser &>/dev/null; then
-    echo "  FileBrowser 已安装，保留现状（面板文件管理已取代入口；如需卸载见文档）"
-elif [ "$WITH_FILEBROWSER" != true ]; then
-    echo "  [7/10] 跳过 FileBrowser（beta.18 起默认不装，面板文件管理已取代；--with-filebrowser 可安装）"
-else
-    if [ -n "$OFFLINE_BUNDLE" ]; then
-        echo "  从离线包安装 FileBrowser..."
-        mkdir -p /tmp/nas-offline
-        tar xzf "$OFFLINE_BUNDLE" -C /tmp/nas-offline
-        cp /tmp/nas-offline/bin/filebrowser /usr/local/bin/
-        chmod +x /usr/local/bin/filebrowser
-        rm -rf /tmp/nas-offline
-        echo "  ✓ 离线安装完成"
-    else
-        # 尝试从 GitHub releases 分支下载离线包（含 filebrowser + nas-panel + 配置）
-        set +e  # 下载失败不应中断整个脚本
-        download_file /tmp/filebrowser.tar.gz \
-            "https://github.com/jackeyPeng/nas/raw/releases/nas-bundle-${BUNDLE_VERSION}-${ARCH}.tar.gz" \
-            "https://ghfast.top/https://github.com/jackeyPeng/nas/raw/releases/nas-bundle-${BUNDLE_VERSION}-${ARCH}.tar.gz" \
-            "https://get.z1.sale/filebrowser/linux-${ARCH}-filebrowser.tar.gz" \
-            "https://get.z1.sale/filebroswer/linux-${ARCH}-filebrowser.tar.gz" \
-            "https://github.com/filebrowser/filebrowser/releases/download/${FILEBROWSER_VERSION}/linux-${ARCH}-filebrowser.tar.gz" \
-            "https://ghfast.top/https://github.com/filebrowser/filebrowser/releases/download/${FILEBROWSER_VERSION}/linux-${ARCH}-filebrowser.tar.gz"
-        FB_DOWNLOAD_OK=$?
-        set -e
-        if [ "$FB_DOWNLOAD_OK" -eq 0 ]; then
-            cd /tmp && tar xzf filebrowser.tar.gz
-            # 不同来源的 tar.gz 结构不同：可能直接是 filebrowser 或 linux-amd64-filebrowser/filebrowser
-            if [ -f "filebrowser" ]; then
-                mv filebrowser /usr/local/bin/
-            elif [ -f "linux-amd64-filebrowser/filebrowser" ]; then
-                mv linux-amd64-filebrowser/filebrowser /usr/local/bin/
-            elif FB_BIN=$(find . -maxdepth 2 -name filebrowser -type f | head -1) && [ -n "$FB_BIN" ]; then
-                mv "$FB_BIN" /usr/local/bin/
-            else
-                echo "  警告: 无法找到 filebrowser 二进制文件"
-            fi
-            rm -rf filebrowser.tar.gz linux-amd64-filebrowser filebrowser 2>/dev/null
-            cd - > /dev/null
-            chmod +x /usr/local/bin/filebrowser
-        fi
-    fi
-
-    mkdir -p /etc/filebrowser
-    if [ ! -f /etc/filebrowser/filebrowser.db ]; then
-        filebrowser config init --database /etc/filebrowser/filebrowser.db 2>/dev/null || true
-    fi
-    # 固定监听地址和端口：0.0.0.0:8081（默认 127.0.0.1:8080 会与 WebDAV 冲突且无法外部访问）
-    # 注意：必须在服务停止状态下执行 config set，运行中的服务会锁数据库导致 timeout（已知坑）
+echo "[7/10] 清理遗留 FileBrowser..."
+if command -v filebrowser &>/dev/null || [ -f /etc/systemd/system/filebrowser.service ]; then
     systemctl stop filebrowser 2>/dev/null || true
-    if filebrowser config set \
-        --database /etc/filebrowser/filebrowser.db \
-        --address 0.0.0.0 \
-        --port 8081 \
-        --root "$DATA_DIR/nas1/public" \
-        --log /var/log/filebrowser.log >/dev/null 2>&1; then
-        echo "  ✓ FileBrowser 监听 0.0.0.0:8081"
-    else
-        echo "  ✗ FileBrowser config set 失败"
-        exit 1
+    systemctl disable filebrowser 2>/dev/null || true
+    if [ -d /etc/filebrowser ]; then
+        mkdir -p /var/backups
+        tar czf "/var/backups/filebrowser-$(date +%F).tar.gz" -C /etc filebrowser
     fi
-    filebrowser users add "$NAS_USER" "$NAS_PASS" \
-        --database /etc/filebrowser/filebrowser.db \
-        --perm.admin 2>/dev/null || filebrowser users update "$NAS_USER" --password "$NAS_PASS" \
-        --database /etc/filebrowser/filebrowser.db 2>/dev/null || true
-
-    cat > /etc/systemd/system/filebrowser.service << 'FBEOF'
-[Unit]
-Description=File Browser
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=/usr/local/bin/filebrowser --database /etc/filebrowser/filebrowser.db
-Restart=on-failure
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-FBEOF
+    rm -rf /etc/filebrowser /usr/local/bin/filebrowser /etc/systemd/system/filebrowser.service /var/log/filebrowser.log
     systemctl daemon-reload
-    systemctl enable filebrowser
-    systemctl reset-failed filebrowser 2>/dev/null
-    timeout 60 systemctl restart filebrowser || echo "  ⚠ filebrowser 重启失败（结尾注册表会标记，可稍后手动 restart）"
-
-    # 验证 FileBrowser 端口确已生效（防 config set 静默失败）
-    sleep 3
-    FB_PORT_CHECK=$(ss -tln 2>/dev/null | grep -c ":8081 " || true)
-    if [ "$FB_PORT_CHECK" -ge 1 ]; then
-        echo "  ✓ FileBrowser 配置完成（端口 8081 已监听）"
-    else
-        echo "  ✗ FileBrowser 未监听 8081，检查: journalctl -u filebrowser"
-        echo "    常见原因: 数据库中残留旧端口配置，执行:"
-        echo "    filebrowser config set --database /etc/filebrowser/filebrowser.db --address 0.0.0.0 --port 8081"
-        exit 1
-    fi
+    echo "  ✓ 已移除遗留 FileBrowser，配置备份在 /var/backups/filebrowser-$(date +%F).tar.gz"
+else
+    echo "  未检测到遗留 FileBrowser，跳过"
 fi
 
 # ==================== [8/10] 配置 S3 对象存储 (rclone serve s3) ====================
@@ -558,7 +468,6 @@ ufw allow 32768:32769/udp        # NFS lockd + statd
 ufw allow 21/tcp                 # FTP
 ufw allow 30000:31000/tcp        # FTP passive
 ufw allow 8080/tcp               # WebDAV
-ufw allow 8081/tcp               # FileBrowser
 ufw allow 9000/tcp               # S3 API (rclone serve s3)
 ufw allow 8090/tcp               # NAS Web Panel
 ufw --force enable
@@ -605,8 +514,8 @@ SUDOERS_FILE="/etc/sudoers.d/nas-panel"
 echo "${NAS_USER} ALL=(ALL) NOPASSWD: /usr/bin/pdbedit, /opt/nas/scripts/add-user.sh, /opt/nas/scripts/remove-user.sh, /usr/sbin/smartctl, /usr/bin/chpasswd, /usr/bin/smbpasswd, /usr/bin/htpasswd, /bin/systemctl start *, /bin/systemctl stop *, /bin/systemctl restart *, /bin/systemctl reset-failed *, /bin/systemctl enable *, /bin/systemctl disable *, /usr/sbin/ufw status, /usr/sbin/ufw allow *, /usr/sbin/ufw deny *, /usr/sbin/exportfs, /usr/sbin/smartctl -H *, /usr/sbin/smartctl -a *, /usr/bin/tee /opt/nas/.env, /usr/bin/tee -a /etc/samba/smb.conf, /usr/bin/tee /etc/samba/smb.conf, /usr/bin/tee /etc/vsftpd.userlist, /usr/bin/tee -a /etc/vsftpd.userlist, /usr/bin/tee /etc/exports, /usr/bin/tee /etc/nfs.conf, /usr/bin/tee /etc/fail2ban/jail.local, /usr/bin/tee /etc/rclone-htpasswd, /usr/bin/journalctl -p err -n * --no-pager --since *, /usr/sbin/pvs --noheadings *, /usr/sbin/vgs --noheadings *, /usr/sbin/lvs --noheadings *, /usr/sbin/fdisk -l, /usr/sbin/mkfs.ext4 -F *, /usr/sbin/mkfs.xfs -f *, /usr/sbin/mkfs.btrfs *, /bin/mount *, /bin/umount *, /bin/mkdir -p /data/*, /bin/mkdir -p /data, /bin/cat /etc/samba/smb.conf, /bin/cat /etc/vsftpd.userlist, /bin/cat /etc/exports, /bin/cat /etc/nfs.conf, /bin/cat /etc/fail2ban/jail.local, /bin/cat /etc/rclone-htpasswd, /opt/nas/scripts/backup-config.sh, /opt/nas/scripts/restore-config.sh, /bin/rm -f /opt/nas/backups/*, /usr/bin/blkid -s UUID -o value *, /usr/bin/findmnt -n -o TARGET *, /usr/bin/tee /etc/fstab, /usr/bin/tee -a /etc/samba/smb.conf, /bin/chown -R *, /sbin/pvcreate -f *, /sbin/vgcreate -f *, /sbin/lvcreate *, /sbin/vgextend *, /sbin/lvextend *, /sbin/resize2fs *, /sbin/xfs_growfs *, /sbin/pvs --noheadings *, /sbin/vgs --noheadings *, /sbin/lvs --noheadings *, /sbin/pvremove -f *, /sbin/vgremove -f *, /sbin/lvremove -f *, /usr/sbin/wipefs *, /usr/sbin/mdadm *, /usr/sbin/parted *, /bin/ls *" > "$SUDOERS_FILE"
 chmod 440 "$SUDOERS_FILE"
 visudo -cf "$SUDOERS_FILE" 2>/dev/null || { echo "  错误: sudoers 语法检查失败"; rm -f "$SUDOERS_FILE"; }
-# 追加改密码需要的命令（filebrowser + sed）
-echo "${NAS_USER} ALL=(ALL) NOPASSWD: /usr/local/bin/filebrowser *, /usr/bin/sed -i *" >> "$SUDOERS_FILE"
+# 追加改密码需要的命令（sed）
+echo "${NAS_USER} ALL=(ALL) NOPASSWD: /usr/bin/sed -i *" >> "$SUDOERS_FILE"
 visudo -cf "$SUDOERS_FILE" 2>/dev/null || true
 echo "  ✓ NAS Web 管理面板配置完成"
 
@@ -637,14 +546,14 @@ echo "NAS 部署完成!"
 echo "========================================="
 echo ""
 echo "服务状态:"
-for svc in smbd nmbd nfs-kernel-server vsftpd rclone-webdav filebrowser rclone-s3 fail2ban nas-panel; do
+for svc in smbd nmbd nfs-kernel-server vsftpd rclone-webdav rclone-s3 fail2ban nas-panel; do
     printf "  %-22s %s\n" "$svc:" "$(systemctl is-active $svc)"
 done
 
 # ==================== 系统注册表检查 ====================
 echo ""
 echo "========================================="
-echo "系统注册表检查 (46 项)"
+echo "系统注册表检查 (41 项)"
 echo "========================================="
 # 等待面板启动
 sleep 3
@@ -682,9 +591,6 @@ echo "  - Samba:       //NAS_IP/$NAS_USER (用户主目录)"
 echo "  - NFS:         mount -t nfs NAS_IP:/data/nas1/public /mnt/nas"
 echo "  - FTP:         ftp://NAS_IP/ (用户名: $NAS_USER)"
 echo "  - WebDAV:      http://NAS_IP:8080/ (用户名: $NAS_USER)"
-if command -v filebrowser &>/dev/null; then
-    echo "  - FileBrowser: http://NAS_IP:8081/ (用户名: $NAS_USER)"
-fi
 echo "  - S3 API:       http://NAS_IP:9000 (access key: $S3_ACCESS_KEY, s3cmd --no-ssl --host=NAS_IP:9000 ls s3://public/)"
 echo "  - Web 面板:    http://NAS_IP:8090 (用户名: $NAS_USER)"
 echo ""

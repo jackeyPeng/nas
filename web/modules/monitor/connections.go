@@ -33,7 +33,6 @@ var portProtocols = map[string]string{
 	"8080": "webdav",
 	"9000": "s3",
 	"8090": "web",
-	"8081": "web", // FileBrowser
 }
 
 func handleConnections(w http.ResponseWriter, r *http.Request) {

@@ -1,4 +1,4 @@
-# 协议服务配置详解 — SMB / NFS / FTP / WebDAV / S3 / FileBrowser
+# 协议服务配置详解 — SMB / NFS / FTP / WebDAV / S3
 
 > 更新: 2026-10-08 · 依据: configs/ 模板 + scripts/setup.sh + web/modules/diskmgmt/config_sync.go + web/modules/users/(代码逐项核对,非文档转述)
 > 权威源: 共享文件夹元数据在 folders.db(SQLite,/opt/nas/data/folders.db),面板把 DB 投影进各服务配置的「Z1 MANAGED SHARES START/END」托管段。
@@ -15,7 +15,6 @@
 | FTP | vsftpd | /data/nas1(chroot) | 系统账号 + userlist 白名单 | ⚠️ 靠文件系统权限(home 0700) | 静态 configs/vsftpd.conf | `systemctl reload vsftpd`(active 时) | 21, 30000-31000 |
 | WebDAV | rclone serve webdav | /data/nas1/public | htpasswd(多账号) | ❌ 所有账号同一棵 public 树 | 静态 systemd unit | restart(debounce 合并) | 8080 |
 | S3 | rclone serve s3 | /data/nas1/public | access key/secret 单一全局凭据 | ❌ | systemd unit + /etc/rclone/s3-env | restart(改密联动) | 9000 |
-| FileBrowser | filebrowser | /data/nas1/public | BoltDB 独立账号库(单管理员) | ❌(过渡期,将被面板文件管理取代) | `filebrowser config set` | 重启 | 8081 |
 | 面板 | nas-panel | — | JWT(可选 TOTP) | — | — | — | 8090 |
 
 ---
@@ -182,20 +181,12 @@ Restart=on-failure  RestartSec=10
 
 ### 5.3 改密联动(users.go changePassword)
 
-- **仅 username == NAS_USER 时**:sed 更新 ExecStart 里 --auth-key 字面值 + s3-env 两变量 → daemon-reload → restart rclone-s3;同时更新 .env NAS_PASS、FileBrowser 密码、内存面板密码(UpdateNasPass)。
-- 改普通用户密码绝不能碰这三处,否则管理员被顶下线。
+- **仅 username == NAS_USER 时**:sed 更新 ExecStart 里 --auth-key 字面值 + s3-env 两变量 → daemon-reload → restart rclone-s3;同时更新 .env NAS_PASS、内存面板密码(UpdateNasPass)。
+- 改普通用户密码绝不能碰这两处,否则管理员被顶下线。
 
 ---
 
-## 6. FileBrowser(过渡期组件)
-
-- BoltDB(不是 SQLite):/etc/filebrowser/filebrowser.db,独立账号库,单一管理员 NAS_USER。
-- root=/data/nas1/public,监听 0.0.0.0:8081。
-- 进程以 root 跑,不做文件系统权限校验;每用户 scope 是硬边界(当前只单账号)。
-- 已知坑:`filebrowser config set` 前必须 `systemctl stop filebrowser`(否则锁库 timeout);setup.sh 已按此顺序执行。验证 root:停服务后 `filebrowser config cat --database ... | grep -i root`。
-- 定位:将被面板文件管理取代。
-
----
+> v1.4.0 起 FileBrowser 已彻底移除,文件管理请使用面板内置文件管理器。
 
 ## 7. 横切配置
 
@@ -211,7 +202,7 @@ Restart=on-failure  RestartSec=10
 
 ### 7.2 ufw 端口(setup.sh [9/10])
 
-22(ssh)、139/445(SMB)、2049 t/u + 111 t/u + 20048 t/u + 32768:32769 t/u(NFS)、21 + 30000:31000(FTP)、8080(WebDAV)、8081(FileBrowser)、9000(S3)、8090(面板)
+22(ssh)、139/445(SMB)、2049 t/u + 111 t/u + 20048 t/u + 32768:32769 t/u(NFS)、21 + 30000:31000(FTP)、8080(WebDAV)、9000(S3)、8090(面板)
 
 ### 7.3 sudoers 白名单(/etc/sudoers.d/nas-panel)
 

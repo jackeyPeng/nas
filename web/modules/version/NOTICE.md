@@ -95,7 +95,6 @@ Debian is a registered trademark of Software in the Public Interest, Inc. Other 
 | NFS (nfs-kernel-server) | NFS 文件共享 File sharing | GPL-2.0 |
 | vsftpd | FTP 服务 FTP server | GPL-2.0 |
 | rclone | WebDAV/S3 服务端与远程同步 WebDAV/S3 server & sync | MIT |
-| FileBrowser | Web 文件管理器 Web file manager | Apache-2.0 |
 | Fail2ban | 防暴力破解 Brute-force protection | GPL-2.0 |
 | UFW | 防火墙前端 Firewall frontend | GPL-3.0 |
 

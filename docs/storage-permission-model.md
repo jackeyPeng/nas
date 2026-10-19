@@ -80,7 +80,7 @@ UI tag 诚实标注：SMB 蓝（按用户）、NFS 灰（网段）、DAV/S3 黄�
 
 - 用户 = Linux 系统用户，各协议独立启停：Samba(pdbedit/smbpasswd)、FTP(vsftpd.userlist)、WebDAV(htpasswd)。
 - 配额挂 Volume 层（XFS project quota，fstab `prjquota`），按共享文件夹分配 project ID，删除自动清理。
-- 面板登录密码 = `.env NAS_PASS`，仅 `username == NAS_USER` 的改密才联动 NAS_PASS/FileBrowser/内存密码。
+- 面板登录密码 = `.env NAS_PASS`，仅 `username == NAS_USER` 的改密才联动 NAS_PASS/内存密码。
 
 ## 七、已知能力边界
 

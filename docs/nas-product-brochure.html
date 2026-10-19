@@ -73,7 +73,7 @@ tr:nth-child(even) td { background: #f8f9fa; }
     <div class="tagline">
         基于 Debian 13 的全原生服务 NAS 解决方案<br>
         Go 单二进制 Web 管理面板 · 9 大服务一体<br>
-        一份文件，六种协议访问
+        一份文件，五种协议访问
     </div>
     <div class="version">v1.2.0 · 2026 年 7 月</div>
     <div class="logo">🗄️</div>
@@ -99,11 +99,11 @@ tr:nth-child(even) td { background: #f8f9fa; }
         </div>
         <div class="feature-card">
             <h4>📦 Go 单二进制面板</h4>
-            <p>Web 管理面板编译成单个二进制文件，内嵌前端，内存占用 <3MB，跟 FileBrowser 一样轻量</p>
+            <p>Web 管理面板编译成单个二进制文件，内嵌前端，内存占用 <3MB，内置整池文件管理器</p>
         </div>
         <div class="feature-card">
             <h4>💾 统一存储</h4>
-            <p>一份文件六种协议访问：SMB / NFS / FTP / WebDAV / Web UI / S3 API，数据不再被对象格式隔离</p>
+            <p>一份文件五种协议访问：SMB / NFS / FTP / WebDAV / S3 API，数据不再被对象格式隔离</p>
         </div>
         <div class="feature-card">
             <h4>📡 实时监控告警</h4>
@@ -132,8 +132,7 @@ tr:nth-child(even) td { background: #f8f9fa; }
             <div style="flex:1;background:#3a7ca5;padding:5mm;border-right:1px solid #5a9cc5;">NFS<br><b>2049</b></div>
             <div style="flex:1;background:#3a7ca5;padding:5mm;border-right:1px solid #5a9cc5;">FTP<br><b>21</b></div>
             <div style="flex:1;background:#3a7ca5;padding:5mm;border-right:1px solid #5a9cc5;">WebDAV<br><b>8080</b></div>
-            <div style="flex:1;background:#3a7ca5;padding:5mm;border-right:1px solid #5a9cc5;">S3 API<br><b>9000</b></div>
-            <div style="flex:1;background:#3a7ca5;padding:5mm;">FileBrowser<br><b>8081</b></div>
+            <div style="flex:1;background:#3a7ca5;padding:5mm;">S3 API<br><b>9000</b></div>
         </div>
         <div style="background:#2d4a6f;color:white;text-align:center;padding:5mm;font-size:11pt;border-top:1px solid #5a9cc5;">
             Fail2ban · UFW · unattended-upgrades · SMART · 监控告警 (cron 每5分钟)
@@ -153,7 +152,7 @@ tr:nth-child(even) td { background: #f8f9fa; }
             <div style="flex:1;background:#1a3a5c;padding:4mm;border-radius:6px;margin:0 2mm;">photos</div>
             <div style="flex:1;background:#1a3a5c;padding:4mm;border-radius:6px;margin:0 2mm;">backups</div>
         </div>
-        <div style="font-size:10pt;opacity:0.7;">每个目录自动映射为 S3 bucket · 一份文件六种协议访问 (SMB/NFS/FTP/WebDAV/Web UI/S3)</div>
+        <div style="font-size:10pt;opacity:0.7;">每个目录自动映射为 S3 bucket · 一份文件五种协议访问 (SMB/NFS/FTP/WebDAV/S3)</div>
     </div>
 </div>
 
@@ -168,7 +167,6 @@ tr:nth-child(even) td { background: #f8f9fa; }
         <tr><td>NFS</td><td>2049</td><td>Linux 设备高速文件访问，固定端口</td></tr>
         <tr><td>FTP (vsftpd)</td><td>21</td><td>传统文件传输，用户白名单控制</td></tr>
         <tr><td>WebDAV (rclone)</td><td>8080</td><td>WebDAV 文件服务，htpasswd 认证</td></tr>
-        <tr><td>FileBrowser</td><td>8081</td><td>Web 文件管理界面，浏览/上传/下载/编辑</td></tr>
         <tr><td>S3 API (rclone)</td><td>9000</td><td>S3 兼容对象存储，bucket 自动映射目录</td></tr>
         <tr><td>Fail2ban</td><td>-</td><td>SSH/FTP 暴力破解防护</td></tr>
         <tr><td>UFW 防火墙</td><td>-</td><td>默认 deny，仅开放必要端口</td></tr>
@@ -281,9 +279,9 @@ tr:nth-child(even) td { background: #f8f9fa; }
     </div>
 
     <div style="background:#1a2a3a;border-radius:8px;padding:4mm;margin:3mm 0;font-size:9pt;line-height:1.6;">
-        <div style="color:#4a9eff;font-weight:700;margin-bottom:2mm;">10 步部署流程</div>
-        <div style="color:#d4d4d4;">[1/10] 安装基础软件包&nbsp;&nbsp;✓&nbsp;&nbsp;[2/10] 创建数据目录&nbsp;✓&nbsp;&nbsp;[3/10] 配置 Samba&nbsp;✓&nbsp;&nbsp;[4/10] 配置 NFS&nbsp;&nbsp;✓&nbsp;&nbsp;[5/10] 配置 FTP&nbsp;&nbsp;✓</div>
-        <div style="color:#d4d4d4;">[6/10] 配置 WebDAV&nbsp;&nbsp;&nbsp;&nbsp;✓&nbsp;&nbsp;[7/10] 安装 FileBrowser&nbsp;✓&nbsp;&nbsp;[8/10] 配置 S3&nbsp;&nbsp;✓&nbsp;&nbsp;[9/10] 防火墙安全&nbsp;✓&nbsp;&nbsp;[10/10] Web 面板&nbsp;✓</div>
+        <div style="color:#4a9eff;font-weight:700;margin-bottom:2mm;">9 步部署流程</div>
+        <div style="color:#d4d4d4;">[1/9] 安装基础软件包&nbsp;&nbsp;✓&nbsp;&nbsp;[2/9] 创建数据目录&nbsp;✓&nbsp;&nbsp;[3/9] 配置 Samba&nbsp;✓&nbsp;&nbsp;[4/9] 配置 NFS&nbsp;&nbsp;✓&nbsp;&nbsp;[5/9] 配置 FTP&nbsp;&nbsp;✓</div>
+        <div style="color:#d4d4d4;">[6/9] 配置 WebDAV&nbsp;&nbsp;&nbsp;&nbsp;✓&nbsp;&nbsp;[7/9] 配置 S3&nbsp;&nbsp;✓&nbsp;&nbsp;[8/9] 防火墙安全&nbsp;✓&nbsp;&nbsp;[9/9] Web 面板&nbsp;✓</div>
     </div>
     
     <h3>从源码编译</h3>
@@ -321,7 +319,6 @@ tr:nth-child(even) td { background: #f8f9fa; }
         <tr><th>组件</th><th>许可证</th><th>用途</th></tr>
         <tr><td>本项目代码</td><td>GNU AGPLv3</td><td>NAS 系统和管理面板</td></tr>
         <tr><td>rclone</td><td>MIT</td><td>WebDAV + S3 服务</td></tr>
-        <tr><td>FileBrowser</td><td>Apache 2.0</td><td>Web 文件管理</td></tr>
         <tr><td>Alpine.js</td><td>MIT</td><td>前端响应式框架</td></tr>
         <tr><td>Go JWT</td><td>MIT</td><td>认证库</td></tr>
     </table>

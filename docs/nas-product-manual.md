@@ -4,7 +4,7 @@
 > 最后更新: 2026-07-21  
 > 适用系统: Debian GNU/Linux 13 (trixie), 内核 6.12.94+
 
-> **v1.4 变更**: 监控告警模块重设计（SVG 仪表盘、分区使用表、多渠道告警）、RAID 扩容、存储配额、系统设置重构、自动化运维脚本。
+> **v1.4 变更**: 监控告警模块重设计（SVG 仪表盘、分区使用表、多渠道告警）、RAID 扩容、存储配额、系统设置重构、自动化运维脚本。v1.4.0 起 FileBrowser 已彻底移除，文件管理请使用面板内置文件管理器（见 7.7 节）。
 
 ---
 
@@ -22,9 +22,8 @@
    - 7.3 [vsftpd — FTP 服务](#73-vsftpd--ftp-服务)
    - 7.4 [rclone — WebDAV 服务](#74-rclone--webdav-服务)
    - 7.5 [rclone — S3 对象存储](#75-rclone--s3-对象存储)
-   - 7.7 [rclone — 远端同步（Web 面板）](#77-rclone--远端同步web-面板)
-   - 7.6 [FileBrowser — Web 文件管理器](#76-filebrowser--web-文件管理器)
-   - 7.8 [面板文件管理 — 内置 Web 文件页](#78-面板文件管理--内置-web-文件页)
+   - 7.6 [rclone — 远端同步（Web 面板）](#76-rclone--远端同步web-面板)
+   - 7.7 [面板文件管理 — 内置 Web 文件页](#77-面板文件管理--内置-web-文件页)
 8. [安全配置](#8-安全配置)
    - 8.1 [UFW 防火墙](#81-ufw-防火墙)
    - 8.2 [Fail2ban 入侵防护](#82-fail2ban-入侵防护)
@@ -50,7 +49,6 @@
 | NFS     | nfs-kernel-server  | Linux 设备高速文件访问        | 2049             |
 | FTP     | vsftpd             | 传统文件传输                  | 21, 30000-31000  |
 | WebDAV  | rclone serve       | 浏览器/移动端文件管理         | 8080             |
-| Web UI  | FileBrowser        | Web 文件管理界面（浏览/上传/下载/编辑） | 8081    |
 | S3 对象存储 | rclone serve s3  | S3 兼容对象存储，bucket 自动映射目录      | 9000             |
 
 **设计原则：**
@@ -73,10 +71,6 @@
 │  │  nmbd   │  │     │  │        │  │   (8080)      │  │
 │  │(139/445)│  │(2049)│  │  (21)  │  │               │  │
 │  └────┬────┘  └──┬──┘  └───┬────┘  └──────┬────────┘  │
-│  ┌─────────────┐                                         │
-│  │ FileBrowser │                                         │
-│  │   (8081)    │                                         │
-│  └──────┬──────┘                                         │
 │       │          │         │               │           │
 │       └──────────┴─────────┴───────────────┘           │
 │                          │                              │
@@ -154,7 +148,6 @@ Samba、NFS 都是内核级服务（NFS 直接在内核空间运行），用 Doc
 | nfs-common          | 1:2.8.3-1               | NFS 通用工具           | ~3 MB          |
 | vsftpd              | 3.0.5-0.2               | FTP 服务器             | ~1.5 MB        |
 | rclone              | 1.75.2 (.deb)           | WebDAV + S3 服务 (serve 模式) | ~30 MB |
-| filebrowser         | v2.63.17                | Web 文件管理器          | ~15 MB (单文件)|
 | rpcbind             | 1.2.7-1                 | RPC 端口映射 (NFS 依赖)| ~0.5 MB        |
 | xfsprogs            | 6.15.0-1                | XFS 文件系统工具        | ~5 MB          |
 | mdadm               | 4.3+20250117-1          | RAID 管理工具           | ~2 MB          |
@@ -241,7 +234,6 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
 │   ├── vsftpd.conf             ← FTP 配置
 │   ├── jail.local              ← Fail2ban 配置
 │   ├── rclone-webdav.service   ← WebDAV systemd 单元文件
-│   ├── filebrowser.service     ← FileBrowser systemd 单元文件
 │   └── rclone-s3.service        ← rclone S3 systemd 单元文件
 └── scripts/                    ← 管理脚本
     ├── setup.sh                ← 一键部署脚本
@@ -258,7 +250,6 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
 | /opt/nas/configs/vsftpd.conf         | /etc/vsftpd.conf                         |
 | /opt/nas/configs/jail.local          | /etc/fail2ban/jail.local                 |
 | /opt/nas/configs/rclone-webdav.service | /etc/systemd/system/rclone-webdav.service |
-| /opt/nas/configs/filebrowser.service  | /etc/systemd/system/filebrowser.service  |
 | /opt/nas/configs/rclone-s3.service     | /etc/systemd/system/rclone-s3.service     |
 | /opt/nas/scripts/*.sh                | 保留原位，直接执行                        |
 
@@ -390,69 +381,7 @@ sudo systemctl enable rclone-webdav
 sudo systemctl restart rclone-webdav
 ```
 
-### 步骤 8：安装 FileBrowser
-
-```bash
-# 下载并安装 FileBrowser（单二进制文件）
-# 方式 1：自有文件服务器（推荐，速度快）
-cd /tmp
-curl -fsSL -o filebrowser.tar.gz https://file.abwen.com/filebroswer/linux-amd64-filebrowser.tar.gz
-tar xzf filebrowser.tar.gz
-sudo mv filebrowser /usr/local/bin/
-
-# 方式 2：官方脚本（需要能访问 GitHub）
-# curl -fsSL https://raw.githubusercontent.com/filebrowser/get/master/get.sh | bash
-
-# 方式 3：通过 GitHub 镜像（备用）
-# cd /tmp
-# curl -fsSL -o filebrowser.tar.gz https://ghfast.top/https://github.com/filebrowser/filebrowser/releases/download/v2.63.17/linux-amd64-filebrowser.tar.gz
-# tar xzf filebrowser.tar.gz
-# sudo mv filebrowser /usr/local/bin/
-
-# 验证安装
-filebrowser version
-# 期望输出: File Browser v2.63.17/...
-
-# 创建配置目录和数据库
-sudo mkdir -p /etc/filebrowser
-sudo filebrowser config init --database /etc/filebrowser/filebrowser.db
-
-# 配置服务参数
-sudo filebrowser config set \
-    --database /etc/filebrowser/filebrowser.db \
-    --address 0.0.0.0 \
-    --port 8081 \
-    --root /data \
-    --log /var/log/filebrowser.log
-
-# 创建管理员用户（密码至少 12 位，FileBrowser v2.63+ 强制要求）
-sudo filebrowser users add <NAS_USER> <NAS_PASS> \
-    --database /etc/filebrowser/filebrowser.db \
-    --perm.admin
-
-# 创建 systemd 服务文件（详见 7.5 节）
-sudo tee /etc/systemd/system/filebrowser.service > /dev/null << 'EOF'
-[Unit]
-Description=File Browser
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=/usr/local/bin/filebrowser --database /etc/filebrowser/filebrowser.db
-Restart=on-failure
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-# 启动服务
-sudo systemctl daemon-reload
-sudo systemctl enable filebrowser
-sudo systemctl start filebrowser
-```
-
-### 步骤 9：安装 rclone S3 服务
+### 步骤 8：安装 rclone S3 服务
 
 ```bash
 # 下载并安装 rclone .deb 包（推荐，速度快）
@@ -474,7 +403,7 @@ sudo systemctl enable rclone-s3
 sudo systemctl start rclone-s3
 ```
 
-### 步骤 10：配置防火墙
+### 步骤 9：配置防火墙
 
 ```bash
 # 重置并配置 ufw
@@ -491,7 +420,6 @@ sudo ufw allow 2049/udp               # NFS UDP
 sudo ufw allow 21/tcp                 # FTP
 sudo ufw allow 30000:31000/tcp        # FTP 被动模式
 sudo ufw allow 8080/tcp               # WebDAV
-sudo ufw allow 8081/tcp               # FileBrowser
 sudo ufw allow 9000/tcp               # rclone S3 API
 
 # 启用防火墙
@@ -499,7 +427,7 @@ sudo ufw --force enable
 sudo ufw status verbose
 ```
 
-### 步骤 11：配置 Fail2ban
+### 步骤 10：配置 Fail2ban
 
 ```bash
 # 写入配置（详见 8.2 节）
@@ -510,16 +438,16 @@ sudo systemctl enable fail2ban
 sudo systemctl restart fail2ban
 ```
 
-### 步骤 12：验证部署
+### 步骤 11：验证部署
 
 ```bash
 # 检查所有服务状态
-for svc in smbd nmbd nfs-kernel-server vsftpd rclone-webdav filebrowser rclone-s3 fail2ban; do
+for svc in smbd nmbd nfs-kernel-server vsftpd rclone-webdav rclone-s3 fail2ban; do
     echo "$svc: $(systemctl is-active $svc)"
 done
 
 # 检查端口监听
-sudo ss -tlnp | grep -E '22|445|139|2049|21|8080|8081'
+sudo ss -tlnp | grep -E '22|445|139|2049|21|8080'
 
 # 测试 Samba
 smbclient -L localhost -U <NAS_USER>%<NAS_PASS>
@@ -529,9 +457,6 @@ showmount -e localhost
 
 # 测试 WebDAV
 curl -u <NAS_USER>:<NAS_PASS> http://localhost:8080/
-
-# 测试 FileBrowser
-curl -s http://localhost:8081/ | head -5
 
 # 测试 rclone S3 API
 curl -s http://localhost:9000/
@@ -987,124 +912,7 @@ s3.upload_file('localfile.txt', 'backups', 'remotefile.txt')
 
 ---
 
-### 7.6 FileBrowser — Web 文件管理器
-
-**简介：** FileBrowser 是一个轻量级 Web 文件管理器，单二进制文件，内存占用极低（< 50 MB），提供浏览器端的文件浏览、上传、下载、编辑、分享等功能。
-
-> **过渡期说明（2026-10 起）：** Web 面板导航的「文件」入口已由内置文件管理页取代（见 7.8，v2 写操作已落地）。**v1.4.0-beta.18 起 setup.sh 新装默认不再安装 FileBrowser**（`--with-filebrowser` 开关保留一个版本周期）；已安装机器升级不受影响、服务保留运行。面板「服务管理」页仍可手动安装。beta.19（M3）评估彻底移除。
-
-**安装位置：** `/usr/local/bin/filebrowser`
-**配置文件：** `/etc/filebrowser/filebrowser.db`（SQLite 数据库）
-**日志文件：** `/var/log/filebrowser.log`
-
-**Systemd 服务文件：** `/etc/systemd/system/filebrowser.service`
-
-```ini
-[Unit]
-Description=File Browser
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=/usr/local/bin/filebrowser --database /etc/filebrowser/filebrowser.db
-Restart=on-failure
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-```
-
-**核心配置说明：**
-
-FileBrowser 的配置存储在 SQLite 数据库中，通过命令行管理：
-
-```bash
-# 初始化数据库
-sudo filebrowser config init --database /etc/filebrowser/filebrowser.db
-
-# 设置服务参数
-sudo filebrowser config set \
-    --database /etc/filebrowser/filebrowser.db \
-    --address 0.0.0.0 \       # 监听所有网卡
-    --port 8081 \              # Web 端口
-    --root /data \             # 文件根目录
-    --log /var/log/filebrowser.log  # 日志路径
-```
-
-| 参数              | 说明                                         |
-|-------------------|----------------------------------------------|
-| `--address`       | 监听地址，`0.0.0.0` 表示所有网卡             |
-| `--port`          | Web 服务端口，默认 8080，此处用 8081 避免与 WebDAV 冲突 |
-| `--root`          | 文件根目录，设为 `/data` 暴露整个数据树       |
-| `--database`      | SQLite 数据库路径，存储用户和配置             |
-| `--log`           | 日志文件路径                                  |
-
-**用户管理：**
-
-```bash
-# 添加管理员用户（密码至少 12 位，v2.63+ 强制要求）
-sudo filebrowser users add <NAS_USER> <NAS_PASS> \
-    --database /etc/filebrowser/filebrowser.db \
-    --perm.admin
-
-# 添加普通用户
-sudo filebrowser users add alice alicepassword123 \
-    --database /etc/filebrowser/filebrowser.db
-
-# 查看所有用户
-sudo filebrowser users ls --database /etc/filebrowser/filebrowser.db
-
-# 修改用户密码
-sudo filebrowser users update <NAS_USER> --password newpassword123 \
-    --database /etc/filebrowser/filebrowser.db
-
-# 删除用户
-sudo filebrowser users delete alice \
-    --database /etc/filebrowser/filebrowser.db
-```
-
-**权限控制：**
-
-FileBrowser 支持细粒度的权限管理，可以在 Web 界面或命令行设置：
-
-| 权限          | 说明                           |
-|--------------|-------------------------------|
-| `--perm.admin` | 管理员权限（可管理用户和配置）|
-| `--scope`      | 限制用户只能访问指定目录       |
-
-示例：限制用户只能访问自己的私有目录：
-
-```bash
-sudo filebrowser users add bob bobpassword123 \
-    --database /etc/filebrowser/filebrowser.db \
-    --scope /data/private/bob
-```
-
-**功能特性：**
-
-- **文件浏览** — 目录树导航，支持列表/网格视图
-- **上传下载** — 拖拽上传，批量下载（ZIP 打包）
-- **在线编辑** — 文本文件在线编辑（代码高亮）
-- **文件分享** — 生成临时分享链接（可设过期时间）
-- **多语言** — 支持中文界面（登录后在设置中切换）
-- **用户管理** — 管理员可在 Web 界面添加/删除用户
-- **Shell 集成** — 可配置执行自定义命令（默认禁用）
-
-**与 WebDAV (rclone) 的区别：**
-
-| 特性        | FileBrowser (8081)          | rclone WebDAV (8080)       |
-|------------|-----------------------------|---------------------------|
-| 界面        | 美观的 Web UI，有文件预览    | 原生 WebDAV 协议，无 UI    |
-| 适用场景    | 浏览器直接访问，临时文件管理  | 挂载为网络驱动器，程序集成  |
-| 认证方式    | Web 登录（JWT Token）        | HTTP Basic Auth            |
-| 资源占用    | ~50 MB 内存                  | ~30 MB 内存                |
-| 功能        | 浏览/上传/下载/编辑/分享     | 仅 WebDAV 协议访问         |
-
-两者可以共存，FileBrowser 给用户用，WebDAV 给程序/挂载用。
-
----
-
-### 7.7 rclone — 远端同步（Web 面板）
+### 7.6 rclone — 远端同步（Web 面板）
 
 面板"远端同步"页把 rclone 的 remote 配置和同步任务全部可视化，用于数据备份上云、从云恢复、多机同步。
 
@@ -1130,9 +938,9 @@ sudo filebrowser users add bob bobpassword123 \
 
 ---
 
-### 7.8 面板文件管理 — 内置 Web 文件页
+### 7.7 面板文件管理 — 内置 Web 文件页
 
-面板内置的整池文件管理器（v3 权限管理已落地），取代原 FileBrowser 外链入口。无需额外服务/端口，随 nas-panel 本体运行，使用面板统一登录与审计。
+面板内置的整池文件管理器（v3 权限管理已落地）。无需额外服务/端口，随 nas-panel 本体运行，使用面板统一登录与审计。
 
 **功能（v3）：**
 
@@ -1156,7 +964,7 @@ sudo filebrowser users add bob bobpassword123 \
 - 上传/重命名/移动/复制/删除/改权限/改属主/修复 home 全部纳入审计日志（操作者/参数/结果）
 - 访问经面板 JWT 认证
 
-**FileBrowser 退役说明：** beta.18 起新装机器默认不再安装 FileBrowser（安装脚本保留 `--with-filebrowser` 开关一个版本周期）；存量已装机器升级不受影响，需要卸载时可运行 `scripts/cleanup.sh` 或手动停止并删除 filebrowser 服务与 `/etc/filebrowser`。系统注册表中 FileBrowser 相关检查项按实际安装状态自动适配，不影响验收口径。
+**FileBrowser 移除说明：** v1.4.0 起 FileBrowser 已彻底移除（安装链、服务管理页、系统注册表、HTTPS 证书应用、密码同步、监控端口映射、备份/恢复脚本、i18n 文案全链路清理）。存量旧机器升级时 `setup.sh` 会自动检测并卸载残留的 filebrowser 服务与 `/etc/filebrowser`（卸载前备份到 `/var/backups/filebrowser-<日期>.tar.gz`）；`scripts/cleanup.sh` 保留手动清理残留的能力。
 
 ---
 
@@ -1413,7 +1221,7 @@ CPU 卡片还显示：型号、负载 1/5/15 分钟、核数。
 
 #### 服务状态
 
-显示 8 个核心服务的运行状态（smbd、nmbd、nfs-kernel-server、vsftpd、rclone-webdav、filebrowser、rclone-s3、fail2ban），绿色=运行中，红色=已停止。
+显示 7 个核心服务的运行状态（smbd、nmbd、nfs-kernel-server、vsftpd、rclone-webdav、rclone-s3、fail2ban），绿色=运行中，红色=已停止。
 
 #### 详细信息（可折叠）
 
@@ -1590,24 +1398,9 @@ Finder → 前往 → 连接服务器 → `http://192.168.1.100:8080/`
 net use W: http://192.168.1.100:8080/ /user:<NAS_USER> <NAS_PASS>
 ```
 
-### FileBrowser 访问
+### 面板内置文件管理访问
 
-**浏览器访问：**
-```
-http://192.168.1.100:8081/
-```
-输入用户名 `<NAS_USER>`，密码 `<NAS_PASS>`。
-
-**功能使用：**
-- **文件浏览** — 左侧目录树导航，右侧文件列表
-- **上传文件** — 点击上传按钮或拖拽文件到页面
-- **下载文件** — 点击文件名或右键选择下载
-- **在线编辑** — 双击文本文件直接在浏览器中编辑
-- **文件分享** — 右键选择"分享"生成临时链接
-- **切换中文** — 登录后点击用户头像 → 设置 → 语言 → 简体中文
-
-**移动端访问：**
-FileBrowser 响应式设计，手机/平板浏览器直接访问，无需安装 App。
+FileBrowser 已彻底移除，浏览器/移动端文件管理请直接使用面板内置的 Web 文件页（见 7.7 节），登录面板后点击左侧导航「文件」即可浏览、上传、下载、删除、改权限，无需额外端口。
 
 ---
 
@@ -1823,34 +1616,6 @@ sudo fail2ban-client -t  # 测试配置
 sudo systemctl restart fail2ban
 ```
 
-### FileBrowser 无法访问
-
-```bash
-# 1. 检查服务状态
-systemctl status filebrowser
-
-# 2. 查看日志
-sudo journalctl -u filebrowser -n 50
-sudo tail -50 /var/log/filebrowser.log
-
-# 3. 检查端口监听
-sudo ss -tlnp | grep 8081
-
-# 4. 本地测试
-curl http://localhost:8081/
-
-# 5. 检查防火墙
-sudo ufw status | grep 8081
-
-# 6. 重置管理员密码（如果忘记密码）
-sudo filebrowser users update <NAS_USER> --password newpassword123 \
-    --database /etc/filebrowser/filebrowser.db
-
-# 7. 检查数据库文件权限
-ls -la /etc/filebrowser/filebrowser.db
-sudo chown root:root /etc/filebrowser/filebrowser.db
-```
-
 ---
 
 ## 13. 批量部署
@@ -1906,7 +1671,6 @@ sudo /opt/nas/scripts/setup.sh
 | NFS 服务            | `systemctl is-active nfs-kernel-server`          | active         |
 | FTP 服务            | `systemctl is-active vsftpd`                     | active         |
 | WebDAV 服务         | `systemctl is-active rclone-webdav`              | active         |
-| FileBrowser 服务    | `systemctl is-active filebrowser`                | active         |
 | rclone S3 服务       | `systemctl is-active rclone-s3`                   | active         |
 | Fail2ban            | `systemctl is-active fail2ban`                   | active         |
 | UFW 防火墙          | `sudo ufw status`                                | active         |
@@ -1928,10 +1692,8 @@ sudo /opt/nas/scripts/setup.sh
 | 3 | `/etc/vsftpd.conf`                          | vsftpd     | FTP 服务配置               |
 | 4 | `/etc/vsftpd.userlist`                      | vsftpd     | FTP 用户白名单             |
 | 5 | `/etc/systemd/system/rclone-webdav.service`  | rclone     | WebDAV systemd 服务单元    |
-| 6 | `/etc/systemd/system/filebrowser.service`    | filebrowser| FileBrowser systemd 服务单元|
-| 7 | `/etc/filebrowser/filebrowser.db`            | filebrowser| FileBrowser SQLite 数据库  |
-| 8 | `/etc/fail2ban/jail.local`                  | fail2ban   | 入侵防护规则               |
-| 9 | `/var/log/vsftpd.log`                       | vsftpd     | FTP 日志文件（需预创建）   |
+| 6 | `/etc/fail2ban/jail.local`                  | fail2ban   | 入侵防护规则               |
+| 7 | `/var/log/vsftpd.log`                       | vsftpd     | FTP 日志文件（需预创建）   |
 
 **部署包文件清单 (`/opt/nas/`)：**
 
@@ -1942,11 +1704,10 @@ sudo /opt/nas/scripts/setup.sh
 | 3 | `configs/vsftpd.conf`                 | FTP 配置模板             |
 | 4 | `configs/jail.local`                  | Fail2ban 配置模板        |
 | 5 | `configs/rclone-webdav.service`       | WebDAV 服务单元模板      |
-| 6 | `configs/filebrowser.service`        | FileBrowser 服务单元模板 |
-| 7 | `configs/rclone-s3.service`          | rclone S3 服务单元模板   |
-| 8 | `scripts/setup.sh`                    | 一键部署脚本             |
-| 9 | `scripts/add-user.sh`                 | 添加用户脚本             |
-| 10 | `scripts/remove-user.sh`              | 删除用户脚本             |
+| 6 | `configs/rclone-s3.service`          | rclone S3 服务单元模板   |
+| 7 | `scripts/setup.sh`                    | 一键部署脚本             |
+| 8 | `scripts/add-user.sh`                 | 添加用户脚本             |
+| 9 | `scripts/remove-user.sh`              | 删除用户脚本             |
 
 ---
 
@@ -1962,7 +1723,6 @@ sudo /opt/nas/scripts/setup.sh
 | 21           | TCP   | FTP         | 入站  | FTP 控制连接                |
 | 30000-31000  | TCP   | FTP         | 入站  | FTP 被动模式数据通道        |
 | 8080         | TCP   | WebDAV      | 入站  | WebDAV HTTP 服务            |
-| 8081         | TCP   | FileBrowser | 入站  | Web 文件管理器              |
 | 9000         | TCP   | rclone S3   | 入站  | S3 API 端点                |
 
 ## 附录 B：Systemd 服务清单
@@ -1975,7 +1735,6 @@ sudo /opt/nas/scripts/setup.sh
 | rpcbind            | 系统服务 | enabled | RPC 端口映射（NFS 依赖）       |
 | vsftpd             | 系统服务 | enabled | FTP 服务器                     |
 | rclone-webdav      | 自定义   | enabled | WebDAV 服务（rclone serve）    |
-| filebrowser        | 自定义   | enabled | Web 文件管理器                 |
 | rclone-s3          | 自定义   | enabled | rclone S3 对象存储服务        |
 | fail2ban           | 系统服务 | enabled | 入侵检测与自动封禁            |
 | ufw                | 系统服务 | enabled | 防火墙                         |

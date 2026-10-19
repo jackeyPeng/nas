@@ -355,11 +355,11 @@
 
 ## 17. 文件管理（FileMgmt）
 
-**功能说明**: 面板内置整池文件管理器（v3 权限管理已落地，取代 FileBrowser；beta.18 起新装默认不装 FileBrowser）。前端「文件」页：目录浏览 + 面包屑导航 + 下载 + 预览 + 用量展示 + 多选工具栏（上传/新建/移动/复制/删除/改权限）+ 行内属性对话框（chmod/chown）；用户页每行「修复 home 权限」。安全核心：所有 handler 入参一律池根相对路径，经 `resolvePoolPath`（filemgmt/path.go）锚定——拒绝绝对路径 / `..` 子串 / 符号链接逃逸（对最深已存在祖先 EvalSymlinks）；写操作双重锚定 + renameat2/mkdir O_EXCL 原子兜底；权限操作 mode 白名单（^[0-7]{3,4}$ 且 ≤0777，setuid/setgid/sticky 拒绝）、递归 Walk 符号链接 chmod 跳过/chown 用 Lchown、池根拒绝、fix-home-perms home 根 Lstat 拒符号链接；面板 root 进程直接 os.Chmod/os.Chown 免 sudo（sudoers 无 chmod -R，刻意不扩）。
+**功能说明**: 面板内置整池文件管理器（v3 权限管理已落地；beta.24 起 FileBrowser 已彻底移除）。前端「文件」页：目录浏览 + 面包屑导航 + 下载 + 预览 + 用量展示 + 多选工具栏（上传/新建/移动/复制/删除/改权限）+ 行内属性对话框（chmod/chown）；用户页每行「修复 home 权限」。安全核心：所有 handler 入参一律池根相对路径，经 `resolvePoolPath`（filemgmt/path.go）锚定——拒绝绝对路径 / `..` 子串 / 符号链接逃逸（对最深已存在祖先 EvalSymlinks）；写操作双重锚定 + renameat2/mkdir O_EXCL 原子兜底；权限操作 mode 白名单（^[0-7]{3,4}$ 且 ≤0777，setuid/setgid/sticky 拒绝）、递归 Walk 符号链接 chmod 跳过/chown 用 Lchown、池根拒绝、fix-home-perms home 根 Lstat 拒符号链接；面板 root 进程直接 os.Chmod/os.Chown 免 sudo（sudoers 无 chmod -R，刻意不扩）。
 
 | 操作项 | 分类 | 说明 |
 |---|---|---|
-| 面板文件页导航入口 | 只显示 | 替换原 FileBrowser 外链，面板内 Alpine 页 |
+| 面板文件页导航入口 | 只显示 | 面板内 Alpine 页（FileBrowser 已移除） |
 | 目录列表浏览（面包屑/排序/属主/权限位/符号链接标注） | 只显示 | `GET /api/files/list`，2000 条截断 + truncated 标志 |
 | 目录/池用量展示 | 只显示 | `GET /api/files/usage`，du 异步独立端点；du_status 三态 ok/timeout/error，前端非 ok 一律降级 |
 | 单文件下载 | 只显示 | `GET /api/files/download`，ServeContent + Range 断点续传 + nosniff |

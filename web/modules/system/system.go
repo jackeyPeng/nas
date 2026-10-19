@@ -548,7 +548,6 @@ func getServiceList() []ServiceInfo {
 		{"fail2ban", "入侵防护"},
 		{"cron", "定时任务"},
 		{"ssh", "SSH 远程登录"},
-		{"filebrowser", "网页文件管理"},
 	}
 
 	var result []ServiceInfo
@@ -596,7 +595,6 @@ func handleServices(w http.ResponseWriter, r *http.Request) {
 		allowed := map[string]bool{
 			"smbd": true, "nmbd": true, "vsftpd": true, "nfs-server": true,
 			"nas-panel": true, "fail2ban": true, "cron": true, "ssh": true,
-			"filebrowser": true,
 		}
 		if !allowed[name] {
 			http.Error(w, `{"error":"不允许操作此服务"}`, http.StatusForbidden)

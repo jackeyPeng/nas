@@ -30,20 +30,19 @@ Z1 has two parallel tracks:
 | NFS | 2049 | Linux high-speed file access |
 | FTP | 21 | vsftpd traditional file transfer |
 | WebDAV | 8080 | rclone serve WebDAV |
-| FileBrowser | 8081 | Web file manager (mobile-friendly) |
 | S3 API | 9000 | rclone serve s3, auto bucket mapping |
 | Fail2ban | - | SSH/FTP brute-force protection |
 | UFW | - | Firewall, default deny |
-| Z1 Panel | 8090 | Web management panel (Go binary) |
+| Z1 Panel | 8090 | Web management panel (Go binary), includes built-in file manager |
 
-> All native systemd services, no Docker dependency. One file, six protocol access.
+> All native systemd services, no Docker dependency. One file, five protocol access.
 
 ### Web Panel Modules (11)
 
 | Module | Features |
 |--------|----------|
 | Dashboard | System info, CPU/mem/disk usage, disk slot map, pool overview cards, service status |
-| Service Mgmt | 9 services start/stop/restart, view logs |
+| Service Mgmt | 7 services start/stop/restart, view logs |
 | User Mgmt | User list (service badges/quota/shares), 4-step wizard, groups, permission matrix, login logs, service toggles |
 | Storage Mgmt | **4-layer model** (Disk→Pool→Volume→Folder), slot map, RAID wizard (goal-oriented), LVM/RAID expansion (SSE), folder CRUD |
 | Firewall | Status cards, visual rule management, source IP/notes, service presets, auto-allow SSH |
@@ -182,7 +181,6 @@ nas/
 | NFS | `mount NAS_IP:/data/shared` | IP-based |
 | FTP | `ftp://NAS_IP/` | NAS_USER / NAS_PASS |
 | WebDAV | `http://NAS_IP:8080/` | NAS_USER / NAS_PASS |
-| FileBrowser | `http://NAS_IP:8081/` | NAS_USER / NAS_PASS |
 | S3 API | `http://NAS_IP:9000` | NAS_USER / NAS_PASS |
 | Web Panel | `http://NAS_IP:8090` | NAS_USER / NAS_PASS |
 
@@ -231,7 +229,7 @@ sudo bash /opt/nas/scripts/restore-config.sh
 
 | Layer | Technology | Notes |
 |-------|-----------|-------|
-| NAS Services | Samba/NFS/vsftpd/rclone/FileBrowser | All native systemd, no Docker |
+| NAS Services | Samba/NFS/vsftpd/rclone | All native systemd, no Docker |
 | Backend | Go 1.25 + go:embed | Single binary, <3MB RAM |
 | Frontend | Alpine.js + CSS | No build tools, light theme |
 | Auth | JWT | 24h validity |

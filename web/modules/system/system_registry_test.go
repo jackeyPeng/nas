@@ -6,6 +6,24 @@ import (
 	"testing"
 )
 
+// TestAllRegistryItemsNoFileBrowser 锁定 FileBrowser 彻底移除：注册表应为
+// 41 项（46 - 5 个 FileBrowser 专属项），且任何 item 的 Name/Description
+// 都不应再提及 filebrowser/FileBrowser（新装机不再安装，不应再出现相关检查项）。
+func TestAllRegistryItemsNoFileBrowser(t *testing.T) {
+	items := allRegistryItems()
+	if len(items) != 41 {
+		t.Fatalf("allRegistryItems() 长度 = %d, want 41", len(items))
+	}
+	for _, item := range items {
+		if strings.Contains(strings.ToLower(item.Name), "filebrowser") {
+			t.Errorf("item %d Name %q 不应包含 filebrowser", item.ID, item.Name)
+		}
+		if strings.Contains(strings.ToLower(item.Description), "filebrowser") {
+			t.Errorf("item %d Description %q 不应包含 filebrowser", item.ID, item.Description)
+		}
+	}
+}
+
 // TestDetectPoolMode covers mount-source device → pool mode classification.
 func TestDetectPoolMode(t *testing.T) {
 	cases := []struct {

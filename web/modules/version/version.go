@@ -108,9 +108,6 @@ func handleComponents(w http.ResponseWriter, r *http.Request) {
 	rcloneVer := firstMatch(cmdVersion("rclone", "version"), regexp.MustCompile(`rclone\s+v?(\S+)`))
 	comps = append(comps, Component{"rclone", "对象存储", rcloneVer, "WebDAV :8080 + S3 :9000 服务端"})
 
-	fbVer := firstMatch(cmdVersion("filebrowser", "version"), regexp.MustCompile(`(v\S+|version\s+\S+)`))
-	comps = append(comps, Component{"FileBrowser", "网页文件管理", fbVer, "Web 文件管理器 · 端口 8081"})
-
 	// ── 网页管理 ──────────────────────────────────────
 	comps = append(comps, Component{"nas-panel", "网页管理", DisplayVersion,
 		"管理面板 · 端口 8090 · 构建 " + BuildTime + " · " + GitCommit})
@@ -243,7 +240,6 @@ func buildNoticeSections() []NoticeSection {
 				{Label: "NFS (nfs-kernel-server) · GPL-2.0", Text: "NFS 文件共享 / File sharing"},
 				{Label: "vsftpd · GPL-2.0", Text: "FTP 服务 / FTP server"},
 				{Label: "rclone · MIT", Text: "WebDAV/S3 服务端与远程同步 / WebDAV/S3 server & sync"},
-				{Label: "FileBrowser · Apache-2.0", Text: "Web 文件管理器 / Web file manager"},
 				{Label: "Fail2ban · GPL-2.0", Text: "防暴力破解 / Brute-force protection"},
 				{Label: "UFW · GPL-3.0", Text: "防火墙前端 / Firewall frontend"},
 				{Label: "LVM2 · GPL-2.0 / LGPL-2.1", Text: "逻辑卷管理 / Logical volume management"},

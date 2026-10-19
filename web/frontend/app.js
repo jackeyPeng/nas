@@ -245,7 +245,7 @@ function nasPanel() {
         // 组件版本（系统详情页）
         components: { items: [], panel: null },
         noticeSections: [],
-        componentCategories: ['文件共享', '网页文件管理', '对象存储', '网页管理', '系统防护', '存储管理', '运行环境'],
+        componentCategories: ['文件共享', '对象存储', '网页管理', '系统防护', '存储管理', '运行环境'],
         // 硬件档案（系统详情页）
         hardware: null,
 
@@ -360,7 +360,6 @@ function nasPanel() {
                 'nfs-kernel-server': 'services.desc_nfs',
                 'vsftpd': 'services.desc_vsftpd',
                 'rclone-webdav': 'services.desc_webdav',
-                'filebrowser': 'services.desc_filebrowser',
                 'rclone-s3': 'services.desc_s3',
                 'fail2ban': 'services.desc_fail2ban',
             };
@@ -371,7 +370,6 @@ function nasPanel() {
         catLabel(cat) {
             const map = {
                 '文件共享': 'component.file_sharing',
-                '网页文件管理': 'component.web_file_mgmt',
                 '对象存储': 'component.object_storage',
                 '网页管理': 'component.web_management',
                 '系统防护': 'component.system_protection',
@@ -406,7 +404,6 @@ function nasPanel() {
                 'fail2ban': 'services.fail2ban',
                 'cron': 'services.cron',
                 'ssh': 'services.ssh_svc',
-                'filebrowser': 'services.filebrowser',
             };
             return map[name] ? window.t(map[name]) : fallback;
         },
@@ -438,7 +435,6 @@ function nasPanel() {
                 'NFS (nfs-kernel-server)': 'component.detail_nfs',
                 'vsftpd': 'component.detail_ftp',
                 'rclone': 'component.detail_rclone',
-                'FileBrowser': 'component.detail_filebrowser',
                 'Fail2ban': 'component.detail_fail2ban',
                 'UFW': 'component.detail_ufw',
                 'LVM': 'component.detail_lvm',
@@ -615,8 +611,8 @@ function nasPanel() {
         },
 
         get serviceSummary() {
-            // not-installed = 可选服务未装(如 FileBrowser,beta.19 起默认不装),
-            // 不是异常也不计入总数,否则全新安装仪表盘恒显「1 个异常」假告警。
+            // not-installed = 可选服务未装,不是异常也不计入总数,
+            // 否则全新安装仪表盘恒显「1 个异常」假告警。
             const svcs = (this.dashboard.services || []).filter(s => s.active !== 'not-installed');
             const down = svcs.filter(s => s.active !== 'active').length;
             return { total: svcs.length, down };

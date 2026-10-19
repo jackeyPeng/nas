@@ -265,13 +265,9 @@ VERIFY_WARN=0
 # 等待面板启动
 sleep 2
 
-# 检查所有服务（filebrowser 未安装时跳过——beta.18 起 setup.sh 默认不装，
-# 否则全新安装会因 ✗ inactive 误置 VERIFY_OK=false 且向用户展示不存在的服务）
+# 检查所有服务
 echo -e "${BOLD}服务状态:${NC}"
-for svc in smbd nmbd nfs-kernel-server vsftpd rclone-webdav filebrowser rclone-s3 fail2ban nas-panel; do
-    if [ "$svc" = "filebrowser" ] && ! command -v filebrowser >/dev/null 2>&1; then
-        continue
-    fi
+for svc in smbd nmbd nfs-kernel-server vsftpd rclone-webdav rclone-s3 fail2ban nas-panel; do
     STATUS=$(systemctl is-active "$svc" 2>/dev/null || echo "inactive")
     case "$STATUS" in
         active)
@@ -326,9 +322,6 @@ echo -e "  │ 密码:   ${GREEN}${NAS_PASS}${NC}"
 echo -e "  └─────────────────────────────────────────┘"
 echo ""
 echo -e "  ${BOLD}其他访问方式${NC}"
-if command -v filebrowser >/dev/null 2>&1; then
-    echo -e "  FileBrowser:  ${CYAN}http://${PRIMARY_IP}:8081${NC}"
-fi
 echo -e "  WebDAV:       ${CYAN}http://${PRIMARY_IP}:8080${NC}"
 echo -e "  Samba:        ${CYAN}\\\\${PRIMARY_IP}\\public${NC}"
 echo -e "  FTP:          ${CYAN}ftp://${PRIMARY_IP}${NC}"

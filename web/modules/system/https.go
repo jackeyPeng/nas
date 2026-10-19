@@ -43,7 +43,6 @@ func getCertStatus() CertStatus {
 		Type: "none",
 		Services: []CertService{
 			{Name: "NAS 管理面板", Port: "8090"},
-			{Name: "FileBrowser", Port: "8081"},
 			{Name: "WebDAV", Port: "8080"},
 			{Name: "S3 对象存储", Port: "9000"},
 		},
@@ -120,8 +119,6 @@ func isServiceUsingHTTPS(displayName string) bool {
 		svcName = "rclone-webdav"
 	case "S3 对象存储":
 		svcName = "rclone-s3"
-	case "FileBrowser":
-		svcName = "filebrowser"
 	case "NAS 管理面板":
 		svcName = "nas-panel"
 	default:
@@ -268,13 +265,10 @@ func handleHTTPSApply(w http.ResponseWriter, r *http.Request) {
 	// 1. NAS Panel - use Go TLS
 	results = append(results, applyPanelTLS()...)
 
-	// 2. FileBrowser - use -t (cert) and -k (key) flags
-	results = append(results, applyFileBrowserTLS()...)
-
-	// 3. WebDAV (rclone) - use --cert and --key
+	// 2. WebDAV (rclone) - use --cert and --key
 	results = append(results, applyRcloneTLS("rclone-webdav", "8080")...)
 
-	// 4. S3 (rclone) - use --cert and --key
+	// 3. S3 (rclone) - use --cert and --key
 	results = append(results, applyRcloneTLS("rclone-s3", "9000")...)
 
 	// Open firewall port 443
@@ -295,7 +289,6 @@ func handleHTTPSRemove(w http.ResponseWriter, r *http.Request) {
 
 	// Revert services to HTTP
 	revertServiceTLS("nas-panel")
-	revertServiceTLS("filebrowser")
 	revertServiceTLS("rclone-webdav")
 	revertServiceTLS("rclone-s3")
 
@@ -338,51 +331,6 @@ func applyPanelTLS() []string {
 	}
 	common.SudoExec("systemctl", "restart", "nas-panel")
 	results = append(results, "NAS 管理面板: HTTPS 已启用")
-	return results
-}
-
-func applyFileBrowserTLS() []string {
-	var results []string
-	unitFile := "/etc/systemd/system/filebrowser.service"
-	unitOut, _ := common.SudoOutput("cat", unitFile)
-
-	// Replace ExecStart to add -t/-k
-	lines := strings.Split(unitOut, "\n")
-	var newLines []string
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "ExecStart=") {
-			// Remove existing -t/-k flags if present
-			execLine := strings.TrimPrefix(trimmed, "ExecStart=")
-			// Remove old TLS flags
-			for _, flag := range []string{"-t ", "-k "} {
-				for {
-					idx := strings.Index(execLine, flag)
-					if idx < 0 {
-						break
-					}
-					// Find end of value (next space or end)
-					end := idx + len(flag)
-					rest := execLine[end:]
-					if spaceIdx := strings.Index(rest, " "); spaceIdx >= 0 {
-						execLine = execLine[:idx] + rest[spaceIdx+1:]
-					} else {
-						execLine = execLine[:idx]
-					}
-					execLine = strings.TrimSpace(execLine)
-				}
-			}
-			// Add TLS flags
-			execLine = fmt.Sprintf("%s -t %s -k %s", execLine, certFile, keyFile)
-			newLines = append(newLines, "ExecStart="+execLine)
-		} else {
-			newLines = append(newLines, line)
-		}
-	}
-	common.SafeWriteFile(unitFile, strings.Join(newLines, "\n"))
-	common.SudoExec("systemctl", "daemon-reload")
-	common.SudoExec("systemctl", "restart", "filebrowser")
-	results = append(results, "FileBrowser: HTTPS 已启用")
 	return results
 }
 
