@@ -4,7 +4,7 @@
 
 | 版本 | 日期 | 主要变化 |
 |------|------|---------|
-| 未发布 | - | 凭证保险箱升级为零知识模型 v2（PBKDF2+AES-256-GCM 全部在浏览器端完成，服务器只存密文）+ 新增独立密码生成器页面 + 侧边栏新增「🧰 工具箱」分组 |
+| v1.4.0-beta.25 | 2026-10-20 | 零知识凭证保险箱 v2（浏览器端 PBKDF2-600k+AES-256-GCM，服务器只存密文；独立口令/5 错锁 30 分钟/自动锁定/查看自动遮罩/旧版一键迁移）+ 独立密码生成器页 + 侧边栏「🧰 工具箱」分组；附发布前审查与体检修复集：迁移失败即停防明文丢失、解锁失败计数原子化、改口令实时拉取+覆盖校验、输错保险箱口令误踢登录修复、PWA sw.js 网络优先+旧缓存清理（根治升级后界面陈旧）、rclone 状态真实版本显示、配置一致性不再误报池根用户目录、staticcheck 清零；第八轮双机重置用户级全流程验收（merge/RAID1 各 33 项全 PASS + Chrome 实测） |
 | v1.4.0-beta.24 | 2026-10-19 | 彻底移除 FileBrowser — 面板文件管理已完全取代；装机链/服务页/注册表(46→41)/HTTPS/密码同步/监控/备份/i18n/文档全链路清理；setup.sh 升级迁移自动卸载存量并备份 /etc/filebrowser；R2 安装包同步清理。附验收修复集：升级机注册表幽灵项剪枝、用户服务开关静默失败×2、x-for 重复 key 崩溃（'after' 错误真身，导航失效根因）、关于页 hardware null 守卫；第七轮双机重置完整验收全 PASS + Chrome 实测 |
 | v1.4.0-beta.23 | 2026-10-17 | UI 巡检修复集 — 共享影子身份（建共享时的 nologin 占位用户）不再泄漏为用户页幻影用户；仪表盘/用户页 null 数组崩溃修复；面板停止的服务不再误标「失败」（is-active exit3 四态归一 + rclone unit SuccessExitStatus=143，已停止显黄色徽章）；健康中心口径对齐（not-installed 不计 warn、新增「N 个已停止」warn）；权限报错文案与校验对齐；第六轮双机重置完整验收（merge/RAID1 各 34 项全 PASS）+ Chrome 实测 |
 | v1.4.0-beta.22 | 2026-10-16 | rclone 安全升级 v1.75.2（修 serve webdav 路径遍历 GHSA-44pm-2q5p-fm63 等命中我方暴露面的高危项 + Go 1.26.9 HTTP/2 CVE；新装必落 pin 版本；服务页重装路径 serve 根对齐 /data/nas1/public 消除越权隐患）+ 系统健康注册表存储层 6 项按池模式感知（RAID 池机器不再恒 fail，46/46 可达）；双机重置重装完整验收（merge/RAID1 各 35 项断言全 PASS） |
@@ -22,7 +22,9 @@
 
 ---
 
-## [未发布] - 凭证保险箱零知识模型 v2 + 密码生成器 + 工具箱菜单组
+## [2026-10-20] - 零知识凭证保险箱 v2 + 密码生成器 + 工具箱菜单组
+
+### 版本 v1.4.0-beta.25
 
 ### 变更
 - **凭证保险箱升级为零知识加密模型**（`web/modules/vault/vault.go` 全量重写）：
@@ -34,10 +36,22 @@
 - **新增独立密码生成器页面**（不依赖保险箱解锁）：`crypto.getRandomValues()` 浏览器端生成，长度 8-64 可调，字符类型可选，六档强度指示器，20 条内存生成历史
 - **侧边栏新增「🧰 工具箱」菜单分组**（置于「维护」分组之后），收纳「🔐 凭证保险箱」与「🔑 密码生成器」；原「访问控制」分组移除凭证保险箱入口
 - **i18n**：zh-CN/en-US 新增 `vault.*`、`pwgen.*`、`nav.toolbox`/`nav.pwgen`、`events.vault.*` 键，中英文严格对齐
-- **Service Worker**：`web/frontend/sw.js` SHELL 清单加入 `/zkvault.min.js`，缓存版本 `z1-nas-v2` → `z1-nas-v3`
+- **Service Worker**：`web/frontend/sw.js` SHELL 清单加入 `/zkvault.min.js`（缓存策略与版本在下方修复集升级为 `z1-nas-v4`）
 - **文档**：`docs/nas-product-manual.md` 新增 7.8 节（零知识保险箱架构图 + 密码生成器说明）；`docs/feature-operation-checklist.md` 第 9 节改写为零知识模型，新增第 10 节密码生成器，后续章节顺延编号（10-18 → 11-19），汇总统计重新复算
 - **合规文档**：`NOTICE.md` / `web/modules/version/NOTICE.md`（镜像同步）/ `THIRD_PARTY_LICENSES.md` / `third_party/manifest.json` 新增 `@noble/hashes` 2.4.0 与 `@noble/ciphers` 2.4.0（MIT）条目；`web/modules/version/version.go` 的 `buildNoticeSections()` 开源许可证列表与关于页组件列表新增「ZkVault 加密内核 · MIT」
 - 新增 `web/modules/vault/vault_test.go`：覆盖设置冲突/校验、解锁成功/失败/锁定/过期、条目 CRUD owner 隔离、修改口令事务性、旧版迁移前置条件等场景
+
+### 发布前独立审查 + E2E 修复集（3c87c7f / a8f884a / cbcfd9e）
+- **Critical×2**：①旧版迁移失败即停——此前单条 reveal/create 失败会静默跳过且无条件清空旧表，可致明文凭据永久丢失；改为失败即中断、如实报告、绝不 purge。②`vaultFetch` 把解锁接口的 401（口令错误）误判为会话过期直接登出——输错一次保险箱口令即被踢回登录页；改为按响应体区分业务错误与会话过期，错误提示内联显示剩余尝试次数
+- **Important×4**：解锁失败计数改 SQL 原子自增（防并发稀释 5 次锁定阈值）；密码生成 randInt 改 rejection sampling（消模偏差）；保险箱口令下限 8→12 位对齐全站密码策略；修改口令改为实时拉取全部条目+逐条旧钥解密（失败即中止）+服务端事务内覆盖数校验（防旧标签页缓存漏加密其它设备新增条目）
+- **Minor×7**：生成按钮字符类全关时禁用、强度改熵估算（bits=len×log2(pool) 六档）、isLocked 坏数据 fail-safe、锁定时清倒计时 interval、断网捕获、setup 并发 TOCTOU 归一 409、改口令对话框补 `vault.old_passphrase` 缺失 i18n 键（原显示裸键名）
+- **PWA 陈旧根治**：`sw.js` 重写为网络优先+写穿缓存+activate 清理旧缓存（此前 cache-first 且无清理，`caches.match` 按创建顺序恒命中最老副本，升级后界面长期陈旧、离线缺 app.js）；SHELL 补 `/app.js`，缓存版本 → `z1-nas-v4`
+- **staticcheck 清零**：删 8 个死函数（含 TODO 挂账的 ownerShareOf 去重项、被服务开关重构废弃的 enableWebDAVUser）+ 死变量/死赋值/测试恒真断言等 10 处卫生项
+- **配置一致性检查移除池根未纳管目录扫描**：文件管理器时代池根直属目录是合法用户数据（web 上传目录曾被误报「存在但未在面板中管理」），真实配置漂移仍由 smb.conf/exports 托管段对账覆盖
+- **rclone 状态显示真实版本**：此前前端硬编码「未知版本」未绑定 API 返回的 version 字段
+- **UI 文案与对齐**（77a5a1f）：「池根」全链改「根目录」（面包屑/回收站伪共享 (根目录 nasN)/EN Root directory）；文件管理表补 `table` 基类修表头与内容对齐 + 单元格 `data-label`（移动端卡片有字段名）
+- **加固与根治**：setup.sh 手工路径补 `chmod 600 .env`（含 NAS_PASS/JWT_SECRET）；`TestEventBusSubscribe` flaky 根治（goroutine Drain 与 TempDir 清理竞态，done 通道同步）
+- **验收**：第八轮双机重置用户级全流程（48 merge / 57 RAID1）：一键安装零错误、8 服务 active、注册表 41/41、acceptance-suite 33/33、NFS/WebDAV/S3/FTP 协议断言全过、Chrome UI 实测（保险箱全链/工具箱/生成器/rclone 版本/健康页）0 JS 错误
 
 ---
 
