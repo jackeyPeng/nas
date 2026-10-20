@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 主要变化 |
 |------|------|---------|
+| v1.4.0-beta.26 | 2026-10-20 | 安全审计全量修复 — P0：命令/sed 注入根除（证书 domain 校验+openssl 直传参、chpasswd/smbpasswd 走 stdin、.env 与 rclone-s3 unit 改纯 Go 行级重写、htpasswd 直传参、密码统一拒绝换行/控制字符）、/api/system/check 免认证暴露收口（loopback+JWT）、登录/TOTP IP 限流（5 次失败锁 15 分钟）、服务开关白名单、Samba/SSH 配置注入防护、备份路径穿越防护；P1：面板 HTTPS 真正生效（TLS_CERT/TLS_KEY→ListenAndServeTLS）、XFS 配额根修（建池挂载+fstab 加 prjquota、/etc/projects 改标准 id:path、建文件夹配额真正落地）、防火墙端口范围/备注回显/sudoers 补齐、xfs_growfs 改挂载点（扩容静默失败根除）、NVMe 分区名+mkfs 参数、删池/重置清脏数据、诊断三 bug；P2：磁盘操作全局锁补漏、rclone 状态事务锁、SQLite 统一 WAL（顺带根治 logger/eventbus 旧 DSN 参数被驱动静默忽略）、monitor 后台采样（1.5s→<1ms）+du/smartctl 缓存（不再反复唤醒休眠盘）、RAID 注册表区分初始重建与降级；双机重置验收全 PASS（用户一键安装 RAID5 机 + 分支构建 LVM 机，套件 33 项+五协议+配额 E2E+限流/注入实测） |
 | v1.4.0-beta.25 | 2026-10-20 | 零知识凭证保险箱 v2（浏览器端 PBKDF2-600k+AES-256-GCM，服务器只存密文；独立口令/5 错锁 30 分钟/自动锁定/查看自动遮罩/旧版一键迁移）+ 独立密码生成器页 + 侧边栏「🧰 工具箱」分组；附发布前审查与体检修复集：迁移失败即停防明文丢失、解锁失败计数原子化、改口令实时拉取+覆盖校验、输错保险箱口令误踢登录修复、PWA sw.js 网络优先+旧缓存清理（根治升级后界面陈旧）、rclone 状态真实版本显示、配置一致性不再误报池根用户目录、staticcheck 清零；第八轮双机重置用户级全流程验收（merge/RAID1 各 33 项全 PASS + Chrome 实测） |
 | v1.4.0-beta.24 | 2026-10-19 | 彻底移除 FileBrowser — 面板文件管理已完全取代；装机链/服务页/注册表(46→41)/HTTPS/密码同步/监控/备份/i18n/文档全链路清理；setup.sh 升级迁移自动卸载存量并备份 /etc/filebrowser；R2 安装包同步清理。附验收修复集：升级机注册表幽灵项剪枝、用户服务开关静默失败×2、x-for 重复 key 崩溃（'after' 错误真身，导航失效根因）、关于页 hardware null 守卫；第七轮双机重置完整验收全 PASS + Chrome 实测 |
 | v1.4.0-beta.23 | 2026-10-17 | UI 巡检修复集 — 共享影子身份（建共享时的 nologin 占位用户）不再泄漏为用户页幻影用户；仪表盘/用户页 null 数组崩溃修复；面板停止的服务不再误标「失败」（is-active exit3 四态归一 + rclone unit SuccessExitStatus=143，已停止显黄色徽章）；健康中心口径对齐（not-installed 不计 warn、新增「N 个已停止」warn）；权限报错文案与校验对齐；第六轮双机重置完整验收（merge/RAID1 各 34 项全 PASS）+ Chrome 实测 |
@@ -19,6 +20,48 @@
 | v1.4.0-beta.13 | 2026-09-19 | NFS 导出对所有网段开放（跨网段客户端可挂载） |
 | v1.4.0-beta.12 | 2026-09-18 | 创建向导按已选磁盘实时预估容量（选目标后预览面板 + 各方案可用容量/注意事项）+ 登录页品牌 slogan |
 | v1.4.0-beta.11 | 2026-09-18 | 当前连接展示（监控页，SMB 会话 + 各协议端口归类）+ 回收站改 per-share `.recycle/`（删除=rename 零拷贝，恢复保留目录树，旧 `#recycle` 兼容）+ 存储页 tab 切换跳动修复 |
+
+---
+
+## [2026-10-20] - 安全审计全量修复（P0/P1/P2）
+
+### 版本 v1.4.0-beta.26
+
+外部逐行代码审计报告（P0 安全漏洞 / P1 功能失效 / P2 并发与性能，共 20 项）经逐项核实后全量修复；每项修复经独立审查子代理复核，两轮审查发现（密码换行注入回归、服务白名单误伤、Glob 伪修复、采样器 panic 防护等）均已回修。
+
+### 变更
+
+**P0 安全**
+- 命令/sed 注入根除：自签证书 domain 白名单校验 + openssl 直传参（废 bash -c 拼接）；建用户/改密的 chpasswd、smbpasswd 改 stdin 传参；管理员改密的 .env NAS_PASS、rclone-s3.service --auth-key、s3-env 三处 sed 拼接改为纯 Go 行级重写 + SafeWriteFile；WebDAV htpasswd 直传参。
+- 密码入口统一拒绝换行/控制字符（防 chpasswd 多行注入改任意用户密码、防 .env 注入 KEY=VALUE、防 systemd unit 拆行损坏）。
+- /api/system/check 免认证暴露收口：loopback 放行（安装脚本 localhost 调用不受影响）+ 远程要求有效 JWT；不信任 X-Forwarded-For。
+- 面板登录 + TOTP 增加按 IP 限流：连续 5 次失败锁 15 分钟（429 + retry_after），成功清零，假时钟单测覆盖。
+- 服务自启动开关白名单（8 核心服务 + rclone-webdav/rclone-s3），任意 systemd 服务启停通道关闭。
+- Samba 共享 path/comment/valid_users 与 SSH 配置 port/permit_root_login 等参数拒绝换行与控制字符（防 smb.conf 注入 root preexec、防 sshd_config 注入）。
+- 备份恢复/删除路径 filepath.Clean 归一 + 前缀后缀校验（杜绝 `../../` 穿越后 sudo rm）。
+
+**P1 功能**
+- 面板 HTTPS 打通：main.go 读取 TLS_CERT/TLS_KEY 走 ListenAndServeTLS（此前 applyPanelTLS 写入的环境变量从未被读取，HTTPS 是死代码）。
+- XFS 配额根修：建池 mount（7 处）与 fstab（3 处写入点）加 prjquota；/etc/projects 修正为标准 `id:path` 两段格式（兼容归一存量三段脏数据）；**建文件夹带 quota_gb 时真正落地 project 配额**（此前只存元数据从不生效，实机 dd 验证 5G 硬限精确 EDQUOT）。
+- 防火墙三修：来源 IP 规则的端口范围不再截断（30000:31000 原样传 ufw）；规则备注解析回显；sudoers 补齐 ufw delete/enable/disable/status numbered/verbose + xfs_quota。
+- xfs_growfs 改传 findmnt 解析的挂载点（Debian 12/13 xfsprogs 传块设备必报错），扩容静默失败根除；resize2fs 兜底仅限实为 ext4 时。
+- NVMe 分区名（nvme0n1→p1）+ mkfs 按文件系统选参数（xfs -f / ext4 -F）。
+- 存储重置/单独删池对齐出厂重置：清 folders.db 行 + .last_reload + SyncAllConfigs 收敛托管段（不再残留幽灵共享）。
+- 诊断三修：保存配置不再清空 last_run/last_result/last_detail（防改计划即误触发）；时间窗口按分钟解析；SMART 多盘进度统一 + 轮询超时不再误报通过。
+
+**P2 稳定性/性能**
+- 破坏性磁盘操作全局锁补漏（建池/RAID 扩容/换盘/格式化/挂载/卸载/出厂重置互通一把锁）；廉价参数校验前置到锁外（错参请求不排队数小时）。
+- rclone 任务状态"读-改-写"整体事务锁（后台调度与前端操作不再互相覆盖）；路径校验移出锁。
+- SQLite 统一 common.OpenSQLite：WAL + busy_timeout 5s + MaxOpenConns(1)；**发现并根治 logger/eventbus 旧 DSN 参数写法被 modernc 驱动静默忽略**（并发 database is locked 隐患的真实根因）。
+- 性能：/api/monitor 后台采样器（响应 1.5s→<1ms，panic 防护）；du 目录大小 60s TTL 缓存 + 60s 超时 + stale-while-revalidate；smartctl 30s 缓存（不再每次轮询唤醒休眠盘，超时错误不缓存）；存储页目录列表 Glob("/data/*/") 恒空伪展开修复（Glob+IsDir）。
+- RAID 注册表项区分"初始重建中（warn + 进度/ETA）"与"真降级（fail）"——建池后重建窗口不再显示故障。
+- 并入 beta.25 后未发布项：拆池 umount 竞态加固（00c3932）。
+
+### 验收
+- 双机重置验收：A 机走真实用户一条命令安装（RAID5 4 盘池，注册表 41/41，验收套件 33 项全 PASS）；B 机注入本分支构建（LVM merge 4 盘池，套件 33 项全 PASS）。
+- 修复项实机实测：配额 E2E（id:path 落盘 + bhard 生效 + dd 精确停在 5GiB）、登录限流（5×401→429，锁定 IP 正确密码亦拒，loopback 不受影响）、单引号密码建户+SMB 登录、换行密码 400、备份穿越 400、防火墙范围规则+备注回显、system/check 远程 401/loopback 200、monitor <1ms。
+- 本机 Chrome UI 实测：登录/仪表盘/用户页（配额回显）/防火墙页渲染正常。
+- go build ./... / go test ./... / go vet / go test -race 全绿；新增单测 60+。
 
 ---
 
