@@ -30,8 +30,8 @@ type PendingOp struct {
 	// NFSNoRootSquash 显式开启 NFS no_root_squash（默认 root_squash 安全基线）
 	NFSNoRootSquash bool `json:"nfs_no_root_squash"`
 	// NFSNoRootSquashSet 区分「未传」（继承现有值）与「显式传 false」
-	NFSNoRootSquashSet bool `json:"-"`
-	QuotaGB            int  `json:"quota_gb"`
+	NFSNoRootSquashSet bool   `json:"-"`
+	QuotaGB            int    `json:"quota_gb"`
 	CreatedAt          string `json:"created_at"`
 }
 

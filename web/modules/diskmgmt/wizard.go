@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -489,35 +488,4 @@ func writeFstab(uuid, mountPoint, fstype string) {
 	if newContent != content {
 		common.SafeWriteFile("/etc/fstab", newContent)
 	}
-}
-
-// shareNameFromMount derives Samba share name from mount point
-// e.g. /data/nas3 → nas3, /data/system → system
-func shareNameFromMount(mountPoint string) string {
-	if mountPoint == "/data" {
-		return "data"
-	}
-	// Extract last path component
-	idx := strings.LastIndex(mountPoint, "/")
-	if idx >= 0 && idx < len(mountPoint)-1 {
-		return mountPoint[idx+1:]
-	}
-	return filepath.Base(mountPoint)
-}
-
-// addSambaShare adds a share to smb.conf and restarts smbd
-// Removes existing share with same name first to avoid duplicates
-// 格式与托管共享一致：含 create/directory mask + force user/group
-func addSambaShare(name, path, user string) {
-	// Read existing config and remove any existing share with same name
-	smbConf, _ := common.SudoOutput("cat", "/etc/samba/smb.conf")
-	conf := fmt.Sprintf("\n[%s]\n   path = %s\n   browseable = yes\n   writable = yes\n   valid users = %s\n   create mask = 0775\n   directory mask = 0775\n   force user = %s\n   force group = %s\n", name, path, user, user, user)
-	if smbConf != "" {
-		// Remove existing share with same name
-		newConf := removeSambaShare(smbConf, name)
-		common.SafeWriteFile("/etc/samba/smb.conf", newConf+conf)
-	} else {
-		common.SafeWriteFile("/etc/samba/smb.conf", conf)
-	}
-	common.SudoExec("systemctl", "restart", "smbd")
 }

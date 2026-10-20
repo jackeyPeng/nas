@@ -813,10 +813,10 @@ type taskProgress struct {
 	FilesTotal   int
 	FilesPercent int
 	StatsLine    string
-	OutputTail  []string // 最近 40 行输出
-	startedAt   time.Time
-	full        strings.Builder // 完整输出（写日志用）
-	fullLen     int
+	OutputTail   []string // 最近 40 行输出
+	startedAt    time.Time
+	full         strings.Builder // 完整输出（写日志用）
+	fullLen      int
 }
 
 const maxFullOutput = 512 * 1024

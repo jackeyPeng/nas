@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -281,113 +280,6 @@ func handleDiskStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	common.JSONResponse(w, map[string]interface{}{"disks": disks})
-}
-
-// handleQuickSetup does: format + mkdir + mount + fstab + chown
-func handleQuickSetup(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
-		return
-	}
-
-	device := r.FormValue("device")
-	mountpoint := r.FormValue("mountpoint")
-	fstype := r.FormValue("fstype")
-	confirm := r.FormValue("confirm")
-	autoSamba := r.FormValue("samba")
-
-	if device == "" || mountpoint == "" {
-		http.Error(w, `{"error": "device and mountpoint required"}`, http.StatusBadRequest)
-		return
-	}
-	if fstype == "" {
-		fstype = "xfs"
-	}
-	// 白名单校验：设备 + 挂载点（加固轮1 #1）
-	if err := common.ValidateBlockDevice(device); err != nil {
-		http.Error(w, fmt.Sprintf(`{"error": %q}`, err.Error()), http.StatusBadRequest)
-		return
-	}
-	if cleaned, err := common.ValidateDataPath(mountpoint, true); err != nil {
-		http.Error(w, fmt.Sprintf(`{"error": %q}`, err.Error()), http.StatusBadRequest)
-		return
-	} else {
-		mountpoint = cleaned
-	}
-	if confirm != "yes" {
-		http.Error(w, `{"error": "请加 confirm=yes 确认操作"}`, http.StatusBadRequest)
-		return
-	}
-	if isSystemDisk(device) {
-		http.Error(w, `{"error": "不允许操作系统盘"}`, http.StatusBadRequest)
-		return
-	}
-
-	nasUser := common.GetNASUser()
-	if nasUser == "" {
-		nasUser = "root"
-	}
-
-	var steps []string
-
-	out, err := common.SudoExec("mkfs."+fstype, "-F", device)
-	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error": "格式化失败: %s"}`, out), http.StatusInternalServerError)
-		return
-	}
-	steps = append(steps, "格式化 "+device+" 为 "+fstype)
-
-	uuidOut, _ := common.ExecOutput("blkid", "-s", "UUID", "-o", "value", device)
-	uuid := strings.TrimSpace(uuidOut)
-
-	common.SudoExec("mkdir", "-p", mountpoint)
-	steps = append(steps, "创建目录 "+mountpoint)
-
-	common.SudoExec("mount", device, mountpoint)
-	steps = append(steps, "挂载 "+device+" 到 "+mountpoint)
-
-	if uuid != "" {
-		fstabLine := fmt.Sprintf("UUID=%s %s %s defaults 0 2", uuid, mountpoint, fstype)
-		fstabData, _ := common.SudoOutput("cat", "/etc/fstab")
-		fstabLines := strings.Split(fstabData, "\n")
-		found := false
-		for _, line := range fstabLines {
-			if strings.Contains(line, uuid) {
-				found = true
-				break
-			}
-		}
-		if !found {
-			content := fstabData
-			if !strings.HasSuffix(content, "\n") {
-				content += "\n"
-			}
-			content += fstabLine + "\n"
-			common.SafeWriteFile("/etc/fstab", content)
-			steps = append(steps, "写入 /etc/fstab 持久化 (UUID="+uuid+")")
-		}
-	}
-
-	common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountpoint)
-	steps = append(steps, "设置权限 "+nasUser+":"+nasUser)
-
-	if autoSamba == "yes" {
-		shareName := filepath.Base(mountpoint)
-		smbConf := fmt.Sprintf("\n[%s]\n   path = %s\n   browseable = yes\n   writable = yes\n   valid users = %s\n",
-			shareName, mountpoint, nasUser)
-		common.SafeAppendFile("/etc/samba/smb.conf", smbConf)
-		common.SudoExec("systemctl", "restart", "smbd")
-		steps = append(steps, "添加 Samba 共享 "+shareName+" 并重启 smbd")
-	}
-
-	common.JSONResponse(w, map[string]interface{}{
-		"message":    "快速配置完成",
-		"steps":      steps,
-		"device":     device,
-		"mountpoint": mountpoint,
-		"fstype":     fstype,
-		"uuid":       uuid,
-	})
 }
 
 // handleFstab returns current /etc/fstab content

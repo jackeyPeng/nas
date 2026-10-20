@@ -37,28 +37,29 @@ func TestNFSExportOpts(t *testing.T) {
 // 文件夹级更新不携带 NFS 选项时继承现有值（防对话框静默重置）
 func TestExecuteUpdateFolderInheritsNFSFlag(t *testing.T) {
 	// 直接验证继承逻辑的判定条件（executeUpdateFolder 依赖 DB，这里测决策规则）
+	// 复刻 executeUpdateFolder 的三态决策（含 existing 为 nil 的分支，消除恒真 nil 判断）
+	decide := func(op PendingOp, existing *FolderMeta) bool {
+		if op.NFSNoRootSquashSet {
+			return op.NFSNoRootSquash
+		}
+		if existing != nil {
+			return existing.NFSNoRootSquash
+		}
+		return false
+	}
 	existing := &FolderMeta{Name: "docs", Path: "/data/nas1/docs", NFSExport: true, NFSNoRootSquash: true}
 	op := PendingOp{Action: "update", FolderName: "docs", FolderPath: "/data/nas1/docs", Permission: "readwrite"} // Set=false
 
-	// 复刻 executeUpdateFolder 的三态决策
-	got := false
-	if op.NFSNoRootSquashSet {
-		got = op.NFSNoRootSquash
-	} else if existing != nil {
-		got = existing.NFSNoRootSquash
-	}
-	if !got {
+	if !decide(op, existing) {
 		t.Error("未显式携带 nfs_no_root_squash 时应继承现有值 true")
 	}
 
 	op2 := PendingOp{Action: "update", NFSNoRootSquash: false, NFSNoRootSquashSet: true}
-	got2 := false
-	if op2.NFSNoRootSquashSet {
-		got2 = op2.NFSNoRootSquash
-	} else if existing != nil {
-		got2 = existing.NFSNoRootSquash
-	}
-	if got2 {
+	if decide(op2, existing) {
 		t.Error("显式传 false 时应关闭 no_root_squash")
+	}
+
+	if decide(PendingOp{Action: "update"}, nil) {
+		t.Error("无现有元数据且未显式携带时应默认 false")
 	}
 }

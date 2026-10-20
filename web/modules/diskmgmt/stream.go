@@ -394,7 +394,6 @@ func setupRAIDStream(w http.ResponseWriter, devs []string, level int, mountPoint
 	mdadmConf, _ := common.SudoOutput("/usr/sbin/mdadm", "--detail", "--scan")
 	existingConf, _ := common.SudoOutput("cat", "/etc/mdadm/mdadm.conf")
 	if existingConf == "" {
-		existingConf, _ = common.SudoOutput("cat", "/etc/mdadm.conf")
 		common.SafeWriteFile("/etc/mdadm/mdadm.conf", mdadmConf)
 	} else {
 		common.SafeWriteFile("/etc/mdadm/mdadm.conf", existingConf+"\n"+mdadmConf)

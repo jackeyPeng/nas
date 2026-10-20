@@ -13,26 +13,26 @@ import (
 
 // SharedFolder represents a shared directory in a storage volume
 type SharedFolder struct {
-	Name         string `json:"name"`
-	Path         string `json:"path,omitempty"`
-	Pool         string `json:"pool"`
-	PoolName     string `json:"pool_name"`
-	Source       string `json:"source"`
-	Owner        string `json:"owner,omitempty"`
-	Size         string `json:"size"`
-	SambaShare   bool   `json:"samba_share"`
-	NFSExport    bool   `json:"nfs_export,omitempty"`
-	FTPAccess    bool   `json:"ftp_access,omitempty"`
-	WebDAVAccess bool   `json:"webdav_access,omitempty"`
-	S3Access     bool   `json:"s3_access,omitempty"`
-	Permission   string `json:"permission"`
-	ValidUsers   string `json:"valid_users"`
-	WriteUsers   string `json:"write_users,omitempty"`
-	NFSNoRootSquash bool `json:"nfs_no_root_squash,omitempty"`
-	RecycleBin   bool   `json:"recycle_bin"`
-	QuotaGB      int    `json:"quota_gb"`
-	QuotaUsed    string `json:"quota_used"`
-	Description  string `json:"description,omitempty"`
+	Name            string `json:"name"`
+	Path            string `json:"path,omitempty"`
+	Pool            string `json:"pool"`
+	PoolName        string `json:"pool_name"`
+	Source          string `json:"source"`
+	Owner           string `json:"owner,omitempty"`
+	Size            string `json:"size"`
+	SambaShare      bool   `json:"samba_share"`
+	NFSExport       bool   `json:"nfs_export,omitempty"`
+	FTPAccess       bool   `json:"ftp_access,omitempty"`
+	WebDAVAccess    bool   `json:"webdav_access,omitempty"`
+	S3Access        bool   `json:"s3_access,omitempty"`
+	Permission      string `json:"permission"`
+	ValidUsers      string `json:"valid_users"`
+	WriteUsers      string `json:"write_users,omitempty"`
+	NFSNoRootSquash bool   `json:"nfs_no_root_squash,omitempty"`
+	RecycleBin      bool   `json:"recycle_bin"`
+	QuotaGB         int    `json:"quota_gb"`
+	QuotaUsed       string `json:"quota_used"`
+	Description     string `json:"description,omitempty"`
 }
 
 // handleListFolders lists all shared folders under storage spaces

@@ -120,7 +120,7 @@ func handleSambaShare(w http.ResponseWriter, r *http.Request) {
 			shareBlock += fmt.Sprintf("   comment = %s\n", comment)
 		}
 		shareBlock += fmt.Sprintf("   path = %s\n", path)
-		shareBlock += fmt.Sprintf("   browseable = yes\n")
+		shareBlock += "   browseable = yes\n"
 		if readOnly {
 			shareBlock += "   read only = yes\n"
 		} else {

@@ -108,12 +108,12 @@ func handleInstallServices(w http.ResponseWriter, r *http.Request) {
 		steps = append(steps, msg)
 	} else {
 		// Install all services
-		out, err := common.SudoExec("apt-get", "update", "-qq")
+		_, err := common.SudoExec("apt-get", "update", "-qq")
 		if err == nil {
 			steps = append(steps, "apt update 完成")
 		}
 
-		out, err = common.SudoExec("apt-get", "install", "-y", "-qq",
+		out, err := common.SudoExec("apt-get", "install", "-y", "-qq",
 			"samba", "nfs-kernel-server", "vsftpd", "rclone", "fail2ban", "apache2-utils")
 		if err != nil {
 			http.Error(w, fmt.Sprintf(`{"error":"安装失败: %s"}`, out+": "+err.Error()), http.StatusInternalServerError)

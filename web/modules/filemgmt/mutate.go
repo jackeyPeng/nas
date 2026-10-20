@@ -30,12 +30,14 @@ func validateFileName(name string) error {
 		return fmt.Errorf("名称不能为空")
 	}
 	if name == "." || name == ".." {
+		//lint:ignore ST1005 消息以 .. 字面量结尾是语义需要，非句读
 		return fmt.Errorf("名称不能为 . 或 ..")
 	}
 	if strings.Contains(name, "/") {
 		return fmt.Errorf("名称不能包含 /")
 	}
 	if strings.Contains(name, "..") {
+		//lint:ignore ST1005 同上
 		return fmt.Errorf("名称不能包含 ..")
 	}
 	for _, r := range name {

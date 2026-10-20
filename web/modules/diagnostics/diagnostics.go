@@ -18,7 +18,6 @@ import (
 
 var (
 	db        *sql.DB
-	dbMu      sync.Mutex
 	runMu     sync.Mutex
 	isRunning bool // only one long task at a time
 )

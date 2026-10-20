@@ -130,6 +130,9 @@ if [ ${#NAS_PASS} -lt 12 ]; then
     echo "错误: NAS_PASS 至少需要 12 位（面板密码策略）"
     exit 1
 fi
+# 加固：.env 含 NAS_PASS/JWT_SECRET，收紧权限（install.sh 一键路径已 chmod 600，
+# 此处覆盖手工 cp .env.example 创建的场景，默认 umask 可能留下 644）
+chmod 600 "$ENV_FILE" 2>/dev/null || true
 
 # ==================== 确保 /opt/nas 软链接存在 ====================
 

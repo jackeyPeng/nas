@@ -327,11 +327,6 @@ func addWebDAVUser(username, password string) error {
 	return nil
 }
 
-func enableWebDAVUser(username string) error {
-	// htpasswd 条目已存在性由 updateUserServices 前置检查；此处无需动作
-	return nil
-}
-
 func disableWebDAVUser(username string) error {
 	out, err := common.SudoExec("bash", "-c",
 		fmt.Sprintf("sed -i '/^%s:/d' /etc/rclone-htpasswd", shellQuote(username)))

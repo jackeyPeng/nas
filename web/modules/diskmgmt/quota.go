@@ -107,12 +107,6 @@ func setFolderQuota(mountPoint, folderPath, poolName, folderName string, quotaGB
 	return nil
 }
 
-// removeFolderQuota removes quota when a folder is deleted
-func removeFolderQuota(poolName, folderName string) {
-	projName := projectName(poolName, folderName)
-	removeProjectEntry(projName)
-}
-
 // getFolderQuota reads current quota for a folder from xfs_quota report
 func getFolderQuota(mountPoint, poolName, folderName string) (usedGB float64, limitGB int, err error) {
 	projName := projectName(poolName, folderName)

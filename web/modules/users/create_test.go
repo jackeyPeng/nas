@@ -91,7 +91,7 @@ func TestApplyPermissionChange_MaterializeFromFolderLevel(t *testing.T) {
 func TestApplyPermissionChange_AllReadonly(t *testing.T) {
 	valid, write, perm := "alice,bob", "alice,bob", "readwrite"
 	valid, write, perm = applyPermissionChange(valid, write, perm, "alice", "readonly")
-	valid, write, perm = applyPermissionChange(valid, write, perm, "bob", "readonly")
+	_, write, perm = applyPermissionChange(valid, write, perm, "bob", "readonly")
 	if strings.TrimSpace(write) != "" {
 		t.Errorf("全员只读后 write_users 应为空, got %q", write)
 	}
@@ -104,7 +104,7 @@ func TestApplyPermissionChange_AllReadonly(t *testing.T) {
 func TestApplyPermissionChange_AllDenied(t *testing.T) {
 	valid, write, perm := "alice,bob", "alice,bob", "readwrite"
 	valid, write, perm = applyPermissionChange(valid, write, perm, "alice", "noaccess")
-	valid, write, perm = applyPermissionChange(valid, write, perm, "bob", "noaccess")
+	valid, _, perm = applyPermissionChange(valid, write, perm, "bob", "noaccess")
 	if strings.TrimSpace(valid) != "" {
 		t.Errorf("全员禁止后 valid_users 应为空, got %q", valid)
 	}

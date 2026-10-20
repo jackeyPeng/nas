@@ -922,6 +922,7 @@
     "not_setup": "Vault is not set up yet",
     "passphrase_too_short": "Passphrase must be at least 12 characters",
     "passphrase_mismatch": "Passphrases do not match",
+    "old_passphrase": "Old Passphrase",
     "old_passphrase_wrong": "Old passphrase is incorrect",
     "passphrase_changed": "Passphrase changed successfully",
     "saved": "Credential saved",

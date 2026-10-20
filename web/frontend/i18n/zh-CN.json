@@ -922,6 +922,7 @@
     "not_setup": "保险箱尚未初始化",
     "passphrase_too_short": "口令至少 12 位",
     "passphrase_mismatch": "两次输入的口令不一致",
+    "old_passphrase": "旧口令",
     "old_passphrase_wrong": "旧口令不正确",
     "passphrase_changed": "口令修改成功",
     "saved": "凭据已保存",

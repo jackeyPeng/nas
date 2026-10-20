@@ -5,8 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"nas-panel/modules/diskmgmt"
 )
 
 // poolRootOverride 仅供测试注入;生产为空,走默认池根(与 diskmgmt 一致)。
@@ -77,22 +75,4 @@ func normalizedRoot() string {
 		return resolved
 	}
 	return root
-}
-
-// ownerShareOf 返回 absPath 所属共享(folders.db Path 前缀最长匹配)。
-// 删除时定位对应 .recycle;无匹配返回 false(池根散落文件)。
-func ownerShareOf(absPath string) (diskmgmt.FolderMeta, bool) {
-	var best diskmgmt.FolderMeta
-	found := false
-	for _, m := range diskmgmt.GetAllFolderMeta() {
-		clean := filepath.Clean(m.Path)
-		prefix := clean + string(filepath.Separator)
-		if strings.HasPrefix(absPath+string(filepath.Separator), prefix) {
-			// 最长匹配用 Clean 后长度(Task 1 review Minor#3:原始 m.Path 可能带尾/重复斜杠)
-			if !found || len(clean) > len(filepath.Clean(best.Path)) {
-				best, found = m, true
-			}
-		}
-	}
-	return best, found
 }

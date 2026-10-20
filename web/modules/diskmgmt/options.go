@@ -2,7 +2,6 @@ package diskmgmt
 
 import (
 	"fmt"
-	"strings"
 )
 
 // RaidOption represents a RAID/storage configuration option
@@ -198,38 +197,3 @@ func getMinDiskSizeGB(disks []WizardDisk) float64 {
 	}
 	return minSize
 }
-
-// safetyColor returns CSS color for safety level
-func safetyColor(level string) string {
-	switch level {
-	case "low":
-		return "#dc2626"
-	case "medium":
-		return "#f59e0b"
-	case "high":
-		return "#16a34a"
-	case "veryhigh":
-		return "#2563eb"
-	default:
-		return "#6b7280"
-	}
-}
-
-// safetyBg returns CSS background color for safety level
-func safetyBg(level string) string {
-	switch level {
-	case "low":
-		return "#fee2e2"
-	case "medium":
-		return "#fef3c7"
-	case "high":
-		return "#dcfce7"
-	case "veryhigh":
-		return "#dbeafe"
-	default:
-		return "#f3f4f6"
-	}
-}
-
-// ensure strings import is used
-var _ = strings.TrimSpace
