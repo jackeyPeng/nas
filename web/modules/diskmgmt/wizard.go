@@ -283,7 +283,8 @@ func setupSingleDisk(dev, mountPoint, nasUser string) []string {
 	steps = append(steps, "格式化 xfs")
 	// Mount
 	common.SudoExec("mkdir", "-p", mountPoint)
-	if out, err := common.SudoOutput("mount", partDev, mountPoint); err != nil {
+	// prjquota：与 writeFstab 写入的 defaults,prjquota 保持一致，建池后配额立即可用（无需重启）
+	if out, err := common.SudoOutput("mount", "-o", "prjquota", partDev, mountPoint); err != nil {
 		steps = append(steps, "失败: mount "+partDev+" - "+err.Error()+" "+out)
 		return steps
 	}
@@ -322,7 +323,7 @@ func setupMergeDisks(devs []string, mountPoint, nasUser string) []string {
 	steps = append(steps, "格式化 xfs")
 	// mount
 	common.SudoExec("mkdir", "-p", mountPoint)
-	common.SudoExec("mount", lvPath, mountPoint)
+	common.SudoExec("mount", "-o", "prjquota", lvPath, mountPoint)
 	steps = append(steps, "挂载 → "+mountPoint)
 	// fstab
 	uuidOut, _ := common.ExecOutput("blkid", "-s", "UUID", "-o", "value", lvPath)
@@ -371,7 +372,7 @@ func setupRaid1(devs []string, mountPoint, nasUser string) []string {
 	steps = append(steps, "格式化 xfs")
 	// Mount
 	common.SudoExec("mkdir", "-p", mountPoint)
-	common.SudoExec("mount", mdDev, mountPoint)
+	common.SudoExec("mount", "-o", "prjquota", mdDev, mountPoint)
 	steps = append(steps, "挂载 → "+mountPoint)
 	// fstab
 	uuidOut, _ := common.ExecOutput("blkid", "-s", "UUID", "-o", "value", mdDev)
@@ -421,7 +422,7 @@ func setupRaidN(devs []string, mountPoint, nasUser string, level int) []string {
 	steps = append(steps, "格式化 xfs")
 	// Mount
 	common.SudoExec("mkdir", "-p", mountPoint)
-	common.SudoExec("mount", mdDev, mountPoint)
+	common.SudoExec("mount", "-o", "prjquota", mdDev, mountPoint)
 	steps = append(steps, "挂载 → "+mountPoint)
 	// fstab
 	uuidOut, _ := common.ExecOutput("blkid", "-s", "UUID", "-o", "value", mdDev)

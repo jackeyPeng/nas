@@ -273,7 +273,8 @@ func setupLVMSingleStream(w http.ResponseWriter, dev, mountPoint, nasUser string
 
 	stepRunning("挂载并配置")
 	common.SudoExec("mkdir", "-p", mountPoint)
-	out, err = common.SudoExec("mount", lvPath, mountPoint)
+	// prjquota：与 writeFstab 的 defaults,prjquota 一致，建池后配额立即可用
+	out, err = common.SudoExec("mount", "-o", "prjquota", lvPath, mountPoint)
 	if checkExecError(w, "挂载", out, err) {
 		return
 	}
@@ -328,7 +329,8 @@ func setupLVMMergeStream(w http.ResponseWriter, devs []string, mountPoint, nasUs
 
 	stepRunning("挂载并配置")
 	common.SudoExec("mkdir", "-p", mountPoint)
-	out, err = common.SudoExec("mount", lvPath, mountPoint)
+	// prjquota：与 writeFstab 的 defaults,prjquota 一致，建池后配额立即可用
+	out, err = common.SudoExec("mount", "-o", "prjquota", lvPath, mountPoint)
 	if checkExecError(w, "挂载", out, err) {
 		return
 	}
@@ -380,7 +382,7 @@ func setupRAIDStream(w http.ResponseWriter, devs []string, level int, mountPoint
 	// 5. Mount + fstab
 	stepRunning("挂载并配置")
 	common.SudoExec("mkdir", "-p", mountPoint)
-	out, err = common.SudoExec("mount", mdDev, mountPoint)
+	out, err = common.SudoExec("mount", "-o", "prjquota", mdDev, mountPoint)
 	if checkExecError(w, "挂载", out, err) {
 		return
 	}
