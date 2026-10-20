@@ -539,33 +539,10 @@ func CheckConfigConsistency() ConfigIssues {
 		}
 	}
 
-	// 2. Check: folders on disk but not in metadata
-	scanOrphanDirs := func(mountPoint string) {
-		entries, err := os.ReadDir(mountPoint)
-		if err != nil {
-			return
-		}
-		metaMap := make(map[string]bool)
-		for _, m := range metas {
-			metaMap[m.Path] = true
-		}
-		for _, entry := range entries {
-			if !entry.IsDir() || entry.Name() == "#recycle" || entry.Name() == ".recycle" {
-				continue
-			}
-			fullPath := filepath.Join(mountPoint, entry.Name())
-			if !metaMap[fullPath] {
-				issues.HasIssues = true
-				issues.Issues = append(issues.Issues, fmt.Sprintf("目录 %s 存在但未在面板中管理", fullPath))
-			}
-		}
-	}
-
-	// Scan all /data mount points
-	mounts := getExistingDataMounts()
-	for _, m := range mounts {
-		scanOrphanDirs(m["mount"])
-	}
+	// 2.（已移除）池根下未纳管目录扫描——filemgmt 时代池根直属目录是合法用户数据
+	// （上传/新建目录权限对齐有专门的池根直属 0644 分支，回收站有 (根目录 nasN) 伪共享），
+	// 旧「目录存在但未在面板中管理」检查会把正常文件管理操作误报为配置不一致；
+	// 真实配置漂移由下面 smb.conf / exports 托管段与 folders.db 的对账覆盖。
 
 	// 3. Check: smb.conf managed section matches metadata
 	smbConf, _ := common.SudoOutput("cat", "/etc/samba/smb.conf")
