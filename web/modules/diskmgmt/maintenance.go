@@ -18,6 +18,9 @@ func handleReplaceDisk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	common.LockDiskOp()
+	defer common.UnlockDiskOp()
+
 	mdDevice := r.FormValue("md_device")
 	oldDevice := r.FormValue("old_device")
 	newDevice := r.FormValue("new_device")

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"nas-panel/common"
 )
@@ -69,8 +70,8 @@ func handleListFolders(w http.ResponseWriter, r *http.Request) {
 			}
 			folderPath := filepath.Join(mountPoint, entry.Name())
 			folder := SharedFolder{Name: entry.Name(), Path: folderPath, Pool: displayName, PoolName: poolName}
-			sizeOut, _ := common.SudoOutput("du", "-sh", folderPath)
-			folder.Size = parseDuSize(sizeOut)
+			size, _ := common.CachedDirSize(folderPath, 60*time.Second)
+			folder.Size = size
 			folders = append(folders, folder)
 		}
 	}
@@ -416,14 +417,6 @@ func parseSambaShares(conf string) map[string]map[string]string {
 		}
 	}
 	return result
-}
-
-func parseDuSize(out string) string {
-	fields := strings.Fields(out)
-	if len(fields) >= 1 {
-		return fields[0]
-	}
-	return ""
 }
 
 func removeSambaShare(conf, shareName string) string {

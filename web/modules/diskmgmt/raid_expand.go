@@ -30,6 +30,9 @@ func sendRAIDExpandProgress(w http.ResponseWriter, ev RAIDExpandEvent) {
 // For RAID1: adds disk, grows to N+1 devices, waits for resync, grows filesystem
 // For RAID5/6: adds disk, starts reshape (returns immediately with reshaping status)
 func handleRAIDExpandStream(w http.ResponseWriter, r *http.Request) {
+	common.LockDiskOp()
+	defer common.UnlockDiskOp()
+
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -207,6 +210,9 @@ func handleRAIDExpandFS(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"md_device and confirm=yes required"}`, http.StatusBadRequest)
 		return
 	}
+
+	common.LockDiskOp()
+	defer common.UnlockDiskOp()
 
 	// Check if reshape is still running
 	mdstat, _ := os.ReadFile("/proc/mdstat")

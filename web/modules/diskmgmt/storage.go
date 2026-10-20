@@ -7,6 +7,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"time"
 
 	"nas-panel/common"
 )
@@ -70,14 +71,17 @@ func detectInterface(devName string) string {
 	return "Unknown"
 }
 
+// smartctlCacheTTL 是 overview/list 等只读展示路径的 smartctl 缓存时长。
+const smartctlCacheTTL = 30 * time.Second
+
 // getDiskTemp reads disk temperature via smartctl
 func getDiskTemp(devName string) string {
 	// Only try for real disks (not partitions)
 	if strings.HasPrefix(devName, "sd") || strings.HasPrefix(devName, "nvme") || strings.HasPrefix(devName, "vd") {
-		out, err := common.SudoOutput("smartctl", "-A", "-d", "ata", "/dev/"+devName)
+		out, err := cachedSmartctl(smartctlCacheTTL, "-A", "-d", "ata", "/dev/"+devName)
 		if err != nil {
 			// Try without ata flag for NVMe
-			out2, err2 := common.SudoOutput("smartctl", "-A", "/dev/"+devName)
+			out2, err2 := cachedSmartctl(smartctlCacheTTL, "-A", "/dev/"+devName)
 			if err2 != nil {
 				return ""
 			}
@@ -118,7 +122,7 @@ func getSmartStatus(devName string) string {
 	if !strings.HasPrefix(devName, "sd") && !strings.HasPrefix(devName, "nvme") && !strings.HasPrefix(devName, "vd") {
 		return ""
 	}
-	out, err := common.SudoOutput("smartctl", "-H", "/dev/"+devName)
+	out, err := cachedSmartctl(smartctlCacheTTL, "-H", "/dev/"+devName)
 	if err != nil {
 		return "unknown"
 	}
@@ -137,7 +141,7 @@ func getSmartStatus(devName string) string {
 
 // getDiskSerial reads disk serial number
 func getDiskSerial(devName string) string {
-	out, err := common.SudoOutput("smartctl", "-i", "/dev/"+devName)
+	out, err := cachedSmartctl(smartctlCacheTTL, "-i", "/dev/"+devName)
 	if err != nil {
 		return ""
 	}

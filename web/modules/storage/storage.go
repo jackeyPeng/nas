@@ -3,7 +3,9 @@ package storage
 import (
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"nas-panel/common"
 )
@@ -50,20 +52,26 @@ func getDiskInfo() (total, used, pct string) {
 	return fields[1], fields[2], fields[4]
 }
 
+// getDirSizes 返回 /data 下各一级子目录的大小。
+// 之前用 common.ExecOutput("du", "-sh", "/data/*/") 把 "/data/*/" 当成
+// 字面参数传给 exec.Command——Go 的 exec 不经过 shell，不会展开通配符，
+// 这个调用在真实环境里一直拿到的是 du 对一个不存在的字面路径报错，
+// 返回 nil（没在 P2 范围内被专门点出，但顺带用 filepath.Glob 在 Go 侧
+// 做实际展开修正，同时套上 TTL 缓存）。响应字段形状不变：
+// []map[string]string{"path": ..., "size": ...}。
 func getDirSizes() []map[string]string {
-	out, err := common.ExecOutput("du", "-sh", "/data/*/")
+	matches, err := filepath.Glob("/data/*/")
 	if err != nil {
 		return nil
 	}
 	var dirs []map[string]string
-	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
-		if line == "" {
+	for _, m := range matches {
+		path := strings.TrimSuffix(m, "/")
+		size, sizeErr := common.CachedDirSize(path, 60*time.Second)
+		if sizeErr != nil {
 			continue
 		}
-		fields := strings.Fields(line)
-		if len(fields) >= 2 {
-			dirs = append(dirs, map[string]string{"path": fields[1], "size": fields[0]})
-		}
+		dirs = append(dirs, map[string]string{"path": path, "size": size})
 	}
 	return dirs
 }

@@ -56,7 +56,7 @@ func registryDBPath() string {
 func initRegistryDB() *sql.DB {
 	registryDBOnce.Do(func() {
 		var err error
-		registryDB, err = sql.Open("sqlite", registryDBPath())
+		registryDB, err = common.OpenSQLite(registryDBPath())
 		if err != nil {
 			log.Printf("[REGISTRY] 无法打开注册表数据库: %v", err)
 			return
@@ -183,17 +183,19 @@ func detectPoolMode(device string) string {
 
 // MdArray describes a single RAID array as reported by /proc/mdstat.
 type MdArray struct {
-	Name     string // "md0"
-	Level    string // "raid1"
-	Slots    string // "[UU]", raw slot string
-	Degraded bool   // slot string contains '_'
-	Resync   string // "30.1%", empty if not resyncing/recovering/reshaping/checking
+	Name      string // "md0"
+	Level     string // "raid1"
+	Slots     string // "[UU]", raw slot string
+	Degraded  bool   // slot string contains '_'
+	Resync    string // "30.1%", empty if not resyncing/recovering/reshaping/checking
+	ResyncETA string // "2.9min" from "finish=2.9min", empty if not present/not resyncing
 }
 
 var (
 	mdstatHeaderRe = regexp.MustCompile(`^(md\d+)\s*:\s*\S+\s+(\S+)`)
 	mdstatSlotsRe  = regexp.MustCompile(`(\[[U_]+\])\s*$`)
 	mdstatPctRe    = regexp.MustCompile(`(resync|recovery|reshape|check)\s*=\s*([0-9.]+%)`)
+	mdstatFinishRe = regexp.MustCompile(`finish=(\S+)`)
 )
 
 // parseMdstat parses the textual contents of /proc/mdstat into a slice of
@@ -217,10 +219,50 @@ func parseMdstat(content string) []MdArray {
 		}
 		if m := mdstatPctRe.FindStringSubmatch(line); m != nil {
 			current.Resync = m[2]
+			if fm := mdstatFinishRe.FindStringSubmatch(line); fm != nil {
+				current.ResyncETA = fm[1]
+			}
 		}
 	}
 
 	return arrays
+}
+
+// classifyMdstat classifies a single RAID array's health from the raw
+// /proc/mdstat text block describing it (header line + slot/status lines,
+// as produced for one "mdN : ..." entry). It distinguishes three cases:
+//   - all slots present ([UUUU])                              → pass
+//   - some slots missing but a recovery/resync/reshape/check
+//     progress line is present (rebuild still running)        → warn
+//   - some slots missing and no active rebuild progress line
+//     (rebuild finished short, or never started)               → fail "阵列降级"
+//
+// This exists as a standalone pure function (operating directly on mdstat
+// text) per the P2 audit brief, in addition to the MdArray-based path used
+// by storageItemStates for the already-parsed multi-array case.
+func classifyMdstat(devBlock string) (status, detail string) {
+	arrays := parseMdstat(devBlock)
+	if len(arrays) == 0 {
+		return "fail", "无法解析 RAID 阵列状态"
+	}
+	a := arrays[0]
+	return classifyMdArray(a)
+}
+
+// classifyMdArray applies the same pass/warn/fail judgement as
+// classifyMdstat to an already-parsed MdArray.
+func classifyMdArray(a MdArray) (status, detail string) {
+	if !a.Degraded {
+		return "pass", fmt.Sprintf("%s %s [%s] 正常", a.Name, a.Level, strings.Trim(a.Slots, "[]"))
+	}
+	if a.Resync != "" {
+		detail = fmt.Sprintf("初始重建 %s", a.Resync)
+		if a.ResyncETA != "" {
+			detail += fmt.Sprintf("，预计剩余 %s", a.ResyncETA)
+		}
+		return "warn", detail
+	}
+	return "fail", fmt.Sprintf("阵列降级: %s [%s]", a.Name, a.Slots)
 }
 
 // storageState is the pass/fail/warn verdict for a single registry item.
@@ -277,18 +319,27 @@ func storageItemStates(mode string, hasVG, hasLV, hasPV bool, mdCount int, array
 		if len(arrays) == 0 {
 			states[37] = storageState{"fail", "挂载源为 RAID 但未见阵列（状态矛盾）"}
 		} else {
-			degraded := false
-			var degradedDetail string
+			// 降级阵列区分「初始重建中」(resync/recovery 进度行存在，warn)
+			// 与「真降级」(无重建进度，fail)，避免建池后 ~5 分钟重建窗口被误报故障。
+			failDetail := ""
+			warnDetail := ""
 			for _, a := range arrays {
-				if a.Degraded {
-					degraded = true
-					degradedDetail = fmt.Sprintf("阵列降级: %s [%s]", a.Name, a.Slots)
-					break
+				if !a.Degraded {
+					continue
+				}
+				st, d := classifyMdArray(a)
+				if st == "fail" && failDetail == "" {
+					failDetail = d
+				} else if st == "warn" && warnDetail == "" {
+					warnDetail = d
 				}
 			}
-			if degraded {
-				states[37] = storageState{"fail", degradedDetail}
-			} else {
+			switch {
+			case failDetail != "":
+				states[37] = storageState{"fail", failDetail}
+			case warnDetail != "":
+				states[37] = storageState{"warn", warnDetail}
+			default:
 				// 列出全部健康阵列（多阵列机器不只报第一个）
 				parts := make([]string, 0, len(arrays))
 				for _, a := range arrays {
@@ -577,7 +628,7 @@ func RefreshRegistry() RegistryReport {
 	// 30. folders.db — 应有 public + home 记录
 	if _, err := os.Stat("/opt/nas/data/folders.db"); err == nil {
 		var folderCount int
-		if db, err := sql.Open("sqlite", "/opt/nas/data/folders.db"); err == nil {
+		if db, err := common.OpenSQLite("/opt/nas/data/folders.db"); err == nil {
 			db.QueryRow("SELECT COUNT(*) FROM folders").Scan(&folderCount)
 			db.Close()
 		}

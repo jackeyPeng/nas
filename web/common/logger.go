@@ -26,7 +26,7 @@ func InitAuditLog(dataDir string) {
 	os.MkdirAll(dataDir, 0755)
 
 	var err error
-	auditDB, err = sql.Open("sqlite", dbPath+"?_journal_mode=WAL&_busy_timeout=5000")
+	auditDB, err = OpenSQLite(dbPath)
 	if err != nil {
 		log.Printf("WARNING: cannot open audit db: %v", err)
 		return

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"nas-panel/common"
 )
@@ -278,8 +279,8 @@ func handleStorageOverview(w http.ResponseWriter, r *http.Request) {
 						Path:   folderPath,
 						Source: "local",
 					}
-					sizeOut, _ := common.SudoOutput("du", "-sh", folderPath)
-					f.Size = parseDuSize(sizeOut)
+					size, _ := common.CachedDirSize(folderPath, 60*time.Second)
+					f.Size = size
 					enrichSharedFolder(&f, metaMap, smbMap, smbConf)
 					// Check WebDAV (rclone serve webdav)
 					if isWebDAVServed(entry.Name()) {
@@ -396,8 +397,8 @@ func handleStorageOverview(w http.ResponseWriter, r *http.Request) {
 			common.SudoExec("chown", "-R", nasUser+":"+nasUser, systemSharePath)
 		}
 
-		sizeOut, _ := common.SudoOutput("du", "-sh", systemSharePath)
-		overview.SystemShareSize = parseDuSize(sizeOut)
+		size, _ := common.CachedDirSize(systemSharePath, 60*time.Second)
+		overview.SystemShareSize = size
 
 		smbConf, _ := common.SudoOutput("cat", "/etc/samba/smb.conf")
 		smbMap := parseSambaShares(smbConf)
@@ -414,8 +415,8 @@ func handleStorageOverview(w http.ResponseWriter, r *http.Request) {
 					Pool:   "系统盘",
 					Source: "local",
 				}
-				sizeOut, _ := common.SudoOutput("du", "-sh", folderPath)
-				f.Size = parseDuSize(sizeOut)
+				size, _ := common.CachedDirSize(folderPath, 60*time.Second)
+				f.Size = size
 				enrichSharedFolder(&f, metaMap, smbMap, smbConf)
 				overview.SystemFolders = append(overview.SystemFolders, f)
 			}

@@ -150,6 +150,9 @@ func handlePoolCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	common.LockDiskOp()
+	defer common.UnlockDiskOp()
+
 	vgName := r.FormValue("vg_name")
 	if vgName == "" {
 		vgName = "vg_nas"
@@ -300,8 +303,8 @@ func handlePoolExtend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	diskOpMutex.Lock()
-	defer diskOpMutex.Unlock()
+	common.LockDiskOp()
+	defer common.UnlockDiskOp()
 
 	vgName := r.FormValue("vg_name")
 	if vgName == "" {
@@ -397,8 +400,8 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	diskOpMutex.Lock()
-	defer diskOpMutex.Unlock()
+	common.LockDiskOp()
+	defer common.UnlockDiskOp()
 
 	poolType := r.FormValue("pool_type")
 	poolDevice := r.FormValue("pool_device")
@@ -419,6 +422,8 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var steps []string
+	// 本次删池涉及的挂载点，收集后统一清理 folders.db 元数据（见 switch 之后）。
+	var deletedMountPoints []string
 
 	switch poolType {
 	case "lvm":
@@ -438,6 +443,7 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 				if mountPoint != "" {
 					common.SudoExec("umount", "-l", mountPoint)
 					steps = append(steps, "卸载 "+mountPoint)
+					deletedMountPoints = append(deletedMountPoints, mountPoint)
 				}
 				common.SudoExec("/usr/sbin/lvremove", "-f", lvPath)
 				steps = append(steps, "删除 LV "+lvPath)
@@ -463,6 +469,7 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 		if mountPoint != "" {
 			common.SudoExec("umount", "-l", mountPoint)
 			steps = append(steps, "卸载 "+mountPoint)
+			deletedMountPoints = append(deletedMountPoints, mountPoint)
 		}
 		// 2. Get member disks BEFORE stopping the array
 		detailOut, _ := common.SudoOutput("/usr/sbin/mdadm", "--detail", poolDevice)
@@ -484,6 +491,7 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 		if mountPoint != "" {
 			common.SudoExec("umount", "-l", mountPoint)
 			steps = append(steps, "卸载 "+mountPoint)
+			deletedMountPoints = append(deletedMountPoints, mountPoint)
 		}
 		common.SudoExec("/usr/sbin/wipefs", "-a", poolDevice)
 		steps = append(steps, "释放 "+poolDevice)
@@ -517,14 +525,22 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Clean Samba shares for nas*
-	smbConf, _ := common.SudoOutput("cat", "/etc/samba/smb.conf")
-	if smbConf != "" {
-		newConf := removeSambaSharesByPrefix(smbConf, "nas")
-		if newConf != smbConf {
-			common.SafeWriteFile("/etc/samba/smb.conf", newConf)
-			common.SudoExec("systemctl", "restart", "smbd")
-			steps = append(steps, "清理 Samba 共享")
+	// 清理 folders.db 元数据 + 重投影托管配置（与 reset.go/stream.go 整体重置同一套做法，
+	// 权威源模式：只拆磁盘不清 folders.db 的话，下次 SyncAllConfigs 会照着残留元数据把
+	// 已删池的 Samba/NFS 共享重新生成回来，见 reset.go 同类注释）。
+	for _, mount := range deletedMountPoints {
+		if n, err := RemoveFolderMetaByMountPrefix(mount); err != nil {
+			steps = append(steps, "清理 folders.db 失败("+mount+"): "+err.Error())
+		} else if n > 0 {
+			steps = append(steps, fmt.Sprintf("清理 folders.db: %s (%d 行)", mount, n))
+		}
+	}
+	if len(deletedMountPoints) > 0 {
+		common.SudoExec("rm", "-f", "/opt/nas/data/.last_reload")
+		if err := SyncAllConfigs(); err != nil {
+			steps = append(steps, "重新生成托管配置失败: "+err.Error())
+		} else {
+			steps = append(steps, "重新生成 Samba/NFS 托管配置")
 		}
 	}
 

@@ -47,7 +47,7 @@ func configDBPath() string {
 func initConfigDB() *sql.DB {
 	configDBOnce.Do(func() {
 		var err error
-		configDB, err = sql.Open("sqlite", configDBPath())
+		configDB, err = common.OpenSQLite(configDBPath())
 		if err != nil {
 			log.Printf("[CONFIG_SYNC] 无法打开元数据库: %v", err)
 			return

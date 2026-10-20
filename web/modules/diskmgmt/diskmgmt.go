@@ -5,13 +5,9 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"sync"
 
 	"nas-panel/common"
 )
-
-// diskOpMutex prevents concurrent destructive disk operations (wipefs, mdadm create, etc.)
-var diskOpMutex sync.Mutex
 
 // RegisterRoutes registers disk management routes
 func RegisterRoutes(mux *http.ServeMux) {
@@ -156,7 +152,7 @@ func handleSmartDetail(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(name, "nvme") && strings.Contains(name, "p") {
 			continue
 		}
-		out, err := common.SudoOutput("smartctl", "-a", "/dev/"+name)
+		out, err := cachedSmartctl(smartctlCacheTTL, "-a", "/dev/"+name)
 		if err == nil && len(out) > 0 {
 			result += "=== /dev/" + name + " ===\n" + out + "\n\n"
 		}
@@ -210,6 +206,8 @@ func handleFormat(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error": "请输入设备路径确认格式化"}`, http.StatusBadRequest)
 		return
 	}
+	common.LockDiskOp()
+	defer common.UnlockDiskOp()
 	out, err := common.SudoExec("mkfs."+fstype, mkfsArgs(fstype, device)...)
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error": %q}`, out+": "+err.Error()), http.StatusInternalServerError)
@@ -242,6 +240,8 @@ func handleMount(w http.ResponseWriter, r *http.Request) {
 	} else {
 		mountPoint = cleaned
 	}
+	common.LockDiskOp()
+	defer common.UnlockDiskOp()
 	// 创建挂载点
 	common.SudoExec("mkdir", "-p", mountPoint)
 	// 挂载
@@ -272,6 +272,8 @@ func handleUnmount(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error": "target (mountpoint or device) required"}`, http.StatusBadRequest)
 		return
 	}
+	common.LockDiskOp()
+	defer common.UnlockDiskOp()
 	out, err := common.SudoExec("umount", target)
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error": %q}`, out+": "+err.Error()), http.StatusInternalServerError)

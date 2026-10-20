@@ -28,8 +28,8 @@ func sendProgress(w http.ResponseWriter, ev ProgressEvent) {
 
 // handleWizardSetupStream does storage setup with real-time progress
 func handleWizardSetupStream(w http.ResponseWriter, r *http.Request) {
-	diskOpMutex.Lock()
-	defer diskOpMutex.Unlock()
+	common.LockDiskOp()
+	defer common.UnlockDiskOp()
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -478,8 +478,8 @@ func setupSeparateStream(w http.ResponseWriter, devs []string, nasUser string,
 
 // handleWizardResetStream does storage reset with real-time progress
 func handleWizardResetStream(w http.ResponseWriter, r *http.Request) {
-	diskOpMutex.Lock()
-	defer diskOpMutex.Unlock()
+	common.LockDiskOp()
+	defer common.UnlockDiskOp()
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")

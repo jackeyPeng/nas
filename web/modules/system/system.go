@@ -715,6 +715,16 @@ func handleReset(w http.ResponseWriter, r *http.Request) {
 			resetMu.Unlock()
 		}()
 
+		// 锁顺序固定：先 resetMu（已在上面获取/释放，resetRunning 只是一个运行标记，
+		// 不是互斥锁本身，这里再拿 common 磁盘锁）后磁盘锁 —— handleReset 的
+		// resetMu 只保护 resetRunning 标记位，临界区很短就立即释放；真正耗时的
+		// LVM/mdadm/wipefs 操作在下面用 common 磁盘锁保护，与 diskmgmt 模块的
+		// 拆池/建池/RAID 扩容等操作互斥，不会出现 resetMu 和磁盘锁相互等待的
+		// 环路（resetMu 临界区内不会再等待磁盘锁，两把锁不会同时被同一调用链
+		// 以相反顺序持有）。
+		common.LockDiskOp()
+		defer common.UnlockDiskOp()
+
 		// 1. 备份当前配置
 		backupDir := "/opt/nas/backups"
 		common.SudoExec("mkdir", "-p", backupDir)

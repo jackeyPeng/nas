@@ -141,8 +141,8 @@ func handleWizardSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	diskOpMutex.Lock()
-	defer diskOpMutex.Unlock()
+	common.LockDiskOp()
+	defer common.UnlockDiskOp()
 
 	mode := r.FormValue("mode")
 	confirm := r.FormValue("confirm")

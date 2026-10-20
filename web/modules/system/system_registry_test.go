@@ -135,11 +135,38 @@ md1 : active raid1 sdd[1] sde[0]
 unused devices: <none>
 `
 
+// mdstatRebuildingFixture 建池后短时间窗口内的典型现场：3 盘 RAID5 刚建好，
+// 第 4 个槽位仍在 recovery（初始同步），不是真降级。
+const mdstatRebuildingFixture = `Personalities : [raid5] 
+md0 : active raid5 sdd[3] sdc[2] sdb[1] sda[0]
+      157161472 blocks super 1.2 level 5, 512k chunk, algorithm 2 [4/3] [UUU_]
+      [=====>...............]  recovery = 50.3% (26383616/52387328) finish=2.0min speed=218938K/sec
+      
+unused devices: <none>
+`
+
+// mdstatTrulyDegradedFixture 缺盘且没有任何 resync/recovery 进度行
+// （重建已结束但仍缺盘，或从未开始重建）——这才是真正的「阵列降级」。
+const mdstatTrulyDegradedFixture = `Personalities : [raid1] 
+md0 : active raid1 sdc[1]
+      52395008 blocks super 1.2 [2/1] [U_]
+      
+unused devices: <none>
+`
+
+// mdstatHealthyNoResyncFixture 全部槽位在位、没有重建行——稳定态 pass。
+const mdstatHealthyNoResyncFixture = `Personalities : [raid1] 
+md0 : active raid1 sdc[1] sdb[0]
+      52395008 blocks super 1.2 [2/2] [UU]
+      
+unused devices: <none>
+`
+
 func TestParseMdstat(t *testing.T) {
 	t.Run("healthy with resync", func(t *testing.T) {
 		got := parseMdstat(mdstatHealthyFixture)
 		want := []MdArray{
-			{Name: "md0", Level: "raid1", Slots: "[UU]", Degraded: false, Resync: "30.1%"},
+			{Name: "md0", Level: "raid1", Slots: "[UU]", Degraded: false, Resync: "30.1%", ResyncETA: "2.9min"},
 		}
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("parseMdstat() = %+v, want %+v", got, want)
@@ -173,6 +200,48 @@ func TestParseMdstat(t *testing.T) {
 		}
 		if got[0].Name != "md0" || got[1].Name != "md1" {
 			t.Errorf("unexpected names: %+v", got)
+		}
+	})
+}
+
+// TestClassifyMdstat 锁定 48 机验收发现的修复：[UUU_] + recovery 进度行
+// 在重建中应为 warn（含进度与 ETA），而非 fail「阵列降级」；重建结束仍缺盘
+// 才是真降级 fail；[UU] 无缺位为 pass。
+func TestClassifyMdstat(t *testing.T) {
+	t.Run("rebuilding in progress -> warn with eta", func(t *testing.T) {
+		status, detail := classifyMdstat(mdstatRebuildingFixture)
+		if status != "warn" {
+			t.Errorf("status = %q, want warn (detail=%q)", status, detail)
+		}
+		if !strings.Contains(detail, "50.3%") {
+			t.Errorf("detail %q should mention progress 50.3%%", detail)
+		}
+		if !strings.Contains(detail, "2.0min") {
+			t.Errorf("detail %q should mention ETA 2.0min", detail)
+		}
+	})
+
+	t.Run("truly degraded no resync -> fail", func(t *testing.T) {
+		status, detail := classifyMdstat(mdstatTrulyDegradedFixture)
+		if status != "fail" {
+			t.Errorf("status = %q, want fail (detail=%q)", status, detail)
+		}
+		if !strings.Contains(detail, "降级") {
+			t.Errorf("detail %q should mention 降级", detail)
+		}
+	})
+
+	t.Run("all slots present -> pass", func(t *testing.T) {
+		status, _ := classifyMdstat(mdstatHealthyNoResyncFixture)
+		if status != "pass" {
+			t.Errorf("status = %q, want pass", status)
+		}
+	})
+
+	t.Run("unparseable block -> fail", func(t *testing.T) {
+		status, _ := classifyMdstat("garbage, no md header here\n")
+		if status != "fail" {
+			t.Errorf("status = %q, want fail for unparseable block", status)
 		}
 	})
 }
@@ -230,6 +299,12 @@ func TestStorageItemStates(t *testing.T) {
 			name: "raid resync in progress", mode: "raid", hasVG: false, hasLV: false, hasPV: false,
 			mdCount: 1, arrays: resyncArrays, hasSig: true, mountCount: 1,
 			expect: []want{{37, "pass"}},
+		},
+		{
+			name: "raid degraded but actively rebuilding -> warn not fail", mode: "raid",
+			hasVG: false, hasLV: false, hasPV: false,
+			mdCount: 1, arrays: parseMdstat(mdstatRebuildingFixture), hasSig: true, mountCount: 1,
+			expect: []want{{37, "warn"}},
 		},
 		{
 			name: "raid mount but no array (contradiction)", mode: "raid", hasVG: false, hasLV: false, hasPV: false,

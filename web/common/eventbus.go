@@ -78,7 +78,7 @@ func initEventBusCore(dataDir string) bool {
 	os.MkdirAll(dataDir, 0755)
 	dbPath := filepath.Join(dataDir, "events.db")
 
-	db, err := sql.Open("sqlite", dbPath+"?_journal_mode=WAL&_busy_timeout=5000")
+	db, err := OpenSQLite(dbPath)
 	if err != nil {
 		log.Printf("WARNING: cannot open events db: %v", err)
 		return false

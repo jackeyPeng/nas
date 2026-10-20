@@ -106,10 +106,10 @@ func initDB() {
 	dbPath := "/opt/nas/data/diagnostics.db"
 	os.MkdirAll(filepath.Dir(dbPath), 0755)
 	var err error
-	db, err = sql.Open("sqlite", dbPath)
+	db, err = common.OpenSQLite(dbPath)
 	if err != nil {
 		// Fallback to current dir
-		db, _ = sql.Open("sqlite", "diagnostics.db")
+		db, _ = common.OpenSQLite("diagnostics.db")
 	}
 	db.Exec(`CREATE TABLE IF NOT EXISTS history (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,

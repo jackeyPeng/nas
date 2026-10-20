@@ -18,8 +18,8 @@ func handleWizardReset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	diskOpMutex.Lock()
-	defer diskOpMutex.Unlock()
+	common.LockDiskOp()
+	defer common.UnlockDiskOp()
 	confirm := r.FormValue("confirm")
 	confirmToken := r.FormValue("confirm_token")
 	common.LogAuditRequest(r, "STORAGE", "存储重置", "清空所有存储池配置", "pending")

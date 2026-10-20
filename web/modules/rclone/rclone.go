@@ -66,13 +66,27 @@ var (
 	dataDir   = "/opt/nas/data/rclone"
 	tasksFile = dataDir + "/tasks.json"
 	logsFile  = dataDir + "/logs.json"
-	mu        sync.RWMutex
+	logsMu    sync.Mutex
+
+	// tasksMu 保护 tasks.json 的每一次「读-改-写」事务。
+	//
+	// 之前 loadTasks()/saveTasks() 各自内部加锁，一次 load 和随后的 save
+	// 是两个独立的临界区：后台 setTaskRunState 的 load→改→save 与用户端
+	// create/update/toggle/delete 的 load→改→save 可能交叉执行，后写入的
+	// 一方会用自己读到的旧快照覆盖掉对方刚写的结果（lost update）。
+	//
+	// 现在 loadTasksLocked/saveTasksLocked 本身不加锁，所有调用方必须把
+	// 一次完整的 load→修改→save 事务整体包在同一次 tasksMu.Lock() 里，
+	// 事务粒度与锁粒度对齐。SSE/长跑的 rclone 子进程执行期间不持锁——
+	// 只有「落盘前读旧值、改字段、写回」这段很短的操作在锁内。
+	tasksMu sync.Mutex
 )
 
 func init() {
 	os.MkdirAll(dataDir, 0755)
 	// 面板重启时，上次运行中被强杀的任务会永远停在 running —— 启动时归一为 failed
-	tasks := loadTasks()
+	tasksMu.Lock()
+	tasks := loadTasksLocked()
 	dirty := false
 	for i := range tasks {
 		if tasks[i].LastResult == "running" {
@@ -82,13 +96,13 @@ func init() {
 		}
 	}
 	if dirty {
-		saveTasks(tasks)
+		saveTasksLocked(tasks)
 	}
+	tasksMu.Unlock()
 }
 
-func loadTasks() []SyncTask {
-	mu.RLock()
-	defer mu.RUnlock()
+// loadTasksLocked 读取 tasks.json。调用方必须已持有 tasksMu。
+func loadTasksLocked() []SyncTask {
 	var tasks []SyncTask
 	data, err := os.ReadFile(tasksFile)
 	if err != nil {
@@ -98,9 +112,8 @@ func loadTasks() []SyncTask {
 	return tasks
 }
 
-func saveTasks(tasks []SyncTask) error {
-	mu.Lock()
-	defer mu.Unlock()
+// saveTasksLocked 写入 tasks.json。调用方必须已持有 tasksMu。
+func saveTasksLocked(tasks []SyncTask) error {
 	data, err := json.MarshalIndent(tasks, "", "  ")
 	if err != nil {
 		return err
@@ -112,9 +125,19 @@ func saveTasks(tasks []SyncTask) error {
 	return os.Rename(tmp, tasksFile)
 }
 
+// loadTasks 是只读场景（如列表展示）的便捷封装：单独加锁读取一次快照。
+// 不构成「读-改-写」事务时可以用它；如果读完还要改字段再存回去，
+// 必须改用 tasksMu.Lock() + loadTasksLocked()/saveTasksLocked() 把整个
+// 事务包在同一把锁里，不能用这个函数。
+func loadTasks() []SyncTask {
+	tasksMu.Lock()
+	defer tasksMu.Unlock()
+	return loadTasksLocked()
+}
+
 func loadLogs() []TaskLog {
-	mu.RLock()
-	defer mu.RUnlock()
+	logsMu.Lock()
+	defer logsMu.Unlock()
 	var logs []TaskLog
 	data, err := os.ReadFile(logsFile)
 	if err != nil {
@@ -125,8 +148,8 @@ func loadLogs() []TaskLog {
 }
 
 func appendLog(log TaskLog) {
-	mu.Lock()
-	defer mu.Unlock()
+	logsMu.Lock()
+	defer logsMu.Unlock()
 	logs := []TaskLog{}
 	data, err := os.ReadFile(logsFile)
 	if err == nil {
@@ -681,9 +704,12 @@ func handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		CreatedAt: time.Now().Format("2006-01-02 15:04:05"),
 	}
 
-	tasks := loadTasks()
+	tasksMu.Lock()
+	tasks := loadTasksLocked()
 	tasks = append(tasks, task)
-	if err := saveTasks(tasks); err != nil {
+	err := saveTasksLocked(tasks)
+	tasksMu.Unlock()
+	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
 		return
 	}
@@ -705,7 +731,9 @@ func handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r.ParseForm()
-	tasks := loadTasks()
+	tasksMu.Lock()
+	defer tasksMu.Unlock()
+	tasks := loadTasksLocked()
 	for i, t := range tasks {
 		if t.ID != id {
 			continue
@@ -741,7 +769,7 @@ func handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 		if v := r.FormValue("transfers"); v != "" {
 			tasks[i].Transfers, _ = strconv.Atoi(v)
 		}
-		if err := saveTasks(tasks); err != nil {
+		if err := saveTasksLocked(tasks); err != nil {
 			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
 			return
 		}
@@ -757,15 +785,18 @@ func handleDeleteTask(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"id required"}`, http.StatusBadRequest)
 		return
 	}
-	tasks := loadTasks()
+	tasksMu.Lock()
+	tasks := loadTasksLocked()
 	for i, t := range tasks {
 		if t.ID == id {
 			tasks = append(tasks[:i], tasks[i+1:]...)
-			saveTasks(tasks)
+			saveTasksLocked(tasks)
+			tasksMu.Unlock()
 			common.JSONResponse(w, map[string]interface{}{"message": "任务已删除"})
 			return
 		}
 	}
+	tasksMu.Unlock()
 	http.Error(w, `{"error":"task not found"}`, http.StatusNotFound)
 }
 
@@ -775,22 +806,26 @@ func handleToggleTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
-	tasks := loadTasks()
+	tasksMu.Lock()
+	tasks := loadTasksLocked()
 	for i, t := range tasks {
 		if t.ID == id {
 			tasks[i].Enabled = !t.Enabled
-			saveTasks(tasks)
+			saveTasksLocked(tasks)
+			enabled := tasks[i].Enabled
+			tasksMu.Unlock()
 			status := "启用"
-			if !tasks[i].Enabled {
+			if !enabled {
 				status = "禁用"
 			}
 			common.JSONResponse(w, map[string]interface{}{
 				"message": fmt.Sprintf("任务已%s", status),
-				"enabled": tasks[i].Enabled,
+				"enabled": enabled,
 			})
 			return
 		}
 	}
+	tasksMu.Unlock()
 	http.Error(w, `{"error":"task not found"}`, http.StatusNotFound)
 }
 
@@ -917,13 +952,15 @@ func formatElapsed(d time.Duration) string {
 
 // setTaskRunState 更新任务的 LastRun/LastResult/LastMessage 并落盘。
 func setTaskRunState(id, result, runTime, message string) {
-	tasks := loadTasks()
+	tasksMu.Lock()
+	defer tasksMu.Unlock()
+	tasks := loadTasksLocked()
 	for i := range tasks {
 		if tasks[i].ID == id {
 			tasks[i].LastRun = runTime
 			tasks[i].LastResult = result
 			tasks[i].LastMessage = message
-			saveTasks(tasks)
+			saveTasksLocked(tasks)
 			return
 		}
 	}
@@ -1117,6 +1154,8 @@ func handleClearLogs(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
 		return
 	}
+	logsMu.Lock()
 	os.Remove(logsFile)
+	logsMu.Unlock()
 	common.JSONResponse(w, map[string]interface{}{"message": "日志已清空"})
 }

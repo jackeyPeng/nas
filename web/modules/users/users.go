@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"nas-panel/common"
 )
@@ -190,15 +191,11 @@ func dirExists(path string) bool {
 }
 
 func dirSize(path string) string {
-	out, err := common.SudoOutput("du", "-sh", path)
+	size, err := common.CachedDirSize(path, 60*time.Second)
 	if err != nil {
 		return "-"
 	}
-	fields := strings.Fields(out)
-	if len(fields) >= 1 {
-		return fields[0]
-	}
-	return "-"
+	return size
 }
 
 func dirCtime(path string) string {

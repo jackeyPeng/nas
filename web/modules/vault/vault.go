@@ -77,7 +77,7 @@ func vaultDBPath() string {
 func initVaultDB() *sql.DB {
 	vaultDBOnce.Do(func() {
 		var err error
-		vaultDB, err = sql.Open("sqlite", vaultDBPath())
+		vaultDB, err = common.OpenSQLite(vaultDBPath())
 		if err != nil {
 			log.Printf("[VAULT] 打开数据库失败: %v", err)
 			return

@@ -27,8 +27,8 @@ func sendPoolExtendProgress(w http.ResponseWriter, ev PoolExtendEvent) {
 
 // handlePoolExtendStream extends LVM pool with SSE progress
 func handlePoolExtendStream(w http.ResponseWriter, r *http.Request) {
-	diskOpMutex.Lock()
-	defer diskOpMutex.Unlock()
+	common.LockDiskOp()
+	defer common.UnlockDiskOp()
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
