@@ -191,7 +191,7 @@ func handleSambaShare(w http.ResponseWriter, r *http.Request) {
 func validateSambaShareFields(path, comment, validUsers string) error {
 	for _, f := range []string{path, comment, validUsers} {
 		for _, r := range f {
-			if r == '\n' || r == '\r' || r < 0x20 {
+			if r < 0x20 {
 				return fmt.Errorf("字段不能包含换行或控制字符")
 			}
 		}

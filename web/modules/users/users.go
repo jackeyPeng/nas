@@ -292,6 +292,10 @@ func handleUserAction(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `{"error":"密码至少12位"}`, http.StatusBadRequest)
 			return
 		}
+		if err := common.ValidSecret(password); err != nil {
+			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
+			return
+		}
 		if err := changePassword(username, password); err != nil {
 			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
 			return

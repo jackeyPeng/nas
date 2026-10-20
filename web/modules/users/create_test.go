@@ -1,9 +1,31 @@
 package users
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 )
+
+// handleCreateUser 的密码控制字符校验必须在触发任何 useradd/chpasswd 之前短路，
+// 否则带 \n 的密码会经 chpasswd stdin 注入额外改密条目。这里只验证校验本身
+// 先于副作用生效（用户名也给合法值，确保 400 来自密码校验而非用户名校验）。
+func TestHandleCreateUser_RejectsControlCharPassword(t *testing.T) {
+	form := url.Values{
+		"username": {"charinjecttest"},
+		"password": {"goodpass123\nroot:evilpw123"},
+	}
+	r := httptest.NewRequest(http.MethodPost, "/api/users", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+
+	handleCreateUser(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("密码含换行应返回 400，got %d: %s", w.Code, w.Body.String())
+	}
+}
 
 func TestListAdd(t *testing.T) {
 	cases := []struct {

@@ -1,6 +1,28 @@
 package users
 
-import "testing"
+import (
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
+	"testing"
+)
+
+// handleUserAction 的 PUT .../password 必须在触达 chpasswd/smbpasswd/.env 写入
+// 之前拒绝含控制字符的密码，否则经 chpasswd stdin（"user:pass\nroot:evil"）可
+// 注入额外改密条目。这里只验证短路行为（400），不触发真实系统调用。
+func TestHandleUserAction_ChangePassword_RejectsControlCharPassword(t *testing.T) {
+	form := url.Values{"password": {"goodpass123\nroot:evilpw123"}}
+	r := httptest.NewRequest(http.MethodPut, "/api/users/alice/password", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+
+	handleUserAction(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("密码含换行应返回 400，got %d: %s", w.Code, w.Body.String())
+	}
+}
 
 func TestUpdateNasPassLine(t *testing.T) {
 	content := "NAS_USER=fm\nNAS_PASS=old-pass\nJWT_SECRET=abc\n"

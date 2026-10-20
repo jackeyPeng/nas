@@ -43,6 +43,10 @@ func handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"密码至少12位"}`, http.StatusBadRequest)
 		return
 	}
+	if err := common.ValidSecret(req.Password); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
+		return
+	}
 
 	// 服务开关
 	for _, svc := range []string{"samba", "ftp", "webdav"} {

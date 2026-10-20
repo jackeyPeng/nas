@@ -4,7 +4,7 @@ import "testing"
 
 func TestAllowedManagedServices(t *testing.T) {
 	allowed := AllowedManagedServices()
-	for _, svc := range []string{"smbd", "nmbd", "vsftpd", "nfs-server", "nas-panel", "fail2ban", "cron", "ssh"} {
+	for _, svc := range []string{"smbd", "nmbd", "vsftpd", "nfs-server", "nas-panel", "fail2ban", "cron", "ssh", "rclone-webdav", "rclone-s3"} {
 		if !allowed[svc] {
 			t.Errorf("服务 %s 应在白名单中", svc)
 		}

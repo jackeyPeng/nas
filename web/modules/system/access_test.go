@@ -64,3 +64,13 @@ func TestCheckAccessAllowed_RemoteInvalidTokenRejected(t *testing.T) {
 		t.Error("远程无效 token 应被拒绝")
 	}
 }
+
+func TestHandleSystemCheck_RemoteNoAuthReturns401(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/api/system/check", nil)
+	r.RemoteAddr = "203.0.113.5:12345"
+	w := httptest.NewRecorder()
+	handleSystemCheck(w, r)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("远程无 Authorization 的请求应返回 401，实际 %d", w.Code)
+	}
+}
