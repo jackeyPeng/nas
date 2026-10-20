@@ -165,6 +165,20 @@ func main() {
 	// Start
 	fmt.Printf("NAS Web Panel starting on %s\n", listenAddr)
 	fmt.Printf("User: %s\n", nasUser)
+
+	// 面板 HTTPS：TLS_CERT/TLS_KEY 来自 /etc/default/nas-panel-tls（applyPanelTLS 写入并通过
+	// systemd EnvironmentFile 注入），两者非空且文件存在时启用 TLS，否则维持 HTTP。
+	certFile := os.Getenv("TLS_CERT")
+	keyFile := os.Getenv("TLS_KEY")
+	if certFile != "" && keyFile != "" {
+		if _, certErr := os.Stat(certFile); certErr == nil {
+			if _, keyErr := os.Stat(keyFile); keyErr == nil {
+				fmt.Printf("TLS: enabled (cert=%s)\n", certFile)
+				log.Fatal(http.ListenAndServeTLS(listenAddr, certFile, keyFile, loggingMiddleware(mux)))
+			}
+		}
+	}
+	fmt.Println("TLS: disabled, serving HTTP")
 	log.Fatal(http.ListenAndServe(listenAddr, loggingMiddleware(mux)))
 }
 

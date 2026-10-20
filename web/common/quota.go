@@ -2,6 +2,7 @@ package common
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -64,4 +65,35 @@ func mountOptionsHavePrjquota(opts string) bool {
 		}
 	}
 	return false
+}
+
+// ParseProjectsLine 解析 /etc/projects 的一行。
+// 标准格式是两段 "projectID:/path"（XFS 官方格式，ID 在前）。
+// 历史脏数据是三段 "name:id:path"（和 /etc/projid 的 name:id 搞混了），
+// 这里兼容两种格式，读出后统一按标准两段格式回写归一。
+// 返回 ok=false 表示该行为空行/注释/无法解析，调用方应原样保留。
+func ParseProjectsLine(line string) (id int, path string, name string, ok bool) {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+		return 0, "", "", false
+	}
+	parts := strings.Split(trimmed, ":")
+	switch len(parts) {
+	case 2:
+		// 标准格式：id:path
+		n, err := strconv.Atoi(strings.TrimSpace(parts[0]))
+		if err != nil {
+			return 0, "", "", false
+		}
+		return n, strings.TrimSpace(parts[1]), "", true
+	case 3:
+		// 脏数据格式：name:id:path
+		n, err := strconv.Atoi(strings.TrimSpace(parts[1]))
+		if err != nil {
+			return 0, "", "", false
+		}
+		return n, strings.TrimSpace(parts[2]), strings.TrimSpace(parts[0]), true
+	default:
+		return 0, "", "", false
+	}
 }

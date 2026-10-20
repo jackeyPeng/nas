@@ -340,7 +340,13 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 				if scheduleVal == "" {
 					scheduleVal = "weekly"
 				}
-				db.Exec(`INSERT OR REPLACE INTO item_state (item_id, enabled, schedule) VALUES (?, ?, ?)`,
+				// INSERT OR REPLACE 会把同行的 last_run/last_result/last_detail 清成 NULL
+				// （REPLACE 等价于先 DELETE 再 INSERT，未出现在 VALUES 里的列全部回到默认值）。
+				// item_state 主键是 item_id，schedulerLoop 下一分钟会用 isDue() 判定该项是否到期，
+				// last_run 被清空后 isDue 把它当成"从未运行过"立即判定为到期，误触发重跑。
+				// 改成 ON CONFLICT DO UPDATE，只更新 enabled/schedule 两列，不动 last_* 三列。
+				db.Exec(`INSERT INTO item_state (item_id, enabled, schedule) VALUES (?, ?, ?)
+					ON CONFLICT(item_id) DO UPDATE SET enabled = excluded.enabled, schedule = excluded.schedule`,
 					itemID, enabledVal, scheduleVal)
 			}
 		}
@@ -427,6 +433,18 @@ func runDiagnostic(itemID string, cfg Config) (result, detail string) {
 	}
 }
 
+const smartShortMaxPolls = 30 // 短检每盘最多轮询 30 次 x 5s ≈ 2.5 分钟
+
+// smartShortProgress 是多盘轮询进度的纯函数部分：
+// 总进度 = (已完成盘数 * 每盘轮询总次数 + 当前盘已轮询次数) / (总盘数 * 每盘轮询总次数) * 100。
+// 之前的实现没有乘以盘数，每块盘都从 0% 重新跑到 100%，多盘时进度条会在每块盘切换时跳回 0。
+func smartShortProgress(disksDone, diskIndexPolls, totalDisks, pollsPerDisk int) int {
+	if totalDisks <= 0 || pollsPerDisk <= 0 {
+		return 0
+	}
+	return (disksDone*pollsPerDisk + diskIndexPolls) * 100 / (totalDisks * pollsPerDisk)
+}
+
 func runSMARTShort() (string, string) {
 	disks := getDataDisks()
 	if len(disks) == 0 {
@@ -435,7 +453,7 @@ func runSMARTShort() (string, string) {
 
 	var results []string
 	allPass := true
-	for _, disk := range disks {
+	for diskIdx, disk := range disks {
 		out, err := common.SudoExec("smartctl", "-t", "short", disk)
 		if err != nil {
 			results = append(results, fmt.Sprintf("%s: 触发失败 - %s", disk, out))
@@ -443,22 +461,31 @@ func runSMARTShort() (string, string) {
 			continue
 		}
 		// Wait for test to complete (short test ~2 min)
-		for i := 0; i < 30; i++ {
+		completed := false
+		for i := 0; i < smartShortMaxPolls; i++ {
 			time.Sleep(5 * time.Second)
 			runMu.Lock()
-			currentProgress = (i + 1) * 100 / 30
+			currentProgress = smartShortProgress(diskIdx, i+1, len(disks), smartShortMaxPolls)
 			runMu.Unlock()
 
 			statusOut, _ := common.SudoOutput("smartctl", "-l", "selftest", disk)
 			if strings.Contains(statusOut, "Completed without error") {
 				results = append(results, fmt.Sprintf("%s: 通过", disk))
+				completed = true
 				break
 			}
 			if strings.Contains(statusOut, "Completed with read failure") || strings.Contains(statusOut, "failed") {
 				results = append(results, fmt.Sprintf("%s: 失败", disk))
 				allPass = false
+				completed = true
 				break
 			}
+		}
+		// 轮询超时仍未得到明确结果：之前的代码直接跳出循环，allPass 保持 true，
+		// 误报"通过"。自检实际上既没有失败也没有成功读到结果，必须按失败处理并明确说明原因。
+		if !completed {
+			results = append(results, fmt.Sprintf("%s: SMART 自检超时未完成", disk))
+			allPass = false
 		}
 	}
 	if allPass {
@@ -594,15 +621,42 @@ func checkIOUsage(limit int) bool {
 	return true
 }
 
+// parseHHMMToMinutes 把 "HH:MM" 解析成当天总分钟数（0-1439）。解析失败返回 -1。
+func parseHHMMToMinutes(hhmm string) int {
+	parts := strings.Split(hhmm, ":")
+	if len(parts) != 2 {
+		return -1
+	}
+	h, err := strconv.Atoi(strings.TrimSpace(parts[0]))
+	if err != nil || h < 0 || h > 23 {
+		return -1
+	}
+	m, err := strconv.Atoi(strings.TrimSpace(parts[1]))
+	if err != nil || m < 0 || m > 59 {
+		return -1
+	}
+	return h*60 + m
+}
+
+// inTimeWindowAt 是 inTimeWindow 的纯函数核心：按分钟粒度比较，支持跨午夜窗口
+// （start > end 时视为跨夜，如 22:00-06:00）。start/end 解析失败时视为不在窗口内（更保守，
+// 避免配置错误导致长耗时任务在非预期时间跑）。
+func inTimeWindowAt(start, end string, nowMinutes int) bool {
+	startM := parseHHMMToMinutes(start)
+	endM := parseHHMMToMinutes(end)
+	if startM < 0 || endM < 0 {
+		return false
+	}
+	if startM <= endM {
+		return nowMinutes >= startM && nowMinutes < endM
+	}
+	return nowMinutes >= startM || nowMinutes < endM // 跨午夜窗口
+}
+
 func inTimeWindow(start, end string) bool {
 	now := time.Now()
-	h, _, _ := now.Clock()
-	startH, _ := strconv.Atoi(strings.Split(start, ":")[0])
-	endH, _ := strconv.Atoi(strings.Split(end, ":")[0])
-	if startH <= endH {
-		return h >= startH && h < endH
-	}
-	return h >= startH || h < endH // overnight window
+	h, m, _ := now.Clock()
+	return inTimeWindowAt(start, end, h*60+m)
 }
 
 func getDataDisks() []string {

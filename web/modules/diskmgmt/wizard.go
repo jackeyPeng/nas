@@ -273,11 +273,7 @@ func setupSingleDisk(dev, mountPoint, nasUser string) []string {
 		steps = append(steps, "失败: parted "+dev+" - "+err.Error()+" "+out)
 		return steps
 	}
-	// NVMe partitions use "p1" suffix: nvme0n1 → nvme0n1p1, sda → sda1
-	partDev := dev + "1"
-	if strings.HasPrefix(dev, "/dev/nvme") {
-		partDev = dev + "p1"
-	}
+	partDev := partitionDevice(dev, 1)
 	steps = append(steps, "分区 "+dev)
 	// Format
 	if out, err := common.SudoOutput("mkfs.xfs", "-f", partDev); err != nil {
@@ -450,7 +446,7 @@ func writeFstab(uuid, mountPoint, fstype string) {
 	if uuid == "" {
 		return
 	}
-	fstabLine := fmt.Sprintf("UUID=%s %s %s defaults 0 2\n", uuid, mountPoint, fstype)
+	fstabLine := fmt.Sprintf("UUID=%s %s %s %s 0 2\n", uuid, mountPoint, fstype, fstabOptions(fstype))
 	data, _ := common.SudoOutput("cat", "/etc/fstab")
 	content := data
 	if !strings.HasSuffix(content, "\n") {

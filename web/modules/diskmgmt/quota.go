@@ -75,8 +75,8 @@ func setFolderQuota(mountPoint, folderPath, poolName, folderName string, quotaGB
 	projID := findProjectID(projName)
 	if projID < 0 {
 		projID = getNextProjectID()
-		// Add to /etc/projects: name:id:path
-		entry := fmt.Sprintf("%s:%d:%s\n", projName, projID, folderPath)
+		// Add to /etc/projects: 标准格式 id:path（XFS 要求 ID 在前）
+		entry := fmt.Sprintf("%d:%s\n", projID, folderPath)
 		if err := appendToFile(quotaProjectsFile, entry); err != nil {
 			return fmt.Errorf("写入 %s 失败: %v", quotaProjectsFile, err)
 		}
@@ -150,14 +150,20 @@ func findProjectID(name string) int {
 }
 
 // removeProjectEntry removes entries from /etc/projects and /etc/projid
+// /etc/projects 标准格式是 id:path，没有 name，所以先从 /etc/projid 查出 id 再按 id 匹配删除。
+// 解析沿用 common.ParseProjectsLine，顺带归一化历史脏数据（name:id:path → id:path）。
 func removeProjectEntry(name string) {
-	// Remove from /etc/projects
+	id := findProjectID(name)
+
+	// Remove from /etc/projects（按 id 匹配；id<0 说明 projid 里也没有，整行按 name 兜底匹配脏数据）
 	if data, err := os.ReadFile(quotaProjectsFile); err == nil {
 		var lines []string
 		for _, line := range strings.Split(string(data), "\n") {
-			if !strings.HasPrefix(strings.TrimSpace(line), name+":") {
-				lines = append(lines, line)
+			lineID, _, lineName, ok := common.ParseProjectsLine(line)
+			if ok && ((id >= 0 && lineID == id) || (lineName != "" && lineName == name)) {
+				continue
 			}
+			lines = append(lines, line)
 		}
 		common.SafeWriteFile(quotaProjectsFile, strings.Join(lines, "\n"))
 	}
@@ -173,7 +179,8 @@ func removeProjectEntry(name string) {
 	}
 }
 
-// updateProjectPath updates the path in /etc/projects for an existing project
+// updateProjectPath updates the path in /etc/projects for an existing project（按 id 匹配，
+// 同时把历史脏数据行归一化为标准 id:path 格式）
 func updateProjectPath(name string, id int, newPath string) {
 	data, err := os.ReadFile(quotaProjectsFile)
 	if err != nil {
@@ -181,9 +188,9 @@ func updateProjectPath(name string, id int, newPath string) {
 	}
 	var lines []string
 	for _, line := range strings.Split(string(data), "\n") {
-		parts := strings.Split(strings.TrimSpace(line), ":")
-		if len(parts) >= 3 && parts[0] == name {
-			lines = append(lines, fmt.Sprintf("%s:%d:%s", name, id, newPath))
+		lineID, _, lineName, ok := common.ParseProjectsLine(line)
+		if ok && (lineID == id || (lineName != "" && lineName == name)) {
+			lines = append(lines, fmt.Sprintf("%d:%s", id, newPath))
 		} else {
 			lines = append(lines, line)
 		}

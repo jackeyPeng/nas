@@ -79,7 +79,7 @@ func getStatus() FirewallStatus {
 // 行格式: [ 1] 22/tcp                     ALLOW IN    Anywhere
 //
 //	[18] 22/tcp (v6)               ALLOW IN    Anywhere (v6)
-var ruleRe = regexp.MustCompile(`^\[\s*(\d+)\]\s+(\S+?)(?:\s+\(v6\))?\s+(ALLOW|DENY|LIMIT|REJECT)\s+(?:IN|OUT)\s+(.+?)(?:\s+\(v6\))?\s*(?:#.*)?$`)
+var ruleRe = regexp.MustCompile(`^\[\s*(\d+)\]\s+(\S+?)(?:\s+\(v6\))?\s+(ALLOW|DENY|LIMIT|REJECT)\s+(?:IN|OUT)\s+(.+?)(?:\s+\(v6\))?\s*(?:#(.*))?$`)
 
 func parseRules(out string) []FirewallRule {
 	rules := []FirewallRule{}
@@ -99,6 +99,11 @@ func parseRules(out string) []FirewallRule {
 		from = strings.TrimSuffix(from, "(v6)")
 		from = strings.TrimSpace(from)
 
+		var comment string
+		if len(m) > 5 {
+			comment = strings.TrimSpace(m[5])
+		}
+
 		port := portProto
 		proto := "any"
 		if idx := strings.LastIndex(portProto, "/"); idx > 0 {
@@ -107,12 +112,13 @@ func parseRules(out string) []FirewallRule {
 		}
 
 		rules = append(rules, FirewallRule{
-			Num:    num,
-			Port:   port,
-			Proto:  proto,
-			Action: action,
-			From:   from,
-			V6:     v6,
+			Num:     num,
+			Port:    port,
+			Proto:   proto,
+			Action:  action,
+			From:    from,
+			V6:      v6,
+			Comment: comment,
 		})
 	}
 	return rules
@@ -122,6 +128,34 @@ func parseRules(out string) []FirewallRule {
 
 var portRe = regexp.MustCompile(`^\d{1,5}(:\d{1,5})?$`)
 var ipRe = regexp.MustCompile(`^[\d\./:a-fA-F]+$`)
+
+// buildAddRuleArgs 构造 `ufw` 添加规则的参数列表。
+// port 原样传递（ufw 原生支持 "30000:31000" 端口范围语法，之前误用
+// strings.Split(port, ":")[0] 把范围截断成起始端口，范围规则形同虚设）。
+func buildAddRuleArgs(port, proto, action, from, comment string) []string {
+	args := []string{}
+	if action == "deny" {
+		args = append(args, "deny")
+	} else {
+		args = append(args, "allow")
+	}
+	if from != "" && from != "any" {
+		args = append(args, "from", from, "to", "any", "port", port)
+		if proto != "any" {
+			args = append(args, "proto", proto)
+		}
+	} else {
+		if proto == "any" {
+			args = append(args, port)
+		} else {
+			args = append(args, port+"/"+proto)
+		}
+	}
+	if comment != "" {
+		args = append(args, "comment", comment)
+	}
+	return args
+}
 
 func handleAddRule(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
@@ -150,27 +184,7 @@ func handleAddRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	args := []string{}
-	if action == "deny" {
-		args = append(args, "deny")
-	} else {
-		args = append(args, "allow")
-	}
-	if from != "" && from != "any" {
-		args = append(args, "from", from, "to", "any", "port", strings.Split(port, ":")[0])
-		if proto != "any" {
-			args = append(args, "proto", proto)
-		}
-	} else {
-		if proto == "any" {
-			args = append(args, port)
-		} else {
-			args = append(args, port+"/"+proto)
-		}
-	}
-	if comment != "" {
-		args = append(args, "comment", comment)
-	}
+	args := buildAddRuleArgs(port, proto, action, from, comment)
 
 	out, err := common.SudoExec("ufw", args...)
 	if err != nil {

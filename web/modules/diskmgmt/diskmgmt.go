@@ -210,7 +210,7 @@ func handleFormat(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error": "请输入设备路径确认格式化"}`, http.StatusBadRequest)
 		return
 	}
-	out, err := common.SudoExec("mkfs."+fstype, "-F", device)
+	out, err := common.SudoExec("mkfs."+fstype, mkfsArgs(fstype, device)...)
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error": %q}`, out+": "+err.Error()), http.StatusInternalServerError)
 		return
@@ -247,7 +247,9 @@ func handleMount(w http.ResponseWriter, r *http.Request) {
 	// 挂载
 	var out string
 	var err error
-	if fstype != "" {
+	if fstype == "xfs" {
+		out, err = common.SudoExec("mount", "-t", fstype, "-o", "prjquota", device, mountPoint)
+	} else if fstype != "" {
 		out, err = common.SudoExec("mount", "-t", fstype, device, mountPoint)
 	} else {
 		out, err = common.SudoExec("mount", device, mountPoint)

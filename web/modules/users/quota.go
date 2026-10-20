@@ -76,8 +76,8 @@ func setPrivateDirQuota(username string, quotaGB int) error {
 	projID := findProjectID(projName)
 	if projID < 0 {
 		projID = getNextProjectID()
-		// 写入 /etc/projects
-		entry := fmt.Sprintf("%s:%d:%s\n", projName, projID, privDir)
+		// 写入 /etc/projects：标准格式 id:path（XFS 要求 ID 在前）
+		entry := fmt.Sprintf("%d:%s\n", projID, privDir)
 		if err := appendToFile(quotaProjectsFile, entry); err != nil {
 			return fmt.Errorf("写入 %s 失败: %v", quotaProjectsFile, err)
 		}
@@ -162,13 +162,19 @@ func findProjectID(name string) int {
 	return -1
 }
 
+// removeProjectEntry：/etc/projects 标准格式是 id:path，没有 name，先从 /etc/projid 查出 id
+// 再按 id 匹配删除；解析沿用 common.ParseProjectsLine，顺带归一化历史脏数据。
 func removeProjectEntry(name string) {
+	id := findProjectID(name)
+
 	if data, err := common.ExecOutput("cat", quotaProjectsFile); err == nil {
 		var lines []string
 		for _, line := range strings.Split(data, "\n") {
-			if !strings.HasPrefix(strings.TrimSpace(line), name+":") {
-				lines = append(lines, line)
+			lineID, _, lineName, ok := common.ParseProjectsLine(line)
+			if ok && ((id >= 0 && lineID == id) || (lineName != "" && lineName == name)) {
+				continue
 			}
+			lines = append(lines, line)
 		}
 		common.SafeWriteFile(quotaProjectsFile, strings.Join(lines, "\n"))
 	}
@@ -183,6 +189,7 @@ func removeProjectEntry(name string) {
 	}
 }
 
+// updateProjectPath：按 id 匹配，同时把历史脏数据行归一化为标准 id:path 格式
 func updateProjectPath(name string, id int, newPath string) {
 	data, err := common.ExecOutput("cat", quotaProjectsFile)
 	if err != nil {
@@ -190,9 +197,9 @@ func updateProjectPath(name string, id int, newPath string) {
 	}
 	var lines []string
 	for _, line := range strings.Split(data, "\n") {
-		parts := strings.Split(strings.TrimSpace(line), ":")
-		if len(parts) >= 3 && parts[0] == name {
-			lines = append(lines, fmt.Sprintf("%s:%d:%s", name, id, newPath))
+		lineID, _, lineName, ok := common.ParseProjectsLine(line)
+		if ok && (lineID == id || (lineName != "" && lineName == name)) {
+			lines = append(lines, fmt.Sprintf("%d:%s", id, newPath))
 		} else {
 			lines = append(lines, line)
 		}

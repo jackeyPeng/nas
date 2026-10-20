@@ -253,14 +253,18 @@ func handlePoolCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 6. mount
-	common.SudoExec("mount", lvPath, mountPoint)
+	if fstype == "xfs" {
+		common.SudoExec("mount", "-o", "prjquota", lvPath, mountPoint)
+	} else {
+		common.SudoExec("mount", lvPath, mountPoint)
+	}
 	steps = append(steps, "挂载 "+lvPath+" → "+mountPoint)
 
 	// 7. fstab
 	uuidOut, _ := common.ExecOutput("blkid", "-s", "UUID", "-o", "value", lvPath)
 	uuid := strings.TrimSpace(uuidOut)
 	if uuid != "" {
-		fstabLine := fmt.Sprintf("UUID=%s %s %s defaults 0 2", uuid, mountPoint, fstype)
+		fstabLine := fmt.Sprintf("UUID=%s %s %s %s 0 2", uuid, mountPoint, fstype, fstabOptions(fstype))
 		fstabData, _ := os.ReadFile("/etc/fstab")
 		content := string(fstabData)
 		if !strings.HasSuffix(content, "\n") {
@@ -363,19 +367,13 @@ func handlePoolExtend(w http.ResponseWriter, r *http.Request) {
 	}
 	steps = append(steps, "lvextend "+lvName+" +100%FREE")
 
-	// 4. resize filesystem
-	out, err = common.SudoExec("/usr/sbin/resize2fs", lvPath)
-	if err != nil {
-		// Try xfs_growfs for xfs
-		out2, err2 := common.SudoExec("/usr/sbin/xfs_growfs", lvPath)
-		if err2 != nil {
-			http.Error(w, fmt.Sprintf(`{"error":"resize 失败: %s / %s"}`, out, out2), http.StatusInternalServerError)
-			return
-		}
-		steps = append(steps, "xfs_growfs "+lvName)
-	} else {
-		steps = append(steps, "resize2fs "+lvName)
+	// 4. resize filesystem（按实际文件系统类型选择 xfs_growfs/resize2fs，xfs 用挂载点而非设备路径）
+	growStep, _, growErr := growFilesystemByDevice(lvPath)
+	if growErr != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"resize 失败: %s"}`, growErr.Error()), http.StatusInternalServerError)
+		return
 	}
+	steps = append(steps, growStep)
 
 	common.JSONResponse(w, map[string]interface{}{
 		"message": "存储池扩容完成",

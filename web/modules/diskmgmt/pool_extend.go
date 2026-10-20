@@ -99,12 +99,14 @@ func handlePoolExtendStream(w http.ResponseWriter, r *http.Request) {
 	common.SudoExec("/usr/sbin/lvextend", "-l", "+100%FREE", lvPath)
 	stepDone("扩展逻辑卷")
 
-	// 5. Resize filesystem
+	// 5. Resize filesystem（按实际文件系统类型选择 xfs_growfs/resize2fs，xfs 用挂载点而非设备路径）
 	stepRunning("扩展文件系统")
-	// Try xfs_growfs first (we use xfs), fallback to resize2fs
-	_, err := common.SudoExec("/usr/sbin/xfs_growfs", lvPath)
-	if err != nil {
-		common.SudoExec("/usr/sbin/resize2fs", lvPath)
+	if _, _, err := growFilesystemByDevice(lvPath); err != nil {
+		sendPoolExtendProgress(w, PoolExtendEvent{
+			Step: "扩展文件系统", Status: "error",
+			Detail: err.Error(),
+		})
+		return
 	}
 	stepDone("扩展文件系统")
 

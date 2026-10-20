@@ -449,7 +449,7 @@ func setupSeparateStream(w http.ResponseWriter, devs []string, nasUser string,
 			return
 		}
 		time.Sleep(500 * time.Millisecond)
-		partDev := dev + "1"
+		partDev := partitionDevice(dev, 1)
 		stepDone(fmt.Sprintf("磁盘 %d: 创建分区", i+1))
 
 		stepRunning(fmt.Sprintf("磁盘 %d: 格式化", i+1))
@@ -461,7 +461,7 @@ func setupSeparateStream(w http.ResponseWriter, devs []string, nasUser string,
 
 		stepRunning(fmt.Sprintf("磁盘 %d: 挂载", i+1))
 		common.SudoExec("mkdir", "-p", mountPoint)
-		out, err = common.SudoExec("mount", partDev, mountPoint)
+		out, err = common.SudoExec("mount", "-o", "prjquota", partDev, mountPoint)
 		if checkExecError(w, fmt.Sprintf("磁盘%d挂载", i+1), out, err) {
 			return
 		}
@@ -515,10 +515,12 @@ func handleWizardResetStream(w http.ResponseWriter, r *http.Request) {
 	// 1. Unmount
 	stepRunning("卸载数据目录")
 	mounts := getExistingDataMounts()
+	var resetMountPoints []string
 	for _, m := range mounts {
 		mount := m["mount"]
 		if mount == "/data" || isDataNasMount(mount) {
 			common.SudoExec("umount", "-l", mount)
+			resetMountPoints = append(resetMountPoints, mount)
 		}
 	}
 	stepDone("卸载数据目录")
@@ -589,17 +591,15 @@ func handleWizardResetStream(w http.ResponseWriter, r *http.Request) {
 	}
 	stepDone("清除磁盘签名")
 
-	// 6. Clean Samba
-	stepRunning("清理 Samba 共享")
-	smbConf, _ := common.SudoOutput("cat", "/etc/samba/smb.conf")
-	if smbConf != "" {
-		newConf := removeSambaSharesByPrefix(smbConf, "nas")
-		if newConf != smbConf {
-			common.SafeWriteFile("/etc/samba/smb.conf", newConf)
-			common.SudoExec("systemctl", "restart", "smbd")
-		}
+	// 6. 清理 folders.db 元数据 + 重投影托管配置（权威源模式，替代旧的手工 removeSambaSharesByPrefix：
+	// 那个调用只改 smb.conf 不碰 folders.db，残留元数据会在下次 SyncAllConfigs 时把共享重新生成回来）
+	stepRunning("清理共享配置")
+	for _, mount := range resetMountPoints {
+		RemoveFolderMetaByMountPrefix(mount)
 	}
-	stepDone("清理 Samba 共享")
+	common.SudoExec("rm", "-f", "/opt/nas/data/.last_reload")
+	SyncAllConfigs()
+	stepDone("清理共享配置")
 
 	// 7. Recreate /data
 	stepRunning("重建 /data 目录")

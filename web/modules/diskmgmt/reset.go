@@ -1,6 +1,7 @@
 package diskmgmt
 
 import (
+	"fmt"
 	"net/http"
 	"path/filepath"
 	"regexp"
@@ -32,11 +33,13 @@ func handleWizardReset(w http.ResponseWriter, r *http.Request) {
 
 	// 1. Unmount all /data/nas* and /data (if it's LVM/RAID)
 	mounts := getExistingDataMounts()
+	var resetMountPoints []string
 	for _, m := range mounts {
 		mount := m["mount"]
 		if mount == "/data" || strings.HasPrefix(mount, "/data/nas") {
 			common.SudoExec("umount", "-l", mount)
 			steps = append(steps, "卸载 "+mount)
+			resetMountPoints = append(resetMountPoints, mount)
 		}
 	}
 
@@ -113,15 +116,23 @@ func handleWizardReset(w http.ResponseWriter, r *http.Request) {
 	}
 	steps = append(steps, "清除磁盘签名")
 
-	// 7. Remove Samba shares (nas1, nas2, etc)
-	smbConf, _ := common.SudoOutput("cat", "/etc/samba/smb.conf")
-	if smbConf != "" {
-		newConf := removeSambaSharesByPrefix(smbConf, "nas")
-		if newConf != smbConf {
-			common.SafeWriteFile("/etc/samba/smb.conf", newConf)
-			common.SudoExec("systemctl", "restart", "smbd")
-			steps = append(steps, "清理 Samba 共享")
+	// 7. 清理 folders.db 元数据 + 重投影托管配置（权威源模式）
+	// 文件系统/LVM 已拆除完成，此时清掉 folders.db 里属于这些挂载点的行，
+	// 再调 SyncAllConfigs() 重新生成 smb.conf/exports 的 Z1 托管段——
+	// 元数据少了行，托管段自然收敛，不用再手工删 smb.conf 片段（旧的 removeSambaSharesByPrefix
+	// 调用已移除：它只改 smb.conf 不碰 folders.db，重置后再次 SyncAllConfigs 会把删掉的共享重新生成回来）。
+	for _, mount := range resetMountPoints {
+		if n, err := RemoveFolderMetaByMountPrefix(mount); err != nil {
+			steps = append(steps, "清理 folders.db 失败("+mount+"): "+err.Error())
+		} else if n > 0 {
+			steps = append(steps, fmt.Sprintf("清理 folders.db: %s (%d 行)", mount, n))
 		}
+	}
+	common.SudoExec("rm", "-f", "/opt/nas/data/.last_reload")
+	if err := SyncAllConfigs(); err != nil {
+		steps = append(steps, "重新生成托管配置失败: "+err.Error())
+	} else {
+		steps = append(steps, "重新生成 Samba/NFS 托管配置")
 	}
 
 	// 8. Recreate base /data directory

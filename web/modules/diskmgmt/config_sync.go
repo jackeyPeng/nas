@@ -241,6 +241,33 @@ func RemoveFolderMeta(folderPath string) {
 	db.Exec("DELETE FROM folders WHERE path = ?", folderPath)
 }
 
+// RemoveFolderMetaByMountPrefix 删除被拆池/重置的挂载点下的所有 folders.db 元数据行
+// （pool 列存的就是挂载点，如 /data/nas1；path 以 "挂载点/" 为前缀兜底覆盖 pool 列缺失/不一致的脏数据）。
+// 存储重置/拆池只调系统命令清磁盘，若不清这张表，SyncAllConfigs 会照着残留元数据重新生成
+// smb.conf/exports 的 Z1 托管段，造成"池已删但共享配置还在"的脏数据。
+func RemoveFolderMetaByMountPrefix(mountPoint string) (int64, error) {
+	db := initConfigDB()
+	if db == nil {
+		return 0, fmt.Errorf("无法打开元数据库")
+	}
+	return deleteFoldersByMountPrefix(db, mountPoint)
+}
+
+// deleteFoldersByMountPrefix 是 RemoveFolderMetaByMountPrefix 的可测部分：接收已打开的 *sql.DB，
+// 不依赖全局单例，方便用 t.TempDir() 建临时 sqlite 测试 SQL 条件本身。
+func deleteFoldersByMountPrefix(db *sql.DB, mountPoint string) (int64, error) {
+	mountPoint = strings.TrimSuffix(mountPoint, "/")
+	if mountPoint == "" {
+		return 0, fmt.Errorf("挂载点为空")
+	}
+	res, err := db.Exec("DELETE FROM folders WHERE pool = ? OR path = ? OR path LIKE ?",
+		mountPoint, mountPoint, mountPoint+"/%")
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 // GetAllFolderMeta returns all folder metadata
 func GetAllFolderMeta() []FolderMeta {
 	db := initConfigDB()

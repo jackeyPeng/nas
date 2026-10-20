@@ -175,7 +175,9 @@ func handleRAIDExpandStream(w http.ResponseWriter, r *http.Request) {
 
 		// Grow filesystem
 		stepRunning("扩展文件系统")
-		growFilesystem(w, mdDev)
+		if !growFilesystem(w, mdDev) {
+			return
+		}
 		stepDone("扩展文件系统")
 
 		sendRAIDExpandProgress(w, RAIDExpandEvent{
@@ -218,14 +220,16 @@ func handleRAIDExpandFS(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Grow filesystem
-	out, err := common.SudoExec("/usr/sbin/xfs_growfs", mdDev)
+	// Grow filesystem（按实际文件系统类型选择 xfs_growfs/resize2fs，xfs 用挂载点而非设备路径）
+	step, out, err := growFilesystemByDevice(mdDev)
 	if err != nil {
-		common.SudoExec("/usr/sbin/resize2fs", mdDev)
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
+		return
 	}
 
 	common.JSONResponse(w, map[string]interface{}{
 		"message": "文件系统已扩展",
+		"step":    step,
 		"output":  out,
 	})
 }
@@ -316,12 +320,17 @@ func waitForResync(w http.ResponseWriter, mdDev string, currentStep, totalSteps 
 	}
 }
 
-// growFilesystem grows the filesystem on md device
-func growFilesystem(w http.ResponseWriter, mdDev string) {
-	_, err := common.SudoExec("/usr/sbin/xfs_growfs", mdDev)
-	if err != nil {
-		common.SudoExec("/usr/sbin/resize2fs", mdDev)
+// growFilesystem grows the filesystem on md device.
+// 返回 ok=false 表示扩容失败，调用方不应再标记该步骤为完成（xfs_growfs 失败不许静默吞掉）。
+func growFilesystem(w http.ResponseWriter, mdDev string) bool {
+	if _, _, err := growFilesystemByDevice(mdDev); err != nil {
+		sendRAIDExpandProgress(w, RAIDExpandEvent{
+			Step: "扩展文件系统", Status: "error",
+			Detail: err.Error(),
+		})
+		return false
 	}
+	return true
 }
 
 // checkRAIDError checks error and sends SSE error event

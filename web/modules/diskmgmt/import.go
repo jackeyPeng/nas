@@ -119,9 +119,14 @@ func handleImportPool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 4. fstab（按 UUID，避免设备名漂移）
+	// 4. 检测文件系统类型；xfs 重新挂载加 prjquota（面板目录配额依赖该挂载选项）
 	fsOut, _ := common.ExecOutput("findmnt", "-n", "-o", "FSTYPE", "--source", lvPath)
 	fsType := strings.TrimSpace(fsOut)
+	if fsType == "xfs" {
+		common.SudoExec("mount", "-o", "remount,prjquota", mountPoint)
+	}
+
+	// 5. fstab（按 UUID，避免设备名漂移）
 	uuidOut, _ := common.ExecOutput("blkid", "-s", "UUID", "-o", "value", lvPath)
 	uuid := strings.TrimSpace(uuidOut)
 	if uuid != "" {
@@ -131,7 +136,7 @@ func handleImportPool(w http.ResponseWriter, r *http.Request) {
 				if !strings.HasSuffix(content, "\n") {
 					content += "\n"
 				}
-				content += fmt.Sprintf("UUID=%s %s %s defaults 0 2\n", uuid, mountPoint, fsType)
+				content += fmt.Sprintf("UUID=%s %s %s %s 0 2\n", uuid, mountPoint, fsType, fstabOptions(fsType))
 				common.SafeWriteFile("/etc/fstab", content)
 			}
 		}
