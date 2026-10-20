@@ -2,6 +2,7 @@ package diskmgmt
 
 import (
 	"context"
+	"errors"
 	"os/exec"
 	"strings"
 	"sync"
@@ -50,6 +51,11 @@ func cachedSmartctl(ttl time.Duration, args ...string) (string, error) {
 		}
 	}
 	out, err := smartctlExecFunc(args)
+	// 超时/被杀的错误不缓存：休眠盘 spin-up 可能超过 5s 超时，缓存这个
+	// 错误会让温度/健康状态在 TTL 内一直显示空/unknown（放大超时窗口）。
+	if err != nil && (errors.Is(err, context.DeadlineExceeded) || strings.Contains(err.Error(), "signal: killed")) {
+		return out, err
+	}
 	smartctlCache.Store(key, &smartctlCacheEntry{value: out, err: err, fetchedAt: time.Now()})
 	return out, err
 }

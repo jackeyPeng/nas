@@ -1,6 +1,7 @@
 package monitor
 
 import (
+	"log"
 	"sync"
 	"time"
 )
@@ -41,13 +42,30 @@ func startSampler() {
 
 func samplerLoop() {
 	for {
-		snap := sampleFunc()
-		sampleMu.Lock()
-		latestSample = snap
-		hasSample = true
-		sampleMu.Unlock()
+		snap := safeSample()
+		if snap != nil { // panic 恢复为 nil 时保留上一份快照，不覆盖
+			sampleMu.Lock()
+			latestSample = snap
+			hasSample = true
+			sampleMu.Unlock()
+		}
 		time.Sleep(5 * time.Second)
 	}
+}
+
+// safeSample 包一层 recover：采样逻辑里有大量字符串解析路径，
+// 移进后台 goroutine 后一旦 panic 会带崩整个面板进程（此前在 HTTP
+// handler 里由 net/http 的 per-connection recover 兜住）。panic 时
+// 记日志并返回 nil（调用方保留 hasSample 语义，见 getMonitorSnapshot
+// 对 nil 快照的兜底）。
+func safeSample() (snap map[string]interface{}) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("monitor sampler panic recovered: %v", r)
+			snap = nil
+		}
+	}()
+	return sampleFunc()
 }
 
 // getMonitorSnapshot 返回最近一次后台采样结果（<5ms，纯读内存）。
@@ -69,9 +87,9 @@ func getMonitorSnapshot() map[string]interface{} {
 
 	if !ready {
 		coldStartOnce.Do(func() {
-			snap := sampleFunc()
+			snap := safeSample()
 			sampleMu.Lock()
-			if !hasSample {
+			if !hasSample && snap != nil {
 				latestSample = snap
 				hasSample = true
 			}
@@ -81,5 +99,8 @@ func getMonitorSnapshot() map[string]interface{} {
 
 	sampleMu.Lock()
 	defer sampleMu.Unlock()
+	if latestSample == nil {
+		return map[string]interface{}{}
+	}
 	return latestSample
 }

@@ -731,6 +731,12 @@ func handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r.ParseForm()
+	// 本地路径校验放在锁外：isUnderSharedDir 要 sudo cat smb.conf，
+	// 放锁内会让慢 sudo 拖住所有 tasks.json 事务（含后台状态落盘）。
+	if v := r.FormValue("source"); v != "" && !isUnderSharedDir(v) {
+		http.Error(w, `{"error":"本地路径必须在已配置的共享目录范围内"}`, http.StatusBadRequest)
+		return
+	}
 	tasksMu.Lock()
 	defer tasksMu.Unlock()
 	tasks := loadTasksLocked()
@@ -745,10 +751,6 @@ func handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 			tasks[i].Name = v
 		}
 		if v := r.FormValue("source"); v != "" {
-			if !isUnderSharedDir(v) {
-				http.Error(w, `{"error":"本地路径必须在已配置的共享目录范围内"}`, http.StatusBadRequest)
-				return
-			}
 			tasks[i].Source = v
 		}
 		if v := r.FormValue("remote"); v != "" {

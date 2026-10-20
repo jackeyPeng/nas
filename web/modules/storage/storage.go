@@ -60,18 +60,22 @@ func getDiskInfo() (total, used, pct string) {
 // 做实际展开修正，同时套上 TTL 缓存）。响应字段形状不变：
 // []map[string]string{"path": ..., "size": ...}。
 func getDirSizes() []map[string]string {
-	matches, err := filepath.Glob("/data/*/")
+	// 注意：filepath.Glob 没有目录尾斜杠语义，"/data/*/" 恒返回空；
+	// 必须 glob "/data/*" 后自行过滤目录。
+	matches, err := filepath.Glob("/data/*")
 	if err != nil {
 		return nil
 	}
 	var dirs []map[string]string
 	for _, m := range matches {
-		path := strings.TrimSuffix(m, "/")
-		size, sizeErr := common.CachedDirSize(path, 60*time.Second)
+		if fi, statErr := os.Stat(m); statErr != nil || !fi.IsDir() {
+			continue
+		}
+		size, sizeErr := common.CachedDirSize(m, 60*time.Second)
 		if sizeErr != nil {
 			continue
 		}
-		dirs = append(dirs, map[string]string{"path": path, "size": size})
+		dirs = append(dirs, map[string]string{"path": m, "size": size})
 	}
 	return dirs
 }

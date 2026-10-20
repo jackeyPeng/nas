@@ -262,7 +262,7 @@ func classifyMdArray(a MdArray) (status, detail string) {
 		}
 		return "warn", detail
 	}
-	return "fail", fmt.Sprintf("阵列降级: %s [%s]", a.Name, a.Slots)
+	return "fail", fmt.Sprintf("阵列降级: %s [%s]", a.Name, strings.Trim(a.Slots, "[]"))
 }
 
 // storageState is the pass/fail/warn verdict for a single registry item.

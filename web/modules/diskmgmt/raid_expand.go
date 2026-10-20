@@ -30,9 +30,6 @@ func sendRAIDExpandProgress(w http.ResponseWriter, ev RAIDExpandEvent) {
 // For RAID1: adds disk, grows to N+1 devices, waits for resync, grows filesystem
 // For RAID5/6: adds disk, starts reshape (returns immediately with reshaping status)
 func handleRAIDExpandStream(w http.ResponseWriter, r *http.Request) {
-	common.LockDiskOp()
-	defer common.UnlockDiskOp()
-
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -41,7 +38,9 @@ func handleRAIDExpandStream(w http.ResponseWriter, r *http.Request) {
 	device := r.URL.Query().Get("device")   // new disk, e.g. /dev/sdd
 	confirm := r.URL.Query().Get("confirm")
 
-	// ── 参数检查 ──
+	// ── 参数检查（锁外）──
+	// 廉价校验先做完再拿全局磁盘锁：错误参数的请求不应该排队等
+	// 可能长达数小时的无关磁盘操作（RAID1 扩容持锁跨整个 resync）。
 	if mdDev == "" || device == "" {
 		sendRAIDExpandProgress(w, RAIDExpandEvent{Step: "参数检查", Status: "error", Detail: "缺少 md_device 或 device 参数"})
 		return
@@ -50,6 +49,9 @@ func handleRAIDExpandStream(w http.ResponseWriter, r *http.Request) {
 		sendRAIDExpandProgress(w, RAIDExpandEvent{Step: "需要确认", Status: "error", Detail: "请加 confirm=yes"})
 		return
 	}
+
+	common.LockDiskOp()
+	defer common.UnlockDiskOp()
 
 	// SSE 由前端 GET 触发，全局中间件不审计 GET——这里显式补记
 	common.LogAuditRequest(r, "STORAGE", "扩展RAID阵列(流式)", fmt.Sprintf("md=%s device=%s", mdDev, device), "pending")
