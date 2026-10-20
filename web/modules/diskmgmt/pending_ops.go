@@ -243,6 +243,15 @@ func executeCreateFolder(op PendingOp) error {
 		RecycleBin:      op.RecycleBin, QuotaGB: op.QuotaGB,
 	})
 
+	// quota_gb>0 时落地 XFS project 配额。此前只把 quota_gb 存进 folders.db
+	// 元数据，setFolderQuota 仅在专用配额 API 里被调用，创建时带的配额从未生效
+	// （57 验收实测抓到）。失败如实报错（如池未启用 prjquota），不静默忽略。
+	if op.QuotaGB > 0 {
+		if err := setFolderQuota(op.Pool, folderPath, filepath.Base(op.Pool), op.FolderName, op.QuotaGB); err != nil {
+			return fmt.Errorf("文件夹已创建，但配额设置失败: %v", err)
+		}
+	}
+
 	return nil
 }
 
