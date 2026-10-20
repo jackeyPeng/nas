@@ -3,9 +3,9 @@
   "dataLicense": "CC0-1.0",
   "SPDXID": "SPDXRef-DOCUMENT",
   "name": "Z1-Abwen-NAS",
-  "documentNamespace": "https://z1.sale/spdx/20261019-062713",
+  "documentNamespace": "https://z1.sale/spdx/20261020-051432",
   "creationInfo": {
-    "created": "2026-10-19T06:27:13Z",
+    "created": "2026-10-20T05:14:32Z",
     "creators": [
       "Tool: nas-panel scripts/gen-sbom.py",
       "Organization: Abwen"
@@ -193,8 +193,28 @@
       "copyrightText": "NOASSERTION"
     },
     {
-      "name": "Alpine.js",
+      "name": "@noble/ciphers",
       "SPDXID": "SPDXRef-Package-18",
+      "versionInfo": "2.4.0",
+      "downloadLocation": "https://github.com/paulmillr/noble-ciphers",
+      "filesAnalyzed": false,
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "name": "@noble/hashes",
+      "SPDXID": "SPDXRef-Package-19",
+      "versionInfo": "2.4.0",
+      "downloadLocation": "https://github.com/paulmillr/noble-hashes",
+      "filesAnalyzed": false,
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "name": "Alpine.js",
+      "SPDXID": "SPDXRef-Package-20",
       "versionInfo": "3.x",
       "downloadLocation": "https://alpinejs.dev",
       "filesAnalyzed": false,
@@ -204,8 +224,8 @@
     },
     {
       "name": "rclone",
-      "SPDXID": "SPDXRef-Package-19",
-      "versionInfo": "1.74.4",
+      "SPDXID": "SPDXRef-Package-21",
+      "versionInfo": "1.75.2",
       "downloadLocation": "https://rclone.org",
       "filesAnalyzed": false,
       "licenseConcluded": "MIT",

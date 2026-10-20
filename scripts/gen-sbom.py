@@ -28,8 +28,10 @@ SYSTEM_COMPONENTS = [
     ("smartmontools", "Debian", "GPL-2.0-or-later", "system-package", "https://www.smartmontools.org"),
     ("unattended-upgrades", "Debian", "GPL-2.0-or-later", "system-package", "https://wiki.debian.org/UnattendedUpgrades"),
     ("apache2-utils", "Debian", "Apache-2.0", "system-package", "https://httpd.apache.org"),
-    ("rclone", "1.74.4", "MIT", "third-party-binary", "https://rclone.org"),
+    ("rclone", "1.75.2", "MIT", "third-party-binary", "https://rclone.org"),
     ("Alpine.js", "3.x", "MIT", "third-party-binary", "https://alpinejs.dev"),
+    ("@noble/hashes", "2.4.0", "MIT", "third-party-binary", "https://github.com/paulmillr/noble-hashes"),
+    ("@noble/ciphers", "2.4.0", "MIT", "third-party-binary", "https://github.com/paulmillr/noble-ciphers"),
 ]
 
 

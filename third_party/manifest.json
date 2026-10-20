@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-19T06:27:13.044714+00:00",
+  "generated_at": "2026-10-20T05:14:32.030002+00:00",
   "project": "Z1 / Abwen NAS (nas-panel)",
   "project_license": "AGPL-3.0-only",
   "components": [
@@ -130,18 +130,11 @@
       "homepage": "https://security.appspot.com/vsftpd.html"
     },
     {
-      "name": "Alpine.js",
-      "version": "3.x",
+      "name": "@noble/ciphers",
+      "version": "2.4.0",
       "license": "MIT",
       "type": "third-party-binary",
-      "homepage": "https://alpinejs.dev"
-    },
-    {
-      "name": "rclone",
-      "version": "1.74.4",
-      "license": "MIT",
-      "type": "third-party-binary",
-      "homepage": "https://rclone.org"
+      "homepage": "https://github.com/paulmillr/noble-ciphers"
     },
     {
       "name": "@noble/hashes",
@@ -151,11 +144,18 @@
       "homepage": "https://github.com/paulmillr/noble-hashes"
     },
     {
-      "name": "@noble/ciphers",
-      "version": "2.4.0",
+      "name": "Alpine.js",
+      "version": "3.x",
       "license": "MIT",
       "type": "third-party-binary",
-      "homepage": "https://github.com/paulmillr/noble-ciphers"
+      "homepage": "https://alpinejs.dev"
+    },
+    {
+      "name": "rclone",
+      "version": "1.75.2",
+      "license": "MIT",
+      "type": "third-party-binary",
+      "homepage": "https://rclone.org"
     }
   ]
 }
