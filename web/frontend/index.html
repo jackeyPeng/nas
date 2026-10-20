@@ -2879,7 +2879,7 @@
                     <div style="display:flex;justify-content:space-between;align-items:center">
                         <div>
                             <span style="font-size:var(--fs-base);font-weight:600;color: var(--text-secondary)"><span x-text="$t('rclone.status')"></span></span>
-                            <div style="font-size:var(--fs-sm);color: var(--text-light);margin-top:var(--sp-1)" x-text="$t('rclone.unknown_version')"></div>
+                            <div style="font-size:var(--fs-sm);color: var(--text-light);margin-top:var(--sp-1)" x-text="rcloneStatus.version || $t('rclone.unknown_version')"></div>
                         </div>
                         <span style="padding:var(--sp-1) var(--sp-3);border-radius:var(--radius-lg);font-size:var(--fs-sm);background: var(--success-light);color: var(--success)" x-text="$t('common.installed')"></span>
                     </div>
