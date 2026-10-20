@@ -183,8 +183,21 @@ echo ""
 echo "[额外] 拆除存储池 + 清理磁盘 RAID/LVM 签名..."
 
 # 卸载 /data/nas* 存储池
+# （实踩：服务刚 stop 时 nfsd/smbd 收尾会短暂持有挂载点，单次 umount busy 被静默吞掉
+#  → LVM/磁盘清理连锁跳过、/data 删不掉。先静默 NFS 导出并兜底 stop，再重试等待，失败如实警告）
+exportfs -ra 2>/dev/null || true
+systemctl stop nfs-kernel-server smbd nmbd vsftpd rclone-webdav rclone-s3 2>/dev/null || true
 for mp in $(mount | grep -oE '/data/nas[0-9]+' | sort -u); do
-    umount "$mp" 2>/dev/null && echo "  卸载 $mp" || true
+    mp_ok=false
+    for _try in 1 2 3 4 5 6; do
+        if umount "$mp" 2>/dev/null; then mp_ok=true; break; fi
+        sleep 1
+    done
+    if [ "$mp_ok" = true ]; then
+        echo "  卸载 $mp"
+    else
+        echo "  ⚠️  $mp 仍被占用无法卸载（fuser -vm $mp 排查后重跑），后续 LVM/磁盘/数据清理可能不完整"
+    fi
 done
 
 # 拆除 LVM：先 LV → VG → PV（旧版本只做 mdadm，遇到 LVM 池会残留）
