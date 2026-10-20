@@ -133,7 +133,7 @@ func handleInstallServices(w http.ResponseWriter, r *http.Request) {
 		nasPass, _ := common.ReadEnvFile(common.GetEnvFilePath(), "NAS_PASS")
 
 		// WebDAV with htpasswd auth
-		common.SudoExec("bash", "-c", fmt.Sprintf("htpasswd -cb /etc/rclone-htpasswd %s %s", nasUser, nasPass))
+		common.SudoExec("htpasswd", "-cb", "/etc/rclone-htpasswd", nasUser, nasPass)
 		common.SudoExec("sh", "-c", "cat > /etc/systemd/system/rclone-webdav.service << 'UNIT'\n[Unit]\nDescription=Rclone WebDAV Server\nAfter=network.target\n[Service]\nType=simple\nExecStart=/usr/bin/rclone serve webdav /data/nas1/public --addr :8080 --htpasswd /etc/rclone-htpasswd\nRestart=on-failure\nSuccessExitStatus=143\n[Install]\nWantedBy=multi-user.target\nUNIT")
 		common.SudoExec("systemctl", "daemon-reload")
 		common.SudoExec("systemctl", "enable", "rclone-webdav")
@@ -195,7 +195,7 @@ func installSingleService(name string) (string, error) {
 		// Read NAS user/pass from .env
 		nasUser := common.GetNASUser()
 		nasPass, _ := common.ReadEnvFile(common.GetEnvFilePath(), "NAS_PASS")
-		common.SudoExec("bash", "-c", fmt.Sprintf("htpasswd -cb /etc/rclone-htpasswd %s %s", nasUser, nasPass))
+		common.SudoExec("htpasswd", "-cb", "/etc/rclone-htpasswd", nasUser, nasPass)
 		common.SudoExec("sh", "-c", "cat > /etc/systemd/system/rclone-webdav.service << 'UNIT'\n[Unit]\nDescription=Rclone WebDAV Server\nAfter=network.target\n[Service]\nType=simple\nExecStart=/usr/bin/rclone serve webdav /data/nas1/public --addr :8080 --htpasswd /etc/rclone-htpasswd\nRestart=on-failure\nSuccessExitStatus=143\n[Install]\nWantedBy=multi-user.target\nUNIT")
 		common.SudoExec("systemctl", "daemon-reload")
 		common.SudoExec("systemctl", "enable", "rclone-webdav")

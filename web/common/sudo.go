@@ -20,6 +20,17 @@ func SudoOutput(name string, args ...string) (string, error) {
 	return string(out), err
 }
 
+// SudoExecStdin runs a command with sudo prefix, feeding stdin on its standard
+// input, and returns the combined output. Avoids shell injection issues from
+// piping secrets (e.g. passwords) through "echo ... | cmd" string building.
+func SudoExecStdin(stdin string, name string, args ...string) (string, error) {
+	cmdArgs := append([]string{name}, args...)
+	cmd := exec.Command("sudo", cmdArgs...)
+	cmd.Stdin = strings.NewReader(stdin)
+	out, err := cmd.CombinedOutput()
+	return strings.TrimSpace(string(out)), err
+}
+
 // Exec runs a command without sudo and returns combined output
 func Exec(name string, args ...string) (string, error) {
 	out, err := exec.Command(name, args...).CombinedOutput()

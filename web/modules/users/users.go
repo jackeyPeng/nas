@@ -3,6 +3,7 @@ package users
 import (
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
@@ -371,16 +372,12 @@ func handleUserAction(w http.ResponseWriter, r *http.Request) {
 
 // changePassword 修改系统 + Samba + WebDAV 密码
 func changePassword(username, password string) error {
-	cred := username + ":" + password
-	out, err := common.SudoExec("bash", "-c", fmt.Sprintf("printf '%%s\n' %s | chpasswd", shellQuote(cred)))
+	out, err := common.SudoExecStdin(username+":"+password+"\n", "chpasswd")
 	if err != nil {
 		return fmt.Errorf("chpasswd 失败: %s: %v", out, err)
 	}
 
-	out, err = common.SudoExec("bash", "-c", fmt.Sprintf(
-		"printf '%%s\n%%s\n' %s %s | smbpasswd -a %s -s",
-		shellQuote(password), shellQuote(password), shellQuote(username),
-	))
+	out, err = common.SudoExecStdin(password+"\n"+password+"\n", "smbpasswd", "-a", username, "-s")
 	if err != nil {
 		return fmt.Errorf("smbpasswd 失败: %s: %v", out, err)
 	}
@@ -391,17 +388,25 @@ func changePassword(username, password string) error {
 	// 绝不能改写 .env 的 NAS_PASS 或内存面板密码，否则管理员会被顶下线
 	if username == common.GetNASUser() {
 		// Update .env NAS_PASS (read by panel on startup)
-		common.SudoExec("sed", "-i", fmt.Sprintf("s/^NAS_PASS=.*/NAS_PASS=%s/", password),
-			common.GetEnvFilePath())
+		if envPath := common.GetEnvFilePath(); envPath != "" {
+			if content, ok := readFileWithFallback(envPath); ok {
+				common.SafeWriteFile(envPath, updateNasPassLine(content, password))
+			}
+		}
 
 		// Update rclone-s3 auth-key (ExecStart embeds access_key,secret literally)
 		s3Key := common.S3AccessKey(username)
-		common.SudoExec("bash", "-c", fmt.Sprintf(
-			"sed -i -E 's|--auth-key [^ ]+|--auth-key %s,%s|' /etc/systemd/system/rclone-s3.service",
-			s3Key, password))
-		common.SudoExec("bash", "-c", fmt.Sprintf(
-			"test -f /etc/rclone/s3-env && sed -i -E 's|^RCLONE_S3_SECRET_KEY=.*|RCLONE_S3_SECRET_KEY=%s|;s|^RCLONE_S3_ACCESS_KEY=.*|RCLONE_S3_ACCESS_KEY=%s|' /etc/rclone/s3-env",
-			password, s3Key))
+		const unitFile = "/etc/systemd/system/rclone-s3.service"
+		if content, ok := readFileWithFallback(unitFile); ok {
+			common.SafeWriteFile(unitFile, updateRcloneS3AuthKey(content, s3Key, password))
+		}
+
+		const s3EnvFile = "/etc/rclone/s3-env"
+		if _, err := os.Stat(s3EnvFile); err == nil {
+			if content, ok := readFileWithFallback(s3EnvFile); ok {
+				common.SafeWriteFile(s3EnvFile, updateRcloneS3EnvFile(content, s3Key, password))
+			}
+		}
 		common.SudoExec("systemctl", "daemon-reload")
 		common.SudoExec("systemctl", "restart", "rclone-s3")
 
@@ -410,6 +415,68 @@ func changePassword(username, password string) error {
 	}
 
 	return nil
+}
+
+// readFileWithFallback 读取文件内容：先尝试当前进程权限直读，失败则走 sudo cat。
+func readFileWithFallback(path string) (string, bool) {
+	if data, err := os.ReadFile(path); err == nil {
+		return string(data), true
+	}
+	out, err := common.SudoOutput("cat", path)
+	if err != nil {
+		return "", false
+	}
+	return out, true
+}
+
+// updateNasPassLine 替换 .env 中 NAS_PASS= 整行，其余行原样保留。
+// 纯函数，替代原来的 sed -i 拼接（密码含 sed 特殊字符时会命令注入/语法损坏）。
+func updateNasPassLine(content, password string) string {
+	lines := strings.Split(content, "\n")
+	for i, line := range lines {
+		if strings.HasPrefix(line, "NAS_PASS=") {
+			lines[i] = "NAS_PASS=" + password
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// updateRcloneS3AuthKey 在 rclone-s3.service 的 ExecStart 行中，把 --auth-key
+// 及其后一个 token（旧的 access_key,secret）替换为新值。纯函数，替代
+// sed -i -E 's|--auth-key [^ ]+|...|' 拼接。
+func updateRcloneS3AuthKey(content, accessKey, secret string) string {
+	newValue := fmt.Sprintf("%s,%s", accessKey, secret)
+	lines := strings.Split(content, "\n")
+	for i, line := range lines {
+		if !strings.Contains(line, "--auth-key") {
+			continue
+		}
+		fields := strings.Fields(line)
+		for j := 0; j < len(fields); j++ {
+			if fields[j] == "--auth-key" && j+1 < len(fields) {
+				fields[j+1] = newValue
+				break
+			}
+		}
+		lines[i] = strings.Join(fields, " ")
+	}
+	return strings.Join(lines, "\n")
+}
+
+// updateRcloneS3EnvFile 替换 /etc/rclone/s3-env 中的 RCLONE_S3_SECRET_KEY=
+// 和 RCLONE_S3_ACCESS_KEY= 两行，其余行原样保留。纯函数，替代
+// sed -i -E 's|^RCLONE_S3_SECRET_KEY=.*|...|;s|^RCLONE_S3_ACCESS_KEY=.*|...|' 拼接。
+func updateRcloneS3EnvFile(content, accessKey, secret string) string {
+	lines := strings.Split(content, "\n")
+	for i, line := range lines {
+		switch {
+		case strings.HasPrefix(line, "RCLONE_S3_SECRET_KEY="):
+			lines[i] = "RCLONE_S3_SECRET_KEY=" + secret
+		case strings.HasPrefix(line, "RCLONE_S3_ACCESS_KEY="):
+			lines[i] = "RCLONE_S3_ACCESS_KEY=" + accessKey
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func removeUser(username string, deleteData bool) (string, error) {

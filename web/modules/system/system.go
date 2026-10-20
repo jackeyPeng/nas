@@ -2,6 +2,7 @@ package system
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -260,6 +261,50 @@ func getSSHConfig() SSHConfig {
 	return cfg
 }
 
+// validateSSHParams 校验 /api/system/ssh-config POST 参数，防止往 sshd_config
+// 写入换行注入的额外配置行（如 "22\nPermitRootLogin yes"）或越界值。
+// 任一字段非法则整体拒绝，不读写 sshd_config。
+func validateSSHParams(port, permitRootLogin, passwordAuth, maxAuthTries string) error {
+	if port != "" {
+		if !isAllDigits(port) {
+			return fmt.Errorf("port 必须是数字")
+		}
+		p, err := strconv.Atoi(port)
+		if err != nil || p < 1 || p > 65535 {
+			return fmt.Errorf("port 必须在 1-65535 之间")
+		}
+	}
+	if permitRootLogin != "" && permitRootLogin != "yes" && permitRootLogin != "no" {
+		return fmt.Errorf("permit_root_login 必须是 yes 或 no")
+	}
+	if passwordAuth != "" && passwordAuth != "yes" && passwordAuth != "no" {
+		return fmt.Errorf("password_auth 必须是 yes 或 no")
+	}
+	if maxAuthTries != "" {
+		if !isAllDigits(maxAuthTries) {
+			return fmt.Errorf("max_auth_tries 必须是数字")
+		}
+		n, err := strconv.Atoi(maxAuthTries)
+		if err != nil || n < 1 || n > 100 {
+			return fmt.Errorf("max_auth_tries 必须在 1-100 之间")
+		}
+	}
+	return nil
+}
+
+// isAllDigits 判断字符串是否全由 ASCII 数字组成（非空）
+func isAllDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 func handleSSHConfig(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		common.JSONResponse(w, getSSHConfig())
@@ -271,6 +316,11 @@ func handleSSHConfig(w http.ResponseWriter, r *http.Request) {
 		permitRoot := r.FormValue("permit_root_login") // yes/no
 		passwordAuth := r.FormValue("password_auth")   // yes/no
 		maxAuthTries := r.FormValue("max_auth_tries")
+
+		if err := validateSSHParams(port, permitRoot, passwordAuth, maxAuthTries); err != nil {
+			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
+			return
+		}
 
 		// Read current config
 		data, _ := os.ReadFile("/etc/ssh/sshd_config")
@@ -592,10 +642,7 @@ func handleServices(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Whitelist services
-		allowed := map[string]bool{
-			"smbd": true, "nmbd": true, "vsftpd": true, "nfs-server": true,
-			"nas-panel": true, "fail2ban": true, "cron": true, "ssh": true,
-		}
+		allowed := common.AllowedManagedServices()
 		if !allowed[name] {
 			http.Error(w, `{"error":"不允许操作此服务"}`, http.StatusForbidden)
 			return
@@ -911,7 +958,27 @@ func getDataDiskDevices() []string {
 // 系统配置检查 API
 // ═══════════════════════════════════════
 
+// checkAccessAllowed 判断 /api/system/check 请求是否允许访问。
+// 路由保持公开注册（安装脚本用 localhost curl 调用，不携带 token），
+// 但非本机来源必须携带有效 JWT，否则拒绝——避免整个系统配置检查结果
+// （服务状态、注册表详情等）对公网/局域网匿名暴露。
+// 故意不使用 X-Forwarded-For 判定来源：该头可由客户端任意伪造。
+func checkAccessAllowed(r *http.Request) bool {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		return true
+	}
+	return common.ValidTokenFromRequest(r)
+}
+
 func handleSystemCheck(w http.ResponseWriter, r *http.Request) {
+	if !checkAccessAllowed(r) {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
 	action := r.URL.Query().Get("action")
 	if action == "refresh" {
 		report := RefreshRegistry()

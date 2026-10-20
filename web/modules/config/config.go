@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -115,6 +116,11 @@ func handleSambaShare(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		if err := validateSambaShareFields(path, comment, validUsers); err != nil {
+			http.Error(w, fmt.Sprintf(`{"error": %q}`, err.Error()), http.StatusBadRequest)
+			return
+		}
+
 		shareBlock := fmt.Sprintf("\n[%s]\n", name)
 		if comment != "" {
 			shareBlock += fmt.Sprintf("   comment = %s\n", comment)
@@ -178,6 +184,28 @@ func handleSambaShare(w http.ResponseWriter, r *http.Request) {
 		common.SudoExec("systemctl", "restart", "smbd", "nmbd")
 		common.JSONResponse(w, map[string]interface{}{"message": "共享 " + name + " 已删除"})
 	}
+}
+
+// validateSambaShareFields 校验 path/comment/validUsers 三个字段，
+// 防止拼接进 smb.conf 时通过换行注入额外配置行（如 "root preexec = ..."）。
+func validateSambaShareFields(path, comment, validUsers string) error {
+	for _, f := range []string{path, comment, validUsers} {
+		for _, r := range f {
+			if r == '\n' || r == '\r' || r < 0x20 {
+				return fmt.Errorf("字段不能包含换行或控制字符")
+			}
+		}
+	}
+	if !strings.HasPrefix(path, "/") {
+		return fmt.Errorf("path 必须是绝对路径")
+	}
+	if filepath.Clean(path) != path {
+		return fmt.Errorf("path 格式无效")
+	}
+	if len(comment) > 255 {
+		return fmt.Errorf("comment 长度不能超过 255")
+	}
+	return nil
 }
 
 // parseSambaShares 解析 smb.conf 返回共享列表
@@ -286,6 +314,10 @@ func handleServiceToggle(w http.ResponseWriter, r *http.Request) {
 	action := r.FormValue("action") // enable or disable
 	if svcName == "" || (action != "enable" && action != "disable") {
 		http.Error(w, `{"error": "service and action(enable/disable) required"}`, http.StatusBadRequest)
+		return
+	}
+	if !common.AllowedManagedServices()[svcName] {
+		http.Error(w, `{"error": "不允许操作此服务"}`, http.StatusBadRequest)
 		return
 	}
 	out, err := common.SudoExec("systemctl", action, svcName)

@@ -57,6 +57,29 @@ func TestSudoOutput_Df(t *testing.T) {
 	t.Logf("df output: %s", out)
 }
 
+func TestSudoExecStdin_Cat(t *testing.T) {
+	// 用 cat 验证 stdin 透传；无需真 sudo 语义，仅确认管道正确接线
+	out, err := SudoExecStdin("hello-stdin", "cat")
+	if err != nil {
+		t.Skipf("sudo 不可用，跳过测试: %v", err)
+	}
+	if out != "hello-stdin" {
+		t.Errorf("SudoExecStdin() = %q, want %q", out, "hello-stdin")
+	}
+}
+
+func TestSudoExecStdin_MultiLine(t *testing.T) {
+	// chpasswd 等命令会收到 "user:pass\n" 这类多行输入，确认换行不被截断
+	out, err := SudoExecStdin("line1\nline2\n", "cat")
+	if err != nil {
+		t.Skipf("sudo 不可用，跳过测试: %v", err)
+	}
+	want := "line1\nline2"
+	if out != want {
+		t.Errorf("SudoExecStdin() = %q, want %q", out, want)
+	}
+}
+
 func TestExec_Echo(t *testing.T) {
 	out, err := Exec("echo", "test-no-sudo")
 	if err != nil {

@@ -8,9 +8,11 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"nas-panel/common"
 	"nas-panel/modules/backup"
@@ -42,6 +44,20 @@ var (
 	nasUser    string
 	listenAddr = ":8090"
 )
+
+// loginLimiter 对 /api/login（含 TOTP 校验）做按 IP 的失败锁定，缓解暴力破解。
+// 5 次连续失败锁定 15 分钟。
+var loginLimiter = common.NewLoginLimiter(5, 15*time.Minute, nil)
+
+// loginRequestIP 提取客户端 IP 用于登录限流判定。
+// 故意不走 common.RequestIP（会信任 X-Forwarded-For，可被客户端伪造绕过限流）。
+func loginRequestIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
+}
 
 // 出厂默认账号与初始密码（首次登录后强制修改）
 const (
@@ -335,6 +351,13 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ip := loginRequestIP(r)
+	if allowed, retryAfter := loginLimiter.Allow(ip); !allowed {
+		http.Error(w, fmt.Sprintf(`{"error": "失败次数过多，请稍后重试", "retry_after": %d}`, retryAfter),
+			http.StatusTooManyRequests)
+		return
+	}
+
 	username := r.FormValue("username")
 	password := r.FormValue("password")
 
@@ -342,6 +365,7 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	userMatch := subtle.ConstantTimeCompare([]byte(username), []byte(nasUser))
 	passMatch := subtle.ConstantTimeCompare([]byte(password), []byte(common.GetNasPass()))
 	if userMatch != 1 || passMatch != 1 {
+		loginLimiter.Fail(ip)
 		http.Error(w, `{"error": "invalid credentials"}`, http.StatusUnauthorized)
 		return
 	}
@@ -354,10 +378,13 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !system.VerifyLoginTOTP(totp) {
+			loginLimiter.Fail(ip)
 			http.Error(w, `{"error": "验证码错误"}`, http.StatusUnauthorized)
 			return
 		}
 	}
+
+	loginLimiter.Success(ip)
 
 	token, err := common.CreateToken(username)
 	if err != nil {

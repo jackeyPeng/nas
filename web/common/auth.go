@@ -80,19 +80,23 @@ func VerifyToken(tokenStr string) (string, error) {
 // AuthMiddleware checks JWT token
 func AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		auth := r.Header.Get("Authorization")
-		if !strings.HasPrefix(auth, "Bearer ") {
+		if !ValidTokenFromRequest(r) {
 			http.Error(w, `{"error": "unauthorized"}`, http.StatusUnauthorized)
 			return
 		}
-
-		tokenStr := strings.TrimPrefix(auth, "Bearer ")
-		_, err := VerifyToken(tokenStr)
-		if err != nil {
-			http.Error(w, `{"error": "invalid token"}`, http.StatusUnauthorized)
-			return
-		}
-
 		next(w, r)
 	}
+}
+
+// ValidTokenFromRequest 校验请求 Authorization: Bearer <JWT> 头，返回 token 是否有效。
+// 供需要在非 AuthMiddleware 包裹的 handler 内复用同一校验逻辑的场景调用
+// （如 /api/system/check 这类公开路由内部的分支放行判断）。
+func ValidTokenFromRequest(r *http.Request) bool {
+	auth := r.Header.Get("Authorization")
+	if !strings.HasPrefix(auth, "Bearer ") {
+		return false
+	}
+	tokenStr := strings.TrimPrefix(auth, "Bearer ")
+	_, err := VerifyToken(tokenStr)
+	return err == nil
 }

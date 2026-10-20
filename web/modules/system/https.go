@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -33,6 +34,17 @@ const (
 	certFile = "/etc/nas/certs/server.crt"
 	keyFile  = "/etc/nas/certs/server.key"
 )
+
+// certDomainRe 允许 hostname.local / FQDN / IPv4，拒绝引号、$、()、;、空格、换行、/ 等特殊字符
+var certDomainRe = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9_-]*(\.[a-zA-Z0-9_-]+)*)?$`)
+
+// validateCertDomain 校验 openssl -subj "/CN=<domain>" 里拼接的域名，防止命令注入
+func validateCertDomain(domain string) bool {
+	if len(domain) < 1 || len(domain) > 253 {
+		return false
+	}
+	return certDomainRe.MatchString(domain)
+}
 
 // ═══════════════════════════════════════
 // HTTPS 证书状态
@@ -156,17 +168,17 @@ func handleHTTPSGenerate(w http.ResponseWriter, r *http.Request) {
 		// Auto-detect: use hostname + .local
 		hostname, _ := os.Hostname()
 		domain = hostname + ".local"
+	} else if !validateCertDomain(domain) {
+		http.Error(w, `{"error":"域名格式无效"}`, http.StatusBadRequest)
+		return
 	}
 
 	// Create cert directory
 	common.SudoExec("mkdir", "-p", certDir)
 
 	// Generate self-signed certificate (valid 10 years)
-	script := fmt.Sprintf(
-		`openssl req -x509 -newkey rsa:2048 -keyout %s -out %s -days 3650 -nodes -subj "/CN=%s" 2>&1`,
-		keyFile, certFile, domain,
-	)
-	out, err := common.SudoExec("bash", "-c", script)
+	out, err := common.SudoExec("openssl", "req", "-x509", "-newkey", "rsa:2048",
+		"-keyout", keyFile, "-out", certFile, "-days", "3650", "-nodes", "-subj", "/CN="+domain)
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":"证书生成失败: %s"}`, out), http.StatusInternalServerError)
 		return
@@ -198,6 +210,10 @@ func handleHTTPSUpload(w http.ResponseWriter, r *http.Request) {
 
 	if domain == "" || certPEM == "" || keyPEM == "" {
 		http.Error(w, `{"error":"请提供 domain, cert, key 三个参数"}`, http.StatusBadRequest)
+		return
+	}
+	if !validateCertDomain(domain) {
+		http.Error(w, `{"error":"域名格式无效"}`, http.StatusBadRequest)
 		return
 	}
 

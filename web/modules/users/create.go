@@ -90,7 +90,7 @@ func handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	// Set password
-	out, err = common.SudoExec("sh", "-c", fmt.Sprintf("echo '%s:%s' | chpasswd", req.Username, req.Password))
+	out, err = common.SudoExecStdin(req.Username+":"+req.Password+"\n", "chpasswd")
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":"设置密码失败: %s"}`, out+": "+err.Error()), http.StatusInternalServerError)
 		return

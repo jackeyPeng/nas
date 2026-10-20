@@ -6,12 +6,34 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
 	"nas-panel/common"
 )
+
+const backupDirPrefix = "/opt/nas/backups/"
+
+// validateBackupPath 校验备份文件路径，防止目录穿越（如 ../../ 逃出 backups 目录）
+// 或通过双斜杠等未归一化输入绕过前缀/后缀检查。返回归一化后的路径与是否合法。
+func validateBackupPath(p string) (string, bool) {
+	clean := filepath.Clean(p)
+	if clean != p {
+		return "", false
+	}
+	if !strings.HasPrefix(clean, backupDirPrefix) {
+		return "", false
+	}
+	if !strings.HasSuffix(clean, ".tar.gz") {
+		return "", false
+	}
+	if clean == backupDirPrefix {
+		return "", false
+	}
+	return clean, true
+}
 
 func RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/backup/list", common.AuthMiddleware(handleBackupList))
@@ -107,7 +129,8 @@ func handleBackupRestore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Safety: only allow files in /opt/nas/backups/
-	if !strings.HasPrefix(backupFile, "/opt/nas/backups/") || !strings.HasSuffix(backupFile, ".tar.gz") {
+	backupFile, ok := validateBackupPath(backupFile)
+	if !ok {
 		http.Error(w, `{"error": "invalid backup file path"}`, http.StatusBadRequest)
 		return
 	}
@@ -142,7 +165,8 @@ func handleBackupDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Safety check
-	if !strings.HasPrefix(file, "/opt/nas/backups/") || !strings.HasSuffix(file, ".tar.gz") {
+	file, ok := validateBackupPath(file)
+	if !ok {
 		http.Error(w, `{"error": "invalid file path"}`, http.StatusBadRequest)
 		return
 	}
