@@ -635,6 +635,40 @@ func getServiceList() []ServiceInfo {
 	return result
 }
 
+// serviceActionText 是 systemctl 动作到中文提示文案的映射，供 handleServices
+// 与 export.go 的 RestartService 共用（机械抽取时原样保留，不复制一份）。
+var serviceActionText = map[string]string{
+	"start": "启动", "stop": "停止", "restart": "重启",
+	"enable": "启用自启", "disable": "禁用自启",
+}
+
+// serviceAllowedActions 是 systemctl 动作白名单，供 handleServices 与
+// export.go 共用。
+var serviceAllowedActions = map[string]bool{
+	"start": true, "stop": true, "restart": true, "enable": true, "disable": true,
+}
+
+// performServiceAction 是 handleServices POST 分支的内核：服务名+动作白名单
+// 校验 → systemctl 执行 → 成功文案。从 handleServices 机械抽取（行为不变），
+// 供 AI 工具域（restart_service）等进程内调用方直接复用，不走 HTTP 自环。
+func performServiceAction(name, action string) (string, error) {
+	if name == "" || action == "" {
+		return "", fmt.Errorf("name and action required")
+	}
+	allowed := common.AllowedManagedServices()
+	if !allowed[name] {
+		return "", fmt.Errorf("不允许操作此服务")
+	}
+	if !serviceAllowedActions[action] {
+		return "", fmt.Errorf("无效操作")
+	}
+	out, err := common.SudoExec("systemctl", action, name)
+	if err != nil {
+		return "", fmt.Errorf("%s", out+": "+err.Error())
+	}
+	return fmt.Sprintf("服务 %s 已%s", name, serviceActionText[action]), nil
+}
+
 func handleServices(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		common.JSONResponse(w, map[string]interface{}{
@@ -646,40 +680,21 @@ func handleServices(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
 		name := r.FormValue("name")
 		action := r.FormValue("action") // start, stop, restart, enable, disable
-		if name == "" || action == "" {
-			http.Error(w, `{"error":"name and action required"}`, http.StatusBadRequest)
-			return
-		}
-
-		// Whitelist services
-		allowed := common.AllowedManagedServices()
-		if !allowed[name] {
-			http.Error(w, `{"error":"不允许操作此服务"}`, http.StatusForbidden)
-			return
-		}
-
-		// Whitelist actions
-		allowedActions := map[string]bool{
-			"start": true, "stop": true, "restart": true, "enable": true, "disable": true,
-		}
-		if !allowedActions[action] {
-			http.Error(w, `{"error":"无效操作"}`, http.StatusBadRequest)
-			return
-		}
-
-		out, err := common.SudoExec("systemctl", action, name)
+		message, err := performServiceAction(name, action)
 		if err != nil {
-			http.Error(w, fmt.Sprintf(`{"error":%q}`, out+": "+err.Error()), http.StatusInternalServerError)
+			switch err.Error() {
+			case "name and action required":
+				http.Error(w, `{"error":"name and action required"}`, http.StatusBadRequest)
+			case "不允许操作此服务":
+				http.Error(w, `{"error":"不允许操作此服务"}`, http.StatusForbidden)
+			case "无效操作":
+				http.Error(w, `{"error":"无效操作"}`, http.StatusBadRequest)
+			default:
+				http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
+			}
 			return
 		}
-
-		actionText := map[string]string{
-			"start": "启动", "stop": "停止", "restart": "重启",
-			"enable": "启用自启", "disable": "禁用自启",
-		}
-		common.JSONResponse(w, map[string]interface{}{
-			"message": fmt.Sprintf("服务 %s 已%s", name, actionText[action]),
-		})
+		common.JSONResponse(w, map[string]interface{}{"message": message})
 		return
 	}
 

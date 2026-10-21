@@ -157,21 +157,21 @@ func buildAddRuleArgs(port, proto, action, from, comment string) []string {
 	return args
 }
 
-func handleAddRule(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
-	port := strings.TrimSpace(r.FormValue("port"))
-	proto := strings.TrimSpace(r.FormValue("proto"))
-	action := strings.TrimSpace(r.FormValue("action"))
-	from := strings.TrimSpace(r.FormValue("from"))
-	comment := strings.TrimSpace(r.FormValue("comment"))
+// addRuleKernel 是 handleAddRule 的内核：校验 + buildAddRuleArgs + ufw 执行 +
+// 事件广播，从 handleAddRule 机械抽取（行为不变），供 AI 工具域
+// （add_firewall_rule）等进程内调用方直接复用，不走 HTTP 自环。
+func addRuleKernel(port, proto, action, from, comment string) (string, error) {
+	port = strings.TrimSpace(port)
+	proto = strings.TrimSpace(proto)
+	action = strings.TrimSpace(action)
+	from = strings.TrimSpace(from)
+	comment = strings.TrimSpace(comment)
 
 	if port == "" {
-		http.Error(w, `{"error":"端口号必填"}`, http.StatusBadRequest)
-		return
+		return "", fmt.Errorf("端口号必填")
 	}
 	if !portRe.MatchString(port) {
-		http.Error(w, `{"error":"端口格式无效，支持单端口(22)或范围(30000:31000)"}`, http.StatusBadRequest)
-		return
+		return "", fmt.Errorf("端口格式无效，支持单端口(22)或范围(30000:31000)")
 	}
 	if proto != "tcp" && proto != "udp" && proto != "any" {
 		proto = "tcp"
@@ -180,23 +180,37 @@ func handleAddRule(w http.ResponseWriter, r *http.Request) {
 		action = "allow"
 	}
 	if from != "" && from != "any" && !ipRe.MatchString(from) {
-		http.Error(w, `{"error":"来源 IP 格式无效"}`, http.StatusBadRequest)
-		return
+		return "", fmt.Errorf("来源 IP 格式无效")
 	}
 
 	args := buildAddRuleArgs(port, proto, action, from, comment)
 
 	out, err := common.SudoExec("ufw", args...)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":%q}`, strings.TrimSpace(out)), http.StatusInternalServerError)
-		return
+		return "", fmt.Errorf("%s", strings.TrimSpace(out))
 	}
 	common.EmitEvent("firewall", common.EventWarn, "firewall.rule_added",
 		map[string]interface{}{"action": action, "port": port, "proto": proto, "from": from},
 		comment)
-	common.JSONResponse(w, map[string]interface{}{
-		"message": fmt.Sprintf("规则已添加: %s %s/%s", map[string]string{"allow": "允许", "deny": "拒绝"}[action], port, proto),
-	})
+	return fmt.Sprintf("规则已添加: %s %s/%s", map[string]string{"allow": "允许", "deny": "拒绝"}[action], port, proto), nil
+}
+
+func handleAddRule(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	message, err := addRuleKernel(
+		r.FormValue("port"), r.FormValue("proto"), r.FormValue("action"),
+		r.FormValue("from"), r.FormValue("comment"),
+	)
+	if err != nil {
+		switch err.Error() {
+		case "端口号必填", "端口格式无效，支持单端口(22)或范围(30000:31000)", "来源 IP 格式无效":
+			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
+		default:
+			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
+		}
+		return
+	}
+	common.JSONResponse(w, map[string]interface{}{"message": message})
 }
 
 func handleDeleteRule(w http.ResponseWriter, r *http.Request) {

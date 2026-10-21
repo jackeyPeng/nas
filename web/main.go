@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"nas-panel/common"
+	"nas-panel/modules/ai"
 	"nas-panel/modules/backup"
 	"nas-panel/modules/config"
 	"nas-panel/modules/dashboard"
@@ -154,6 +155,7 @@ func main() {
 	hardware.RegisterRoutes(mux)
 	events.RegisterRoutes(mux)
 	filemgmt.RegisterRoutes(mux)
+	ai.RegisterRoutes(mux)
 
 	// Serve frontend
 	frontendRoot, _ := fs.Sub(frontendFS, "frontend")

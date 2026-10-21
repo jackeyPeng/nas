@@ -125,3 +125,4 @@ cython_debug/
 nas-panel
 coverage.out
 build/
+tmp/

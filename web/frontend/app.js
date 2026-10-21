@@ -337,9 +337,31 @@ function nasPanel() {
         userWizardShares: [],
         toast: { show: false, msg: '', type: 'success' },
 
+        // AI 助手
+        aiStatus: { enabled: false, configured: false, model: '', preset: '' },
+        aiTab: 'chat',
+        aiConfigForm: { preset: 'deepseek', base_url: '', api_key: '', model: '' },
+        aiTesting: false,
+        aiConversations: [],
+        aiConversationId: '',
+        aiMessages: [],
+        aiInput: '',
+        aiThinking: false,
+        // 写操作确认门：pendingAction 来自某条 assistant 消息的 pendingAction 字段
+        // （见 handleAISSEEvent），confirmWordInput 是用户在弹窗里敲的确认词，
+        // genPassword 是 create_user 专用的一次性生成密码（只在本次会话内存里，
+        // 确认成功/取消/弹窗关闭都要清空，绝不进 aiMessages/任何持久化状态）。
+        aiConfirm: { show: false, action: null, confirmWordInput: '', genPassword: '', submitting: false },
+
         init() {
             if (this.token) {
                 this.navigate('dashboard');
+            }
+            // AI 助手入口显隐取决于 enabled：应用启动时拉一次状态（未登录时 token 为空，
+            // api() 会带上空 Authorization，后端 AuthMiddleware 会拒绝——这里跟随登录态，
+            // 登录后 navigate('dashboard') 不会主动加载 ai 状态，所以在 init 里单独拉一次）。
+            if (this.token) {
+                this.loadAIStatus();
             }
             // Listen for i18n changes
             window.addEventListener('i18n:changed', (e) => {
@@ -614,6 +636,7 @@ function nasPanel() {
                 case 'backup': this.loadBackups(); break;
                 case 'vault': this.vaultOnEnter(); break;
                 case 'pwgen': this.pwgenOnEnter(); break;
+                case 'ai': this.loadAIStatus(); this.loadAIConversations(); break;
                 case 'rclone': this.loadRcloneStatus(); this.loadRcloneRemotes(); this.loadRcloneTasks().then(() => { if (this.rcloneRunningTasks.length) this.startRcloneProgressPolling(); }); this.loadRcloneLogs(); this.loadSharedDirs(); break;
                 case 'logs': this.loadAuditLogs(); break;
                 case 'events': this.loadEvents(); this.loadEventStats(); break;
@@ -3482,6 +3505,331 @@ function nasPanel() {
             } catch (e) {
                 this.showToast(this.t('msg.network_error'), 'error');
             }
+        },
+
+        // ═══ AI 助手：设置/开关/导航入口 ═══
+
+        // GET /api/ai/status 是唯一免 enabled 守卫的端点，驱动导航入口显隐；
+        // 应用启动（已登录）与每次进 ai 页都会调用。
+        async loadAIStatus() {
+            const data = await this.api('/ai/status');
+            if (data && typeof data === 'object' && data.enabled !== undefined) {
+                this.aiStatus = data;
+                // 配置表单首次回显：仅在已启用（GET /api/ai/config 有 enabled 守卫）时拉取，
+                // 未启用时表单保持用户当前输入，不强行清空。
+                if (data.enabled) this.loadAIConfig();
+            }
+        },
+
+        // GET /api/ai/config 需要功能已开启（requireEnabled）；未开启时不会被调用到
+        // （loadAIStatus 已做分支），这里只处理已启用场景的回显。
+        async loadAIConfig() {
+            const data = await this.api('/ai/config');
+            if (data && typeof data === 'object' && data.base_url !== undefined) {
+                this.aiConfigForm = {
+                    preset: data.preset || 'deepseek',
+                    base_url: data.base_url || '',
+                    api_key: '',
+                    model: data.model || ''
+                };
+            }
+        },
+
+        // 预设联动：deepseek 填云端端点，ollama 填本地端点并禁用/清空 key 输入。
+        applyAIPreset(preset) {
+            if (preset === 'ollama') {
+                this.aiConfigForm.base_url = 'http://localhost:11434/v1';
+                this.aiConfigForm.model = 'qwen3:32b';
+                this.aiConfigForm.api_key = '';
+            } else if (preset === 'deepseek') {
+                this.aiConfigForm.base_url = 'https://api.deepseek.com/v1';
+                this.aiConfigForm.model = 'deepseek-chat';
+            }
+        },
+
+        // POST /api/ai/config：保存端点/key/model。
+        // 注意：该端点同样挂了 requireEnabled——功能未开启时保存会收到 403，
+        // 这是后端当前的既有行为（T1/T2 遗留），不在本轮前端范围内变更；
+        // api() 已经会把 403 的 error 文案 toast 出来，这里不用额外特殊处理。
+        async saveAIConfig() {
+            const data = await this.api('/ai/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(this.aiConfigForm)
+            });
+            if (data && typeof data === 'object' && data.base_url !== undefined) {
+                this.showToast(this.t('ai.save_ok'), 'success');
+                this.aiConfigForm.api_key = '';
+            }
+        },
+
+        // POST /api/ai/test-connection：无需请求体，测的是服务端已保存的配置
+        // （不是表单里尚未保存的值）——先保存再测试才有意义，这里先保存一次。
+        async testAIConnection() {
+            this.aiTesting = true;
+            try {
+                await this.saveAIConfig();
+                const data = await this.api('/ai/test-connection', { method: 'POST' });
+                if (data && typeof data === 'object' && data.ok) {
+                    this.showToast(this.t('ai.test_ok'), 'success');
+                    await this.loadAIStatus();
+                }
+            } finally {
+                this.aiTesting = false;
+            }
+        },
+
+        // POST /api/ai/toggle：开关本身不受 enabled 守卫限制。
+        async toggleAI(enabled) {
+            const data = await this.api('/ai/toggle', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled })
+            });
+            if (data && typeof data === 'object' && data.enabled !== undefined) {
+                this.aiStatus.enabled = data.enabled;
+                if (!data.enabled) this.showToast(this.t('ai.turn_off'), 'success');
+                else { this.showToast(this.t('ai.enabled'), 'success'); this.loadAIStatus(); }
+            }
+            // 失败（如未配置/未验证）时 api() 已经把后端中文原因 toast 出来。
+        },
+
+        // ═══ AI 助手：聊天页 SSE 消费 + 会话列表 ═══
+
+        async loadAIConversations() {
+            const data = await this.api('/ai/conversations');
+            if (data && typeof data === 'object' && data.conversations !== undefined) {
+                this.aiConversations = data.conversations || [];
+            }
+        },
+
+        newAIConversation() {
+            this.aiConversationId = '';
+            this.aiMessages = [];
+            this.aiInput = '';
+        },
+
+        async loadAIConversation(convID) {
+            const data = await this.api('/ai/conversations/' + encodeURIComponent(convID));
+            if (data && typeof data === 'object' && data.messages !== undefined) {
+                this.aiConversationId = convID;
+                // 落库消息只有 role/content（工具轨迹/pending_action 是会话内即时事件产物，
+                // 历史回放不还原这些临时 UI 态——与 role=tool 的内部回填消息一起过滤掉，
+                // 只展示用户可见的 user/assistant 对话）。
+                this.aiMessages = (data.messages || [])
+                    .filter(m => m.role === 'user' || m.role === 'assistant')
+                    .map(m => ({ role: m.role, content: m.content, toolTrace: [] }));
+            }
+        },
+
+        // POST /api/ai/chat（Accept: text/event-stream），对齐 resetStorage() 的
+        // fetch + getReader SSE 消费模式。delta 增量拼接进最后一条 assistant 消息；
+        // tool_call/tool_result 渲染为该消息内的折叠小条目；pending_action 本轮只
+        // 渲染只读信息卡（ai.pending_hint 占位文案，确认交互 R5 接入）。
+        async sendAIMessage() {
+            const message = this.aiInput.trim();
+            if (!message || this.aiThinking) return;
+            this.aiInput = '';
+            this.aiMessages.push({ role: 'user', content: message, toolTrace: [] });
+            const assistantMsg = { role: 'assistant', content: '', toolTrace: [], pendingAction: null, error: '' };
+            this.aiMessages.push(assistantMsg);
+            this.aiThinking = true;
+
+            try {
+                const resp = await fetch('/api/ai/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer ' + this.token,
+                        'Content-Type': 'application/json',
+                        'Accept': 'text/event-stream'
+                    },
+                    body: JSON.stringify({ conversation_id: this.aiConversationId, message })
+                });
+                if (!resp.ok || !resp.body) {
+                    assistantMsg.error = this.t('ai.error_prefix') + ': HTTP ' + resp.status;
+                    this.showToast(assistantMsg.error, 'error');
+                    return;
+                }
+                const reader = resp.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop();
+                    for (const line of lines) {
+                        if (!line.startsWith('data: ')) continue;
+                        let ev;
+                        try { ev = JSON.parse(line.slice(6)); } catch (e) { continue; }
+                        this.handleAISSEEvent(ev, assistantMsg);
+                    }
+                }
+            } catch (e) {
+                assistantMsg.error = this.t('ai.error_prefix') + ': ' + e.message;
+                this.showToast(assistantMsg.error, 'error');
+            } finally {
+                this.aiThinking = false;
+            }
+        },
+
+        // 事件协议（web/modules/ai/chat.go sseEvent）：
+        //   delta          {type,text}              → 增量拼接进当前 assistant 消息
+        //   tool_call      {type,name,args_digest}  → 追加折叠条目（🔧 名称 + digest）
+        //   tool_result    {type,name,digest}       → 补全同名条目的 digest（结果摘要）
+        //   pending_action {type,...PendingAction}  → 本轮只渲染只读信息卡
+        //   done           {type,conversation_id}   → 记录会话 ID、刷新会话列表
+        //   error          {type,message}           → toast + 消息内红条
+        handleAISSEEvent(ev, assistantMsg) {
+            switch (ev.type) {
+                case 'delta':
+                    assistantMsg.content += ev.text || '';
+                    break;
+                case 'tool_call':
+                    assistantMsg.toolTrace.push({ name: ev.name, digest: ev.args_digest || '' });
+                    break;
+                case 'tool_result': {
+                    const entry = assistantMsg.toolTrace.find(t => t.name === ev.name && !t.resultApplied);
+                    if (entry) {
+                        entry.digest = ev.digest || entry.digest;
+                        entry.resultApplied = true;
+                    } else {
+                        assistantMsg.toolTrace.push({ name: ev.name, digest: ev.digest || '' });
+                    }
+                    break;
+                }
+                case 'pending_action':
+                    assistantMsg.pendingAction = {
+                        id: ev.id, tool_name: ev.tool_name, args_json: ev.args_json,
+                        summary: ev.summary, confirm_word: ev.confirm_word
+                    };
+                    this.openAIActionConfirm(assistantMsg.pendingAction);
+                    break;
+                case 'done':
+                    this.aiConversationId = ev.conversation_id || this.aiConversationId;
+                    this.loadAIConversations();
+                    break;
+                case 'error':
+                    assistantMsg.error = ev.message || this.t('ai.error_prefix');
+                    this.showToast(assistantMsg.error, 'error');
+                    break;
+            }
+        },
+
+        // ═══ AI 写操作确认门（type-to-confirm）═══
+        // openAIActionConfirm 打开弹窗：confirmWordInput/genPassword 每次重新打开
+        // 都清空，不continu上一次残留（尤其密码——绝不允许旧密码跨操作卡复用）。
+        openAIActionConfirm(action) {
+            if (!action || action.resolved) return;
+            this.aiConfirm = { show: true, action, confirmWordInput: '', genPassword: '', submitting: false };
+        },
+        closeAIActionConfirm() {
+            this.aiConfirm = { show: false, action: null, confirmWordInput: '', genPassword: '', submitting: false };
+        },
+        // aiActionIsCreateUser 供弹窗模板判断是否渲染密码生成器区块。
+        aiActionIsCreateUser() {
+            return !!(this.aiConfirm.action && this.aiConfirm.action.tool_name === 'create_user');
+        },
+        // aiGenPassword 用独立的随机源生成一次性密码，不读取/不污染工具箱密码
+        // 生成器页面的 this.pwgen 状态（两个生成器互不相关，各自独立成池）。
+        // 字符池固定四类全开、20 位，强度足够且不需要用户再做选择。
+        aiGenPassword() {
+            const upper = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+            const lower = 'abcdefghijklmnopqrstuvwxyz';
+            const digits = '0123456789';
+            const symbols = '!@#$%^&*()-_=+[]{}<>?';
+            const groups = [upper, lower, digits, symbols];
+            const length = 20;
+            const all = groups.join('');
+            const randInt = (max) => {
+                if (max <= 1) return 0;
+                const limit = Math.floor(0x100000000 / max) * max;
+                const buf = new Uint32Array(1);
+                let x;
+                do { crypto.getRandomValues(buf); x = buf[0]; } while (x >= limit);
+                return x % max;
+            };
+            const chars = [];
+            for (const g of groups) chars.push(g[randInt(g.length)]);
+            while (chars.length < length) chars.push(all[randInt(all.length)]);
+            for (let i = chars.length - 1; i > 0; i--) {
+                const j = randInt(i + 1);
+                [chars[i], chars[j]] = [chars[j], chars[i]];
+            }
+            this.aiConfirm.genPassword = chars.slice(0, length).join('');
+        },
+        async aiCopyGenPassword() {
+            if (!this.aiConfirm.genPassword) return;
+            try {
+                await navigator.clipboard.writeText(this.aiConfirm.genPassword);
+                this.showToast(this.t('msg.vault_copied'), 'success');
+            } catch (e) {
+                this.showToast(String(e.message || e), 'error');
+            }
+        },
+        // aiConfirmDisabled 是确认按钮的函数级守卫（不是只靠 :disabled 挡 UI——
+        // confirmAIAction 开头也会再次调用它 return，双重防线防止绕过按钮直接
+        // 触发事件）：确认词必须逐字匹配服务端下发的 confirm_word；create_user
+        // 还要求已经生成过密码（否则确认请求必然 502）。
+        aiConfirmDisabled() {
+            const action = this.aiConfirm.action;
+            if (!action) return true;
+            if (this.aiConfirm.submitting) return true;
+            if (this.aiConfirm.confirmWordInput !== action.confirm_word) return true;
+            if (this.aiActionIsCreateUser() && !this.aiConfirm.genPassword) return true;
+            return false;
+        },
+        async confirmAIAction() {
+            if (this.aiConfirmDisabled()) return;
+            const action = this.aiConfirm.action;
+            this.aiConfirm.submitting = true;
+            try {
+                const body = { action_id: action.id, confirm_word: this.aiConfirm.confirmWordInput };
+                if (this.aiActionIsCreateUser()) {
+                    body.client_payload = { password: this.aiConfirm.genPassword };
+                }
+                const res = await fetch('/api/ai/action/confirm', {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + this.token, 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    this.showToast(data.error || this.t('ai.error_prefix'), 'error');
+                    return;
+                }
+                this.showToast(this.t('msg.op_success'), 'success');
+                // 标记对应消息卡为已执行（绿色态、不可再点，防重复确认 410）
+                const doneMsg = [...this.aiMessages].reverse().find(x => x.pendingAction && x.pendingAction.id === action.id);
+                if (doneMsg) doneMsg.pendingAction = Object.assign({}, doneMsg.pendingAction, { resolved: true });
+                this.closeAIActionConfirm();
+            } catch (e) {
+                this.showToast(String(e.message || e), 'error');
+            } finally {
+                this.aiConfirm.submitting = false;
+            }
+        },
+        async cancelAIAction() {
+            const action = this.aiConfirm.action;
+            if (!action) { this.closeAIActionConfirm(); return; }
+            try {
+                await fetch('/api/ai/action/cancel', {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + this.token, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action_id: action.id })
+                });
+            } catch (e) {
+                // 取消失败也不阻塞关闭弹窗——TTL 到了服务端自然视为不存在。
+            }
+            this.closeAIActionConfirm();
+        },
+        // aiActionSummaryKey 把工具名映射到 i18n 摘要文案 key，服务端已经生成
+        // 了中文 summary（pendingActionSummary），这里的 key 仅用于弹窗标题下方
+        // 的"将执行以下操作"类型标签，不是复述服务端 summary 本身。
+        aiActionSummaryKey(toolName) {
+            const known = ['set_user_quota', 'create_user', 'add_firewall_rule', 'restart_service', 'run_diagnostics', 'create_folder'];
+            return known.includes(toolName) ? ('ai.action_summary_' + toolName) : 'ai.action_summary_default';
         },
 
         // 面板更新（OTA 签名校验）
