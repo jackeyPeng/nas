@@ -3633,6 +3633,10 @@ function nasPanel() {
             this.aiMessages.push({ role: 'user', content: message, toolTrace: [] });
             const assistantMsg = { role: 'assistant', content: '', toolTrace: [], pendingAction: null, error: '' };
             this.aiMessages.push(assistantMsg);
+            // Alpine 响应式关键修复：push 后从数组取回 proxy 引用，SSE 事件的全部
+            // 变更必须走 liveMsg——写 push 前的裸对象不会触发视图更新（症状：数据层
+            // content/toolTrace 都对，但助手气泡永远空白、工具轨迹不渲染）。
+            const liveMsg = this.aiMessages[this.aiMessages.length - 1];
             this.aiThinking = true;
 
             try {
@@ -3646,8 +3650,8 @@ function nasPanel() {
                     body: JSON.stringify({ conversation_id: this.aiConversationId, message })
                 });
                 if (!resp.ok || !resp.body) {
-                    assistantMsg.error = this.t('ai.error_prefix') + ': HTTP ' + resp.status;
-                    this.showToast(assistantMsg.error, 'error');
+                    liveMsg.error = this.t('ai.error_prefix') + ': HTTP ' + resp.status;
+                    this.showToast(liveMsg.error, 'error');
                     return;
                 }
                 const reader = resp.body.getReader();
@@ -3663,12 +3667,12 @@ function nasPanel() {
                         if (!line.startsWith('data: ')) continue;
                         let ev;
                         try { ev = JSON.parse(line.slice(6)); } catch (e) { continue; }
-                        this.handleAISSEEvent(ev, assistantMsg);
+                        this.handleAISSEEvent(ev, liveMsg);
                     }
                 }
             } catch (e) {
-                assistantMsg.error = this.t('ai.error_prefix') + ': ' + e.message;
-                this.showToast(assistantMsg.error, 'error');
+                liveMsg.error = this.t('ai.error_prefix') + ': ' + e.message;
+                this.showToast(liveMsg.error, 'error');
             } finally {
                 this.aiThinking = false;
             }
