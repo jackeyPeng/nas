@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -75,17 +76,14 @@ func historyToChatMessages(stored []StoredMessage) []ChatMessage {
 	return out
 }
 
-// handleChat：POST /api/ai/chat。本 Task（T6）只实现非流式分支——返回
-// 一次性 JSON {conversation_id, reply, tool_trace, pending_action}。
-// SSE 流式分支（Accept: text/event-stream）在 Task 7 接入，按 Accept 头分流。
+// handleChat：POST /api/ai/chat。按 Accept: text/event-stream 分两支：
+// 非流式（T6）返回一次性 JSON；SSE 流式（T7）逐事件推送，见 handleChatSSE。
 func handleChat(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
 		return
 	}
 
-	// 进 handler 即审计：GET/POST 都要显式记（SSE 流式分支同样靠这行覆盖，
-	// 不依赖全局中间件——那个只审计非 GET，SSE 本身就是 GET 触发的变体场景）。
 	var req chatRequestBody
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		common.LogAuditRequest(r, "AI", "AI对话", "请求体非法", "failed")
@@ -103,10 +101,17 @@ func handleChat(w http.ResponseWriter, r *http.Request) {
 	if convID == "" {
 		convID = newConversationID()
 	}
+	// 进 handler 即审计：GET/POST 都要显式记（SSE 本身是 POST 触发，但同样
+	// 走这里——不依赖全局中间件，因为中间件只审非 GET，而且这里需要富 detail）。
 	common.LogAuditRequest(r, "AI", "AI对话", "conv="+convID, "pending")
 
 	if err := EnsureConversation(convID); err != nil {
 		http.Error(w, `{"error":"会话初始化失败"}`, http.StatusInternalServerError)
+		return
+	}
+
+	if strings.Contains(r.Header.Get("Accept"), "text/event-stream") {
+		handleChatSSE(w, r, convID, req.Message)
 		return
 	}
 
@@ -163,6 +168,115 @@ func handleChat(w http.ResponseWriter, r *http.Request) {
 		ToolTrace:      result.ToolTrace,
 		PendingAction:  result.PendingAction,
 	})
+}
+
+// sseEvent 是每一行 `data: <json>\n\n` 的通用外壳；Type 决定其余字段的
+// 含义，按计划定义的事件协议逐字段实现：
+//   - delta：{"type":"delta","text":...}
+//   - tool_call：{"type":"tool_call","name":...,"args_digest":...}
+//   - tool_result：{"type":"tool_result","name":...,"digest":...}
+//   - pending_action：{"type":"pending_action", ...PendingAction 全字段}
+//   - done：{"type":"done","conversation_id":...}
+//   - error：{"type":"error","message":...}
+type sseEvent struct {
+	Type           string `json:"type"`
+	Text           string `json:"text,omitempty"`
+	Name           string `json:"name,omitempty"`
+	ArgsDigest     string `json:"args_digest,omitempty"`
+	Digest         string `json:"digest,omitempty"`
+	ConversationID string `json:"conversation_id,omitempty"`
+	Message        string `json:"message,omitempty"`
+
+	// pending_action 事件内联 PendingAction 的全部字段（计划："...PendingAction
+	// 全字段"）；嵌入指针字段让 json.Marshal 把这些字段摊平到顶层，与
+	// delta/tool_call 等事件共享同一个 sseEvent 类型、同一次 json.Marshal
+	// 调用，避免手写两套序列化路径。为 nil 时（绝大多数事件类型）这些字段
+	// 不会出现在输出里。
+	*PendingAction `json:",omitempty"`
+}
+
+// sendSSEEvent 按 "data: <json>\n\n" 格式写一行 SSE 事件并立即 Flush，
+// 对齐 diskmgmt/stream.go 的 sendProgress 模式。
+func sendSSEEvent(w http.ResponseWriter, ev sseEvent) {
+	data, err := json.Marshal(ev)
+	if err != nil {
+		return
+	}
+	fmt.Fprintf(w, "data: %s\n\n", data)
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// handleChatSSE 是 POST /api/ai/chat 的流式分支：RunAgentStream 替代
+// RunAgent，工具执行间隙即时发事件。convID/message 已在 handleChat 校验过
+// （非空、会话已 Ensure），这里只管编排与推流。
+func handleChatSSE(w http.ResponseWriter, r *http.Request, convID, message string) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	cfg := LoadConfig()
+	stored, err := LoadConversation(convID, historyWindow)
+	if err != nil {
+		sendSSEEvent(w, sseEvent{Type: "error", Message: "加载会话历史失败"})
+		return
+	}
+	history := historyToChatMessages(stored)
+
+	username := common.RequestUsername(r)
+	ip := common.RequestIP(r)
+
+	hooks := AgentStreamHooks{
+		OnDelta: func(text string) {
+			sendSSEEvent(w, sseEvent{Type: "delta", Text: text})
+		},
+		OnToolCall: func(name, argsJSON string) {
+			sendSSEEvent(w, sseEvent{Type: "tool_call", Name: name, ArgsDigest: digest(argsJSON)})
+		},
+		OnToolResult: func(name, result string) {
+			sendSSEEvent(w, sseEvent{Type: "tool_result", Name: name, Digest: digest(result)})
+		},
+	}
+
+	result, err := RunAgentStream(r.Context(), cfg, toolRegistry, history, message, hooks)
+	if err != nil {
+		common.LogAuditRequest(r, "AI", "AI对话", "conv="+convID+" error="+err.Error(), "failed")
+		sendSSEEvent(w, sseEvent{Type: "error", Message: "模型调用失败: " + err.Error()})
+		return
+	}
+
+	// 工具调用审计：逐条记录（detail=工具名+脱敏后的参数摘要），数据来源是
+	// RunAgentStream 返回的 ToolTrace（与 SSE tool_call/tool_result 事件
+	// 同一份工具调用记录，不是另外重新收集）。
+	for _, trace := range result.ToolTrace {
+		common.LogAudit(username, "AI_TOOL", "AI", r.URL.Path, sanitizeArgsDigest(trace.Name, trace.ArgsJSON), "success", ip)
+	}
+
+	if err := SaveMessage(convID, "user", message, ""); err != nil {
+		sendSSEEvent(w, sseEvent{Type: "error", Message: "保存消息失败"})
+		return
+	}
+	if err := EnsureTitle(convID, message); err != nil {
+		sendSSEEvent(w, sseEvent{Type: "error", Message: "保存会话标题失败"})
+		return
+	}
+	if err := SaveMessage(convID, "assistant", result.Reply, ""); err != nil {
+		sendSSEEvent(w, sseEvent{Type: "error", Message: "保存回复失败"})
+		return
+	}
+
+	if result.PendingAction != nil {
+		result.PendingAction.ID = newPendingActionID()
+		result.PendingAction.Summary = pendingActionSummary(result.PendingAction.ToolName, result.PendingAction.ArgsJSON)
+		result.PendingAction.ConfirmWord = "执行"
+		result.PendingAction.CreatedAt = nowFunc()
+		defaultPendingStore.Put(*result.PendingAction)
+		sendSSEEvent(w, sseEvent{Type: "pending_action", PendingAction: result.PendingAction})
+	}
+
+	common.LogAuditRequest(r, "AI", "AI对话", "conv="+convID, "success")
+	sendSSEEvent(w, sseEvent{Type: "done", ConversationID: convID})
 }
 
 // handleListConversations：GET /api/ai/conversations，返回最近 20 个会话。
