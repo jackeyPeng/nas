@@ -1,22 +1,10 @@
 # NAS 项目变更日志
 
-## [未发布]
-
-### AI 助手 M2（确认门全链 + 写工具 + 安全测试集）
-
-开发中，分支 `feat/ai-assistant`，尚未合并/发版——以下条目随正式发版转正到「版本变更一览」并归入对应 beta 版本号。
-
-- **确认门全链落地**：`POST /api/ai/action/confirm` / `POST /api/ai/action/cancel` 从占位实现改为真实端点——服务端 `PendingStore`（内存、TTL 5 分钟、一次性 Take）承接写工具请求，参数全程留服务端、不经客户端回传；前端新增 type-to-confirm 确认弹窗（函数级守卫 `aiConfirmDisabled()`，不只靠按钮 `:disabled`）。
-- **6 个写工具上线**：`set_user_quota`（改配额）/ `create_user`（建用户）/ `add_firewall_rule`（加防火墙规则）/ `restart_service`（重启受管服务，Enum 动态取自 `common.AllowedManagedServices()`）/ `run_diagnostics`（跑磁盘自检）/ `create_folder`（建共享文件夹）。全部直调既有模块内核执行（不复制业务逻辑），缺导出内核的模块（users/firewall/system/diagnostics/diskmgmt）按既有模式补 `export.go`。
-- **create_user 密码红线**：工具参数表里没有 `password` 字段，模型给不出密码；初始密码由前端确认框一次性生成器生成，经专用 `client_payload.password` 通道随确认请求送达，服务端 `common.ValidSecret` 校验后注入执行，全程不进入对话上下文、不落入消息数据库、不出现在审计日志详情里。
-- **安全修复（T11 对抗测试发现）**：`users.CreateUserWithPassword` 内核补上用户名白名单校验（此前只有 HTTP 向导 handler 校验，内核本身对 `../etc` 这类用户名没有防线——AI 写工具路径直调内核会绕过 handler 层校验）。
-- **对抗性安全测试集**（`web/modules/ai/security_test.go`）：恶意工具结果注入（工具返回含"忽略之前指令"字样的数据，断言写工具仍只产出待确认卡、不被直接执行）、schema 攻击面（`service` 夹带 shell 元字符被 Enum 拒绝、`username` 路径穿越被白名单拒绝）、API Key 泄漏面（落库消息/审计 detail/SSE 事件全文三处均不含 Key）、开关守卫（关闭态 403、开启态 200）。
-- **文档**：操作清单新增「AI 助手」模块节（10 操作项，统计重算为 64/104/27，合计 195，20 个功能模块）；产品手册新增 11.6 节（定位/开关/隐私权衡/确认门语义）。
-
 ## 版本变更一览
 
 | 版本 | 日期 | 主要变化 |
 |------|------|---------|
+| v1.4.0-beta.28 | 2026-10-21 | AI 助手模块（M1+M2）— 可开关内置功能模块（默认关闭零足迹）：OpenAI 兼容端点接入（DeepSeek/Ollama 预设+连通性测试+Key 0600 存储掩码回显）、NAS 域 15 工具（9 只读+6 写，ToolDomain 抽象+schema 校验，直调既有模块内核）、SSE 流式对话+SQLite 会话历史、写操作 type-to-confirm 确认门（参数服务端留存/一次性 Take/TTL 5 分钟）、create_user 密码前端生成直注（永不进模型上下文/落库/审计）、对抗性安全测试集（注入/schema 攻击/Key 泄漏面/开关守卫）。附验收修复集：删用户补 WebDAV 凭据撤销（被删用户仍能过 rclone 认证）、shell 管道调用点清零、AI 页 Alpine 响应式修复（气泡/工具轨迹不随流式更新）、控制面守卫豁免（关闭态无法存配置）、建池文案按模式报实际用盘数；双机重置用户级全流程验收（RAID1+LVM merge 各 38 项套件+31 项 AI E2E 全 PASS+本机 Chrome UI 实测） |
 | v1.4.0-beta.27 | 2026-10-21 | 运维脚本审计修复 + 收尾 — cleanup.sh 存储拆除段前置到卸载软件包与删 /data 之前（修复 set -e 下 rm 挂载点 busy 即中止、RAID/LVM/软链接全残留的实踩事故；数据目录删除加"仍有挂载即跳过并警告"守卫）；配置备份/恢复补面板数据库整目录（folders.db/vault.db/registry.db/2fa.json/rclone tasks 等）、rclone.conf（root+用户）、/etc/projects+projid——重装恢复不再丢保险箱/云同步/共享元数据/2FA；rclone 升级下载按架构取 deb（arm64 不再必败，R2 已补 arm64 制品）；sudoers 白名单按实测调用面补全并收敛为具体子命令/路径粒度（115 条，拒绝 bash -c/cat */rm -rf * 等 root-equivalent 通配，visudo 校验通过）；仪表盘存储池卡片类型标签不再写死「单盘」（RAID 显示级别、LVM 按盘数区分单盘/合并，双语 i18n） |
 | v1.4.0-beta.26 | 2026-10-20 | 安全审计全量修复 — P0：命令/sed 注入根除（证书 domain 校验+openssl 直传参、chpasswd/smbpasswd 走 stdin、.env 与 rclone-s3 unit 改纯 Go 行级重写、htpasswd 直传参、密码统一拒绝换行/控制字符）、/api/system/check 免认证暴露收口（loopback+JWT）、登录/TOTP IP 限流（5 次失败锁 15 分钟）、服务开关白名单、Samba/SSH 配置注入防护、备份路径穿越防护；P1：面板 HTTPS 真正生效（TLS_CERT/TLS_KEY→ListenAndServeTLS）、XFS 配额根修（建池挂载+fstab 加 prjquota、/etc/projects 改标准 id:path、建文件夹配额真正落地）、防火墙端口范围/备注回显/sudoers 补齐、xfs_growfs 改挂载点（扩容静默失败根除）、NVMe 分区名+mkfs 参数、删池/重置清脏数据、诊断三 bug；P2：磁盘操作全局锁补漏、rclone 状态事务锁、SQLite 统一 WAL（顺带根治 logger/eventbus 旧 DSN 参数被驱动静默忽略）、monitor 后台采样（1.5s→<1ms）+du/smartctl 缓存（不再反复唤醒休眠盘）、RAID 注册表区分初始重建与降级；双机重置验收全 PASS（用户一键安装 RAID5 机 + 分支构建 LVM 机，套件 33 项+五协议+配额 E2E+限流/注入实测） |
 | v1.4.0-beta.25 | 2026-10-20 | 零知识凭证保险箱 v2（浏览器端 PBKDF2-600k+AES-256-GCM，服务器只存密文；独立口令/5 错锁 30 分钟/自动锁定/查看自动遮罩/旧版一键迁移）+ 独立密码生成器页 + 侧边栏「🧰 工具箱」分组；附发布前审查与体检修复集：迁移失败即停防明文丢失、解锁失败计数原子化、改口令实时拉取+覆盖校验、输错保险箱口令误踢登录修复、PWA sw.js 网络优先+旧缓存清理（根治升级后界面陈旧）、rclone 状态真实版本显示、配置一致性不再误报池根用户目录、staticcheck 清零；第八轮双机重置用户级全流程验收（merge/RAID1 各 33 项全 PASS + Chrome 实测） |
@@ -34,6 +22,33 @@
 | v1.4.0-beta.13 | 2026-09-19 | NFS 导出对所有网段开放（跨网段客户端可挂载） |
 | v1.4.0-beta.12 | 2026-09-18 | 创建向导按已选磁盘实时预估容量（选目标后预览面板 + 各方案可用容量/注意事项）+ 登录页品牌 slogan |
 | v1.4.0-beta.11 | 2026-09-18 | 当前连接展示（监控页，SMB 会话 + 各协议端口归类）+ 回收站改 per-share `.recycle/`（删除=rename 零拷贝，恢复保留目录树，旧 `#recycle` 兼容）+ 存储页 tab 切换跳动修复 |
+
+---
+
+## [2026-10-21] - v1.4.0-beta.28 — AI 助手模块（M1+M2）+ 发布前验收修复集
+
+### AI 助手（新功能模块，默认关闭）
+
+- **定位**：家庭助手基座——NAS 域为首个交付，后续健康/生活秘书类能力以独立工具域（Domain Pack）接入；安康系统按同一功能模块模式规划。
+- **模块形态**：可开关内置功能模块，默认关闭且零足迹；控制面端点（status/config/toggle/test-connection）豁免开关守卫，功能面（chat/conversations/action）关闭态一律 403；开启前提=已配置端点且连通性测试通过。
+- **模型接入**：OpenAI-compatible 客户端（流式/非流式），DeepSeek（云端）/Ollama（本地）双预设联动，API Key 0600 权限存储+掩码回显，独立连通性测试端点。
+- **工具框架**：ToolDomain 抽象+参数 schema 校验（未知参数拒绝、Enum/白名单约束）；NAS 域 15 工具——9 只读（健康报告/服务状态/存储总览/共享文件夹/用户列表/防火墙/诊断/日志/系统信息）+ 6 写（建用户/改配额/加防火墙规则/重启服务/跑诊断/建共享文件夹）；只读工具统一 JSON 输出+8K 截断+参数 clamp；写工具全部直调既有模块内核（缺导出的模块补 export.go 薄 wrapper，不复制业务逻辑）。
+- **对话**：SSE 流式（delta/tool_call/tool_result/pending_action/done/error 事件协议）+ SQLite 会话存储+会话列表/历史重载。
+- **确认门（写操作最终防线）**：写操作一律转待确认卡——参数全程服务端留存（PendingStore，TTL 5 分钟、一次性 Take、不经客户端回传防篡改），前端 type-to-confirm 弹窗（函数级守卫），确认词错误拒绝、重放 410，执行成败均入审计日志。
+- **create_user 密码红线**：工具参数表无 password 字段（模型给不出密码）；初始密码由确认弹窗一次性生成器生成（20 位四类字符），经专用 client_payload 通道随确认请求直发服务端，校验后注入执行——永不进对话上下文、不落消息库、不出现在审计 detail。
+- **对抗性安全测试集**：恶意工具结果注入（"忽略之前指令"字样数据不触发直接执行）、schema 攻击面（shell 元字符/路径穿越被拒）、API Key 泄漏面（落库消息/审计 detail/SSE 全文三处断言无 Key）、开关守卫——全部进常驻测试。
+- **文档**：功能操作清单新增「AI 助手」模块节（统计重算 64/104/27，合计 195 项/20 模块）；产品手册新增 11.6 节（定位/开关/隐私权衡/确认门语义）。
+
+### 验收与修复（本轮双机重置·用户级全流程）
+
+- **fix(users)**：删用户补 WebDAV 凭据撤销——remove-user.sh 清了 smbpasswd/userlist 却漏 /etc/rclone-htpasswd，被删用户仍能通过 rclone serve webdav 认证（实测抓到：删除后 PROPFIND 仍 207）；补 htpasswd -D+sed 兜底后实测 401。
+- **refactor(security)**：残留 shell 管道调用点清零——services unit heredoc/users sed+grep/diagnostics sysfs echo/rclone chown --reference 全部直传参或纯 Go 化，为切换非 root 最小权限运行扫清障碍。
+- **fix(ai)**：/api/ai/config 豁免 enabled 守卫——关闭态 403 导致无法保存配置、永远无法开启（前端联调发现的设计缺口）；守卫收窄到功能面。
+- **fix(ai)**：SSE 事件改写 push 后的 proxy 引用而非裸对象——修复助手气泡/工具轨迹/pending 卡不随流式更新的 Alpine 响应式 bug（数据层正确、视图层空白；本机 Chrome 实测发现）。
+- **fix(ai)**：确认执行后 pending 卡转绿色已执行态且不可再点（防重复确认撞 410）；新增 i18n 键 ai.executed_hint 双语。
+- **fix(users)**：CreateUserWithPassword 内核补用户名白名单校验——此前只有 HTTP 向导 handler 校验，AI 写工具直调内核会绕过（对抗测试发现）。
+- **fix(diskmgmt)**：建池完成文案按模式报实际用盘数——raid1/single 不再误报全部空闲盘数（4 盘机做 raid1 明示「2 块加入存储池，其余 2 块空闲盘未使用」）。
+- **验收**：两台测试机重置干净后走纯用户路径（一键安装→首登强制改密→建池 RAID1 与 LVM merge 各一台→注册表 41/41→验收套件各 38 项全 PASS→AI E2E 各 31 项全 PASS（桩 LLM 驱动全工具链）→本机 Chrome UI 全链实测：流式渲染/工具轨迹/确认弹窗/密码生成器/已执行态）；测试用户与临时端点全部清理复位。
 
 ---
 
