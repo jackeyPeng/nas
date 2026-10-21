@@ -1,5 +1,18 @@
 # NAS 项目变更日志
 
+## [未发布]
+
+### AI 助手 M2（确认门全链 + 写工具 + 安全测试集）
+
+开发中，分支 `feat/ai-assistant`，尚未合并/发版——以下条目随正式发版转正到「版本变更一览」并归入对应 beta 版本号。
+
+- **确认门全链落地**：`POST /api/ai/action/confirm` / `POST /api/ai/action/cancel` 从占位实现改为真实端点——服务端 `PendingStore`（内存、TTL 5 分钟、一次性 Take）承接写工具请求，参数全程留服务端、不经客户端回传；前端新增 type-to-confirm 确认弹窗（函数级守卫 `aiConfirmDisabled()`，不只靠按钮 `:disabled`）。
+- **6 个写工具上线**：`set_user_quota`（改配额）/ `create_user`（建用户）/ `add_firewall_rule`（加防火墙规则）/ `restart_service`（重启受管服务，Enum 动态取自 `common.AllowedManagedServices()`）/ `run_diagnostics`（跑磁盘自检）/ `create_folder`（建共享文件夹）。全部直调既有模块内核执行（不复制业务逻辑），缺导出内核的模块（users/firewall/system/diagnostics/diskmgmt）按既有模式补 `export.go`。
+- **create_user 密码红线**：工具参数表里没有 `password` 字段，模型给不出密码；初始密码由前端确认框一次性生成器生成，经专用 `client_payload.password` 通道随确认请求送达，服务端 `common.ValidSecret` 校验后注入执行，全程不进入对话上下文、不落入消息数据库、不出现在审计日志详情里。
+- **安全修复（T11 对抗测试发现）**：`users.CreateUserWithPassword` 内核补上用户名白名单校验（此前只有 HTTP 向导 handler 校验，内核本身对 `../etc` 这类用户名没有防线——AI 写工具路径直调内核会绕过 handler 层校验）。
+- **对抗性安全测试集**（`web/modules/ai/security_test.go`）：恶意工具结果注入（工具返回含"忽略之前指令"字样的数据，断言写工具仍只产出待确认卡、不被直接执行）、schema 攻击面（`service` 夹带 shell 元字符被 Enum 拒绝、`username` 路径穿越被白名单拒绝）、API Key 泄漏面（落库消息/审计 detail/SSE 事件全文三处均不含 Key）、开关守卫（关闭态 403、开启态 200）。
+- **文档**：操作清单新增「AI 助手」模块节（10 操作项，统计重算为 64/104/27，合计 195，20 个功能模块）；产品手册新增 11.6 节（定位/开关/隐私权衡/确认门语义）。
+
 ## 版本变更一览
 
 | 版本 | 日期 | 主要变化 |
