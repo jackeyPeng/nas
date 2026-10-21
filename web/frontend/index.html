@@ -185,9 +185,11 @@
                 </template>
 
                 <!-- 工具箱 -->
-                <li class="nav-group" @click="navGroup = (navGroup === 'toolbox' ? '' : 'toolbox')">
-                    <span style="flex:1">🧰 <span x-text="$t('nav.toolbox')"></span></span>
-                    <span style="font-size:var(--fs-xs);color: var(--text-muted)" x-text="navGroup==='toolbox' ? '▼' : '▶'"></span>
+                <li class="nav-group" style="display:flex;align-items:center">
+                    <span style="flex:1;cursor:pointer" @click="navGroup = (navGroup === 'toolbox' ? '' : 'toolbox')">🧰 <span x-text="$t('nav.toolbox')"></span></span>
+                    <!-- AI 助手常驻小入口：不受 enabled 隐藏，未启用时点击进 ai 页看引导卡 -->
+                    <span :class="{active: page === 'ai'}" style="cursor:pointer;font-size:var(--fs-xs);padding:2px 6px;border-radius:4px" @click.stop="navigate('ai')" :title="$t('nav.ai')">🤖</span>
+                    <span style="font-size:var(--fs-xs);color: var(--text-muted);cursor:pointer;margin-left:var(--sp-1)" @click="navGroup = (navGroup === 'toolbox' ? '' : 'toolbox')" x-text="navGroup==='toolbox' ? '▼' : '▶'"></span>
                 </li>
                 <template x-if="navGroup === 'toolbox'">
                     <div>
@@ -196,6 +198,9 @@
                         </li>
                         <li :class="{active: page === 'pwgen'}" @click="navigate('pwgen')">
                             <span style="margin-left:var(--sp-5)">🔑</span> <span x-text="$t('nav.pwgen')"></span>
+                        </li>
+                        <li x-show="aiStatus.enabled || page==='ai'" :class="{active: page === 'ai'}" @click="navigate('ai')">
+                            <span style="margin-left:var(--sp-5)">🤖</span> <span x-text="$t('nav.ai')"></span>
                         </li>
                     </div>
                 </template>
@@ -2757,6 +2762,70 @@
                         </template>
                     </tbody>
                 </table>
+            </div>
+
+            <!-- AI 助手 -->
+            <div x-show="page === 'ai'" class="page" x-transition.opacity.duration.300ms>
+                <h2 style="margin-bottom:var(--sp-4)">🤖 <span x-text="$t('ai.title')"></span></h2>
+
+                <!-- 未配置/未启用引导卡：configured 或 enabled 任一为假都显示，指引走设置 tab 完成开启向导 -->
+                <template x-if="!aiStatus.enabled">
+                    <div style="max-width:640px;background: var(--card-bg);border:1px solid var(--border);border-radius:var(--radius);padding:var(--sp-5);margin-bottom:var(--sp-5)">
+                        <h3 style="margin-top:0" x-text="$t('ai.onboarding_title')"></h3>
+                        <p style="color:var(--text-light)" x-text="$t('ai.onboarding_desc')"></p>
+                        <button class="btn btn-primary" @click="aiTab = 'settings'" x-text="$t('ai.tab_settings')"></button>
+                    </div>
+                </template>
+
+                <!-- Tab 导航 -->
+                <div class="tab-nav" style="display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:var(--sp-5)">
+                    <button :class="{'tab-active': aiTab === 'chat'}" class="tab-btn" @click="aiTab = 'chat'" x-text="$t('ai.tab_chat')"></button>
+                    <button :class="{'tab-active': aiTab === 'settings'}" class="tab-btn" @click="aiTab = 'settings'" x-text="$t('ai.tab_settings')"></button>
+                </div>
+
+                <!-- Tab: 对话（内容见 Task 9） -->
+                <div x-show="aiTab === 'chat'" x-transition.opacity.duration.200ms>
+                    <template x-if="!aiStatus.enabled">
+                        <p style="color:var(--text-light)" x-text="$t('ai.not_enabled')"></p>
+                    </template>
+                </div>
+
+                <!-- Tab: 设置 -->
+                <div x-show="aiTab === 'settings'" x-transition.opacity.duration.200ms>
+                    <div style="max-width:640px;background: var(--card-bg);border:1px solid var(--border);border-radius:var(--radius);padding:var(--sp-5)">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--sp-4)">
+                            <strong x-text="aiStatus.enabled ? $t('ai.enabled') : $t('ai.disabled_hint')"></strong>
+                            <button class="btn btn-sm" :class="aiStatus.enabled ? 'btn-danger' : 'btn-primary'" @click="toggleAI(!aiStatus.enabled)" x-text="aiStatus.enabled ? $t('ai.turn_off') : $t('ai.turn_on')"></button>
+                        </div>
+
+                        <div class="form-group">
+                            <label x-text="$t('ai.preset')"></label>
+                            <select x-model="aiConfigForm.preset" @change="applyAIPreset(aiConfigForm.preset)">
+                                <option value="deepseek" x-text="$t('ai.preset_deepseek')"></option>
+                                <option value="ollama" x-text="$t('ai.preset_ollama')"></option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label x-text="$t('ai.base_url')"></label>
+                            <input type="text" x-model="aiConfigForm.base_url" class="port-input" style="width:100%" placeholder="https://api.deepseek.com/v1">
+                        </div>
+                        <div class="form-group">
+                            <label x-text="$t('ai.api_key')"></label>
+                            <input type="password" x-model="aiConfigForm.api_key" class="port-input" style="width:100%" :disabled="aiConfigForm.preset === 'ollama'" autocomplete="off">
+                        </div>
+                        <div class="form-group">
+                            <label x-text="$t('ai.model')"></label>
+                            <input type="text" x-model="aiConfigForm.model" class="port-input" style="width:100%">
+                        </div>
+
+                        <div style="display:flex;gap:var(--sp-2);margin-bottom:var(--sp-4)">
+                            <button class="btn" @click="testAIConnection()" :disabled="aiTesting" x-text="aiTesting ? $t('ai.testing') : $t('ai.test_conn')"></button>
+                            <button class="btn btn-primary" @click="saveAIConfig()" x-text="$t('ai.save')"></button>
+                        </div>
+
+                        <div style="background: var(--danger-light);border:1px solid #fecaca;border-radius:var(--radius-sm);padding:var(--sp-3);color: var(--danger);font-size:var(--fs-xs)" x-text="$t('ai.privacy_note')"></div>
+                    </div>
+                </div>
             </div>
 
             <!-- Diagnostics -->

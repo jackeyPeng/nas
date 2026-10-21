@@ -337,9 +337,21 @@ function nasPanel() {
         userWizardShares: [],
         toast: { show: false, msg: '', type: 'success' },
 
+        // AI 助手
+        aiStatus: { enabled: false, configured: false, model: '', preset: '' },
+        aiTab: 'chat',
+        aiConfigForm: { preset: 'deepseek', base_url: '', api_key: '', model: '' },
+        aiTesting: false,
+
         init() {
             if (this.token) {
                 this.navigate('dashboard');
+            }
+            // AI 助手入口显隐取决于 enabled：应用启动时拉一次状态（未登录时 token 为空，
+            // api() 会带上空 Authorization，后端 AuthMiddleware 会拒绝——这里跟随登录态，
+            // 登录后 navigate('dashboard') 不会主动加载 ai 状态，所以在 init 里单独拉一次）。
+            if (this.token) {
+                this.loadAIStatus();
             }
             // Listen for i18n changes
             window.addEventListener('i18n:changed', (e) => {
@@ -614,6 +626,7 @@ function nasPanel() {
                 case 'backup': this.loadBackups(); break;
                 case 'vault': this.vaultOnEnter(); break;
                 case 'pwgen': this.pwgenOnEnter(); break;
+                case 'ai': this.loadAIStatus(); break;
                 case 'rclone': this.loadRcloneStatus(); this.loadRcloneRemotes(); this.loadRcloneTasks().then(() => { if (this.rcloneRunningTasks.length) this.startRcloneProgressPolling(); }); this.loadRcloneLogs(); this.loadSharedDirs(); break;
                 case 'logs': this.loadAuditLogs(); break;
                 case 'events': this.loadEvents(); this.loadEventStats(); break;
@@ -3482,6 +3495,93 @@ function nasPanel() {
             } catch (e) {
                 this.showToast(this.t('msg.network_error'), 'error');
             }
+        },
+
+        // ═══ AI 助手：设置/开关/导航入口 ═══
+
+        // GET /api/ai/status 是唯一免 enabled 守卫的端点，驱动导航入口显隐；
+        // 应用启动（已登录）与每次进 ai 页都会调用。
+        async loadAIStatus() {
+            const data = await this.api('/ai/status');
+            if (data && typeof data === 'object' && data.enabled !== undefined) {
+                this.aiStatus = data;
+                // 配置表单首次回显：仅在已启用（GET /api/ai/config 有 enabled 守卫）时拉取，
+                // 未启用时表单保持用户当前输入，不强行清空。
+                if (data.enabled) this.loadAIConfig();
+            }
+        },
+
+        // GET /api/ai/config 需要功能已开启（requireEnabled）；未开启时不会被调用到
+        // （loadAIStatus 已做分支），这里只处理已启用场景的回显。
+        async loadAIConfig() {
+            const data = await this.api('/ai/config');
+            if (data && typeof data === 'object' && data.base_url !== undefined) {
+                this.aiConfigForm = {
+                    preset: data.preset || 'deepseek',
+                    base_url: data.base_url || '',
+                    api_key: '',
+                    model: data.model || ''
+                };
+            }
+        },
+
+        // 预设联动：deepseek 填云端端点，ollama 填本地端点并禁用/清空 key 输入。
+        applyAIPreset(preset) {
+            if (preset === 'ollama') {
+                this.aiConfigForm.base_url = 'http://localhost:11434/v1';
+                this.aiConfigForm.model = 'qwen3:32b';
+                this.aiConfigForm.api_key = '';
+            } else if (preset === 'deepseek') {
+                this.aiConfigForm.base_url = 'https://api.deepseek.com/v1';
+                this.aiConfigForm.model = 'deepseek-chat';
+            }
+        },
+
+        // POST /api/ai/config：保存端点/key/model。
+        // 注意：该端点同样挂了 requireEnabled——功能未开启时保存会收到 403，
+        // 这是后端当前的既有行为（T1/T2 遗留），不在本轮前端范围内变更；
+        // api() 已经会把 403 的 error 文案 toast 出来，这里不用额外特殊处理。
+        async saveAIConfig() {
+            const data = await this.api('/ai/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(this.aiConfigForm)
+            });
+            if (data && typeof data === 'object' && data.base_url !== undefined) {
+                this.showToast(this.t('ai.save_ok'), 'success');
+                this.aiConfigForm.api_key = '';
+            }
+        },
+
+        // POST /api/ai/test-connection：无需请求体，测的是服务端已保存的配置
+        // （不是表单里尚未保存的值）——先保存再测试才有意义，这里先保存一次。
+        async testAIConnection() {
+            this.aiTesting = true;
+            try {
+                await this.saveAIConfig();
+                const data = await this.api('/ai/test-connection', { method: 'POST' });
+                if (data && typeof data === 'object' && data.ok) {
+                    this.showToast(this.t('ai.test_ok'), 'success');
+                    await this.loadAIStatus();
+                }
+            } finally {
+                this.aiTesting = false;
+            }
+        },
+
+        // POST /api/ai/toggle：开关本身不受 enabled 守卫限制。
+        async toggleAI(enabled) {
+            const data = await this.api('/ai/toggle', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled })
+            });
+            if (data && typeof data === 'object' && data.enabled !== undefined) {
+                this.aiStatus.enabled = data.enabled;
+                if (!data.enabled) this.showToast(this.t('ai.turn_off'), 'success');
+                else { this.showToast(this.t('ai.enabled'), 'success'); this.loadAIStatus(); }
+            }
+            // 失败（如未配置/未验证）时 api() 已经把后端中文原因 toast 出来。
         },
 
         // 面板更新（OTA 签名校验）
