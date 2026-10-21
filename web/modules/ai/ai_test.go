@@ -60,8 +60,21 @@ func TestConfigEndpointRequiresEnabled(t *testing.T) {
 	mux := newTestMux(t)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, authedRequest(t, http.MethodGet, "/api/ai/config", nil))
+	// 控制面豁免（R4 联调裁定）：关闭态必须能读配置，否则无法完成首次开启
+	if rec.Code != http.StatusOK {
+		t.Fatalf("未启用时 GET /api/ai/config 应 200（控制面豁免）, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if bytes.Contains(rec.Body.Bytes(), []byte("api_key_sk_live")) {
+		t.Fatalf("config 响应泄漏了完整 key: %s", rec.Body.String())
+	}
+}
+
+func TestChatStillGuardedWhenDisabled(t *testing.T) {
+	mux := newTestMux(t)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, authedRequest(t, http.MethodPost, "/api/ai/chat", nil))
 	if rec.Code != http.StatusForbidden {
-		t.Fatalf("未启用时 GET /api/ai/config 应 403, got %d body=%s", rec.Code, rec.Body.String())
+		t.Fatalf("未启用时 POST /api/ai/chat 应 403, got %d body=%s", rec.Code, rec.Body.String())
 	}
 	var resp map[string]string
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {

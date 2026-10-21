@@ -21,11 +21,14 @@ func buildRegistry() *Registry {
 var toolRegistry = buildRegistry()
 
 // RegisterRoutes 注册 ai 模块的全部 HTTP 路由。
-// AI 助手是默认关闭的功能模块：requireEnabled 包裹除 GET /api/ai/status
-// 外的全部端点；toggle 本身例外（必须在关闭态也能调用才能打开开关）。
+// AI 助手是默认关闭的功能模块：requireEnabled 只包裹**功能面**端点
+// （chat/conversations/action）；**控制面**端点（status/config/toggle/
+// test-connection）豁免——关闭态必须能读写配置与测连通性，否则永远无法
+// 完成首次开启（R4 前端联调发现的设计缺口，parent 裁定：控制面不跑 AI
+// 功能不调 LLM 会话，豁免不破坏"关闭零足迹"语义）。
 func RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/ai/status", common.AuthMiddleware(handleStatus))
-	mux.HandleFunc("/api/ai/config", common.AuthMiddleware(requireEnabled(handleConfig)))
+	mux.HandleFunc("/api/ai/config", common.AuthMiddleware(handleConfig))
 	mux.HandleFunc("/api/ai/toggle", common.AuthMiddleware(handleToggle))
 	// test-connection 同 toggle 例外：配置阶段（功能尚未开启）就需要能测连通性。
 	mux.HandleFunc("/api/ai/test-connection", common.AuthMiddleware(handleTestConnection))
