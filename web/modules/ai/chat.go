@@ -156,7 +156,7 @@ func handleChat(w http.ResponseWriter, r *http.Request) {
 	if result.PendingAction != nil {
 		result.PendingAction.ID = newPendingActionID()
 		result.PendingAction.Summary = pendingActionSummary(result.PendingAction.ToolName, result.PendingAction.ArgsJSON)
-		result.PendingAction.ConfirmWord = "执行"
+		result.PendingAction.ConfirmWord = pendingActionConfirmWord
 		result.PendingAction.CreatedAt = nowFunc()
 		defaultPendingStore.Put(*result.PendingAction)
 	}
@@ -269,7 +269,7 @@ func handleChatSSE(w http.ResponseWriter, r *http.Request, convID, message strin
 	if result.PendingAction != nil {
 		result.PendingAction.ID = newPendingActionID()
 		result.PendingAction.Summary = pendingActionSummary(result.PendingAction.ToolName, result.PendingAction.ArgsJSON)
-		result.PendingAction.ConfirmWord = "执行"
+		result.PendingAction.ConfirmWord = pendingActionConfirmWord
 		result.PendingAction.CreatedAt = nowFunc()
 		defaultPendingStore.Put(*result.PendingAction)
 		sendSSEEvent(w, sseEvent{Type: "pending_action", PendingAction: result.PendingAction})
@@ -327,10 +327,54 @@ func jsonEscape(s string) string {
 	return s
 }
 
-// pendingActionSummary 生成待确认操作卡的人类可读摘要。本 Task 没有写
-// 工具实现（Task 10 才有 nasWriteTools），这里给出通用兜底：工具名 +
-// 参数摘要；Task 10 接入具体写工具时可在这里按 ToolName 扩展专用文案
-// （计划里 ai.action_summary_* 的 i18n 键对应关系）。
+// pendingActionSummary 生成待确认操作卡的人类可读摘要：按 ToolName 给出
+// 专用文案（对应前端 i18n ai.action_summary_{tool} 键描述的内容，摘要本身
+// 由服务端生成并随 PendingAction.Summary 下发，前端直接展示，不需要
+// 自己拼参数）。解析失败（argsJSON 非法，理论上不会发生——到这里之前
+// 已经过 ValidateArgs）时退化为通用兜底文案。
 func pendingActionSummary(toolName, argsJSON string) string {
-	return "即将执行写操作「" + toolName + "」，参数：" + digest(argsJSON)
+	var args map[string]interface{}
+	_ = json.Unmarshal([]byte(argsJSON), &args)
+	str := func(k string) string {
+		v, _ := args[k].(string)
+		return v
+	}
+	num := func(k string) string {
+		v, ok := args[k].(float64)
+		if !ok {
+			return "0"
+		}
+		return fmt.Sprintf("%d", int(v))
+	}
+	svcOn := func(k string) string {
+		if b, ok := args[k].(bool); ok && b {
+			return "开"
+		}
+		return "关"
+	}
+
+	switch toolName {
+	case "set_user_quota":
+		return fmt.Sprintf("设置用户「%s」的私有目录配额为 %sGB", str("username"), num("quota_gb"))
+	case "create_user":
+		return fmt.Sprintf("创建用户「%s」（Samba:%s FTP:%s WebDAV:%s），密码将由你在确认时生成", str("username"), svcOn("svc_samba"), svcOn("svc_ftp"), svcOn("svc_webdav"))
+	case "add_firewall_rule":
+		return fmt.Sprintf("添加防火墙规则：端口 %s/%s，来源 %s", str("port"), orDefault(str("proto"), "tcp"), orDefault(str("from"), "任意"))
+	case "restart_service":
+		return fmt.Sprintf("重启服务「%s」", str("service"))
+	case "run_diagnostics":
+		return fmt.Sprintf("运行诊断项「%s」", str("item"))
+	case "create_folder":
+		return fmt.Sprintf("在存储池「%s」下创建文件夹「%s」（权限：%s）", str("pool"), str("name"), orDefault(str("permission"), "readwrite"))
+	default:
+		return "即将执行写操作「" + toolName + "」，参数：" + digest(argsJSON)
+	}
+}
+
+// orDefault 在 s 为空时返回 def，否则返回 s 本身。
+func orDefault(s, def string) string {
+	if s == "" {
+		return def
+	}
+	return s
 }

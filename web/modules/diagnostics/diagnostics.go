@@ -192,47 +192,41 @@ var (
 	currentProgress    int
 )
 
-func handleRun(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
-		return
-	}
-
-	itemID := r.FormValue("item_id")
+// runItemKernel 是 handleRun 的内核：并发/温度/IO/时间窗口校验通过后，
+// 异步启动诊断任务（与原 handleRun 一致，调用方拿到的是"已受理"而非"已完成"，
+// 真实结果通过 history/item_state 落库，由 StatusSnapshot/History 轮询可见）。
+// 从 handleRun 机械抽取（行为不变），供 AI 工具域（run_diagnostics）等
+// 进程内调用方直接复用，不走 HTTP 自环。
+func runItemKernel(itemID string) error {
 	if itemID == "" {
-		http.Error(w, `{"error":"item_id required"}`, http.StatusBadRequest)
-		return
+		return fmt.Errorf("item_id required")
 	}
 
 	// Check if already running
 	runMu.Lock()
 	if isRunning {
 		runMu.Unlock()
-		http.Error(w, `{"error":"已有诊断任务正在运行，请等待完成"}`, http.StatusConflict)
-		return
+		return fmt.Errorf("已有诊断任务正在运行，请等待完成")
 	}
 
 	// Check temperature
 	cfg := loadConfig()
 	if !checkTemperature(cfg.TempLimit) {
 		runMu.Unlock()
-		http.Error(w, fmt.Sprintf(`{"error":"磁盘温度超过 %d°C，已跳过诊断"}`, cfg.TempLimit), http.StatusServiceUnavailable)
-		return
+		return fmt.Errorf("磁盘温度超过 %d°C，已跳过诊断", cfg.TempLimit)
 	}
 
 	// Check IO usage
 	if !checkIOUsage(cfg.IOLimit) {
 		runMu.Unlock()
-		http.Error(w, fmt.Sprintf(`{"error":"磁盘 IO 使用率超过 %d%%，已跳过诊断"}`, cfg.IOLimit), http.StatusServiceUnavailable)
-		return
+		return fmt.Errorf("磁盘 IO 使用率超过 %d%%，已跳过诊断", cfg.IOLimit)
 	}
 
 	// Check time window for long tasks
 	if itemID == "smart_long" || itemID == "raid_scrub" {
 		if !inTimeWindow(cfg.TimeWindowStart, cfg.TimeWindowEnd) {
 			runMu.Unlock()
-			http.Error(w, `{"error":"长耗时诊断仅允许在时间窗口内运行"}`, http.StatusServiceUnavailable)
-			return
+			return fmt.Errorf("长耗时诊断仅允许在时间窗口内运行")
 		}
 	}
 
@@ -273,6 +267,28 @@ func handleRun(w http.ResponseWriter, r *http.Request) {
 		// Clean old history (keep 500)
 		db.Exec("DELETE FROM history WHERE id NOT IN (SELECT id FROM history ORDER BY id DESC LIMIT 500)")
 	}()
+
+	return nil
+}
+
+func handleRun(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	itemID := r.FormValue("item_id")
+	if err := runItemKernel(itemID); err != nil {
+		switch err.Error() {
+		case "item_id required":
+			http.Error(w, `{"error":"item_id required"}`, http.StatusBadRequest)
+		case "已有诊断任务正在运行，请等待完成":
+			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusConflict)
+		default:
+			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusServiceUnavailable)
+		}
+		return
+	}
 
 	common.JSONResponse(w, map[string]interface{}{
 		"message": "诊断任务已开始",

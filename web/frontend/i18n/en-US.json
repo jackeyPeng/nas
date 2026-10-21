@@ -1366,11 +1366,22 @@
     "no_messages": "Start the conversation",
     "tool_call_label": "Calling tool",
     "tool_result_label": "Tool result",
-    "pending_hint": "This action needs confirmation — the confirm flow ships in the next version",
+    "pending_hint": "Click to reopen the confirmation dialog",
     "error_prefix": "Something went wrong",
     "confirm_title": "Confirm action",
-    "confirm_word_label": "Confirmation word",
+    "confirm_word_label": "Type \"{0}\" to confirm execution",
     "confirm_execute": "Execute",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "gen_password_label": "Initial password (one-time, hidden after closing)",
+    "gen_password_placeholder": "Click the button to generate",
+    "gen_password_btn": "Generate password",
+    "gen_password_hint": "Copy and save it before confirming. It will not be shown again, and it is never sent to the AI model.",
+    "action_summary_set_user_quota": "Change a user's quota",
+    "action_summary_create_user": "Create a new user and generate an initial password",
+    "action_summary_add_firewall_rule": "Add a firewall rule",
+    "action_summary_restart_service": "Restart a system service",
+    "action_summary_run_diagnostics": "Run a disk self-test",
+    "action_summary_create_folder": "Create a shared folder",
+    "action_summary_default": "Perform a write action"
   }
 }

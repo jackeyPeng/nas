@@ -347,6 +347,11 @@ function nasPanel() {
         aiMessages: [],
         aiInput: '',
         aiThinking: false,
+        // 写操作确认门：pendingAction 来自某条 assistant 消息的 pendingAction 字段
+        // （见 handleAISSEEvent），confirmWordInput 是用户在弹窗里敲的确认词，
+        // genPassword 是 create_user 专用的一次性生成密码（只在本次会话内存里，
+        // 确认成功/取消/弹窗关闭都要清空，绝不进 aiMessages/任何持久化状态）。
+        aiConfirm: { show: false, action: null, confirmWordInput: '', genPassword: '', submitting: false },
 
         init() {
             if (this.token) {
@@ -3699,6 +3704,7 @@ function nasPanel() {
                         id: ev.id, tool_name: ev.tool_name, args_json: ev.args_json,
                         summary: ev.summary, confirm_word: ev.confirm_word
                     };
+                    this.openAIActionConfirm(assistantMsg.pendingAction);
                     break;
                 case 'done':
                     this.aiConversationId = ev.conversation_id || this.aiConversationId;
@@ -3709,6 +3715,117 @@ function nasPanel() {
                     this.showToast(assistantMsg.error, 'error');
                     break;
             }
+        },
+
+        // ═══ AI 写操作确认门（type-to-confirm）═══
+        // openAIActionConfirm 打开弹窗：confirmWordInput/genPassword 每次重新打开
+        // 都清空，不continu上一次残留（尤其密码——绝不允许旧密码跨操作卡复用）。
+        openAIActionConfirm(action) {
+            this.aiConfirm = { show: true, action, confirmWordInput: '', genPassword: '', submitting: false };
+        },
+        closeAIActionConfirm() {
+            this.aiConfirm = { show: false, action: null, confirmWordInput: '', genPassword: '', submitting: false };
+        },
+        // aiActionIsCreateUser 供弹窗模板判断是否渲染密码生成器区块。
+        aiActionIsCreateUser() {
+            return !!(this.aiConfirm.action && this.aiConfirm.action.tool_name === 'create_user');
+        },
+        // aiGenPassword 用独立的随机源生成一次性密码，不读取/不污染工具箱密码
+        // 生成器页面的 this.pwgen 状态（两个生成器互不相关，各自独立成池）。
+        // 字符池固定四类全开、20 位，强度足够且不需要用户再做选择。
+        aiGenPassword() {
+            const upper = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+            const lower = 'abcdefghijklmnopqrstuvwxyz';
+            const digits = '0123456789';
+            const symbols = '!@#$%^&*()-_=+[]{}<>?';
+            const groups = [upper, lower, digits, symbols];
+            const length = 20;
+            const all = groups.join('');
+            const randInt = (max) => {
+                if (max <= 1) return 0;
+                const limit = Math.floor(0x100000000 / max) * max;
+                const buf = new Uint32Array(1);
+                let x;
+                do { crypto.getRandomValues(buf); x = buf[0]; } while (x >= limit);
+                return x % max;
+            };
+            const chars = [];
+            for (const g of groups) chars.push(g[randInt(g.length)]);
+            while (chars.length < length) chars.push(all[randInt(all.length)]);
+            for (let i = chars.length - 1; i > 0; i--) {
+                const j = randInt(i + 1);
+                [chars[i], chars[j]] = [chars[j], chars[i]];
+            }
+            this.aiConfirm.genPassword = chars.slice(0, length).join('');
+        },
+        async aiCopyGenPassword() {
+            if (!this.aiConfirm.genPassword) return;
+            try {
+                await navigator.clipboard.writeText(this.aiConfirm.genPassword);
+                this.showToast(this.t('msg.vault_copied'), 'success');
+            } catch (e) {
+                this.showToast(String(e.message || e), 'error');
+            }
+        },
+        // aiConfirmDisabled 是确认按钮的函数级守卫（不是只靠 :disabled 挡 UI——
+        // confirmAIAction 开头也会再次调用它 return，双重防线防止绕过按钮直接
+        // 触发事件）：确认词必须逐字匹配服务端下发的 confirm_word；create_user
+        // 还要求已经生成过密码（否则确认请求必然 502）。
+        aiConfirmDisabled() {
+            const action = this.aiConfirm.action;
+            if (!action) return true;
+            if (this.aiConfirm.submitting) return true;
+            if (this.aiConfirm.confirmWordInput !== action.confirm_word) return true;
+            if (this.aiActionIsCreateUser() && !this.aiConfirm.genPassword) return true;
+            return false;
+        },
+        async confirmAIAction() {
+            if (this.aiConfirmDisabled()) return;
+            const action = this.aiConfirm.action;
+            this.aiConfirm.submitting = true;
+            try {
+                const body = { action_id: action.id, confirm_word: this.aiConfirm.confirmWordInput };
+                if (this.aiActionIsCreateUser()) {
+                    body.client_payload = { password: this.aiConfirm.genPassword };
+                }
+                const res = await fetch('/api/ai/action/confirm', {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + this.token, 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    this.showToast(data.error || this.t('ai.error_prefix'), 'error');
+                    return;
+                }
+                this.showToast(this.t('msg.op_success'), 'success');
+                this.closeAIActionConfirm();
+            } catch (e) {
+                this.showToast(String(e.message || e), 'error');
+            } finally {
+                this.aiConfirm.submitting = false;
+            }
+        },
+        async cancelAIAction() {
+            const action = this.aiConfirm.action;
+            if (!action) { this.closeAIActionConfirm(); return; }
+            try {
+                await fetch('/api/ai/action/cancel', {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + this.token, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action_id: action.id })
+                });
+            } catch (e) {
+                // 取消失败也不阻塞关闭弹窗——TTL 到了服务端自然视为不存在。
+            }
+            this.closeAIActionConfirm();
+        },
+        // aiActionSummaryKey 把工具名映射到 i18n 摘要文案 key，服务端已经生成
+        // 了中文 summary（pendingActionSummary），这里的 key 仅用于弹窗标题下方
+        // 的"将执行以下操作"类型标签，不是复述服务端 summary 本身。
+        aiActionSummaryKey(toolName) {
+            const known = ['set_user_quota', 'create_user', 'add_firewall_rule', 'restart_service', 'run_diagnostics', 'create_folder'];
+            return known.includes(toolName) ? ('ai.action_summary_' + toolName) : 'ai.action_summary_default';
         },
 
         // 面板更新（OTA 签名校验）

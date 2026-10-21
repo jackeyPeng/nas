@@ -75,66 +75,15 @@ func handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 执行创建
-	steps := []string{}
+	// 1-2. 创建系统用户 + 密码 + 主目录 + 服务开关（机械抽取进 CreateUserWithPassword，
+	// 行为不变——handler 只负责表单解析与响应，内核与导出函数共享同一实现）。
+	steps, err := CreateUserWithPassword(req.Username, req.Password, req.Services["samba"], req.Services["ftp"], req.Services["webdav"])
 	addStep := func(format string, args ...interface{}) {
 		steps = append(steps, fmt.Sprintf(format, args...))
 	}
-
-	// 1. Create system user (inline, no external script dependency)
-	addStep("创建系统用户 %s", req.Username)
-	out, err := common.SudoExec("useradd", "-m", "-s", "/bin/bash", "-G", "nasusers", req.Username)
 	if err != nil {
-		// Check if user already exists
-		if out2, err2 := common.SudoExec("id", req.Username); err2 == nil && out2 != "" {
-			addStep("用户 %s 已存在，跳过系统用户创建", req.Username)
-		} else {
-			http.Error(w, fmt.Sprintf(`{"error":"创建系统用户失败: %s"}`, out+": "+err.Error()), http.StatusInternalServerError)
-			return
-		}
-	}
-	// Set password
-	out, err = common.SudoExecStdin(req.Username+":"+req.Password+"\n", "chpasswd")
-	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":"设置密码失败: %s"}`, out+": "+err.Error()), http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
 		return
-	}
-	addStep("设置密码")
-
-	// 1.5 创建用户主目录 + 默认子目录 + 写入 folders.db + 生成托管配置
-	if err := diskmgmt.EnsureUserHome(req.Username); err != nil {
-		addStep("⚠️ 创建主目录失败: %v", err)
-	} else {
-		addStep("创建用户主目录 %s", req.Username)
-	}
-
-	// 2. 更新服务开关（默认全关，按需开启）
-	if req.Services["samba"] {
-		if err := addSambaUser(req.Username, req.Password); err != nil {
-			addStep("⚠️ Samba 启用失败: %v", err)
-		} else {
-			addStep("启用 Samba 服务")
-		}
-	} else {
-		addStep("关闭 Samba 服务")
-		disableSambaUser(req.Username)
-	}
-	if req.Services["ftp"] {
-		addStep("启用 FTP 服务")
-		enableFTPUser(req.Username)
-	} else {
-		addStep("关闭 FTP 服务")
-		disableFTPUser(req.Username)
-	}
-	if req.Services["webdav"] {
-		if err := addWebDAVUser(req.Username, req.Password); err != nil {
-			addStep("⚠️ WebDAV 启用失败: %v", err)
-		} else {
-			addStep("启用 WebDAV 服务")
-		}
-	} else {
-		addStep("关闭 WebDAV 服务")
-		disableWebDAVUser(req.Username)
 	}
 
 	// 3. 设置私有目录配额
@@ -158,6 +107,74 @@ func handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		"message": fmt.Sprintf("用户 %s 创建成功", req.Username),
 		"steps":   steps,
 	})
+}
+
+// CreateUserWithPassword 是 handleCreateUser 步骤 1/1.5/2 的内核：创建系统
+// 用户、设置密码、建主目录、按服务开关启用/关闭 Samba/FTP/WebDAV——从
+// handleCreateUser 机械抽取而来，行为不变（原函数改调它）。导出供 AI 工具域
+// （create_user）等进程内调用方直接复用；密码参数由调用方负责生成/校验
+// （AI 路径下密码由前端生成器生成，经确认端点 common.ValidSecret 校验后
+// 注入，永不进 LLM 上下文）。
+func CreateUserWithPassword(username, password string, svcSamba, svcFtp, svcWebdav bool) (steps []string, err error) {
+	addStep := func(format string, args ...interface{}) {
+		steps = append(steps, fmt.Sprintf(format, args...))
+	}
+
+	// 1. Create system user (inline, no external script dependency)
+	addStep("创建系统用户 %s", username)
+	out, cerr := common.SudoExec("useradd", "-m", "-s", "/bin/bash", "-G", "nasusers", username)
+	if cerr != nil {
+		// Check if user already exists
+		if out2, err2 := common.SudoExec("id", username); err2 == nil && out2 != "" {
+			addStep("用户 %s 已存在，跳过系统用户创建", username)
+		} else {
+			return steps, fmt.Errorf("创建系统用户失败: %s", out+": "+cerr.Error())
+		}
+	}
+	// Set password
+	out, cerr = common.SudoExecStdin(username+":"+password+"\n", "chpasswd")
+	if cerr != nil {
+		return steps, fmt.Errorf("设置密码失败: %s", out+": "+cerr.Error())
+	}
+	addStep("设置密码")
+
+	// 1.5 创建用户主目录 + 默认子目录 + 写入 folders.db + 生成托管配置
+	if herr := diskmgmt.EnsureUserHome(username); herr != nil {
+		addStep("⚠️ 创建主目录失败: %v", herr)
+	} else {
+		addStep("创建用户主目录 %s", username)
+	}
+
+	// 2. 更新服务开关（默认全关，按需开启）
+	if svcSamba {
+		if serr := addSambaUser(username, password); serr != nil {
+			addStep("⚠️ Samba 启用失败: %v", serr)
+		} else {
+			addStep("启用 Samba 服务")
+		}
+	} else {
+		addStep("关闭 Samba 服务")
+		disableSambaUser(username)
+	}
+	if svcFtp {
+		addStep("启用 FTP 服务")
+		enableFTPUser(username)
+	} else {
+		addStep("关闭 FTP 服务")
+		disableFTPUser(username)
+	}
+	if svcWebdav {
+		if werr := addWebDAVUser(username, password); werr != nil {
+			addStep("⚠️ WebDAV 启用失败: %v", werr)
+		} else {
+			addStep("启用 WebDAV 服务")
+		}
+	} else {
+		addStep("关闭 WebDAV 服务")
+		disableWebDAVUser(username)
+	}
+
+	return steps, nil
 }
 
 // isValidUsername 白名单校验用户名

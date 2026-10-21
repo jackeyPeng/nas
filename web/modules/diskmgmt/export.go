@@ -13,3 +13,11 @@ func OverviewData() StorageOverview {
 func SmartSnapshot() []DiskStatus {
 	return getDiskStatus()
 }
+
+// CreateFolder 导出创建共享文件夹内核，供 AI 工具域（create_folder）等
+// 进程内调用方直接复用，不走 HTTP 自环。薄导出层，逻辑全部在
+// createFolderKernel 里（= handleCreateFolder 的内核，valid_users/
+// recycle_bin/nfs 取表单路径的默认值，quotaGB<=0 表示不设配额）。
+func CreateFolder(pool, name, permission string, quotaGB int) error {
+	return createFolderKernel(pool, name, permission, quotaGB)
+}

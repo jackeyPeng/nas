@@ -2819,9 +2819,11 @@
                                                     </div>
                                                 </template>
                                                 <div style="white-space:pre-wrap" x-text="m.content"></div>
-                                                <!-- pending_action 只读信息卡（本轮占位，确认交互 R5 接入） -->
+                                                <!-- pending_action 信息卡：出现即自动弹出确认弹窗（openAIActionConfirm），
+                                                     这里额外保留一个可点击摘要条,方便用户在弹窗被取消/关闭后重新唤起确认 -->
                                                 <template x-if="m.pendingAction">
-                                                    <div style="margin-top:var(--sp-2);background: var(--warn-light);border:1px solid #f59e0b;border-radius:var(--radius-sm);padding:var(--sp-2) var(--sp-3);font-size:var(--fs-xs)">
+                                                    <div style="margin-top:var(--sp-2);background: var(--warn-light);border:1px solid #f59e0b;border-radius:var(--radius-sm);padding:var(--sp-2) var(--sp-3);font-size:var(--fs-xs);cursor:pointer"
+                                                        @click="openAIActionConfirm(m.pendingAction)">
                                                         <div style="font-weight:600;color: var(--warn)" x-text="m.pendingAction.summary"></div>
                                                         <div style="color: var(--warn);margin-top:var(--sp-1)" x-text="$t('ai.pending_hint')"></div>
                                                     </div>
@@ -2880,6 +2882,40 @@
                         </div>
 
                         <div style="background: var(--danger-light);border:1px solid #fecaca;border-radius:var(--radius-sm);padding:var(--sp-3);color: var(--danger);font-size:var(--fs-xs)" x-text="$t('ai.privacy_note')"></div>
+                    </div>
+                </div>
+
+                <!-- 写操作确认弹窗（type-to-confirm）：@click.self 只响应遮罩本身的点击，
+                     不会因为点弹窗内部内容意外关闭；取消按钮调 cancelAIAction() 通知服务端
+                     丢弃该待确认卡（对齐 PendingStore 一次性语义，不是单纯关窗口）。 -->
+                <div class="modal" x-show="aiConfirm.show" x-cloak @click.self="cancelAIAction()">
+                    <div class="modal-box" x-show="aiConfirm.action">
+                        <h3 x-text="$t('ai.confirm_title')"></h3>
+                        <p x-text="aiConfirm.action ? aiConfirm.action.summary : ''"></p>
+                        <p style="color: var(--text-light);font-size:var(--fs-xs)" x-text="aiConfirm.action ? $t(aiActionSummaryKey(aiConfirm.action.tool_name)) : ''"></p>
+
+                        <!-- create_user 专用：一次性密码生成器,生成后只在本次弹窗内存里,
+                             确认/取消/关闭都会清空,绝不落入 aiMessages 或任何持久化状态 -->
+                        <template x-if="aiActionIsCreateUser()">
+                            <div style="margin:var(--sp-3) 0;background: var(--card-bg-alt);border-radius:var(--radius-sm);padding:var(--sp-3)">
+                                <label x-text="$t('ai.gen_password_label')"></label>
+                                <div style="display:flex;gap:var(--sp-2);margin-top:var(--sp-2)">
+                                    <input type="text" readonly :value="aiConfirm.genPassword" :placeholder="$t('ai.gen_password_placeholder')" style="flex:1;font-family:monospace" class="port-input">
+                                    <button class="btn btn-sm" @click="aiGenPassword()" x-text="$t('ai.gen_password_btn')"></button>
+                                    <button class="btn btn-sm btn-success" @click="aiCopyGenPassword()" :disabled="!aiConfirm.genPassword" x-text="$t('vault.copy')"></button>
+                                </div>
+                                <p style="margin:var(--sp-2) 0 0;color: var(--danger);font-size:var(--fs-xs)" x-text="$t('ai.gen_password_hint')"></p>
+                            </div>
+                        </template>
+
+                        <div class="form-group" style="margin-top:var(--sp-3)">
+                            <label x-text="aiConfirm.action ? $t('ai.confirm_word_label', [aiConfirm.action.confirm_word]) : ''"></label>
+                            <input type="text" x-model="aiConfirm.confirmWordInput" :placeholder="aiConfirm.action ? aiConfirm.action.confirm_word : ''">
+                        </div>
+                        <div class="modal-actions">
+                            <button class="btn" @click="cancelAIAction()" x-text="$t('ai.cancel')"></button>
+                            <button class="btn btn-danger" @click="confirmAIAction()" :disabled="aiConfirmDisabled()" x-text="$t('ai.confirm_execute')"></button>
+                        </div>
                     </div>
                 </div>
             </div>

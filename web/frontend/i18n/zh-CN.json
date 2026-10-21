@@ -1366,11 +1366,22 @@
     "no_messages": "开始对话吧",
     "tool_call_label": "调用工具",
     "tool_result_label": "工具结果",
-    "pending_hint": "该操作需要确认——确认交互下个版本接入",
+    "pending_hint": "点击可重新打开确认弹窗",
     "error_prefix": "出错了",
     "confirm_title": "操作确认",
-    "confirm_word_label": "确认词",
+    "confirm_word_label": "请输入「{0}」以确认执行",
     "confirm_execute": "执行",
-    "cancel": "取消"
+    "cancel": "取消",
+    "gen_password_label": "初始密码（一次性生成，关闭后不再显示）",
+    "gen_password_placeholder": "点击右侧按钮生成",
+    "gen_password_btn": "生成密码",
+    "gen_password_hint": "请在确认前复制保存，密码不会再次显示，也不会发送给 AI 模型。",
+    "action_summary_set_user_quota": "修改用户配额",
+    "action_summary_create_user": "创建新用户并生成初始密码",
+    "action_summary_add_firewall_rule": "添加防火墙规则",
+    "action_summary_restart_service": "重启系统服务",
+    "action_summary_run_diagnostics": "运行磁盘自检",
+    "action_summary_create_folder": "创建共享文件夹",
+    "action_summary_default": "执行一项写操作"
   }
 }

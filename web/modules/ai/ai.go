@@ -7,13 +7,15 @@ import (
 	"nas-panel/common"
 )
 
-// buildRegistry 组装 agent loop 使用的工具注册表。本期（M1/T6）只有 nas
-// 域的只读工具；写工具（nasWriteTools，M2/T10）接入时在这里追加一个
-// Domain，不改调用方——RunAgent/handleChat 只认 *Registry。
+// buildRegistry 组装 agent loop 使用的工具注册表：nas 域的只读工具
+// （M1/T5）+ 写工具（M2/T10）。RunAgent/handleChat 只认 *Registry，
+// 写工具的 Write=true 标记让 agent loop 自动转 PendingAction，不需要
+// 调用方额外区分。
 func buildRegistry() *Registry {
+	tools := append(nasReadTools(), nasWriteTools()...)
 	return NewRegistry(Domain{
 		Name:  "nas",
-		Tools: nasReadTools(),
+		Tools: tools,
 	})
 }
 
@@ -37,25 +39,10 @@ func RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/ai/conversations", common.AuthMiddleware(requireEnabled(handleListConversations)))
 	mux.HandleFunc("/api/ai/conversations/", common.AuthMiddleware(requireEnabled(handleGetConversation)))
 
-	// 确认执行端点是 Task 10（M2）的事：本 Task 只占位返回 501，
-	// 避免前端/调用方提前对接时拿到 404 误判为路由缺失。
-	mux.HandleFunc("/api/ai/action/confirm", common.AuthMiddleware(requireEnabled(handleActionConfirmPlaceholder)))
-	mux.HandleFunc("/api/ai/action/cancel", common.AuthMiddleware(requireEnabled(handleActionCancelPlaceholder)))
-}
-
-// handleActionConfirmPlaceholder 占位：M2（Task 10）落地确认门全链前，
-// 先保证路由存在、行为明确（501 而非 404），前端可以据此判断"功能未实现"
-// 而不是"接口不存在"。
-func handleActionConfirmPlaceholder(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusNotImplemented)
-	json.NewEncoder(w).Encode(map[string]string{"error": "确认执行端点将在后续版本提供"})
-}
-
-func handleActionCancelPlaceholder(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusNotImplemented)
-	json.NewEncoder(w).Encode(map[string]string{"error": "取消操作端点将在后续版本提供"})
+	// 确认执行门（M2/T10）：action_id 按服务端 PendingStore 取参数执行，
+	// 参数不经客户端回传；create_user 的密码走 client_payload 专用通道。
+	mux.HandleFunc("/api/ai/action/confirm", common.AuthMiddleware(requireEnabled(handleActionConfirm)))
+	mux.HandleFunc("/api/ai/action/cancel", common.AuthMiddleware(requireEnabled(handleActionCancel)))
 }
 
 // aiEnabled 读内存缓存的配置，避免每请求读盘；SaveConfig 刷新缓存后即时生效。

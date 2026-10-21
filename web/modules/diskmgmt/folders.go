@@ -185,6 +185,66 @@ func hasRecycleBin(conf, shareName string) bool {
 	return false
 }
 
+// validateFolderNameAndPool 校验 create_folder 公共必填参数（pool 必须在
+// /data 下、name 不含路径穿越、name 符合系统用户名规则）。从
+// handleCreateFolder 机械抽取，供该 handler 与 createFolderKernel 共用，
+// 保证两条路径（表单提交 / AI 工具）校验规则恒一致。
+func validateFolderNameAndPool(pool, name string) error {
+	if pool == "" || name == "" {
+		return fmt.Errorf("pool 和 name 必填")
+	}
+	if !strings.HasPrefix(pool, "/data") {
+		return fmt.Errorf("pool 必须在 /data 下")
+	}
+	if strings.Contains(name, "/") || strings.Contains(name, "..") {
+		return fmt.Errorf("名称不能包含 / 或 ..")
+	}
+	if !isValidFolderName(name) {
+		return fmt.Errorf("文件夹名只能包含小写字母、数字、下划线和短横线，且以小写字母开头（2-32 位）")
+	}
+	return nil
+}
+
+// applyCreateFolder 是 executeCreateFolder+SyncAllConfigs 的公共收尾：
+// 从 handleCreateFolder 机械抽取，供该 handler 与 createFolderKernel 共用。
+func applyCreateFolder(op PendingOp) error {
+	if err := executeCreateFolder(op); err != nil {
+		return fmt.Errorf("创建文件夹失败: %w", err)
+	}
+	if err := SyncAllConfigs(); err != nil {
+		return fmt.Errorf("配置同步失败: %w", err)
+	}
+	return nil
+}
+
+// createFolderKernel 是 create_folder AI 工具的内核：pool/name/permission/
+// quotaGB 四个参数（对齐 AI 工具 schema），valid_users 留空（开放共享，
+// 与表单路径默认行为一致）、recycle_bin/nfs 均为 false、nfs_no_root_squash
+// 显式 false（新文件夹默认 root_squash 安全基线，同 handleCreateFolder）。
+// 复用 validateFolderNameAndPool/applyCreateFolder，不复制校验或执行逻辑。
+func createFolderKernel(pool, name, permission string, quotaGB int) error {
+	if err := validateFolderNameAndPool(pool, name); err != nil {
+		return err
+	}
+	if permission == "" {
+		permission = "readwrite"
+	}
+	if quotaGB < 0 {
+		return fmt.Errorf("quota_gb 必须是非负整数")
+	}
+	op := PendingOp{
+		Action:             "create",
+		FolderName:         name,
+		FolderPath:         filepath.Join(pool, name),
+		Pool:               pool,
+		Permission:         permission,
+		SambaShare:         permission != "noaccess",
+		NFSNoRootSquashSet: true,
+		QuotaGB:            quotaGB,
+	}
+	return applyCreateFolder(op)
+}
+
 // handleCreateFolder creates a shared folder (deferred to pending queue)
 func handleCreateFolder(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -200,20 +260,8 @@ func handleCreateFolder(w http.ResponseWriter, r *http.Request) {
 	quotaGBStr := r.FormValue("quota_gb")
 	nfsExport := r.FormValue("nfs")
 
-	if pool == "" || name == "" {
-		http.Error(w, `{"error":"pool 和 name 必填"}`, http.StatusBadRequest)
-		return
-	}
-	if !strings.HasPrefix(pool, "/data") {
-		http.Error(w, `{"error":"pool 必须在 /data 下"}`, http.StatusBadRequest)
-		return
-	}
-	if strings.Contains(name, "/") || strings.Contains(name, "..") {
-		http.Error(w, `{"error":"名称不能包含 / 或 .."}`, http.StatusBadRequest)
-		return
-	}
-	if !isValidFolderName(name) {
-		http.Error(w, `{"error":"文件夹名只能包含小写字母、数字、下划线和短横线，且以小写字母开头（2-32 位）"}`, http.StatusBadRequest)
+	if err := validateFolderNameAndPool(pool, name); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
 		return
 	}
 	if permission == "" {
@@ -250,12 +298,8 @@ func handleCreateFolder(w http.ResponseWriter, r *http.Request) {
 		NFSNoRootSquashSet: true,
 		QuotaGB:            quotaGB,
 	}
-	if err := executeCreateFolder(op); err != nil {
-		common.JSONResponse(w, map[string]interface{}{"error": "创建文件夹失败: " + err.Error()})
-		return
-	}
-	if err := SyncAllConfigs(); err != nil {
-		common.JSONResponse(w, map[string]interface{}{"error": "配置同步失败: " + err.Error()})
+	if err := applyCreateFolder(op); err != nil {
+		common.JSONResponse(w, map[string]interface{}{"error": err.Error()})
 		return
 	}
 

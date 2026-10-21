@@ -183,14 +183,5 @@ func TestHandleChatRequiresEnabled(t *testing.T) {
 	}
 }
 
-func TestHandleActionConfirmPlaceholderReturns501(t *testing.T) {
-	srv, _ := scriptedLLM(t, []string{`{"choices":[{"message":{"role":"assistant","content":"x"}}]}`})
-	defer srv.Close()
-	mux := setupChatTest(t, srv.URL)
-
-	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, authedRequest(t, http.MethodPost, "/api/ai/action/confirm", []byte(`{}`)))
-	if rec.Code != http.StatusNotImplemented {
-		t.Fatalf("占位端点应 501, got %d body=%s", rec.Code, rec.Body.String())
-	}
-}
+// 确认门全链实现（M2/T10）：确认/取消端点的行为断言在 actions_test.go，
+// 这里不再保留 M1 阶段的 501 占位断言。
