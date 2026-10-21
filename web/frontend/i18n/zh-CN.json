@@ -1356,7 +1356,7 @@
     "turn_on_failed": "开启失败",
     "privacy_note": "⚠️ 隐私提示：云端端点会接收对话内容及工具调用上下文（如文件名、用户名、健康摘要等）。涉及敏感信息的场景，建议改用本地 Ollama 端点。",
     "onboarding_title": "AI 助手尚未配置",
-    "onboarding_desc": "填写模型端点信息，测试连通性通过后即可开启。开启后才会出现在工具箱入口。",
+    "onboarding_desc": "填写模型端点信息（DeepSeek 云端或 Ollama 本地），测试连通性通过后即可开启。未开启时 AI 功能零足迹：不发起任何模型请求，对话与工具接口全部关闭。",
     "placeholder": "输入消息，Enter 发送，Shift+Enter 换行",
     "send": "发送",
     "thinking": "AI 正在思考…",

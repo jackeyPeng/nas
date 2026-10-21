@@ -1356,7 +1356,7 @@
     "turn_on_failed": "Failed to turn on",
     "privacy_note": "⚠️ Privacy note: cloud endpoints receive your conversation and tool-call context (e.g. filenames, usernames, health summaries). For sensitive scenarios, use a local Ollama endpoint instead.",
     "onboarding_title": "AI Assistant is not configured yet",
-    "onboarding_desc": "Fill in the model endpoint, pass the connectivity test, then turn it on. It appears in the toolbox entry only after being enabled.",
+    "onboarding_desc": "Fill in the model endpoint (DeepSeek cloud or local Ollama), pass the connectivity test, then turn it on. While off, the AI feature leaves zero footprint: no model requests are made and all chat/tool APIs stay closed.",
     "placeholder": "Type a message, Enter to send, Shift+Enter for a new line",
     "send": "Send",
     "thinking": "AI is thinking…",
