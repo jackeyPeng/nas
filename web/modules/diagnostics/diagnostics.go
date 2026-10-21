@@ -3,6 +3,7 @@ package diagnostics
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -513,6 +514,14 @@ func runSMARTLong() (string, string) {
 	return "pass", strings.Join(results, "; ") + "（长检在后台运行，请稍后查看结果）"
 }
 
+// writeSysfs 写 sysfs 控制文件（面板以 root 运行，直接 os.WriteFile 即可）。
+// 保留原 `echo ... > file 2>/dev/null` 的容错语义：失败只记日志，不中断调用方流程。
+func writeSysfs(path, value string) {
+	if err := os.WriteFile(path, []byte(value), 0644); err != nil {
+		log.Printf("[DIAGNOSTICS] 写 sysfs 失败: path=%s value=%s err=%v", path, value, err)
+	}
+}
+
 func runRAIDScrub(cfg Config) (string, string) {
 	// Find MD devices
 	mdMatches, _ := filepath.Glob("/dev/md[0-9]*")
@@ -533,13 +542,13 @@ func runRAIDScrub(cfg Config) (string, string) {
 	// Set speed limit
 	for _, dev := range mdDevices {
 		speedFile := fmt.Sprintf("/sys/block/%s/md/sync_speed_max", filepath.Base(dev))
-		common.SudoExec("bash", "-c", fmt.Sprintf("echo %d > %s 2>/dev/null", cfg.ScrubSpeedMax, speedFile))
+		writeSysfs(speedFile, fmt.Sprintf("%d", cfg.ScrubSpeedMax))
 	}
 
 	var results []string
 	for _, dev := range mdDevices {
 		actionFile := fmt.Sprintf("/sys/block/%s/md/sync_action", filepath.Base(dev))
-		common.SudoExec("bash", "-c", fmt.Sprintf("echo check > %s 2>/dev/null", actionFile))
+		writeSysfs(actionFile, "check")
 
 		// Monitor progress
 		for i := 0; i < 360; i++ { // max 30 min polling
@@ -547,14 +556,14 @@ func runRAIDScrub(cfg Config) (string, string) {
 
 			// Check if still in time window
 			if !inTimeWindow(cfg.TimeWindowStart, cfg.TimeWindowEnd) {
-				common.SudoExec("bash", "-c", fmt.Sprintf("echo idle > %s 2>/dev/null", actionFile))
+				writeSysfs(actionFile, "idle")
 				results = append(results, fmt.Sprintf("%s: 超出时间窗口，已暂停", dev))
 				return "warn", strings.Join(results, "; ")
 			}
 
 			// Check IO usage
 			if !checkIOUsage(cfg.IOLimit) {
-				common.SudoExec("bash", "-c", fmt.Sprintf("echo idle > %s 2>/dev/null", actionFile))
+				writeSysfs(actionFile, "idle")
 				results = append(results, fmt.Sprintf("%s: IO 使用率过高，已暂停", dev))
 				return "warn", strings.Join(results, "; ")
 			}

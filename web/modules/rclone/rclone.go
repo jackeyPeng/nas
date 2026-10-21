@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"nas-panel/common"
@@ -494,6 +495,21 @@ func handleUpdateRemote(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// chownReference 等价于 `chown --reference=refPath target`：把 target 的属主/属组
+// 对齐 refPath。面板以 root 运行，直接用 os.Chown；refPath Stat 失败时静默跳过，
+// 与原命令 `2>/dev/null` 的容错语义一致。
+func chownReference(refPath, target string) {
+	info, err := os.Stat(refPath)
+	if err != nil {
+		return
+	}
+	st, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return
+	}
+	os.Chown(target, int(st.Uid), int(st.Gid))
+}
+
 // handleMkdir 在共享目录下创建子目录
 func handleMkdir(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
@@ -525,7 +541,7 @@ func handleMkdir(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// 属主对齐父共享目录（保持 Samba 可写）
-	common.SudoExec("bash", "-c", fmt.Sprintf("chown --reference=%s %s", dir, full))
+	chownReference(dir, full)
 	common.JSONResponse(w, map[string]interface{}{
 		"message": "目录已创建",
 		"path":    full,

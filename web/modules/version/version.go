@@ -3,6 +3,7 @@ package version
 import (
 	_ "embed"
 	"net/http"
+	"os"
 	"regexp"
 	"runtime"
 	"strings"
@@ -80,6 +81,33 @@ func cmdVersion(name string, args ...string) string {
 	return strings.TrimSpace(out)
 }
 
+// firstOutputLine 等价于 `| head -1`：返回第一行（trim 后），空输出返回空字符串。
+// 纯函数，便于单测。
+func firstOutputLine(out string) string {
+	trimmed := strings.TrimSpace(out)
+	if trimmed == "" {
+		return ""
+	}
+	lines := strings.SplitN(trimmed, "\n", 2)
+	return strings.TrimSpace(lines[0])
+}
+
+// parseOSPrettyName 等价于 `awk -F'"' '/^PRETTY_NAME/{print $2}' /etc/os-release`：
+// 从 os-release 内容中取出 PRETTY_NAME= 右侧双引号包裹的值。纯函数，便于单测。
+func parseOSPrettyName(content string) string {
+	for _, line := range strings.Split(content, "\n") {
+		if !strings.HasPrefix(line, "PRETTY_NAME") {
+			continue
+		}
+		parts := strings.SplitN(line, `"`, 3)
+		if len(parts) >= 2 {
+			return parts[1]
+		}
+		return ""
+	}
+	return ""
+}
+
 // handleComponents returns versions of all NAS software components
 func handleComponents(w http.ResponseWriter, r *http.Request) {
 	var comps []Component
@@ -96,8 +124,8 @@ func handleComponents(w http.ResponseWriter, r *http.Request) {
 
 	ftpVer := firstMatch(cmdVersion("/usr/sbin/vsftpd", "-v"), regexp.MustCompile(`vsftpd:\s+version\s+(\S+)`))
 	if ftpVer == "" {
-		out, _ := common.ExecOutput("sh", "-c", "/usr/sbin/vsftpd -v 2>&1 | head -1")
-		ftpVer = firstMatch(strings.TrimSpace(out), regexp.MustCompile(`version\s+(\S+)`))
+		out, _ := common.Exec("/usr/sbin/vsftpd", "-v")
+		ftpVer = firstMatch(firstOutputLine(out), regexp.MustCompile(`version\s+(\S+)`))
 	}
 	if ftpVer == "" {
 		ftpVer = dpkgVersion("vsftpd")
@@ -144,7 +172,8 @@ func handleComponents(w http.ResponseWriter, r *http.Request) {
 
 	// ── 运行环境 ──────────────────────────────────────
 	comps = append(comps, Component{"Linux 内核", "运行环境", common.ExecFirstLine("uname", "-r"), "操作系统内核"})
-	osPretty := common.ExecFirstLine("sh", "-c", `awk -F'"' '/^PRETTY_NAME/{print $2}' /etc/os-release 2>/dev/null`)
+	osReleaseData, _ := os.ReadFile("/etc/os-release")
+	osPretty := parseOSPrettyName(string(osReleaseData))
 	comps = append(comps, Component{"操作系统", "运行环境", osPretty, "Debian GNU/Linux"})
 
 	common.JSONResponse(w, map[string]interface{}{
@@ -163,7 +192,7 @@ func handleComponents(w http.ResponseWriter, r *http.Request) {
 
 // dpkgVersion returns the installed version of a deb package
 func dpkgVersion(pkg string) string {
-	out, _ := common.ExecOutput("sh", "-c", "dpkg-query -W -f='${Version}' "+pkg+" 2>/dev/null")
+	out, _ := common.ExecOutput("dpkg-query", "-W", "-f=${Version}", pkg)
 	v := strings.TrimSpace(out)
 	if v == "" || strings.Contains(v, "dpkg-query") {
 		return ""

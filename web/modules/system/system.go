@@ -513,14 +513,24 @@ func handleSysctl(w http.ResponseWriter, r *http.Request) {
 // 系统更新
 // ═══════════════════════════════════════
 
+// countUpgradableLines 等价于 `apt list --upgradable 2>/dev/null | grep -c upgradable`：
+// 统计 `apt list --upgradable` 输出中含 "upgradable" 的行数。纯函数，便于单测。
+func countUpgradableLines(out string) int {
+	n := 0
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, "upgradable") {
+			n++
+		}
+	}
+	return n
+}
+
 func getUpdateInfo() map[string]interface{} {
 	info := map[string]interface{}{}
 
 	// Count upgradable packages
-	out, _ := common.SudoOutput("bash", "-c", "apt list --upgradable 2>/dev/null | grep -c upgradable || echo 0")
-	count := 0
-	fmt.Sscanf(strings.TrimSpace(out), "%d", &count)
-	info["upgradable_count"] = count
+	out, _ := common.SudoOutput("apt", "list", "--upgradable")
+	info["upgradable_count"] = countUpgradableLines(out)
 
 	// Last update time
 	if data, err := os.ReadFile("/var/log/apt/history.log"); err == nil {

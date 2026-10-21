@@ -492,10 +492,6 @@ func removeUser(username string, deleteData bool) (string, error) {
 	return out, nil
 }
 
-func shellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
-}
-
 // RegisterRoutes 注册用户模块路由
 func RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/users", common.AuthMiddleware(handleUsers))

@@ -169,9 +169,8 @@ func deleteGroup(name string) error {
 
 // setGroupMembers 设置组成员（替换式）
 func setGroupMembers(groupName, membersStr string) error {
-	// 先清空组
-	out, err := common.SudoExec("bash", "-c",
-		fmt.Sprintf("gpasswd -M '' %s", shellQuote(groupName)))
+	// 先清空组（-M 后跟空字符串成员列表，直传参，等价于原 shell 里的 -M ''）
+	out, err := common.SudoExec("gpasswd", "-M", "", groupName)
 	if err != nil {
 		return fmt.Errorf("清空组成员失败: %s: %v", out, err)
 	}

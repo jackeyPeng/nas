@@ -240,30 +240,39 @@ func updateUserServices(username string, services map[string]bool) error {
 	return nil
 }
 
+// countUserLines 统计 content 中以 "prefix:" 开头的行数，
+// 等价于原来的 `grep -c '^prefix:'`。纯函数，便于单测。
+func countUserLines(content, prefix string) int {
+	if prefix == "" {
+		return 0
+	}
+	needle := prefix + ":"
+	n := 0
+	for _, line := range strings.Split(content, "\n") {
+		if strings.HasPrefix(line, needle) {
+			n++
+		}
+	}
+	return n
+}
+
 // inSambaPasswd 判断用户是否已有 Samba 密码库记录。
 func inSambaPasswd(username string) bool {
-	out, _ := common.SudoOutput("bash", "-c",
-		fmt.Sprintf("pdbedit -L 2>/dev/null | grep -c '^%s:'", shellQuote(username)))
-	n := strings.TrimSpace(out)
-	return n != "" && n != "0"
+	out, _ := common.SudoOutput("pdbedit", "-L")
+	return countUserLines(out, username) > 0
 }
 
 // inHtpasswd 判断用户是否已有 WebDAV htpasswd 记录。
 func inHtpasswd(username string) bool {
-	out, _ := common.SudoOutput("bash", "-c",
-		fmt.Sprintf("grep -c '^%s:' /etc/rclone-htpasswd 2>/dev/null", shellQuote(username)))
-	n := strings.TrimSpace(out)
-	return n != "" && n != "0"
+	out, _ := common.SudoOutput("cat", "/etc/rclone-htpasswd")
+	return countUserLines(out, username) > 0
 }
 
 // --- Samba 服务开关 ---
 
 // addSambaUser 将用户加入 Samba 密码库并设置密码（新建用户时必须用 -a，不能用 -e）
 func addSambaUser(username, password string) error {
-	out, err := common.SudoExec("bash", "-c", fmt.Sprintf(
-		"printf '%%s\n%%s\n' %s %s | smbpasswd -a %s -s",
-		shellQuote(password), shellQuote(password), shellQuote(username),
-	))
+	out, err := common.SudoExecStdin(password+"\n"+password+"\n", "smbpasswd", "-a", username, "-s")
 	if err != nil {
 		return fmt.Errorf("smbpasswd -a 失败: %s: %v", out, err)
 	}
@@ -291,6 +300,65 @@ func disableSambaUser(username string) error {
 // 注意：vsftpd.conf 里 userlist_deny=NO，即 userlist 是【白名单】——
 // 在列表里 = 允许登录，不在列表里 = 拒绝登录。
 
+// appendLine 等价于 `echo line >> file`：直接在现有内容末尾追加一行
+// （不会在追加前补一个多余的换行，与 shell >> 的字节级行为一致）。
+// 纯函数，便于单测。
+func appendLine(content, line string) string {
+	return content + line + "\n"
+}
+
+// removeExactLine 等价于 `sed -i '/^line$/d' file`：删除与 line 完全相等的行，
+// 其余行原样保留（包括空行）。纯函数，便于单测。
+func removeExactLine(content, line string) string {
+	if content == "" {
+		return ""
+	}
+	lines := strings.Split(content, "\n")
+	// 末尾空字符串元素代表原内容以换行结尾；sed 处理时不会把它当成"一行"，
+	// 这里按原文件行结构处理后再还原末尾换行语义。
+	trailingNewline := strings.HasSuffix(content, "\n")
+	var kept []string
+	for i, l := range lines {
+		if i == len(lines)-1 && trailingNewline && l == "" {
+			continue // 不是真实行，是 Split 产生的末尾空元素
+		}
+		if l == line {
+			continue
+		}
+		kept = append(kept, l)
+	}
+	result := strings.Join(kept, "\n")
+	if len(kept) > 0 {
+		result += "\n"
+	}
+	return result
+}
+
+// removeLinesByPrefix 等价于 `sed -i '/^prefix/d' file`：删除以 prefix 开头的行，
+// 其余行原样保留。纯函数，便于单测。
+func removeLinesByPrefix(content, prefix string) string {
+	if content == "" {
+		return ""
+	}
+	lines := strings.Split(content, "\n")
+	trailingNewline := strings.HasSuffix(content, "\n")
+	var kept []string
+	for i, l := range lines {
+		if i == len(lines)-1 && trailingNewline && l == "" {
+			continue
+		}
+		if strings.HasPrefix(l, prefix) {
+			continue
+		}
+		kept = append(kept, l)
+	}
+	result := strings.Join(kept, "\n")
+	if len(kept) > 0 {
+		result += "\n"
+	}
+	return result
+}
+
 func enableFTPUser(username string) error {
 	// 加入 userlist = 允许登录（白名单模式）
 	data, _ := common.ExecOutput("cat", "/etc/vsftpd.userlist")
@@ -299,10 +367,13 @@ func enableFTPUser(username string) error {
 			return nil // 已在白名单
 		}
 	}
-	out, err := common.SudoExec("bash", "-c",
-		fmt.Sprintf("echo %s >> /etc/vsftpd.userlist", shellQuote(username)))
+	current, err := common.SudoOutput("cat", "/etc/vsftpd.userlist")
 	if err != nil {
-		return fmt.Errorf("启用 FTP 失败: %s: %v", out, err)
+		return fmt.Errorf("启用 FTP 失败: %v", err)
+	}
+	updated := appendLine(current, username)
+	if err := common.SafeWriteFile("/etc/vsftpd.userlist", updated); err != nil {
+		return fmt.Errorf("启用 FTP 失败: %v", err)
 	}
 	// 重新加载 vsftpd
 	common.SudoExec("systemctl", "reload", "vsftpd")
@@ -311,10 +382,13 @@ func enableFTPUser(username string) error {
 
 func disableFTPUser(username string) error {
 	// 从 userlist 移除 = 拒绝登录（白名单模式）
-	out, err := common.SudoExec("bash", "-c",
-		fmt.Sprintf("sed -i '/^%s$/d' /etc/vsftpd.userlist", shellQuote(username)))
+	data, err := common.SudoOutput("cat", "/etc/vsftpd.userlist")
 	if err != nil {
-		return fmt.Errorf("禁用 FTP 失败: %s: %v", out, err)
+		return fmt.Errorf("禁用 FTP 失败: %v", err)
+	}
+	updated := removeExactLine(data, username)
+	if err := common.SafeWriteFile("/etc/vsftpd.userlist", updated); err != nil {
+		return fmt.Errorf("禁用 FTP 失败: %v", err)
 	}
 	common.SudoExec("systemctl", "reload", "vsftpd")
 	return nil
@@ -332,10 +406,13 @@ func addWebDAVUser(username, password string) error {
 }
 
 func disableWebDAVUser(username string) error {
-	out, err := common.SudoExec("bash", "-c",
-		fmt.Sprintf("sed -i '/^%s:/d' /etc/rclone-htpasswd", shellQuote(username)))
+	data, err := common.SudoOutput("cat", "/etc/rclone-htpasswd")
 	if err != nil {
-		return fmt.Errorf("禁用 WebDAV 失败: %s: %v", out, err)
+		return fmt.Errorf("禁用 WebDAV 失败: %v", err)
+	}
+	updated := removeLinesByPrefix(data, username+":")
+	if err := common.SafeWriteFile("/etc/rclone-htpasswd", updated); err != nil {
+		return fmt.Errorf("禁用 WebDAV 失败: %v", err)
 	}
 	return nil
 }
