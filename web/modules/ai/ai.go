@@ -14,6 +14,8 @@ func RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/ai/status", common.AuthMiddleware(handleStatus))
 	mux.HandleFunc("/api/ai/config", common.AuthMiddleware(requireEnabled(handleConfig)))
 	mux.HandleFunc("/api/ai/toggle", common.AuthMiddleware(handleToggle))
+	// test-connection 同 toggle 例外：配置阶段（功能尚未开启）就需要能测连通性。
+	mux.HandleFunc("/api/ai/test-connection", common.AuthMiddleware(handleTestConnection))
 }
 
 // aiEnabled 读内存缓存的配置，避免每请求读盘；SaveConfig 刷新缓存后即时生效。
