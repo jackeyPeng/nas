@@ -2820,12 +2820,13 @@
                                                 </template>
                                                 <div style="white-space:pre-wrap" x-text="m.content"></div>
                                                 <!-- pending_action 信息卡：出现即自动弹出确认弹窗（openAIActionConfirm），
-                                                     这里额外保留一个可点击摘要条,方便用户在弹窗被取消/关闭后重新唤起确认 -->
+                                                     这里额外保留一个可点击摘要条,方便用户在弹窗被取消/关闭后重新唤起确认；
+                                                     resolved 后变绿色已执行态，不可再点击（防 410 重复确认） -->
                                                 <template x-if="m.pendingAction">
-                                                    <div style="margin-top:var(--sp-2);background: var(--warn-light);border:1px solid #f59e0b;border-radius:var(--radius-sm);padding:var(--sp-2) var(--sp-3);font-size:var(--fs-xs);cursor:pointer"
-                                                        @click="openAIActionConfirm(m.pendingAction)">
-                                                        <div style="font-weight:600;color: var(--warn)" x-text="m.pendingAction.summary"></div>
-                                                        <div style="color: var(--warn);margin-top:var(--sp-1)" x-text="$t('ai.pending_hint')"></div>
+                                                    <div :style="m.pendingAction.resolved ? 'margin-top:var(--sp-2);background:#ecfdf5;border:1px solid #10b981;border-radius:var(--radius-sm);padding:var(--sp-2) var(--sp-3);font-size:var(--fs-xs)' : 'margin-top:var(--sp-2);background: var(--warn-light);border:1px solid #f59e0b;border-radius:var(--radius-sm);padding:var(--sp-2) var(--sp-3);font-size:var(--fs-xs);cursor:pointer'"
+                                                        @click="!m.pendingAction.resolved && openAIActionConfirm(m.pendingAction)">
+                                                        <div :style="m.pendingAction.resolved ? 'font-weight:600;color:#047857' : 'font-weight:600;color: var(--warn)'" x-text="m.pendingAction.summary"></div>
+                                                        <div :style="m.pendingAction.resolved ? 'color:#047857;margin-top:var(--sp-1)' : 'color: var(--warn);margin-top:var(--sp-1)'" x-text="m.pendingAction.resolved ? $t('ai.executed_hint') : $t('ai.pending_hint')"></div>
                                                     </div>
                                                 </template>
                                                 <!-- 错误事件内嵌红条 -->

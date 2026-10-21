@@ -1367,6 +1367,7 @@
     "tool_call_label": "Calling tool",
     "tool_result_label": "Tool result",
     "pending_hint": "Click to reopen the confirmation dialog",
+    "executed_hint": "✓ Confirmed & executed",
     "error_prefix": "Something went wrong",
     "confirm_title": "Confirm action",
     "confirm_word_label": "Type \"{0}\" to confirm execution",

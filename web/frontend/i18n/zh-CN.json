@@ -1367,6 +1367,7 @@
     "tool_call_label": "调用工具",
     "tool_result_label": "工具结果",
     "pending_hint": "点击可重新打开确认弹窗",
+    "executed_hint": "✓ 已确认执行",
     "error_prefix": "出错了",
     "confirm_title": "操作确认",
     "confirm_word_label": "请输入「{0}」以确认执行",

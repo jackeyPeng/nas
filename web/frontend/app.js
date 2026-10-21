@@ -3721,6 +3721,7 @@ function nasPanel() {
         // openAIActionConfirm 打开弹窗：confirmWordInput/genPassword 每次重新打开
         // 都清空，不continu上一次残留（尤其密码——绝不允许旧密码跨操作卡复用）。
         openAIActionConfirm(action) {
+            if (!action || action.resolved) return;
             this.aiConfirm = { show: true, action, confirmWordInput: '', genPassword: '', submitting: false };
         },
         closeAIActionConfirm() {
@@ -3799,6 +3800,9 @@ function nasPanel() {
                     return;
                 }
                 this.showToast(this.t('msg.op_success'), 'success');
+                // 标记对应消息卡为已执行（绿色态、不可再点，防重复确认 410）
+                const doneMsg = [...this.aiMessages].reverse().find(x => x.pendingAction && x.pendingAction.id === action.id);
+                if (doneMsg) doneMsg.pendingAction = Object.assign({}, doneMsg.pendingAction, { resolved: true });
                 this.closeAIActionConfirm();
             } catch (e) {
                 this.showToast(String(e.message || e), 'error');
