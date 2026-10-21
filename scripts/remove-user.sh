@@ -63,6 +63,14 @@ sed -i "/^$USERNAME$/d" /etc/vsftpd.userlist
 systemctl reload vsftpd 2>/dev/null || true
 echo "  ✓ FTP 已移除"
 
+# 3b. 从 WebDAV 凭据移除（此前遗漏：删号后 htpasswd 条目仍在，
+#     被删用户依旧能通过 rclone serve webdav 认证——权限撤销缺口）
+if [ -f /etc/rclone-htpasswd ] && grep -q "^$USERNAME:" /etc/rclone-htpasswd; then
+    htpasswd -D /etc/rclone-htpasswd "$USERNAME" 2>/dev/null || \
+        sed -i "/^$USERNAME:/d" /etc/rclone-htpasswd
+    echo "  ✓ WebDAV 凭据已移除"
+fi
+
 # 4. 处理用户数据
 echo "[4/5] 处理用户数据..."
 if [ "$DELETE_DATA" = "--delete-data" ]; then
