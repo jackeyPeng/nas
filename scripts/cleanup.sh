@@ -39,8 +39,8 @@ fi
 
 echo ""
 
-# ==================== [1/7] 停止所有 NAS 服务 ====================
-echo "[1/7] 停止所有 NAS 服务..."
+# ==================== [1/8] 停止所有 NAS 服务 ====================
+echo "[1/8] 停止所有 NAS 服务..."
 SERVICES="smbd nmbd nfs-kernel-server vsftpd rclone-webdav filebrowser rclone-s3 fail2ban nas-panel"
 for svc in $SERVICES; do
     if systemctl is-active --quiet "$svc" 2>/dev/null; then
@@ -54,9 +54,9 @@ for svc in $SERVICES; do
 done
 echo "  ✓ 服务已停止"
 
-# ==================== [2/7] 删除 systemd 服务文件 ====================
+# ==================== [2/8] 删除 systemd 服务文件 ====================
 echo ""
-echo "[2/7] 删除 systemd 服务文件..."
+echo "[2/8] 删除 systemd 服务文件..."
 SERVICE_FILES="/etc/systemd/system/rclone-webdav.service /etc/systemd/system/filebrowser.service /etc/systemd/system/rclone-s3.service /etc/systemd/system/nas-panel.service"
 for file in $SERVICE_FILES; do
     if [ -f "$file" ]; then
@@ -67,9 +67,9 @@ done
 systemctl daemon-reload
 echo "  ✓ 服务文件已删除"
 
-# ==================== [3/7] 删除配置文件 ====================
+# ==================== [3/8] 删除配置文件 ====================
 echo ""
-echo "[3/7] 删除配置文件..."
+echo "[3/8] 删除配置文件..."
 CONFIG_FILES="
 /etc/samba/smb.conf
 /etc/exports
@@ -96,9 +96,9 @@ if [ -d "/etc/filebrowser" ]; then
 fi
 echo "  ✓ 配置文件已删除"
 
-# ==================== [4/7] 删除二进制文件 ====================
+# ==================== [4/8] 删除二进制文件 ====================
 echo ""
-echo "[4/7] 删除二进制文件..."
+echo "[4/8] 删除二进制文件..."
 BINARIES="/usr/local/bin/filebrowser /usr/local/bin/nas-panel"
 for bin in $BINARIES; do
     if [ -f "$bin" ]; then
@@ -108,79 +108,14 @@ for bin in $BINARIES; do
 done
 echo "  ✓ 二进制文件已删除"
 
-# ==================== [5/7] 卸载软件包 ====================
+# ==================== [5/8] 拆除存储池 + 清理磁盘 RAID/LVM 签名 ====================
+# （48 机实踩事故：本段原在文件末尾「[额外]」位置、purge 软件包与 rm -rf /data 之后。
+#  set -e 下 /data/nas* 还挂着时原 [6/7] 的 rm -rf /data 遇 EBUSY 非零退出，脚本中止，
+#  导致本段与后续清理全部不执行，残留 md0 仍挂载、/opt/nas 软链接仍在。
+#  现移到 purge 软件包之前：lvremove/vgremove/pvremove/mdadm/wipefs 等命令依赖 lvm2/mdadm
+#  软件包，必须在 [6/8] purge 之前执行，否则命令已被卸载。）
 echo ""
-echo "[5/7] 卸载软件包..."
-PACKAGES="samba smbclient nfs-kernel-server nfs-common vsftpd rclone fail2ban ufw smartmontools unattended-upgrades apache2-utils"
-DEBIAN_FRONTEND=noninteractive apt-get purge -y $PACKAGES 2>/dev/null || true
-DEBIAN_FRONTEND=noninteractive apt-get autoremove -y 2>/dev/null || true
-echo "  ✓ 软件包已卸载"
-
-# ==================== [6/7] 清理数据目录 ====================
-echo ""
-echo "[6/7] 清理数据目录..."
-if [ "$KEEP_DATA" = false ]; then
-    if [ -d "/data" ]; then
-        rm -rf /data
-        echo "  删除 /data/"
-    fi
-else
-    echo "  保留 /data/ (--keep-data)"
-fi
-echo "  ✓ 数据目录已处理"
-
-# ==================== [7/7] 清理其他文件 ====================
-echo ""
-echo "[7/7] 清理其他文件..."
-# 清理 Samba 用户（自动获取部署时的用户）
-NAS_USER="${SUDO_USER:-$USER}"
-if [ -n "$NAS_USER" ] && [ "$NAS_USER" != "root" ]; then
-    if command -v smbpasswd &>/dev/null; then
-        smbpasswd -x "$NAS_USER" 2>/dev/null || true
-        echo "  删除 Samba 用户 $NAS_USER"
-    fi
-fi
-
-# 清理 /opt/nas 软链接
-if [ -L "/opt/nas" ]; then
-    rm -f /opt/nas
-    echo "  删除 /opt/nas 软链接"
-fi
-
-# 清理 UFW（如果已重新安装）
-if command -v ufw &>/dev/null; then
-    ufw --force reset 2>/dev/null || true
-    echo "  重置 UFW 规则"
-fi
-
-# 清理 sudoers
-if [ -f /etc/sudoers.d/nas-panel ]; then
-    rm -f /etc/sudoers.d/nas-panel
-    echo "  删除 /etc/sudoers.d/nas-panel"
-fi
-
-# 清理监控 cron
-NAS_USER="${SUDO_USER:-$USER}"
-if [ -n "$NAS_USER" ] && [ "$NAS_USER" != "root" ]; then
-    crontab -u "$NAS_USER" -l 2>/dev/null | grep -v "monitor.sh" | crontab -u "$NAS_USER" - 2>/dev/null || true
-    echo "  删除监控 cron"
-fi
-
-# 清理告警状态
-rm -rf /var/lib/nas-monitor 2>/dev/null || true
-
-# 清理日志
-rm -f /var/log/samba/log.* 2>/dev/null || true
-rm -rf /var/log/samba 2>/dev/null || true
-rm -rf /var/lib/samba 2>/dev/null || true
-rm -rf /var/lib/nfs 2>/dev/null || true
-rm -rf /var/lib/vsftpd 2>/dev/null || true
-
-echo "  ✓ 其他文件已清理"
-
-# ==================== [额外] 清理存储池与磁盘签名 ====================
-echo ""
-echo "[额外] 拆除存储池 + 清理磁盘 RAID/LVM 签名..."
+echo "[5/8] 拆除存储池 + 清理磁盘 RAID/LVM 签名..."
 
 # 卸载 /data/nas* 存储池
 # （实踩：服务刚 stop 时 nfsd/smbd 收尾会短暂持有挂载点，单次 umount busy 被静默吞掉
@@ -241,6 +176,81 @@ done
 # 清理 mdadm.conf
 sed -i '/^ARRAY/d' /etc/mdadm/mdadm.conf 2>/dev/null || true
 echo "  ✓ 磁盘签名清理完成"
+
+# ==================== [6/8] 卸载软件包 ====================
+echo ""
+echo "[6/8] 卸载软件包..."
+PACKAGES="samba smbclient nfs-kernel-server nfs-common vsftpd rclone fail2ban ufw smartmontools unattended-upgrades apache2-utils"
+DEBIAN_FRONTEND=noninteractive apt-get purge -y $PACKAGES 2>/dev/null || true
+DEBIAN_FRONTEND=noninteractive apt-get autoremove -y 2>/dev/null || true
+echo "  ✓ 软件包已卸载"
+
+# ==================== [7/8] 清理数据目录 ====================
+echo ""
+echo "[7/8] 清理数据目录..."
+if [ "$KEEP_DATA" = false ]; then
+    if [ -d "/data" ]; then
+        if mount | grep -q '/data/nas'; then
+            echo "  ⚠️  /data 下仍有挂载点（/data/nas*），跳过 rm -rf /data 以避免误删/残留挂载点"
+            echo "  ⚠️  请手动排查（mount | grep /data/nas、fuser -vm 对应挂载点）后重跑本脚本"
+        else
+            rm -rf /data || echo "  ⚠️  删除 /data/ 失败，请手动检查"
+            echo "  删除 /data/"
+        fi
+    fi
+else
+    echo "  保留 /data/ (--keep-data)"
+fi
+echo "  ✓ 数据目录已处理"
+
+# ==================== [8/8] 清理其他文件 ====================
+echo ""
+echo "[8/8] 清理其他文件..."
+# 清理 Samba 用户（自动获取部署时的用户）
+NAS_USER="${SUDO_USER:-$USER}"
+if [ -n "$NAS_USER" ] && [ "$NAS_USER" != "root" ]; then
+    if command -v smbpasswd &>/dev/null; then
+        smbpasswd -x "$NAS_USER" 2>/dev/null || true
+        echo "  删除 Samba 用户 $NAS_USER"
+    fi
+fi
+
+# 清理 /opt/nas 软链接
+if [ -L "/opt/nas" ]; then
+    rm -f /opt/nas
+    echo "  删除 /opt/nas 软链接"
+fi
+
+# 清理 UFW（如果已重新安装）
+if command -v ufw &>/dev/null; then
+    ufw --force reset 2>/dev/null || true
+    echo "  重置 UFW 规则"
+fi
+
+# 清理 sudoers
+if [ -f /etc/sudoers.d/nas-panel ]; then
+    rm -f /etc/sudoers.d/nas-panel
+    echo "  删除 /etc/sudoers.d/nas-panel"
+fi
+
+# 清理监控 cron
+NAS_USER="${SUDO_USER:-$USER}"
+if [ -n "$NAS_USER" ] && [ "$NAS_USER" != "root" ]; then
+    crontab -u "$NAS_USER" -l 2>/dev/null | grep -v "monitor.sh" | crontab -u "$NAS_USER" - 2>/dev/null || true
+    echo "  删除监控 cron"
+fi
+
+# 清理告警状态
+rm -rf /var/lib/nas-monitor 2>/dev/null || true
+
+# 清理日志
+rm -f /var/log/samba/log.* 2>/dev/null || true
+rm -rf /var/log/samba 2>/dev/null || true
+rm -rf /var/lib/samba 2>/dev/null || true
+rm -rf /var/lib/nfs 2>/dev/null || true
+rm -rf /var/lib/vsftpd 2>/dev/null || true
+
+echo "  ✓ 其他文件已清理"
 
 # ==================== 完成 ====================
 echo ""

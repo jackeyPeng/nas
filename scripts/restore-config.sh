@@ -102,6 +102,8 @@ fi
 echo ""
 echo "[4/7] 恢复 NAS 项目配置..."
 
+NAS_USER="${SUDO_USER:-$USER}"
+
 if [ -f "$BACKUP_ROOT/opt/nas/.env" ]; then
     mkdir -p /opt/nas
     cp -a "$BACKUP_ROOT/opt/nas/.env" /opt/nas/
@@ -111,6 +113,40 @@ fi
 if [ -d "$BACKUP_ROOT/opt/nas/configs" ]; then
     cp -a "$BACKUP_ROOT/opt/nas/configs" /opt/nas/
     echo "  ✓ /opt/nas/configs/"
+fi
+
+# 面板数据目录（folders.db/vault.db/registry.db/diagnostics.db/audit.db/
+# events.db/2fa.json/rclone/tasks.json 等；旧备份包没有该目录时静默跳过。
+# 已有同名文件直接覆盖，恢复前不保留现场）
+if [ -d "$BACKUP_ROOT/opt/nas/data" ]; then
+    mkdir -p /opt/nas/data
+    cp -a "$BACKUP_ROOT/opt/nas/data/." /opt/nas/data/
+    echo "  ✓ /opt/nas/data/"
+fi
+
+# rclone 配置（root 侧）
+if [ -f "$BACKUP_ROOT/root-rclone/rclone.conf" ]; then
+    mkdir -p /root/.config/rclone
+    cp -a "$BACKUP_ROOT/root-rclone/rclone.conf" /root/.config/rclone/rclone.conf
+    echo "  ✓ /root/.config/rclone/rclone.conf"
+fi
+
+# rclone 配置（部署用户侧）
+if [ -f "$BACKUP_ROOT/user-rclone/rclone.conf" ] && [ -n "$NAS_USER" ] && [ "$NAS_USER" != "root" ]; then
+    mkdir -p "/home/${NAS_USER}/.config/rclone"
+    cp -a "$BACKUP_ROOT/user-rclone/rclone.conf" "/home/${NAS_USER}/.config/rclone/"
+    echo "  ✓ /home/${NAS_USER}/.config/rclone/rclone.conf"
+fi
+
+# /etc/projects、/etc/projid（已随「3. 恢复系统配置文件」的 etc/ 整树回位时自动覆盖，
+# 这里仅在旧版 etc/ 子树未包含时兜底单独恢复，按脚本既有 /etc 恢复模式）
+if [ -f "$BACKUP_ROOT/etc/projects" ] && [ ! -f "/etc/projects" ]; then
+    cp -a "$BACKUP_ROOT/etc/projects" /etc/projects
+    echo "  ✓ /etc/projects"
+fi
+if [ -f "$BACKUP_ROOT/etc/projid" ] && [ ! -f "/etc/projid" ]; then
+    cp -a "$BACKUP_ROOT/etc/projid" /etc/projid
+    echo "  ✓ /etc/projid"
 fi
 
 echo "  ✓ NAS 项目配置已恢复"
@@ -135,7 +171,6 @@ fi
 echo ""
 echo "[6/7] 恢复 crontab..."
 
-NAS_USER="${SUDO_USER:-$USER}"
 if [ -f "$BACKUP_ROOT/crontab.txt" ] && [ -n "$NAS_USER" ] && [ "$NAS_USER" != "root" ]; then
     crontab -u "$NAS_USER" "$BACKUP_ROOT/crontab.txt" 2>/dev/null || true
     echo "  ✓ crontab 已恢复 (${NAS_USER})"

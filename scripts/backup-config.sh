@@ -44,6 +44,8 @@ CONFIG_FILES="
 /etc/fail2ban/jail.local
 /etc/rclone-htpasswd
 /etc/sudoers.d/nas-panel
+/etc/projects
+/etc/projid
 "
 
 mkdir -p "${BACKUP_PATH}/etc"
@@ -101,6 +103,15 @@ if [ -d "/opt/nas/configs" ]; then
     echo "  ✓ /opt/nas/configs/"
 fi
 
+# 面板数据目录（整目录拷贝：folders.db/vault.db/registry.db/diagnostics.db/
+# audit.db/events.db/2fa.json/rclone/tasks.json 等，免去逐项枚举漂移；
+# sqlite 的 -wal/-shm 伴生文件随目录一并拷走）
+if [ -d "/opt/nas/data" ]; then
+    mkdir -p "${BACKUP_PATH}/opt/nas"
+    cp -a /opt/nas/data "${BACKUP_PATH}/opt/nas/"
+    echo "  ✓ /opt/nas/data/"
+fi
+
 # nas-panel 二进制版本信息
 if [ -f "/usr/local/bin/nas-panel" ]; then
     /usr/local/bin/nas-panel --version 2>/dev/null > "${BACKUP_PATH}/nas-panel-version.txt" || \
@@ -121,6 +132,21 @@ if [ -d "/var/lib/samba/private" ]; then
     mkdir -p "${BACKUP_PATH}/var/lib/samba"
     cp -a /var/lib/samba/private "${BACKUP_PATH}/var/lib/samba/"
     echo "  ✓ Samba 用户数据库 (passdb.tdb)"
+fi
+
+# rclone 配置（root 侧，面板以 sudo rclone 实际使用的配置文件）
+if [ -f "/root/.config/rclone/rclone.conf" ]; then
+    mkdir -p "${BACKUP_PATH}/root-rclone"
+    cp -a /root/.config/rclone/rclone.conf "${BACKUP_PATH}/root-rclone/"
+    echo "  ✓ /root/.config/rclone/rclone.conf"
+fi
+
+# rclone 配置（部署用户侧，getRcloneConf fallback 路径）
+NAS_USER_RC="${SUDO_USER:-$USER}"
+if [ -n "$NAS_USER_RC" ] && [ "$NAS_USER_RC" != "root" ] && [ -f "/home/${NAS_USER_RC}/.config/rclone/rclone.conf" ]; then
+    mkdir -p "${BACKUP_PATH}/user-rclone"
+    cp -a "/home/${NAS_USER_RC}/.config/rclone/rclone.conf" "${BACKUP_PATH}/user-rclone/"
+    echo "  ✓ /home/${NAS_USER_RC}/.config/rclone/rclone.conf"
 fi
 
 # Samba 用户列表（文本格式，方便查看）
