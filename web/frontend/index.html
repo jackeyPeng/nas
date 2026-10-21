@@ -2783,10 +2783,66 @@
                     <button :class="{'tab-active': aiTab === 'settings'}" class="tab-btn" @click="aiTab = 'settings'" x-text="$t('ai.tab_settings')"></button>
                 </div>
 
-                <!-- Tab: 对话（内容见 Task 9） -->
+                <!-- Tab: 对话 -->
                 <div x-show="aiTab === 'chat'" x-transition.opacity.duration.200ms>
                     <template x-if="!aiStatus.enabled">
                         <p style="color:var(--text-light)" x-text="$t('ai.not_enabled')"></p>
+                    </template>
+                    <template x-if="aiStatus.enabled">
+                        <div style="display:flex;gap:var(--sp-4);align-items:flex-start">
+                            <!-- 会话侧栏 -->
+                            <div style="width:220px;flex-shrink:0;background: var(--card-bg);border:1px solid var(--border);border-radius:var(--radius);padding:var(--sp-3)">
+                                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--sp-3)">
+                                    <strong style="font-size:var(--fs-sm)" x-text="$t('ai.conversations')"></strong>
+                                    <button class="btn btn-sm btn-primary" @click="newAIConversation()" x-text="$t('ai.new_chat')"></button>
+                                </div>
+                                <template x-for="c in aiConversations" :key="c.id">
+                                    <div @click="loadAIConversation(c.id)"
+                                        :style="(c.id === aiConversationId ? 'background: var(--primary-light);' : '') + 'padding:var(--sp-2);border-radius:var(--radius-sm);cursor:pointer;margin-bottom:var(--sp-1);font-size:var(--fs-xs);overflow:hidden;text-overflow:ellipsis;white-space:nowrap'"
+                                        :title="c.title">
+                                        <span x-text="c.title || c.id"></span>
+                                    </div>
+                                </template>
+                                <p x-show="!aiConversations.length" style="color:var(--text-muted);font-size:var(--fs-xs)" x-text="$t('ai.no_conversations')"></p>
+                            </div>
+
+                            <!-- 消息区 -->
+                            <div style="flex:1;min-width:0;background: var(--card-bg);border:1px solid var(--border);border-radius:var(--radius);padding:var(--sp-4);display:flex;flex-direction:column;height:60vh">
+                                <div style="flex:1;overflow-y:auto;margin-bottom:var(--sp-3)">
+                                    <template x-for="(m, idx) in aiMessages" :key="idx">
+                                        <div :style="'margin-bottom:var(--sp-3);display:flex;' + (m.role === 'user' ? 'justify-content:flex-end' : 'justify-content:flex-start')">
+                                            <div :style="'max-width:80%;padding:var(--sp-2) var(--sp-3);border-radius:var(--radius);' + (m.role === 'user' ? 'background: var(--primary-light);color: var(--text-secondary)' : 'background: var(--card-bg-alt)')">
+                                                <!-- 工具调用/结果折叠条目 -->
+                                                <template x-for="(tr, tidx) in (m.toolTrace || [])" :key="tidx">
+                                                    <div style="font-size:var(--fs-xs);color:var(--text-muted);margin-bottom:var(--sp-1)">
+                                                        🔧 <span x-text="tr.name"></span><span x-show="tr.digest"> — <span x-text="tr.digest"></span></span>
+                                                    </div>
+                                                </template>
+                                                <div style="white-space:pre-wrap" x-text="m.content"></div>
+                                                <!-- pending_action 只读信息卡（本轮占位，确认交互 R5 接入） -->
+                                                <template x-if="m.pendingAction">
+                                                    <div style="margin-top:var(--sp-2);background: var(--warn-light);border:1px solid #f59e0b;border-radius:var(--radius-sm);padding:var(--sp-2) var(--sp-3);font-size:var(--fs-xs)">
+                                                        <div style="font-weight:600;color: var(--warn)" x-text="m.pendingAction.summary"></div>
+                                                        <div style="color: var(--warn);margin-top:var(--sp-1)" x-text="$t('ai.pending_hint')"></div>
+                                                    </div>
+                                                </template>
+                                                <!-- 错误事件内嵌红条 -->
+                                                <template x-if="m.error">
+                                                    <div style="margin-top:var(--sp-2);color: var(--danger);font-size:var(--fs-xs)" x-text="m.error"></div>
+                                                </template>
+                                            </div>
+                                        </div>
+                                    </template>
+                                    <p x-show="!aiMessages.length" style="color:var(--text-muted);font-size:var(--fs-sm)" x-text="$t('ai.no_messages')"></p>
+                                    <p x-show="aiThinking" style="color:var(--text-muted);font-size:var(--fs-xs)" x-text="$t('ai.thinking')"></p>
+                                </div>
+                                <div style="display:flex;gap:var(--sp-2)">
+                                    <textarea x-model="aiInput" @keydown.enter.exact.prevent="sendAIMessage()" rows="2"
+                                        :placeholder="$t('ai.placeholder')" style="flex:1;resize:none;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:var(--fs-base)"></textarea>
+                                    <button class="btn btn-primary" @click="sendAIMessage()" :disabled="aiThinking || !aiInput.trim()" x-text="$t('ai.send')"></button>
+                                </div>
+                            </div>
+                        </div>
                     </template>
                 </div>
 

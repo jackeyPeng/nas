@@ -342,6 +342,11 @@ function nasPanel() {
         aiTab: 'chat',
         aiConfigForm: { preset: 'deepseek', base_url: '', api_key: '', model: '' },
         aiTesting: false,
+        aiConversations: [],
+        aiConversationId: '',
+        aiMessages: [],
+        aiInput: '',
+        aiThinking: false,
 
         init() {
             if (this.token) {
@@ -626,7 +631,7 @@ function nasPanel() {
                 case 'backup': this.loadBackups(); break;
                 case 'vault': this.vaultOnEnter(); break;
                 case 'pwgen': this.pwgenOnEnter(); break;
-                case 'ai': this.loadAIStatus(); break;
+                case 'ai': this.loadAIStatus(); this.loadAIConversations(); break;
                 case 'rclone': this.loadRcloneStatus(); this.loadRcloneRemotes(); this.loadRcloneTasks().then(() => { if (this.rcloneRunningTasks.length) this.startRcloneProgressPolling(); }); this.loadRcloneLogs(); this.loadSharedDirs(); break;
                 case 'logs': this.loadAuditLogs(); break;
                 case 'events': this.loadEvents(); this.loadEventStats(); break;
@@ -3582,6 +3587,128 @@ function nasPanel() {
                 else { this.showToast(this.t('ai.enabled'), 'success'); this.loadAIStatus(); }
             }
             // 失败（如未配置/未验证）时 api() 已经把后端中文原因 toast 出来。
+        },
+
+        // ═══ AI 助手：聊天页 SSE 消费 + 会话列表 ═══
+
+        async loadAIConversations() {
+            const data = await this.api('/ai/conversations');
+            if (data && typeof data === 'object' && data.conversations !== undefined) {
+                this.aiConversations = data.conversations || [];
+            }
+        },
+
+        newAIConversation() {
+            this.aiConversationId = '';
+            this.aiMessages = [];
+            this.aiInput = '';
+        },
+
+        async loadAIConversation(convID) {
+            const data = await this.api('/ai/conversations/' + encodeURIComponent(convID));
+            if (data && typeof data === 'object' && data.messages !== undefined) {
+                this.aiConversationId = convID;
+                // 落库消息只有 role/content（工具轨迹/pending_action 是会话内即时事件产物，
+                // 历史回放不还原这些临时 UI 态——与 role=tool 的内部回填消息一起过滤掉，
+                // 只展示用户可见的 user/assistant 对话）。
+                this.aiMessages = (data.messages || [])
+                    .filter(m => m.role === 'user' || m.role === 'assistant')
+                    .map(m => ({ role: m.role, content: m.content, toolTrace: [] }));
+            }
+        },
+
+        // POST /api/ai/chat（Accept: text/event-stream），对齐 resetStorage() 的
+        // fetch + getReader SSE 消费模式。delta 增量拼接进最后一条 assistant 消息；
+        // tool_call/tool_result 渲染为该消息内的折叠小条目；pending_action 本轮只
+        // 渲染只读信息卡（ai.pending_hint 占位文案，确认交互 R5 接入）。
+        async sendAIMessage() {
+            const message = this.aiInput.trim();
+            if (!message || this.aiThinking) return;
+            this.aiInput = '';
+            this.aiMessages.push({ role: 'user', content: message, toolTrace: [] });
+            const assistantMsg = { role: 'assistant', content: '', toolTrace: [], pendingAction: null, error: '' };
+            this.aiMessages.push(assistantMsg);
+            this.aiThinking = true;
+
+            try {
+                const resp = await fetch('/api/ai/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer ' + this.token,
+                        'Content-Type': 'application/json',
+                        'Accept': 'text/event-stream'
+                    },
+                    body: JSON.stringify({ conversation_id: this.aiConversationId, message })
+                });
+                if (!resp.ok || !resp.body) {
+                    assistantMsg.error = this.t('ai.error_prefix') + ': HTTP ' + resp.status;
+                    this.showToast(assistantMsg.error, 'error');
+                    return;
+                }
+                const reader = resp.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop();
+                    for (const line of lines) {
+                        if (!line.startsWith('data: ')) continue;
+                        let ev;
+                        try { ev = JSON.parse(line.slice(6)); } catch (e) { continue; }
+                        this.handleAISSEEvent(ev, assistantMsg);
+                    }
+                }
+            } catch (e) {
+                assistantMsg.error = this.t('ai.error_prefix') + ': ' + e.message;
+                this.showToast(assistantMsg.error, 'error');
+            } finally {
+                this.aiThinking = false;
+            }
+        },
+
+        // 事件协议（web/modules/ai/chat.go sseEvent）：
+        //   delta          {type,text}              → 增量拼接进当前 assistant 消息
+        //   tool_call      {type,name,args_digest}  → 追加折叠条目（🔧 名称 + digest）
+        //   tool_result    {type,name,digest}       → 补全同名条目的 digest（结果摘要）
+        //   pending_action {type,...PendingAction}  → 本轮只渲染只读信息卡
+        //   done           {type,conversation_id}   → 记录会话 ID、刷新会话列表
+        //   error          {type,message}           → toast + 消息内红条
+        handleAISSEEvent(ev, assistantMsg) {
+            switch (ev.type) {
+                case 'delta':
+                    assistantMsg.content += ev.text || '';
+                    break;
+                case 'tool_call':
+                    assistantMsg.toolTrace.push({ name: ev.name, digest: ev.args_digest || '' });
+                    break;
+                case 'tool_result': {
+                    const entry = assistantMsg.toolTrace.find(t => t.name === ev.name && !t.resultApplied);
+                    if (entry) {
+                        entry.digest = ev.digest || entry.digest;
+                        entry.resultApplied = true;
+                    } else {
+                        assistantMsg.toolTrace.push({ name: ev.name, digest: ev.digest || '' });
+                    }
+                    break;
+                }
+                case 'pending_action':
+                    assistantMsg.pendingAction = {
+                        id: ev.id, tool_name: ev.tool_name, args_json: ev.args_json,
+                        summary: ev.summary, confirm_word: ev.confirm_word
+                    };
+                    break;
+                case 'done':
+                    this.aiConversationId = ev.conversation_id || this.aiConversationId;
+                    this.loadAIConversations();
+                    break;
+                case 'error':
+                    assistantMsg.error = ev.message || this.t('ai.error_prefix');
+                    this.showToast(assistantMsg.error, 'error');
+                    break;
+            }
         },
 
         // 面板更新（OTA 签名校验）
