@@ -1338,6 +1338,7 @@
     "tab_settings": "Settings",
     "enabled": "AI Assistant is on",
     "disabled_hint": "AI Assistant is not enabled yet. Configure a model endpoint and pass the connectivity test to turn it on.",
+    "nav_off": "Off",
     "not_enabled": "This feature is not enabled yet",
     "preset": "Preset",
     "preset_deepseek": "DeepSeek (cloud)",

@@ -187,8 +187,6 @@
                 <!-- 工具箱 -->
                 <li class="nav-group" style="display:flex;align-items:center">
                     <span style="flex:1;cursor:pointer" @click="navGroup = (navGroup === 'toolbox' ? '' : 'toolbox')">🧰 <span x-text="$t('nav.toolbox')"></span></span>
-                    <!-- AI 助手常驻小入口：不受 enabled 隐藏，未启用时点击进 ai 页看引导卡 -->
-                    <span :class="{active: page === 'ai'}" style="cursor:pointer;font-size:var(--fs-xs);padding:2px 6px;border-radius:4px" @click.stop="navigate('ai')" :title="$t('nav.ai')">🤖</span>
                     <span style="font-size:var(--fs-xs);color: var(--text-muted);cursor:pointer;margin-left:var(--sp-1)" @click="navGroup = (navGroup === 'toolbox' ? '' : 'toolbox')" x-text="navGroup==='toolbox' ? '▼' : '▶'"></span>
                 </li>
                 <template x-if="navGroup === 'toolbox'">
@@ -199,8 +197,11 @@
                         <li :class="{active: page === 'pwgen'}" @click="navigate('pwgen')">
                             <span style="margin-left:var(--sp-5)">🔑</span> <span x-text="$t('nav.pwgen')"></span>
                         </li>
-                        <li x-show="aiStatus.enabled || page==='ai'" :class="{active: page === 'ai'}" @click="navigate('ai')">
+                        <!-- AI 助手入口常驻可见（可发现性优先）：未启用时带灰色徽标，
+                             点击进 ai 页展示引导卡+开启向导；enabled 守卫只管功能面 API，不管入口展示 -->
+                        <li :class="{active: page === 'ai'}" @click="navigate('ai')">
                             <span style="margin-left:var(--sp-5)">🤖</span> <span x-text="$t('nav.ai')"></span>
+                            <span x-show="!aiStatus.enabled" style="margin-left:6px;font-size:var(--fs-xs);color:var(--text-muted);border:1px solid var(--border);border-radius:8px;padding:0 6px" x-text="$t('ai.nav_off')"></span>
                         </li>
                     </div>
                 </template>

@@ -1338,6 +1338,7 @@
     "tab_settings": "设置",
     "enabled": "AI 助手已开启",
     "disabled_hint": "AI 助手当前未启用。配置模型端点并通过连通性测试后即可开启。",
+    "nav_off": "未启用",
     "not_enabled": "该功能尚未启用",
     "preset": "预设",
     "preset_deepseek": "DeepSeek（云端）",
