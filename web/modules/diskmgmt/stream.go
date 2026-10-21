@@ -161,12 +161,27 @@ func handleWizardSetupStream(w http.ResponseWriter, r *http.Request) {
 		setupSeparateStream(w, unusedDevs, nasUser, stepRunning, stepDone, totalSteps)
 	}
 
+	// 完成文案按模式报告实际用盘数（raid1 只取前 2 块、single 只取 1 块，
+	// 旧文案统一报 len(unusedDevs) 会在 4 盘机做 raid1 时误报"共 4 块"）
+	usedCount := len(unusedDevs)
+	detail := ""
+	switch mode {
+	case "single":
+		usedCount = 1
+	case "raid1":
+		usedCount = 2
+	}
+	if usedCount < len(unusedDevs) {
+		detail = fmt.Sprintf("存储配置完成，%d 块磁盘加入存储池，其余 %d 块空闲盘未使用", usedCount, len(unusedDevs)-usedCount)
+	} else {
+		detail = fmt.Sprintf("存储配置完成，共 %d 块磁盘", usedCount)
+	}
 	sendProgress(w, ProgressEvent{
 		Step:   "完成",
 		Status: "complete",
 		Index:  totalSteps,
 		Total:  totalSteps,
-		Detail: fmt.Sprintf("存储配置完成，共 %d 块磁盘", len(unusedDevs)),
+		Detail: detail,
 	})
 }
 
