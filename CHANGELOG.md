@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 主要变化 |
 |------|------|---------|
+| v1.4.0-beta.27 | 2026-10-21 | 运维脚本审计修复 + 收尾 — cleanup.sh 存储拆除段前置到卸载软件包与删 /data 之前（修复 set -e 下 rm 挂载点 busy 即中止、RAID/LVM/软链接全残留的实踩事故；数据目录删除加"仍有挂载即跳过并警告"守卫）；配置备份/恢复补面板数据库整目录（folders.db/vault.db/registry.db/2fa.json/rclone tasks 等）、rclone.conf（root+用户）、/etc/projects+projid——重装恢复不再丢保险箱/云同步/共享元数据/2FA；rclone 升级下载按架构取 deb（arm64 不再必败，R2 已补 arm64 制品）；sudoers 白名单按实测调用面补全并收敛为具体子命令/路径粒度（115 条，拒绝 bash -c/cat */rm -rf * 等 root-equivalent 通配，visudo 校验通过）；仪表盘存储池卡片类型标签不再写死「单盘」（RAID 显示级别、LVM 按盘数区分单盘/合并，双语 i18n） |
 | v1.4.0-beta.26 | 2026-10-20 | 安全审计全量修复 — P0：命令/sed 注入根除（证书 domain 校验+openssl 直传参、chpasswd/smbpasswd 走 stdin、.env 与 rclone-s3 unit 改纯 Go 行级重写、htpasswd 直传参、密码统一拒绝换行/控制字符）、/api/system/check 免认证暴露收口（loopback+JWT）、登录/TOTP IP 限流（5 次失败锁 15 分钟）、服务开关白名单、Samba/SSH 配置注入防护、备份路径穿越防护；P1：面板 HTTPS 真正生效（TLS_CERT/TLS_KEY→ListenAndServeTLS）、XFS 配额根修（建池挂载+fstab 加 prjquota、/etc/projects 改标准 id:path、建文件夹配额真正落地）、防火墙端口范围/备注回显/sudoers 补齐、xfs_growfs 改挂载点（扩容静默失败根除）、NVMe 分区名+mkfs 参数、删池/重置清脏数据、诊断三 bug；P2：磁盘操作全局锁补漏、rclone 状态事务锁、SQLite 统一 WAL（顺带根治 logger/eventbus 旧 DSN 参数被驱动静默忽略）、monitor 后台采样（1.5s→<1ms）+du/smartctl 缓存（不再反复唤醒休眠盘）、RAID 注册表区分初始重建与降级；双机重置验收全 PASS（用户一键安装 RAID5 机 + 分支构建 LVM 机，套件 33 项+五协议+配额 E2E+限流/注入实测） |
 | v1.4.0-beta.25 | 2026-10-20 | 零知识凭证保险箱 v2（浏览器端 PBKDF2-600k+AES-256-GCM，服务器只存密文；独立口令/5 错锁 30 分钟/自动锁定/查看自动遮罩/旧版一键迁移）+ 独立密码生成器页 + 侧边栏「🧰 工具箱」分组；附发布前审查与体检修复集：迁移失败即停防明文丢失、解锁失败计数原子化、改口令实时拉取+覆盖校验、输错保险箱口令误踢登录修复、PWA sw.js 网络优先+旧缓存清理（根治升级后界面陈旧）、rclone 状态真实版本显示、配置一致性不再误报池根用户目录、staticcheck 清零；第八轮双机重置用户级全流程验收（merge/RAID1 各 33 项全 PASS + Chrome 实测） |
 | v1.4.0-beta.24 | 2026-10-19 | 彻底移除 FileBrowser — 面板文件管理已完全取代；装机链/服务页/注册表(46→41)/HTTPS/密码同步/监控/备份/i18n/文档全链路清理；setup.sh 升级迁移自动卸载存量并备份 /etc/filebrowser；R2 安装包同步清理。附验收修复集：升级机注册表幽灵项剪枝、用户服务开关静默失败×2、x-for 重复 key 崩溃（'after' 错误真身，导航失效根因）、关于页 hardware null 守卫；第七轮双机重置完整验收全 PASS + Chrome 实测 |
@@ -20,6 +21,29 @@
 | v1.4.0-beta.13 | 2026-09-19 | NFS 导出对所有网段开放（跨网段客户端可挂载） |
 | v1.4.0-beta.12 | 2026-09-18 | 创建向导按已选磁盘实时预估容量（选目标后预览面板 + 各方案可用容量/注意事项）+ 登录页品牌 slogan |
 | v1.4.0-beta.11 | 2026-09-18 | 当前连接展示（监控页，SMB 会话 + 各协议端口归类）+ 回收站改 per-share `.recycle/`（删除=rename 零拷贝，恢复保留目录树，旧 `#recycle` 兼容）+ 存储页 tab 切换跳动修复 |
+
+---
+
+## [2026-10-21] - 运维脚本审计修复 + 收尾
+
+### 版本 v1.4.0-beta.27
+
+beta.26 安全审计修复的收尾轮：审计 P3（架构与运维脚本一致性）+ 验收过程新发现的脚本事故 + UI 观察项。
+
+### 变更
+
+**scripts**
+- cleanup.sh：「拆除存储池 + 清磁盘签名」段从文件末尾前置为 [5/8]（在 purge 软件包与删 /data 之前——lvremove/mdadm/wipefs 依赖 lvm2/mdadm 包，必须在 purge 前跑）。修复实踩事故：set -e 下 /data/nas* 仍挂载时 `rm -rf /data` EBUSY 非零退出直接中止脚本，拆除段与后续清理全部不执行（残留 md0 挂载、/opt/nas 软链接）。删 /data 前增加挂载守卫：仍有 /data/nas* 挂载则跳过 rm 并警告，绝不带着挂载点递归删除。
+- backup-config.sh / restore-config.sh：备份范围补 /opt/nas/data/ 整目录（folders.db、vault.db、registry.db、diagnostics.db、audit.db、events.db、2fa.json、rclone/tasks.json，sqlite -wal/-shm 随目录同拷）、/root 与部署用户的 rclone.conf、/etc/projects + /etc/projid；恢复侧镜像回位（全部存在性判断，旧备份包兼容），db 恢复先于面板/rclone 服务重启。修复「重装恢复后保险箱凭据/云同步任务/共享元数据/2FA 全丢」。
+- setup.sh：rclone 升级下载三个 URL 全部按 ${ARCH} 取 deb（原硬编码 amd64，arm64 机器必失败）；get.z1.sale 已补传 rclone-v1.75.2-linux-arm64.deb（GitHub 官方制品，md5 校验一致）。
+- setup.sh sudoers：按 web/ 全量 SudoExec/SudoOutput/SudoExecStdin 调用面实测补全（systemctl reload/is-active/daemon-reload/list-unit-files、vgchange、useradd/userdel/usermod/groupadd/gpasswd、id、passwd -S、openssl req/x509/rsa、timedatectl/hostnamectl、sysctl -w、rclone、crontab -l、update-initramfs、apply-upgrade.sh/backup-data.sh、cat/rm/mkdir 具体路径），共 115 条，visudo -cf 通过。**安全不变式（写入脚本注释）**：白名单禁止 bash -c */sh -c */cat */cp */mv */rm -rf */find */apt install/systemd-run 等 root-equivalent 通配条目；代码残留的 shell 管道调用点（services.go unit heredoc、users/create.go 与 groups.go sed/grep、diagnostics.go echo>sysfs、rclone.go chown --reference）刻意不入白名单——面板当前以 root 运行（sudoers 旁路），若未来切非 root 最小权限，必须先改造这些调用点为直传参数。
+
+**web/frontend**
+- 仪表盘存储池卡片类型副标题不再写死「单盘」：新增 poolTypeLabel（RAID 显示级别大写、LVM 按盘数区分「LVM 单盘/LVM 合并」、single 显示「单盘」），i18n 中英各加两键（key 数对齐校验通过）。
+
+### 验收
+- 脚本轮：bash -n 全过、visudo -cf 通过；cleanup.sh 拆除顺序在测试机 E2E 复验（拆池→重装闭环）。
+- go build ./... / go test ./... 全绿（前端为嵌入资源，无 Go 逻辑变更）。
 
 ---
 
