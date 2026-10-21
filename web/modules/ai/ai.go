@@ -7,6 +7,19 @@ import (
 	"nas-panel/common"
 )
 
+// buildRegistry 组装 agent loop 使用的工具注册表。本期（M1/T6）只有 nas
+// 域的只读工具；写工具（nasWriteTools，M2/T10）接入时在这里追加一个
+// Domain，不改调用方——RunAgent/handleChat 只认 *Registry。
+func buildRegistry() *Registry {
+	return NewRegistry(Domain{
+		Name:  "nas",
+		Tools: nasReadTools(),
+	})
+}
+
+// toolRegistry 是进程级单例：工具清单编译期固定，不需要每次请求重新构建。
+var toolRegistry = buildRegistry()
+
 // RegisterRoutes 注册 ai 模块的全部 HTTP 路由。
 // AI 助手是默认关闭的功能模块：requireEnabled 包裹除 GET /api/ai/status
 // 外的全部端点；toggle 本身例外（必须在关闭态也能调用才能打开开关）。
@@ -16,6 +29,30 @@ func RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/ai/toggle", common.AuthMiddleware(handleToggle))
 	// test-connection 同 toggle 例外：配置阶段（功能尚未开启）就需要能测连通性。
 	mux.HandleFunc("/api/ai/test-connection", common.AuthMiddleware(handleTestConnection))
+
+	mux.HandleFunc("/api/ai/chat", common.AuthMiddleware(requireEnabled(handleChat)))
+	mux.HandleFunc("/api/ai/conversations", common.AuthMiddleware(requireEnabled(handleListConversations)))
+	mux.HandleFunc("/api/ai/conversations/", common.AuthMiddleware(requireEnabled(handleGetConversation)))
+
+	// 确认执行端点是 Task 10（M2）的事：本 Task 只占位返回 501，
+	// 避免前端/调用方提前对接时拿到 404 误判为路由缺失。
+	mux.HandleFunc("/api/ai/action/confirm", common.AuthMiddleware(requireEnabled(handleActionConfirmPlaceholder)))
+	mux.HandleFunc("/api/ai/action/cancel", common.AuthMiddleware(requireEnabled(handleActionCancelPlaceholder)))
+}
+
+// handleActionConfirmPlaceholder 占位：M2（Task 10）落地确认门全链前，
+// 先保证路由存在、行为明确（501 而非 404），前端可以据此判断"功能未实现"
+// 而不是"接口不存在"。
+func handleActionConfirmPlaceholder(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusNotImplemented)
+	json.NewEncoder(w).Encode(map[string]string{"error": "确认执行端点将在后续版本提供"})
+}
+
+func handleActionCancelPlaceholder(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusNotImplemented)
+	json.NewEncoder(w).Encode(map[string]string{"error": "取消操作端点将在后续版本提供"})
 }
 
 // aiEnabled 读内存缓存的配置，避免每请求读盘；SaveConfig 刷新缓存后即时生效。
