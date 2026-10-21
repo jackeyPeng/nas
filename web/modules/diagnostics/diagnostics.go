@@ -140,6 +140,13 @@ func initDB() {
 // ═══════════════════════════════════════
 
 func handleStatus(w http.ResponseWriter, r *http.Request) {
+	common.JSONResponse(w, buildStatusSnapshot())
+}
+
+// buildStatusSnapshot 构造诊断项状态快照（items 清单 + DB 落地状态 + 运行中进度）。
+// 从 handleStatus 抽出的纯函数——handler 现在只负责调它再序列化，行为逐字节不变。
+// AI 工具域 diagnostics.StatusSnapshot() 复用同一内核。
+func buildStatusSnapshot() map[string]interface{} {
 	items := DefaultItems()
 
 	// Load state from DB
@@ -171,9 +178,9 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	common.JSONResponse(w, map[string]interface{}{
+	return map[string]interface{}{
 		"items": items,
-	})
+	}
 }
 
 // ═══════════════════════════════════════

@@ -130,6 +130,16 @@ type RAIDStatus struct {
 
 // handleStorageOverview returns the complete storage dashboard data
 func handleStorageOverview(w http.ResponseWriter, r *http.Request) {
+	overview := buildStorageOverview()
+	common.JSONResponse(w, map[string]interface{}{
+		"overview": overview,
+	})
+}
+
+// buildStorageOverview 构造完整存储总览数据（四层模型：物理盘/存储池/卷/共享文件夹
+// + 总容量 + 告警）。从 handleStorageOverview 抽出的纯函数——handler 现在只负责
+// 调它再序列化，行为逐字节不变。AI 工具域 diskmgmt.OverviewData() 复用同一内核。
+func buildStorageOverview() StorageOverview {
 	cachedPVMappings = nil
 	cachedRAIDMembers = nil
 
@@ -503,9 +513,7 @@ func handleStorageOverview(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	common.JSONResponse(w, map[string]interface{}{
-		"overview": overview,
-	})
+	return overview
 }
 
 // detectPoolDevice 从 mount device 提取 Pool 级别的设备名
