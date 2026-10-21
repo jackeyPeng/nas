@@ -428,6 +428,17 @@ function nasPanel() {
             if (v) return window.t('storage.vol_n', [v[1]]);
             return name;
         },
+        // 存储池类型标签（仪表盘池卡片副标题）：raid 显示级别，lvm 按盘数区分单盘/合并
+        poolTypeLabel(pool) {
+            const t = ((pool && pool.type) || '').toLowerCase();
+            if (t.indexOf('raid') === 0) return t.toUpperCase();
+            if (t === 'lvm') {
+                const n = ((pool && pool.disks) || []).length;
+                return n > 1 ? window.t('storage.pool_type_lvm_merge') : window.t('storage.pool_type_lvm_single');
+            }
+            if (t === 'single') return window.t('storage.single');
+            return t ? t.toUpperCase() : '';
+        },
         // 告警渠道名翻译
         channelLabel(name) {
             const map = { '钉钉': 'monitor.channel_dingtalk', 'Email': 'monitor.channel_email' };

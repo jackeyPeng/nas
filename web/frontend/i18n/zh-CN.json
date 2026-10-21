@@ -348,6 +348,8 @@
     "confirm_create": "确认创建",
     "creating": "创建中...",
     "single": "单盘",
+    "pool_type_lvm_single": "LVM 单盘",
+    "pool_type_lvm_merge": "LVM 合并",
     "merge": "合并",
     "separate": "独立",
     "no_free_disks": "无可用磁盘",

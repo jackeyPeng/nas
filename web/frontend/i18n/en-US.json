@@ -348,6 +348,8 @@
     "confirm_create": "Confirm",
     "creating": "Creating...",
     "single": "Single",
+    "pool_type_lvm_single": "LVM single",
+    "pool_type_lvm_merge": "LVM merge",
     "merge": "Merge",
     "separate": "Separate",
     "no_free_disks": "No free disks",

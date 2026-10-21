@@ -343,7 +343,7 @@
                                     :style="pool.healthy ? 'background: var(--success-light);color: var(--success)' : 'background: var(--danger-light);color: var(--danger)'"
                                     x-text="$t('common.normal')"></span>
                             </div>
-                            <div style="font-size:var(--fs-xs);color: var(--text-light);margin-bottom:var(--sp-1)" x-text="$t('storage.single')"></div>
+                            <div style="font-size:var(--fs-xs);color: var(--text-light);margin-bottom:var(--sp-1)" x-text="poolTypeLabel(pool)"></div>
                             <div style="display:flex;align-items:center;gap:6px">
                                 <span style="font-size:var(--fs-sm);font-weight:600" x-text="pool.used + ' / ' + pool.size"></span>
                             </div>
