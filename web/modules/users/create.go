@@ -116,6 +116,15 @@ func handleCreateUser(w http.ResponseWriter, r *http.Request) {
 // （AI 路径下密码由前端生成器生成，经确认端点 common.ValidSecret 校验后
 // 注入，永不进 LLM 上下文）。
 func CreateUserWithPassword(username, password string, svcSamba, svcFtp, svcWebdav bool) (steps []string, err error) {
+	// 用户名白名单校验下沉进内核本身（而不是只留在 handleCreateUser 里）：
+	// CreateUserWithPassword 现在有两个调用方——HTTP 向导 handler 和 AI
+	// create_user 确认执行路径（executeCreateUserConfirmed）。两者共用同一
+	// 内核就必须共用同一道校验，否则任何新增调用方都要自己记得重新校验
+	// 一次，一旦漏了就是 useradd 命令注入/路径穿越（如 username="../etc"）。
+	if !isValidUsername(username) {
+		return nil, fmt.Errorf("用户名只能包含小写字母、数字、下划线和短横线，且以字母开头")
+	}
+
 	addStep := func(format string, args ...interface{}) {
 		steps = append(steps, fmt.Sprintf(format, args...))
 	}
