@@ -1,8 +1,11 @@
 package tasks
 
 import (
+	"path/filepath"
 	"testing"
 	"time"
+
+	"nas-panel/common"
 )
 
 // resetForTest 清掉包级单例，让每个测试用全新的 t.TempDir() 数据目录初始化。
@@ -378,4 +381,75 @@ func indexOf(s, substr string) int {
 		}
 	}
 	return -1
+}
+
+// TestCountersPersistAcrossReinit：计数器必须活过进程重启——kill -9 后
+// 续跑段 Result 依赖库里的累计值（48 机 E2E 实测抓到的 moved=23/实为149 根修）。
+func TestCountersPersistAcrossReinit(t *testing.T) {
+	dir := resetForTest(t)
+	job, err := CreateJob("photo_dedupe", "", samplePlan(), sampleImpact())
+	if err != nil {
+		t.Fatalf("CreateJob: %v", err)
+	}
+	if err := AddCounters(job.ID, map[string]int64{"moved": 126, "freed": 126000000}); err != nil {
+		t.Fatalf("AddCounters: %v", err)
+	}
+	// 模拟进程重启：关库后对同一目录重新 InitTasks
+	closeDBForTest()
+	if err := InitTasks(dir); err != nil {
+		t.Fatalf("re-InitTasks: %v", err)
+	}
+	// 续跑段再累计
+	if err := AddCounters(job.ID, map[string]int64{"moved": 23, "freed": 23000000, "skipped": 1}); err != nil {
+		t.Fatalf("AddCounters 续: %v", err)
+	}
+	c := LoadCounters(job.ID)
+	if c["moved"] != 149 || c["freed"] != 149000000 || c["skipped"] != 1 {
+		t.Fatalf("重启后累计计数器 = %v, want moved=149 freed=149000000 skipped=1", c)
+	}
+}
+
+// TestCountersMigrationFromOldSchema：F1-rc1 老库没有 counters_json 列，
+// InitTasks 必须 ALTER 补列且不丢既有行。
+func TestCountersMigrationFromOldSchema(t *testing.T) {
+	dir := t.TempDir()
+	closeDBForTest()
+	// 手工建老 schema 库（无 counters_json）+ 一行数据
+	old, err := common.OpenSQLite(filepath.Join(dir, "tasks.db"))
+	if err != nil {
+		t.Fatalf("open old db: %v", err)
+	}
+	if _, err := old.Exec(`CREATE TABLE jobs (
+		id TEXT PRIMARY KEY, kind TEXT NOT NULL, status TEXT NOT NULL,
+		scope_rel TEXT NOT NULL DEFAULT '', plan_json TEXT NOT NULL DEFAULT '[]',
+		impact_json TEXT NOT NULL DEFAULT '{}', progress_cur INTEGER NOT NULL DEFAULT 0,
+		progress_total INTEGER NOT NULL DEFAULT 0, progress_note TEXT NOT NULL DEFAULT '',
+		checkpoint_json TEXT NOT NULL DEFAULT '{}', result_json TEXT NOT NULL DEFAULT '',
+		error TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, started_at TEXT, finished_at TEXT)`); err != nil {
+		t.Fatalf("create old schema: %v", err)
+	}
+	if _, err := old.Exec(`INSERT INTO jobs (id,kind,status,created_at) VALUES ('job-old','photo_dedupe','done','2026-10-22T00:00:00Z')`); err != nil {
+		t.Fatalf("insert old row: %v", err)
+	}
+	old.Close()
+	// InitTasks 应迁移补列并保留旧行
+	if err := InitTasks(dir); err != nil {
+		t.Fatalf("InitTasks on old db: %v", err)
+	}
+	t.Cleanup(closeDBForTest)
+	j, ok := GetJob("job-old")
+	if !ok || j.Status != StatusDone {
+		t.Fatalf("迁移后旧行丢失: %v %v", j, ok)
+	}
+	if err := AddCounters("job-old", map[string]int64{"moved": 1}); err != nil {
+		t.Fatalf("迁移后 AddCounters: %v", err)
+	}
+	if c := LoadCounters("job-old"); c["moved"] != 1 {
+		t.Fatalf("迁移后计数器 = %v, want moved=1", c)
+	}
+	// 幂等：再跑一次 InitTasks 不应报 duplicate column
+	closeDBForTest()
+	if err := InitTasks(dir); err != nil {
+		t.Fatalf("二次 InitTasks: %v", err)
+	}
 }

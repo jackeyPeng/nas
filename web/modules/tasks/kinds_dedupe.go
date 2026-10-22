@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"nas-panel/modules/filemgmt"
@@ -266,46 +265,22 @@ func isBetterKeep(a, b dedupeCandidate) bool {
 // 执行链：move_to_recycle op 接线 + 本次执行统计（供 Result JSON 汇总）
 // ---------------------------------------------------------------------------
 
-// dedupeRunStats 记录单个任务一次 worker 执行期间的 moved/freed/skipped
-// 统计（jobID -> 累计值）；只在内存里，任务跑完即可丢弃（Result 已落库）。
-var (
-	dedupeStatsMu sync.Mutex
-	dedupeStats   = map[string]*dedupeStat{}
-)
-
-type dedupeStat struct {
-	movedFiles int
-	freedBytes int64
-	skipped    int
-}
+// dedupe 统计走 tasks 持久化计数器（counters_json 列）——不再用内存 map：
+// kill -9 后内存累计值随进程消失，续跑段 Result 会丢前段计数（48 机 E2E
+// 实测抓到 moved=23 实为 149）。每步副作用一次 AddCounters，Result 读库。
 
 func recordDedupeMoved(jobID string, freedBytes int64) {
 	if jobID == "" {
 		return
 	}
-	dedupeStatsMu.Lock()
-	defer dedupeStatsMu.Unlock()
-	s := dedupeStats[jobID]
-	if s == nil {
-		s = &dedupeStat{}
-		dedupeStats[jobID] = s
-	}
-	s.movedFiles++
-	s.freedBytes += freedBytes
+	_ = AddCounters(jobID, map[string]int64{"moved": 1, "freed": freedBytes})
 }
 
 func recordDedupeSkipped(jobID string) {
 	if jobID == "" {
 		return
 	}
-	dedupeStatsMu.Lock()
-	defer dedupeStatsMu.Unlock()
-	s := dedupeStats[jobID]
-	if s == nil {
-		s = &dedupeStat{}
-		dedupeStats[jobID] = s
-	}
-	s.skipped++
+	_ = AddCounters(jobID, map[string]int64{"skipped": 1})
 }
 
 // execMoveToRecycle 是 "move_to_recycle" 的真实执行体：
@@ -351,19 +326,13 @@ func fileSizeOrZero(path string) int64 {
 // moved/freed/skipped 序列化为 Result JSON；doneCount 作为兜底（没有
 // 统计记录时——理论上不会发生，防御性保留）。
 func buildDedupeResult(jobID string, doneCount int) string {
-	dedupeStatsMu.Lock()
-	s, ok := dedupeStats[jobID]
-	if ok {
-		delete(dedupeStats, jobID) // 任务已跑完，统计落库即可丢弃内存态
-	}
-	dedupeStatsMu.Unlock()
-
-	if !ok {
+	c := LoadCounters(jobID)
+	if len(c) == 0 {
 		data, _ := json.Marshal(map[string]interface{}{"moved": doneCount, "freed": 0, "skipped": 0})
 		return string(data)
 	}
 	data, _ := json.Marshal(map[string]interface{}{
-		"moved": s.movedFiles, "freed": s.freedBytes, "skipped": s.skipped,
+		"moved": c["moved"], "freed": c["freed"], "skipped": c["skipped"],
 	})
 	return string(data)
 }

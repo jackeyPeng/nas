@@ -106,6 +106,7 @@ func InitTasks(dataDir string) error {
 			progress_total INTEGER NOT NULL DEFAULT 0,
 			progress_note TEXT NOT NULL DEFAULT '',
 			checkpoint_json TEXT NOT NULL DEFAULT '{}',
+			counters_json TEXT NOT NULL DEFAULT '{}',
 			result_json TEXT NOT NULL DEFAULT '',
 			error TEXT NOT NULL DEFAULT '',
 			created_at TEXT NOT NULL,
@@ -116,6 +117,13 @@ func InitTasks(dataDir string) error {
 		CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 	`); err != nil {
 		return fmt.Errorf("create jobs table: %w", err)
+	}
+
+	// 迁移：老库（F1-rc1 期间建的）没有 counters_json 列，ALTER 补上。
+	// 计数器必须持久化——kill -9 后内存累计值随进程消失，续跑段的
+	// Result 会丢掉前段计数（48 机 E2E 实测抓到：moved=23 实为 149）。
+	if err := migrateJobsCounters(); err != nil {
+		return fmt.Errorf("migrate jobs counters: %w", err)
 	}
 
 	if err := recoverCrashedJobs(); err != nil {
@@ -458,6 +466,79 @@ func loadCheckpointLocked(id string) map[string]bool {
 		return map[string]bool{}
 	}
 	return cp
+}
+
+// migrateJobsCounters 给缺 counters_json 列的老库补列（ALTER TABLE 幂等守卫：
+// 先查 PRAGMA table_info，已有列直接返回）。
+func migrateJobsCounters() error {
+	rows, err := db.Query(`PRAGMA table_info(jobs)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	hasCounters := false
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull, pk int
+		var dflt interface{}
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			continue
+		}
+		if name == "counters_json" {
+			hasCounters = true
+			break
+		}
+	}
+	if hasCounters {
+		return nil
+	}
+	_, err = db.Exec(`ALTER TABLE jobs ADD COLUMN counters_json TEXT NOT NULL DEFAULT '{}'`)
+	return err
+}
+
+// AddCounters 把 delta 累加进 job 行的 counters_json（持久化计数器）。
+// kind 执行体每完成一个副作用步骤调一次——kill -9 后计数不随进程丢失，
+// 续跑段 ResultBuilder 从库里读累计值（48 机 E2E 抓到的续跑丢计数根修）。
+func AddCounters(id string, delta map[string]int64) error {
+	dbMu.Lock()
+	defer dbMu.Unlock()
+	if db == nil || len(delta) == 0 {
+		return nil
+	}
+	cur := loadCountersLocked(id)
+	for k, v := range delta {
+		cur[k] += v
+	}
+	raw, err := json.Marshal(cur)
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec(`UPDATE jobs SET counters_json = ? WHERE id = ?`, string(raw), id)
+	return err
+}
+
+// LoadCounters 读取 job 的持久化计数器（无库/无行/坏 JSON 一律返回空 map）。
+func LoadCounters(id string) map[string]int64 {
+	dbMu.Lock()
+	defer dbMu.Unlock()
+	if db == nil {
+		return map[string]int64{}
+	}
+	return loadCountersLocked(id)
+}
+
+func loadCountersLocked(id string) map[string]int64 {
+	var raw string
+	err := db.QueryRow(`SELECT counters_json FROM jobs WHERE id = ?`, id).Scan(&raw)
+	if err != nil || raw == "" {
+		return map[string]int64{}
+	}
+	var m map[string]int64
+	if err := json.Unmarshal([]byte(raw), &m); err != nil || m == nil {
+		return map[string]int64{}
+	}
+	return m
 }
 
 // FinishJob 落终态（done/failed/cancelled）并记录 result/error，走状态机
