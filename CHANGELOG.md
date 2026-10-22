@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 主要变化 |
 |------|------|---------|
+| v1.4.0-beta.30 | 2026-10-22 | AI 配置保存与错误反馈修复（用户实报：保存成功后点「测试连通性」无反应）——① 配置保存的 key 覆盖根修：保存后前端清空 key、「测试连通性」先保存再测试，空 key 被 POST 回后端直接覆盖已存真 key（掩码回显 `****xxxx` 原样保存同理会存进掩码串）；现在空值/掩码回显一律视为「未修改」保留原 key，仅非空新值才更新 ② ai 模块 34 处错误响应从 text/plain 改 JSON content-type——此前前端 api() 不识别、失败完全静默，现在错误原因（如 DeepSeek 返回的「api key is invalid」）直接弹 toast ③ 前端 testAIConnection 补失败兜底分支；补 5 个单测（空值保留/掩码保留/新值更新+Verified 重置/JSON content-type）。实机验证：真实 DeepSeek 端点测试连通、开关开启、对话与三工具链全通过 |
 | v1.4.0-beta.29 | 2026-10-21 | AI 助手入口可发现性修复 — 关闭态侧边栏此前无任何「AI」字样（仅剩工具箱组头部一个 27px 小 emoji，用户实测找不到模块）：导航项改为常驻可见并带「未启用」灰徽标（开启后自动消失），点击进入引导卡+开启向导；移除冗余小入口；引导文案同步更新（删除「开启后才出现在工具箱」过时表述，补「关闭态零足迹」说明，双语） |
 | v1.4.0-beta.28 | 2026-10-21 | AI 助手模块（M1+M2）— 可开关内置功能模块（默认关闭零足迹）：OpenAI 兼容端点接入（DeepSeek/Ollama 预设+连通性测试+Key 0600 存储掩码回显）、NAS 域 15 工具（9 只读+6 写，ToolDomain 抽象+schema 校验，直调既有模块内核）、SSE 流式对话+SQLite 会话历史、写操作 type-to-confirm 确认门（参数服务端留存/一次性 Take/TTL 5 分钟）、create_user 密码前端生成直注（永不进模型上下文/落库/审计）、对抗性安全测试集（注入/schema 攻击/Key 泄漏面/开关守卫）。附验收修复集：删用户补 WebDAV 凭据撤销（被删用户仍能过 rclone 认证）、shell 管道调用点清零、AI 页 Alpine 响应式修复（气泡/工具轨迹不随流式更新）、控制面守卫豁免（关闭态无法存配置）、建池文案按模式报实际用盘数；双机重置用户级全流程验收（RAID1+LVM merge 各 38 项套件+31 项 AI E2E 全 PASS+本机 Chrome UI 实测） |
 | v1.4.0-beta.27 | 2026-10-21 | 运维脚本审计修复 + 收尾 — cleanup.sh 存储拆除段前置到卸载软件包与删 /data 之前（修复 set -e 下 rm 挂载点 busy 即中止、RAID/LVM/软链接全残留的实踩事故；数据目录删除加"仍有挂载即跳过并警告"守卫）；配置备份/恢复补面板数据库整目录（folders.db/vault.db/registry.db/2fa.json/rclone tasks 等）、rclone.conf（root+用户）、/etc/projects+projid——重装恢复不再丢保险箱/云同步/共享元数据/2FA；rclone 升级下载按架构取 deb（arm64 不再必败，R2 已补 arm64 制品）；sudoers 白名单按实测调用面补全并收敛为具体子命令/路径粒度（115 条，拒绝 bash -c/cat */rm -rf * 等 root-equivalent 通配，visudo 校验通过）；仪表盘存储池卡片类型标签不再写死「单盘」（RAID 显示级别、LVM 按盘数区分单盘/合并，双语 i18n） |
@@ -23,6 +24,17 @@
 | v1.4.0-beta.13 | 2026-09-19 | NFS 导出对所有网段开放（跨网段客户端可挂载） |
 | v1.4.0-beta.12 | 2026-09-18 | 创建向导按已选磁盘实时预估容量（选目标后预览面板 + 各方案可用容量/注意事项）+ 登录页品牌 slogan |
 | v1.4.0-beta.11 | 2026-09-18 | 当前连接展示（监控页，SMB 会话 + 各协议端口归类）+ 回收站改 per-share `.recycle/`（删除=rename 零拷贝，恢复保留目录树，旧 `#recycle` 兼容）+ 存储页 tab 切换跳动修复 |
+
+---
+
+## [2026-10-22] - v1.4.0-beta.30 — AI 配置保存 key 覆盖根修 + 错误反馈不再静默
+
+用户实报：AI 设置页保存 DeepSeek 配置成功后，点「测试连通性」毫无反应。排查为两个 bug 叠加，另暴露一个用户侧配置问题：
+
+- **fix(ai)·key 覆盖根修**：`saveAIConfig` 成功后前端清空表单 api_key，而 `testAIConnection` 是「先保存再测试」——空 key 被 POST 回 `/api/ai/config`，后端无条件 `APIKey: req.APIKey` 把已存真 key 覆盖成空，随后的连通性测试必然 401；页面刷新后掩码回显（`****`+后4位）原样保存，还会把掩码串本身存成真 key。修复：`handleConfigSave` 把「空值或等于当前掩码」一律视为未修改、保留 `prev.APIKey`，仅非空新值才更新（Verified 三字段比对逻辑不变）。
+- **fix(ai)·错误响应 content-type**：ai 模块 34 处 `http.Error`（text/plain 却写 JSON 形状体）全部改为 `jsonError` helper（application/json + json.Marshal 生成体，状态码与文案逐字不变）——此前前端 `api()` 只对 JSON 错误自动 toast，text/plain 被当字符串静默返回，`testAIConnection` 又无失败分支，用户看到的就是「点了没反应」。前端同时补字符串兜底分支（双保险不双弹）。
+- **test(ai)**：新增 5 个单测——空 key 保存保留原值且 Verified 不误清、掩码回显保留、新 key 更新且 Verified 重置、jsonError 的 content-type/合法 JSON 断言；模块 91/91 绿。
+- **实机验证（测试机 57，真实 DeepSeek 端点）**：test-connection `ok:true` → 开关开启 → 非流式对话正常 → 工具链对话真实调用 get_health_report/get_storage_overview/get_smart_status 并汇总「41/41 自检通过」。同时验证用户侧根因确为 key 无效（DeepSeek 返回 "Your api key is invalid"，修复后该错误可见）与 base_url 缺 `/v1` 后缀（预设按钮自动填对）。
 
 ---
 
