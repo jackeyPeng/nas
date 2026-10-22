@@ -272,7 +272,7 @@ func scanJob(row scanner) (Job, error) {
 		id, kind, status, scopeRel, planJSON, impactJSON string
 		progressCur, progressTotal                       int
 		progressNote, resultJSON, errText, createdAt     string
-		startedAt, finishedAt                             sql.NullString
+		startedAt, finishedAt                            sql.NullString
 	)
 	if err := row.Scan(&id, &kind, &status, &scopeRel, &planJSON, &impactJSON,
 		&progressCur, &progressTotal, &progressNote, &resultJSON, &errText,
