@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"nas-panel/common"
+	"nas-panel/modules/tasks"
 )
 
 // nowFunc 可在测试里替换，验证 PendingAction.CreatedAt/TTL 相关行为时
@@ -366,6 +367,12 @@ func pendingActionSummary(toolName, argsJSON string) string {
 		return fmt.Sprintf("运行诊断项「%s」", str("item"))
 	case "create_folder":
 		return fmt.Sprintf("在存储池「%s」下创建文件夹「%s」（权限：%s）", str("pool"), str("name"), orDefault(str("permission"), "readwrite"))
+	case "start_task":
+		return taskActionSummary(str("job_id"), startTaskSummary)
+	case "cancel_task":
+		return taskActionSummary(str("job_id"), cancelTaskSummary)
+	case "resume_task":
+		return taskActionSummary(str("job_id"), resumeTaskSummary)
 	default:
 		return "即将执行写操作「" + toolName + "」，参数：" + digest(argsJSON)
 	}
@@ -377,4 +384,74 @@ func orDefault(s, def string) string {
 		return def
 	}
 	return s
+}
+
+// taskKindDisplayNames 是任务 kind 字符串到中文展示名的映射表（F1 Task 5；
+// 后续新增 kind 时在这里扩表，不散落在各个 summary 分支里重复判断）。
+var taskKindDisplayNames = map[string]string{
+	"photo_dedupe": "清理重复照片",
+}
+
+// taskKindDisplayName 查映射表，未知 kind（理论上不会发生，job.Kind 只
+// 可能是服务端 CreateJob 时写入的已知值）原样返回，不整体兜底成固定文案，
+// 方便排查新 kind 忘记扩表的疏漏。
+func taskKindDisplayName(kind string) string {
+	if name, ok := taskKindDisplayNames[kind]; ok {
+		return name
+	}
+	return kind
+}
+
+// taskSummaryTemplate 是单个任务动作（start/cancel/resume）的摘要生成器：
+// 拿到已查出的 job 后产出最终文案。
+type taskSummaryTemplate func(job tasks.Job) string
+
+// taskActionSummary 是 start_task/cancel_task/resume_task 三个分支共用的
+// 查 job→生成文案骨架：job 不存在时统一兜底"任务不存在或已清理"（计划
+// 文案逐字），存在时交给 tmpl 按各自分支的格式生成。
+func taskActionSummary(jobID string, tmpl taskSummaryTemplate) string {
+	job, ok := tasks.GetJob(jobID)
+	if !ok {
+		return "任务不存在或已清理"
+	}
+	return tmpl(job)
+}
+
+// startTaskSummary → "启动任务：清理重复照片（N 组文件，释放 X）"。
+func startTaskSummary(job tasks.Job) string {
+	return fmt.Sprintf("启动任务：%s（%d 组文件，释放 %s）",
+		taskKindDisplayName(job.Kind), job.Impact.Groups, formatHumanBytes(job.Impact.Bytes))
+}
+
+// cancelTaskSummary → "取消任务：<kind中文名>（当前进度 c/t）"。
+func cancelTaskSummary(job tasks.Job) string {
+	return fmt.Sprintf("取消任务：%s（当前进度 %d/%d）",
+		taskKindDisplayName(job.Kind), job.ProgressCur, job.ProgressTotal)
+}
+
+// resumeTaskSummary → "继续任务：<kind中文名>"。
+func resumeTaskSummary(job tasks.Job) string {
+	return fmt.Sprintf("继续任务：%s", taskKindDisplayName(job.Kind))
+}
+
+// formatHumanBytes 把字节数转成人类可读大小（B/KB/MB/GB，保留 1 位小数；
+// 字节数本身不足 1KB 时按整数 B 显示）。与
+// modules/diskmgmt/overview.go 的 formatSize（GB float → 字符串）语义
+// 相同但输入单位不同（这里是字节），两包互不借用彼此的私有函数，各自
+// 建一份——对照计划"参照既有 formatSize 语义自建 helper"的措辞。
+func formatHumanBytes(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%dB", n)
+	}
+	div, exp := int64(unit), 0
+	for v := n / unit; v >= unit; v /= unit {
+		div *= unit
+		exp++
+	}
+	units := []string{"KB", "MB", "GB", "TB"}
+	if exp >= len(units) {
+		exp = len(units) - 1
+	}
+	return fmt.Sprintf("%.1f%s", float64(n)/float64(div), units[exp])
 }

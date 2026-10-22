@@ -8,11 +8,13 @@ import (
 )
 
 // buildRegistry 组装 agent loop 使用的工具注册表：nas 域的只读工具
-// （M1/T5）+ 写工具（M2/T10）。RunAgent/handleChat 只认 *Registry，
-// 写工具的 Write=true 标记让 agent loop 自动转 PendingAction，不需要
-// 调用方额外区分。
+// （M1/T5）+ 写工具（M2/T10）+ 任务工具（F1 T5，plan/start/cancel/pause/
+// resume/list/detail）。RunAgent/handleChat 只认 *Registry，写工具的
+// Write=true 标记让 agent loop 自动转 PendingAction，不需要调用方额外
+// 区分。
 func buildRegistry() *Registry {
 	tools := append(nasReadTools(), nasWriteTools()...)
+	tools = append(tools, nasTasksTools()...)
 	return NewRegistry(Domain{
 		Name:  "nas",
 		Tools: tools,
