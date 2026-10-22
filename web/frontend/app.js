@@ -3573,6 +3573,12 @@ function nasPanel() {
                 if (data && typeof data === 'object' && data.ok) {
                     this.showToast(this.t('ai.test_ok'), 'success');
                     await this.loadAIStatus();
+                } else if (typeof data === 'string' && data.trim()) {
+                    // 后端改 JSON content-type 后 api() 会自动 toast 并返回 null，
+                    // 这个分支只是 text/plain 兜底（不会和 api() 的 toast 双弹）。
+                    let msg = data;
+                    try { const j = JSON.parse(data); if (j && j.error) msg = j.error; } catch (e) {}
+                    this.showToast(msg, 'error');
                 }
             } finally {
                 this.aiTesting = false;

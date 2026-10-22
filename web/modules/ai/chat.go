@@ -80,20 +80,20 @@ func historyToChatMessages(stored []StoredMessage) []ChatMessage {
 // 非流式（T6）返回一次性 JSON；SSE 流式（T7）逐事件推送，见 handleChatSSE。
 func handleChat(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
 	var req chatRequestBody
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		common.LogAuditRequest(r, "AI", "AI对话", "请求体非法", "failed")
-		http.Error(w, `{"error":"请求体非法"}`, http.StatusBadRequest)
+		jsonError(w, "请求体非法", http.StatusBadRequest)
 		return
 	}
 	req.Message = strings.TrimSpace(req.Message)
 	if req.Message == "" {
 		common.LogAuditRequest(r, "AI", "AI对话", "message 为空", "failed")
-		http.Error(w, `{"error":"message 不能为空"}`, http.StatusBadRequest)
+		jsonError(w, "message 不能为空", http.StatusBadRequest)
 		return
 	}
 
@@ -106,7 +106,7 @@ func handleChat(w http.ResponseWriter, r *http.Request) {
 	common.LogAuditRequest(r, "AI", "AI对话", "conv="+convID, "pending")
 
 	if err := EnsureConversation(convID); err != nil {
-		http.Error(w, `{"error":"会话初始化失败"}`, http.StatusInternalServerError)
+		jsonError(w, "会话初始化失败", http.StatusInternalServerError)
 		return
 	}
 
@@ -118,7 +118,7 @@ func handleChat(w http.ResponseWriter, r *http.Request) {
 	cfg := LoadConfig()
 	stored, err := LoadConversation(convID, historyWindow)
 	if err != nil {
-		http.Error(w, `{"error":"加载会话历史失败"}`, http.StatusInternalServerError)
+		jsonError(w, "加载会话历史失败", http.StatusInternalServerError)
 		return
 	}
 	history := historyToChatMessages(stored)
@@ -128,7 +128,7 @@ func handleChat(w http.ResponseWriter, r *http.Request) {
 	result, err := RunAgent(r.Context(), cfg, toolRegistry, history, req.Message)
 	if err != nil {
 		common.LogAuditRequest(r, "AI", "AI对话", "conv="+convID+" error="+err.Error(), "failed")
-		http.Error(w, `{"error":"模型调用失败: `+jsonEscape(err.Error())+`"}`, http.StatusBadGateway)
+		jsonError(w, "模型调用失败: "+err.Error(), http.StatusBadGateway)
 		return
 	}
 
@@ -141,15 +141,15 @@ func handleChat(w http.ResponseWriter, r *http.Request) {
 	// 经由 ChatOnce 的多轮请求/响应完成，这里只持久化这一轮对话对用户可见的
 	// 首尾两条消息（user 请求 + assistant 最终回复），足够下一轮历史回放。
 	if err := SaveMessage(convID, "user", req.Message, ""); err != nil {
-		http.Error(w, `{"error":"保存消息失败"}`, http.StatusInternalServerError)
+		jsonError(w, "保存消息失败", http.StatusInternalServerError)
 		return
 	}
 	if err := EnsureTitle(convID, req.Message); err != nil {
-		http.Error(w, `{"error":"保存会话标题失败"}`, http.StatusInternalServerError)
+		jsonError(w, "保存会话标题失败", http.StatusInternalServerError)
 		return
 	}
 	if err := SaveMessage(convID, "assistant", result.Reply, ""); err != nil {
-		http.Error(w, `{"error":"保存回复失败"}`, http.StatusInternalServerError)
+		jsonError(w, "保存回复失败", http.StatusInternalServerError)
 		return
 	}
 
@@ -282,13 +282,13 @@ func handleChatSSE(w http.ResponseWriter, r *http.Request, convID, message strin
 // handleListConversations：GET /api/ai/conversations，返回最近 20 个会话。
 func handleListConversations(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	common.LogAuditRequest(r, "AI", "查看AI会话列表", "", "success")
 	list, err := ListConversations(historyWindow)
 	if err != nil {
-		http.Error(w, `{"error":"读取会话列表失败"}`, http.StatusInternalServerError)
+		jsonError(w, "读取会话列表失败", http.StatusInternalServerError)
 		return
 	}
 	common.JSONResponse(w, map[string]interface{}{"conversations": list})
@@ -299,19 +299,19 @@ func handleListConversations(w http.ResponseWriter, r *http.Request) {
 // loop 的 20 条历史窗口——这个端点是给前端回显整段对话用的）。
 func handleGetConversation(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	convID := strings.TrimPrefix(r.URL.Path, "/api/ai/conversations/")
 	convID = strings.TrimSuffix(convID, "/")
 	if convID == "" {
-		http.Error(w, `{"error":"缺少会话 ID"}`, http.StatusBadRequest)
+		jsonError(w, "缺少会话 ID", http.StatusBadRequest)
 		return
 	}
 	common.LogAuditRequest(r, "AI", "查看AI会话", "conv="+convID, "success")
 	stored, err := LoadConversation(convID, 50)
 	if err != nil {
-		http.Error(w, `{"error":"读取会话失败"}`, http.StatusInternalServerError)
+		jsonError(w, "读取会话失败", http.StatusInternalServerError)
 		return
 	}
 	common.JSONResponse(w, map[string]interface{}{"conversation_id": convID, "messages": stored})

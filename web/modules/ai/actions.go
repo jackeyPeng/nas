@@ -103,29 +103,29 @@ type cancelActionRequest struct {
 // 不接受客户端覆盖）。执行成功/失败都走 LogAuditRequest 富 detail。
 func handleActionConfirm(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	var req confirmActionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"请求体非法"}`, http.StatusBadRequest)
+		jsonError(w, "请求体非法", http.StatusBadRequest)
 		return
 	}
 	if req.ActionID == "" {
-		http.Error(w, `{"error":"action_id 必填"}`, http.StatusBadRequest)
+		jsonError(w, "action_id 必填", http.StatusBadRequest)
 		return
 	}
 
 	action, ok := defaultPendingStore.Take(req.ActionID)
 	if !ok {
 		common.LogAuditRequest(r, "AI", "确认AI写操作", "action_id="+req.ActionID+" 不存在或已过期", "failed")
-		http.Error(w, `{"error":"操作已过期或不存在，请重新发起请求"}`, http.StatusGone)
+		jsonError(w, "操作已过期或不存在，请重新发起请求", http.StatusGone)
 		return
 	}
 
 	if req.ConfirmWord != action.ConfirmWord {
 		common.LogAuditRequest(r, "AI", "确认AI写操作", sanitizeArgsDigest(action.ToolName, action.ArgsJSON)+" 确认词错误", "failed")
-		http.Error(w, `{"error":"确认词不正确"}`, http.StatusBadRequest)
+		jsonError(w, "确认词不正确", http.StatusBadRequest)
 		return
 	}
 
@@ -137,7 +137,7 @@ func handleActionConfirm(w http.ResponseWriter, r *http.Request) {
 	detail := sanitizeArgsDigest(action.ToolName, action.ArgsJSON)
 	if err != nil {
 		common.LogAuditRequest(r, "AI", "确认AI写操作", detail+" error="+jsonEscape(err.Error()), "failed")
-		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadGateway)
+		jsonError(w, err.Error(), http.StatusBadGateway)
 		return
 	}
 	common.LogAuditRequest(r, "AI", "确认AI写操作", detail, "success")
@@ -151,16 +151,16 @@ func handleActionConfirm(w http.ResponseWriter, r *http.Request) {
 // 不留痕迹（审计仍记一条"取消"，用于追溯模型曾经请求过什么写操作）。
 func handleActionCancel(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	var req cancelActionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"请求体非法"}`, http.StatusBadRequest)
+		jsonError(w, "请求体非法", http.StatusBadRequest)
 		return
 	}
 	if req.ActionID == "" {
-		http.Error(w, `{"error":"action_id 必填"}`, http.StatusBadRequest)
+		jsonError(w, "action_id 必填", http.StatusBadRequest)
 		return
 	}
 	action, ok := defaultPendingStore.Take(req.ActionID)

@@ -22,6 +22,24 @@ func buildRegistry() *Registry {
 // toolRegistry 是进程级单例：工具清单编译期固定，不需要每次请求重新构建。
 var toolRegistry = buildRegistry()
 
+// jsonError 统一错误响应体的 Content-Type：原先 modules/ai 下大量 handler
+// 直调 http.Error 手拼 `{"error":"..."}` 字符串，但 http.Error 固定写
+// text/plain，导致前端 api() 的 JSON 自动 toast 守卫（按 Content-Type 判断）
+// 失效——错误体虽然长得像 JSON，实际走的是字符串兜底分支（见
+// app.js testAIConnection 的 pitfall 2c）。这里统一设
+// application/json 并用 json.Marshal 生成体，msg 含用户可控/动态内容
+// （比如上游 LLM 错误原文）时也能被正确转义，不再需要调用方自己处理 %q。
+func jsonError(w http.ResponseWriter, msg string, code int) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(code)
+	body, err := json.Marshal(map[string]string{"error": msg})
+	if err != nil {
+		// json.Marshal 对 map[string]string 实际不会失败；兜底仍给出合法 JSON。
+		body = []byte(`{"error":"内部错误"}`)
+	}
+	w.Write(body)
+}
+
 // RegisterRoutes 注册 ai 模块的全部 HTTP 路由。
 // AI 助手是默认关闭的功能模块：requireEnabled 只包裹**功能面**端点
 // （chat/conversations/action）；**控制面**端点（status/config/toggle/
@@ -94,7 +112,7 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		handleConfigSave(w, r)
 	default:
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
@@ -109,7 +127,7 @@ type configSaveRequest struct {
 func handleConfigSave(w http.ResponseWriter, r *http.Request) {
 	var req configSaveRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"请求体非法"}`, http.StatusBadRequest)
+		jsonError(w, "请求体非法", http.StatusBadRequest)
 		return
 	}
 	prev := LoadConfig()
@@ -121,6 +139,14 @@ func handleConfigSave(w http.ResponseWriter, r *http.Request) {
 		Model:        req.Model,
 		MaxToolCalls: req.MaxToolCalls,
 	}
+	// 空值/掩码回显一律视为"未修改"：前端保存成功后会清空表单里的
+	// api_key（避免真 key 常驻 DOM/内存），GET /api/ai/config 回显的也是
+	// MaskAPIKey 掩码串而非原文——这两种值重新 POST 回来都不代表用户真的
+	// 改了 key，必须保留 prev.APIKey，否则会把真 key 覆盖成空值或掩码串
+	// 字面量（用户实报的 bug：保存后测连通性必 401）。
+	if next.APIKey == "" || next.APIKey == MaskAPIKey(prev.APIKey) {
+		next.APIKey = prev.APIKey
+	}
 	if next.MaxToolCalls <= 0 {
 		next.MaxToolCalls = 12
 	}
@@ -131,7 +157,7 @@ func handleConfigSave(w http.ResponseWriter, r *http.Request) {
 		next.Verified = false
 	}
 	if err := SaveConfig(next); err != nil {
-		http.Error(w, `{"error":"保存配置失败"}`, http.StatusInternalServerError)
+		jsonError(w, "保存配置失败", http.StatusInternalServerError)
 		return
 	}
 	common.LogAuditRequest(r, "AI", "保存AI配置", "preset="+next.Preset+" model="+next.Model, "success")
@@ -154,12 +180,12 @@ type toggleRequest struct {
 // 关闭：始终允许，且不清空已保存的 endpoint/key 配置（重新打开即恢复）。
 func handleToggle(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	var req toggleRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"请求体非法"}`, http.StatusBadRequest)
+		jsonError(w, "请求体非法", http.StatusBadRequest)
 		return
 	}
 
@@ -167,13 +193,13 @@ func handleToggle(w http.ResponseWriter, r *http.Request) {
 	if req.Enabled {
 		configured := cfg.BaseURL != "" && cfg.Model != ""
 		if !configured || !cfg.Verified {
-			http.Error(w, `{"error":"请先配置模型端点并通过连通性测试"}`, http.StatusBadRequest)
+			jsonError(w, "请先配置模型端点并通过连通性测试", http.StatusBadRequest)
 			return
 		}
 	}
 	cfg.Enabled = req.Enabled
 	if err := SaveConfig(cfg); err != nil {
-		http.Error(w, `{"error":"保存配置失败"}`, http.StatusInternalServerError)
+		jsonError(w, "保存配置失败", http.StatusInternalServerError)
 		return
 	}
 	action := "关闭AI助手"

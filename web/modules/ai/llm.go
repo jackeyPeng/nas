@@ -239,22 +239,22 @@ func apiErrorFromStatus(status int, parsed *chatCompletionResponse) error {
 // 失败回 502 + 中文原因（不挂 requireEnabled：配置阶段功能本身还没开启）。
 func handleTestConnection(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	cfg := LoadConfig()
 	if cfg.BaseURL == "" || cfg.Model == "" {
-		http.Error(w, `{"error":"请先填写模型端点和模型名称"}`, http.StatusBadRequest)
+		jsonError(w, "请先填写模型端点和模型名称", http.StatusBadRequest)
 		return
 	}
 	if err := TestConnection(r.Context(), cfg); err != nil {
 		common.LogAuditRequest(r, "AI", "连通性测试", "model="+cfg.Model, "failed")
-		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadGateway)
+		jsonError(w, err.Error(), http.StatusBadGateway)
 		return
 	}
 	cfg.Verified = true
 	if err := SaveConfig(cfg); err != nil {
-		http.Error(w, `{"error":"保存配置失败"}`, http.StatusInternalServerError)
+		jsonError(w, "保存配置失败", http.StatusInternalServerError)
 		return
 	}
 	common.LogAuditRequest(r, "AI", "连通性测试", "model="+cfg.Model, "success")
