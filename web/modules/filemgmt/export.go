@@ -17,6 +17,35 @@ func ResolvePoolPath(rel string) (string, error) {
 	return resolvePoolPath(rel)
 }
 
+// RelPoolPath 把池内绝对路径换算为池根相对路径（ResolvePoolPath 的逆
+// 运算），供扫描器（如 tasks 模块的 photo_dedupe）把 filepath.WalkDir
+// 拿到的绝对路径转回 Step.Args["src"] 要求的池内相对形式。absPath 必须
+// 已经在池根内，否则返回 ErrNotInPool。
+func RelPoolPath(absPath string) (string, error) {
+	root := normalizedRoot()
+	clean := filepath.Clean(absPath)
+	if clean != root && !strings.HasPrefix(clean, root+string(filepath.Separator)) {
+		return "", ErrNotInPool
+	}
+	rel, err := filepath.Rel(root, clean)
+	if err != nil {
+		return "", err
+	}
+	if rel == "." {
+		return "", nil
+	}
+	return filepath.ToSlash(rel), nil
+}
+
+// SetPoolRootOverrideForTest 覆盖池根（仅供测试）。filemgmt 自己的测试
+// 直接写包级变量 poolRootOverride（path_test.go 既有模式）；本函数是
+// 导出入口，供 tasks 等跨包测试（F1 Task 4 的 photo_dedupe 扫描器需要
+// 一个真实池根 fixture 供 ResolvePoolPath/MoveToRecycle 联调）在不进本
+// 包内部也能注入同一套覆盖机制。生产代码不得调用。
+func SetPoolRootOverrideForTest(root string) {
+	poolRootOverride = root
+}
+
 // 哨兵错误（F1 Task 3）：MoveToRecycle 的调用方用 errors.Is 判定并映射
 // HTTP 码/文案，而不是解析错误文本——handleDelete 重构后的调用点示范。
 var (

@@ -14,6 +14,15 @@ import (
 // "move_to_recycle"（Task 4 注册真实实现），测试用 RegisterOp 注入 fake。
 type OpExec func(ctx context.Context, step Step) error
 
+// ctxJobIDKeyType / ctxJobIDKey：worker 把当前任务 ID 塞进执行步骤的
+// ctx（F1 Task 4 接线：kinds_dedupe.go 的 move_to_recycle 执行体要按
+// jobID 累计 moved/freed/skipped 统计供 ResultBuilder 汇总，不新增
+// OpExec 签名参数——签名由 Task 2 定义，Task 4 不得改动）。用具体类型
+// 而非内建 string 做 key，规避 vet 的 context key 冲突告警。
+type ctxJobIDKeyType struct{}
+
+var ctxJobIDKey = ctxJobIDKeyType{}
+
 var (
 	opMu  sync.Mutex
 	opMap = map[string]OpExec{}
@@ -32,6 +41,42 @@ func lookupOp(op string) (OpExec, bool) {
 	defer opMu.Unlock()
 	fn, ok := opMap[op]
 	return fn, ok
+}
+
+// ResultBuilder 由 kind 实现方（如 kinds_dedupe.go）注册，在任务跑完全部
+// 步骤后把 kind 专属统计（如 moved/freed/skipped）序列化进 Job.Result。
+// doneCount 是本次执行成功的步骤数（含断点续传场景只统计本次新完成的），
+// 供未注册 ResultBuilder 的 kind（测试用 fake op）兜底使用。
+type ResultBuilder func(jobID string, doneCount int) string
+
+var (
+	resultBuilderMu sync.Mutex
+	resultBuilders  = map[string]ResultBuilder{}
+)
+
+// RegisterResultBuilder 注册一种 kind 的结果汇总函数，幂等覆盖。
+func RegisterResultBuilder(kind string, fn ResultBuilder) {
+	resultBuilderMu.Lock()
+	defer resultBuilderMu.Unlock()
+	resultBuilders[kind] = fn
+}
+
+func lookupResultBuilder(kind string) (ResultBuilder, bool) {
+	resultBuilderMu.Lock()
+	defer resultBuilderMu.Unlock()
+	fn, ok := resultBuilders[kind]
+	return fn, ok
+}
+
+// buildJobResult 按 kind 查 resultBuilders；未注册时落回 Task 2 的占位
+// 汇总 {"moved":doneCount,"freed":0,"skipped":0}（既有 worker 测试用
+// fake op，不依赖 kind 专属统计，保持契约不变）。
+func buildJobResult(jobID, kind string, doneCount int) string {
+	if fn, ok := lookupResultBuilder(kind); ok {
+		return fn(jobID, doneCount)
+	}
+	result, _ := json.Marshal(map[string]interface{}{"moved": doneCount, "freed": 0, "skipped": 0})
+	return string(result)
 }
 
 // queueCapacity 是任务队列容量：单 worker 串行消费，家庭盒子磁盘友好，
@@ -260,7 +305,7 @@ func executeJob(id string) {
 		}
 	}
 
-	ctx := context.Background()
+	ctx := context.WithValue(context.Background(), ctxJobIDKey, id)
 
 	for _, step := range job.Plan {
 		if checkpoint[step.Key] {
@@ -312,11 +357,12 @@ func executeJob(id string) {
 		}
 	}
 
-	// 跑完全部步骤：汇总结果（F1 的 move_to_recycle 执行链在 Task 4 接线时
-	// 会在这里/kinds_dedupe.go 补完整 moved/freed/skipped 统计；本 Task 2
-	// 先给出空汇总占位，不影响状态机与事件契约）。
-	result, _ := json.Marshal(map[string]interface{}{"moved": doneCount, "freed": 0, "skipped": 0})
-	if err := FinishJob(id, string(result), "", StatusDone); err != nil {
+	// 跑完全部步骤：汇总结果。F1 Task 4 接线：按 job.Kind 查
+	// resultBuilders 取 kind 专属的 moved/freed/skipped 统计（kinds_dedupe.go
+	// 的 init() 为 "photo_dedupe" 注册）；未注册的 kind（测试用的 fake op）
+	// 落回 Task 2 的占位汇总，不影响既有 worker 测试契约。
+	result := buildJobResult(id, job.Kind, doneCount)
+	if err := FinishJob(id, result, "", StatusDone); err != nil {
 		log.Printf("[tasks] FinishJob(%s) done 失败: %v", id, err)
 		return
 	}
