@@ -41,6 +41,20 @@ web/modules/mcp/       ← MCP 插座（另 spec）
 - 否决独立管家进程（破单服务家电形态）；否决在 ai 包内继续堆（网关/任务/触发器与聊天搅在一起会成泥球）。
 - 包间依赖单向：`ai → tasks`（AI 规划任务、查询/取消任务走 tasks 导出的内核 API）；`triggers → tasks + ai`（建议被接受后转 pending action / 任务计划）；tasks/triggers 不 import ai 的 LLM 部分（引擎无模型依赖，可独立测试）。
 - **通道中立**：任务进度、建议卡、结果报告统一走 eventbus 事件 + 新增 `notifications` 轻量收件箱（面板通知中心数据源）；微信网关将来只是 notifications 的另一个消费者——底座不依赖任何云服务即可闭环验收。
+- **架构边界测试（CI 强制）**：新增一个 Go 测试扫描 import 图并锁定分层——① 禁止跨模块 import 其他模块的内部实现（跨模块只准走 `export.go` 导出的内核 API，AI 工具域接入既有模式）；② tasks/triggers 不得 import ai 的 LLM/agent 部分（引擎无模型依赖）；③ ai→tasks、triggers→tasks+ai 之外出现反向/横向依赖即测试红。边界靠机器守，不靠 review 记忆。
+
+### 三b、单二进制底座 + sidecar 生态（归位规则，2026-10-22 拍板）
+
+产品架构叙事对齐群晖模式：**面板 = 单二进制底座（轻、常驻、核心闭环），生态 = sidecar 独立服务（经 TODO #37 外部应用注册机制统一管理：服务页启停/健康徽章/门户入口）**。后续任何新功能立项时按此归位：
+
+| 形态 | 判据 | 例子 |
+|---|---|---|
+| 进底座（web/modules/*） | 轻量、常驻内存小、属核心管理闭环、纯 Go 零重依赖 | ai/tasks/triggers/存储/用户/防火墙… |
+| sidecar 独立二进制（可选安装件） | 重计算/重依赖/可选装/独立生命周期 | 照片 AI 分类、向量索引、媒体刮削 |
+| 云服务（独立仓+独立部署） | 跑在厂商/第三方侧 | 微信 E2E 中继 |
+| 生态应用（独立仓，零代码合并） | 独立产品、隐私域隔离 | 安康 |
+
+**明确否决**：把底座按模块拆多进程/多仓库——当前体量（25k 行 Go、21 模块、13.6MB 二进制）远未到拆分阈值；多服务会新增服务间认证/网络半死/版本偏差三类恶性 bug，且家庭小白用户无法自救多进程故障；每模块一仓会摧毁"一个提交横跨后端+前端+i18n+文档"的原子开发速度。仓库切分只在发布节奏真正分叉时进行（现状：nas / nas-website / 安康 / 微信中继(将来)四个仓即终态格局）。压 bug 的手段是测试与验收（12k 行单测 + 38 项验收套件 + 双机重置流程），不是包结构。
 
 ## 四、任务引擎（tasks）
 
@@ -93,7 +107,7 @@ jobs: id TEXT PK, kind TEXT, status TEXT,          -- pending_confirm|running|pa
 
 ## 七、里程碑（底座内部）
 
-- **F1 垂直切片**：ai→tasks 分层落位 + 任务引擎核心（jobs 表/worker/checkpoint/SSE 进度/暂停取消）+ photo_dedupe 一个 kind 全链（AI 规划→确认卡→执行→回收站→报告）+ 前端"任务"区块（聊天页工具轨迹旁挂任务卡）
+- **F1 垂直切片**：ai→tasks 分层落位 + **架构边界测试** + 任务引擎核心（jobs 表/worker/checkpoint/SSE 进度/暂停取消）+ photo_dedupe 一个 kind 全链（AI 规划→确认卡→执行→回收站→报告）+ 前端"任务"区块（聊天页工具轨迹旁挂任务卡）
 - **F2 主动管家**：triggers（eventbus 订阅+水位 cron+冷却/上限）+ notifications 收件箱 + 面板通知中心 + 建议卡接受链 + 家庭周报
 - **F3 装机体验**：对话式开机引导 + 人话层术语表全量铺开（含既有推送文案改造）
 - **F4 任务扩批**：photo_organize / bulk_rename / big_file_inventory / run_backup / rclone_sync_setup
@@ -103,7 +117,7 @@ jobs: id TEXT PK, kind TEXT, status TEXT,          -- pending_confirm|running|pa
 
 - 功能：F1 用种入的重复文件集实测（扫描→确认→回收站→报告→恢复）；断点续传实测（任务中 kill 面板重启，续传不重做副作用）；F2 人为触发水位/SMART 迁移验证建议卡与冷却；F3 全新机器走完引导建池建号。
 - 安全：对抗用例扩展——恶意文件名注入不得改变已确认 plan；`plan_task` 参数 schema 拒绝未知 kind/池外路径；任务引擎路径逃逸测试（复用 filemgmt 穿越用例）；关断态 tasks/triggers API 全 403、无后台 goroutine。
-- 回归：现有 ai 91 测试 + acceptance-suite 38 项 + go test ./... -race 全绿。
+- 回归：现有 ai 91 测试 + acceptance-suite 38 项 + go test ./... -race 全绿；**架构边界测试进 CI 常绿**（跨模块内部 import / 反向依赖即红）。
 
 ## 九、成本与依赖
 
@@ -119,3 +133,4 @@ jobs: id TEXT PK, kind TEXT, status TEXT,          -- pending_confirm|running|pa
 4. **架构**：方案三——单二进制、分层分包（ai 内核/tasks/triggers/gateway/mcp 五层）。
 5. **安康**：缓接，插座保留，等用户发令。
 6. **本 spec 范围**：底座（F1-F4），零云依赖闭环；"后面再评估"项：ai 目录更名、Eino 引入时机、微信中继形态细化。
+7. **单体 vs 多服务（2026-10-22 讨论后拍板）**：单二进制底座 + 包级分层 + 架构边界测试（CI 强制）+ sidecar 生态归位规则（§三b）；否决按模块拆多进程/每模块一仓（体量未到阈值、多服务新增恶性 bug 类、多仓摧毁原子提交速度）；重计算可选件走 sidecar、云服务独立仓、生态应用零合并——"多服务"作为生态形态存在，不炸底座。
