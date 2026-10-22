@@ -32,6 +32,7 @@ import (
 	"nas-panel/modules/services"
 	"nas-panel/modules/storage"
 	"nas-panel/modules/system"
+	"nas-panel/modules/tasks"
 	"nas-panel/modules/update"
 	"nas-panel/modules/users"
 	"nas-panel/modules/vault"
@@ -123,6 +124,9 @@ func main() {
 	}
 	common.InitAuditLog(dataDir)
 	common.InitEventBus(dataDir)
+	if err := tasks.InitTasks(dataDir); err != nil {
+		log.Printf("WARNING: tasks engine init failed: %v", err)
+	}
 
 	if addr := os.Getenv("LISTEN_ADDR"); addr != "" {
 		listenAddr = addr
@@ -156,6 +160,7 @@ func main() {
 	events.RegisterRoutes(mux)
 	filemgmt.RegisterRoutes(mux)
 	ai.RegisterRoutes(mux)
+	tasks.RegisterRoutes(mux, ai.IsEnabled)
 
 	// Serve frontend
 	frontendRoot, _ := fs.Sub(frontendFS, "frontend")
