@@ -31,6 +31,7 @@
 - 亮色主题视觉打磨（统一字阶/间距、卡片/表格/按钮一致性、hover 微交互、聚焦态、空状态）✅ 已完成。首轮：内联残留色→CSS 变量（37 处）、磁盘卡片选中态统一。第二轮（2026-09-15）：字阶/间距 token 化完成——font-size 归一 432 处、padding/gap/margin 约 560 组件 token 化、border-radius token 化 117 处、14 处内联可点卡片挂 .clickable-card。第三轮（2026-09-17）收尾：徽章微距 token 化——39 处内联小 padding（1/2/3/5/6px）归入 .badge-xs（2px 8px）/.badge-sm（3px 7px）/.badge-sm.pill/.btn-xs 四档类，计算样式扫描 0 内联微距残留；空状态统一——.empty-state 组件（图标+标题+hint+action，含 --inline 表格紧凑变体）替换 19 处零散"暂无数据"；表格密度分级——.table-dense（8px 行距+fs-sm）应用于登录日志/防火墙规则/操作日志/诊断历史/事件中心 5 张高行数表格
 - Hardware Profile 硬件抽象 ✅ v1 已落地（web/modules/hardware，GET /api/hardware/profile：平台识别 + CPU/内存/网卡/物理盘/温度档案，30s 缓存；.57 与本地 Fedora 均实测通过；2026-09-17 修复 zram 虚拟盘混入物理盘列表——过滤改为只收 TYPE=disk）——风扇/LED/槽位映射依赖真实背板硬件，留 P2
 - 事件中心 Event Bus ✅ 已落地（2026-09-17）——web/common/eventbus.go：进程内 pub/sub（Subscribe/Unsubscribe）+ events.db SQLite 持久化（WAL，独立于 audit.db）+ 非阻塞投递 + 90 天自动清理；web/modules/events：GET /api/events（分页+source/type/days 过滤）+ /api/events/stats；生产方接入 health（状态迁移去抖，只在变化时发事件）/diskmgmt（换盘）/storage（删池/重置/导入/pending 应用/共享夹增删）/update（升级失败漏斗+派发）/rclone（同步成败）/firewall（规则增删/启停）/backup（数据备份）；前端事件中心页（统计卡+筛选+dense 表格+分页）+ dashboard 最近告警卡 + i18n 命名占位符插值（{disk}/{task}）中英双语
+- AI 助手 M1+M2 ✅ 已落地发版（2026-10-21，v1.4.0-beta.28/beta.29）——web/modules/ai：可开关内置功能模块（默认关闭零足迹，控制面/功能面守卫分离）、OpenAI 兼容客户端（DeepSeek/Ollama 预设+连通性测试+Key 掩码存储）、NAS 域 15 工具（9 只读+6 写，ToolDomain 抽象+schema 校验，直调模块内核）、SSE 流式对话+会话历史、写操作 type-to-confirm 确认门（服务端参数留存/一次性/TTL）、create_user 密码前端生成直注（永不进模型上下文）、对抗性安全测试集；前端聊天页+设置页+常驻导航入口（未启用徽标）；双机用户级验收全绿。**M3 家用助手域（健康管理/生活秘书工具域）待规划**——ToolDomain 插座已就位，见 docs/plans/2026-10-21-ai-assistant-design.md
 
 ### P2 — 暂缓
 
@@ -40,7 +41,7 @@
 
 ### P3 — 不做 / 最后
 
-- Docker 应用管理、AI、HA、Cluster、Kubernetes
+- Docker 应用管理、HA、Cluster、Kubernetes（AI 已移出：助手模块 M1+M2 已落地，见上方 ✅ 清单；M3 家用助手域待规划）
 
 ### 待拍板（商业决策）
 
