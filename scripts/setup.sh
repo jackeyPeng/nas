@@ -373,7 +373,12 @@ echo ""
 echo "[8/10] 配置 S3 对象存储 (rclone serve s3)..."
 # 安装/升级 rclone（锁定 v1.75.2：低于 1.75 即升级到 pin 版本；serve s3 的功能下限是 1.62）
 RCLONE_VERSION=$(rclone version 2>/dev/null | head -1 | grep -oP 'v\K[0-9]+\.[0-9]+' | head -1)
-if [ -z "$RCLONE_VERSION" ] || [ "$(echo "$RCLONE_VERSION < 1.75" | bc 2>/dev/null || echo 1)" = "1" ]; then
+# bc 在最小化 Debian 上可能不存在（57 机实测 NO_BC）——版本比较一律走 awk
+rclone_lt_175() {
+    [ -z "$1" ] && { echo 1; return; }
+    echo "$1" | awk -F. '{print ($1<1 || ($1==1 && $2<75)) ? 1 : 0}'
+}
+if [ "$(rclone_lt_175 "$RCLONE_VERSION")" = "1" ]; then
     echo "  升级 rclone..."
     if download_file /tmp/rclone-latest.deb \
         "https://get.z1.sale/releases/rclone-v1.75.2-linux-${ARCH}.deb" \
@@ -399,7 +404,7 @@ if [ -z "$RCLONE_VERSION" ] || [ "$(echo "$RCLONE_VERSION < 1.75" | bc 2>/dev/nu
             sudo dpkg -i /tmp/rclone-latest.deb >/tmp/rclone-dpkg.log 2>&1 || true
         fi
         RCLONE_NOW=$(rclone version 2>/dev/null | head -1 | grep -oP 'v\K[0-9]+\.[0-9]+' | head -1)
-        if [ -n "$RCLONE_NOW" ] && [ "$(echo "$RCLONE_NOW >= 1.75" | bc 2>/dev/null || echo 0)" = "1" ]; then
+        if [ "$(rclone_lt_175 "$RCLONE_NOW")" = "0" ]; then
             echo "  ✓ rclone 已升级到 $(rclone version | head -1)"
         else
             echo "  ✗ rclone 升级未生效（当前 $(rclone version 2>/dev/null | head -1)），S3 服务将不可用"
