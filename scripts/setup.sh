@@ -379,8 +379,32 @@ if [ -z "$RCLONE_VERSION" ] || [ "$(echo "$RCLONE_VERSION < 1.75" | bc 2>/dev/nu
         "https://get.z1.sale/releases/rclone-v1.75.2-linux-${ARCH}.deb" \
         "https://github.com/rclone/rclone/releases/download/v1.75.2/rclone-v1.75.2-linux-${ARCH}.deb" \
         "https://ghfast.top/https://github.com/rclone/rclone/releases/download/v1.75.2/rclone-v1.75.2-linux-${ARCH}.deb"; then
-        sudo dpkg -i /tmp/rclone-latest.deb 2>/dev/null || true
-        echo "  ✓ rclone 已升级到 $(rclone version | head -1)"
+        # 等 dpkg 锁：apt 批量装完后 unattended-upgrades 常仍持锁，立即 dpkg -i 会
+        # 失败——此前 `2>/dev/null || true` 把失败吞掉还照报"✓ 已升级"，机器上
+        # 留下 apt 版 rclone 1.60（无 serve s3），rclone-s3 崩溃循环（48 用户级
+        # 部署实抓）。等锁 + 保留错误输出 + 装后验证版本，三重防线。
+        for _i in $(seq 1 60); do
+            if ! fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 && ! fuser /var/lib/apt/lists/lock >/dev/null 2>&1; then
+                break
+            fi
+            sleep 2
+        done
+        if sudo dpkg -i /tmp/rclone-latest.deb >/tmp/rclone-dpkg.log 2>&1; then
+            :
+        else
+            echo "  ⚠ dpkg 安装 rclone 失败，错误输出："
+            tail -5 /tmp/rclone-dpkg.log | sed 's/^/    /'
+            # 常见残局：dpkg 中断态，尝试修复一次
+            sudo apt-get -f install -y >/dev/null 2>&1 || true
+            sudo dpkg -i /tmp/rclone-latest.deb >/tmp/rclone-dpkg.log 2>&1 || true
+        fi
+        RCLONE_NOW=$(rclone version 2>/dev/null | head -1 | grep -oP 'v\K[0-9]+\.[0-9]+' | head -1)
+        if [ -n "$RCLONE_NOW" ] && [ "$(echo "$RCLONE_NOW >= 1.75" | bc 2>/dev/null || echo 0)" = "1" ]; then
+            echo "  ✓ rclone 已升级到 $(rclone version | head -1)"
+        else
+            echo "  ✗ rclone 升级未生效（当前 $(rclone version 2>/dev/null | head -1)），S3 服务将不可用"
+            echo "    手动修复: sudo dpkg -i /tmp/rclone-latest.deb && sudo systemctl restart rclone-s3"
+        fi
     else
         echo "  ⚠ rclone 升级失败，S3 服务可能不可用（需要 rclone 1.62+，锁定版本 v1.75.2）"
     fi
