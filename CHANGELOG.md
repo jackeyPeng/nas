@@ -2,7 +2,17 @@
 
 ## [未发布]
 
-（暂无未发布变更）
+### 家庭管家底座 F2（主动管家：triggers + notifications + 通知中心 + 周报）
+
+面板从「被动等命令」升级为「主动发现、提出建议、经确认后干活」：事件/水位触发建议卡，通知中心统一收件，接受建议走既有确认门转任务执行，每周自动生成家庭周报。
+
+- **notifications 轻量收件箱**（`b70e8ee`）：新增 `web/modules/notifications/` —— notes 表 + `AddNotification`/`ListNotifications`/`MarkRead`/`MarkAllRead`/`ClearRead`/`UnreadCount` 内核 + REST（enabled 守卫）+ eventbus 订阅（`task.done`/`task.failed`/`health.*`/`rclone.sync_failed`/`suggestion.created` → i18n 键通知，`task.progress` 不入箱防刷屏）。
+- **triggers 主动管家骨架**（`5478ed2`）：新增 `web/modules/triggers/` —— suggestions 表 + 冷却 24h/活跃上限 5 条内核 + actions_json 校验 + REST；`common.CronMatch` 从 rclone 调度器抽取为共享 5 段 cron 匹配器（rclone 行为不变）。
+- **事件源接线**（`a562d4f`）：health 状态迁移为异常/备份失败/云同步失败 → 人话建议卡（navigate 类）；磁盘水位 6 小时 cron（用量 ≥85% 触发「清理重复照片」建议）；人话翻译表第一批（双语）；backup 模块补失败路径 `backup.data_failed` 生产点（原先只有成功事件）。
+- **家庭周报**（`fb21339`）：周日 9 点 cron + 手动生成端点（`POST /api/triggers/report/generate`），存储/本周任务/健康三块模板化数据落收件箱（kind=report，零 LLM 依赖）。
+- **建议接受链**（`c523618`）：`ai.CreatePendingAction` 导出（复用既有确认门/TTL/确认词）+ `POST /api/triggers/suggestions/{id}/accept` 端点（建议 plan 固化 → 待确认操作卡 → 既有 `/api/ai/action/confirm` 确认即执行）+ 重放/过期/空计划对抗用例。
+- **前端通知中心**（`31bae7b`）：侧边栏铃铛 + 未读徽标（30s 轮询）/ 建议卡（执行/忽略/去看看）/ 周报卡/通知列表 + `t()` 插值渲染 + 接受确认弹窗（复用 type-to-confirm 交互，独立状态对象）；AI 关闭时整个通知中心隐藏，零足迹。
+- **文档**：操作清单新增「通知中心」「主动管家」两个模块节（统计实算：只显示 70/用户操作 119/系统自动 43，合计 232，23 个功能模块）；产品手册 11.6 节补「通知中心与主动管家」小节（铃铛位置/建议卡限流说明/接受确认流程/周报内容与时间/关闭 AI 后零足迹）。
 
 ## 版本变更一览
 
