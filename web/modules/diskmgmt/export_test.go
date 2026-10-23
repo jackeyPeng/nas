@@ -77,3 +77,24 @@ func TestPoolUsageKernelCalculation(t *testing.T) {
 		}
 	}
 }
+
+func TestParseDfSizeUsedGB(t *testing.T) {
+	cases := []struct {
+		in       string
+		wantT    float64
+		wantU    float64
+		wantOK   bool
+	}{
+		{"  Size Used\n   50G   2G\n", 50, 2, true},
+		{"Size Used\n0G 0G", 0, 0, false},
+		{"garbage", 0, 0, false},
+		{"", 0, 0, false},
+		{"Size Used\n12G 11G", 12, 11, true},
+	}
+	for i, c := range cases {
+		gotT, gotU, ok := parseDfSizeUsedGB(c.in)
+		if ok != c.wantOK || (ok && (gotT != c.wantT || gotU != c.wantU)) {
+			t.Fatalf("case %d: parseDfSizeUsedGB(%q) = (%v,%v,%v), want (%v,%v,%v)", i, c.in, gotT, gotU, ok, c.wantT, c.wantU, c.wantOK)
+		}
+	}
+}
