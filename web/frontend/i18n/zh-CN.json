@@ -1418,7 +1418,9 @@
     "backup_failed_title": "备份没能完成",
     "backup_failed_body": "刚才的数据备份失败了，建议去检查一下备份设置",
     "sync_failed_title": "云同步没能完成",
-    "sync_failed_body": "刚才的云端同步失败了，建议去检查一下网络或同步设置"
+    "sync_failed_body": "刚才的云端同步失败了，建议去检查一下网络或同步设置",
+    "report_title": "本周家庭报告",
+    "report_body": "存储、任务、健康状况都整理好了，点开看看这一周家里的情况"
   },
   "notif": {
     "task_done_title": "任务完成",

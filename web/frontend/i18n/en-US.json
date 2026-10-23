@@ -1418,7 +1418,9 @@
     "backup_failed_title": "Backup didn't finish",
     "backup_failed_body": "The last data backup failed. You may want to check your backup settings",
     "sync_failed_title": "Cloud sync didn't finish",
-    "sync_failed_body": "The last cloud sync failed. You may want to check your network or sync settings"
+    "sync_failed_body": "The last cloud sync failed. You may want to check your network or sync settings",
+    "report_title": "This week's home report",
+    "report_body": "Storage, tasks, and health are all summarized, open it to see this week's status at home"
   },
   "notif": {
     "task_done_title": "Task finished",

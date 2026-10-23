@@ -69,5 +69,5 @@ func runCronChecks(now time.Time) {
 		return
 	}
 	runWatermarkCronIfDue(now)
-	// 锚点：Task 4 在此处挂周报生成（report.generated，cron "0 9 * * 0"）。
+	runWeeklyReportCronIfDue(now)
 }

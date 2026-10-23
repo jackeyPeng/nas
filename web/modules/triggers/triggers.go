@@ -391,6 +391,7 @@ func requireTriggersEnabled(guard func() bool, next http.HandlerFunc) http.Handl
 func RegisterRoutes(mux *http.ServeMux, enabledGuard func() bool) {
 	mux.HandleFunc("/api/triggers/suggestions", common.AuthMiddleware(requireTriggersEnabled(enabledGuard, handleListSuggestions)))
 	mux.HandleFunc("/api/triggers/suggestions/", common.AuthMiddleware(requireTriggersEnabled(enabledGuard, handleSuggestionSubroute)))
+	mux.HandleFunc("/api/triggers/report/generate", common.AuthMiddleware(requireTriggersEnabled(enabledGuard, handleGenerateReport)))
 }
 
 // registerRoutesBare 跳过 AuthMiddleware，只挂 enabledGuard，供单测直接发
@@ -398,6 +399,7 @@ func RegisterRoutes(mux *http.ServeMux, enabledGuard func() bool) {
 func registerRoutesBare(mux *http.ServeMux, enabledGuard func() bool) {
 	mux.HandleFunc("/api/triggers/suggestions", requireTriggersEnabled(enabledGuard, handleListSuggestions))
 	mux.HandleFunc("/api/triggers/suggestions/", requireTriggersEnabled(enabledGuard, handleSuggestionSubroute))
+	mux.HandleFunc("/api/triggers/report/generate", requireTriggersEnabled(enabledGuard, handleGenerateReport))
 }
 
 // handleListSuggestions: GET /api/triggers/suggestions?all=1
@@ -443,3 +445,4 @@ func handleSuggestionSubroute(w http.ResponseWriter, r *http.Request) {
 	common.LogAuditRequest(r, "TRIGGERS", "忽略建议", "suggestion_id="+id, "success")
 	common.JSONResponse(w, map[string]interface{}{"ok": true})
 }
+
