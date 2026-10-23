@@ -37,7 +37,7 @@ var allowedModuleDeps = map[string][]string{
 	"update":   {"version"},
 	"users":    {"diskmgmt"},
 	"tasks":    {"filemgmt"},
-	"triggers": {"tasks", "ai"}, // 预留，F2 落地
+	"triggers": {"tasks", "ai", "diskmgmt", "notifications"}, // F2 Task 2 落地；本轮实际只用到 common，其余留给 Task 3+
 }
 
 // coreModules 是不得反向依赖 ai/tasks/triggers 的核心模块集合。

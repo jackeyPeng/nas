@@ -1,10 +1,11 @@
 package rclone
 
 import (
-	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"nas-panel/common"
 )
 
 // StartScheduler 启动定时同步调度器（main.go 启动时调用一次）。
@@ -45,56 +46,9 @@ func runDueTasks() {
 	}
 }
 
-// fieldRanges：各字段取值范围，顺序 分 时 日 月 周（0=周日）。
-var fieldRanges = [][2]int{{0, 59}, {0, 23}, {1, 31}, {1, 12}, {0, 6}}
-
-// cronMatch 判断时间是否命中 5 段 cron 表达式。
-// 支持 *、逗号列表、范围(a-b)、步进(*/n 或 a-b/n)。
+// cronMatch 判断时间是否命中 5 段 cron 表达式（分 时 日 月 周）。
+// F2 Task 2 机械迁移：真实实现已抽到 common.CronMatch 供 triggers 共享，
+// 这里保留同名薄包装，行为逐字不变（既有调用点与 scheduler_test.go 不改）。
 func cronMatch(expr string, t time.Time) bool {
-	fields := strings.Fields(expr)
-	if len(fields) != 5 {
-		return false
-	}
-	vals := []int{t.Minute(), t.Hour(), t.Day(), int(t.Month()), int(t.Weekday())}
-	for i := 0; i < 5; i++ {
-		if !cronFieldMatch(fields[i], vals[i], fieldRanges[i][0], fieldRanges[i][1]) {
-			return false
-		}
-	}
-	return true
-}
-
-func cronFieldMatch(field string, val, loDefault, hiDefault int) bool {
-	for _, part := range strings.Split(field, ",") {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		base, step := part, 1
-		if i := strings.Index(part, "/"); i >= 0 {
-			base = part[:i]
-			if s, err := strconv.Atoi(part[i+1:]); err == nil && s > 0 {
-				step = s
-			}
-		}
-		lo, hi := loDefault, hiDefault
-		if base != "*" {
-			if i := strings.Index(base, "-"); i >= 0 {
-				a, e1 := strconv.Atoi(base[:i])
-				b, e2 := strconv.Atoi(base[i+1:])
-				if e1 != nil || e2 != nil {
-					continue
-				}
-				lo, hi = a, b
-			} else if n, err := strconv.Atoi(base); err == nil {
-				lo, hi = n, n
-			} else {
-				continue
-			}
-		}
-		if val >= lo && val <= hi && (val-lo)%step == 0 {
-			return true
-		}
-	}
-	return false
+	return common.CronMatch(expr, t)
 }

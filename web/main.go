@@ -34,6 +34,7 @@ import (
 	"nas-panel/modules/storage"
 	"nas-panel/modules/system"
 	"nas-panel/modules/tasks"
+	"nas-panel/modules/triggers"
 	"nas-panel/modules/update"
 	"nas-panel/modules/users"
 	"nas-panel/modules/vault"
@@ -142,6 +143,14 @@ func main() {
 		notifications.SetEnabledGuard(ai.IsEnabled)
 		notifications.StartSubscriber()
 	}
+	if err := triggers.InitTriggers(dataDir); err != nil {
+		log.Printf("WARNING: triggers init failed: %v", err)
+	} else {
+		// 同 tasks/notifications 接线模式：guard 由 main.go 注入，关断时
+		// 后台循环不产生建议/通知/周报（零足迹语义）。
+		triggers.SetEnabledGuard(ai.IsEnabled)
+		triggers.StartLoops()
+	}
 
 	if addr := os.Getenv("LISTEN_ADDR"); addr != "" {
 		listenAddr = addr
@@ -177,6 +186,7 @@ func main() {
 	ai.RegisterRoutes(mux)
 	tasks.RegisterRoutes(mux, ai.IsEnabled)
 	notifications.RegisterRoutes(mux, ai.IsEnabled)
+	triggers.RegisterRoutes(mux, ai.IsEnabled)
 
 	// Serve frontend
 	frontendRoot, _ := fs.Sub(frontendFS, "frontend")
