@@ -215,11 +215,30 @@ if [ -n "$NAS_USER" ] && [ "$NAS_USER" != "root" ]; then
     fi
 fi
 
-# 清理 /opt/nas 软链接
+# 清理 /opt/nas 软链接与仓库实体
+# 坑（2026-10-23 实踩）：安装布局是 /opt/nas -> $HOME/soft/nas（sudo 下为
+# /root/soft/nas）。只删软链接会把仓库实体连同 data/（面板数据库：ai.db/
+# tasks.db/audit.db/registry.db…）留在机器上，下次 install.sh 检测到已有
+# 仓库直接 git pull + 重建软链接，面板"继承"旧数据——所谓 factory reset
+# 实际不是 factory（发布后复验时旧任务记录穿越重置复活，实锤此路径）。
 if [ -L "/opt/nas" ]; then
+    NAS_REAL="$(readlink -f /opt/nas)"
     rm -f /opt/nas
     echo "  删除 /opt/nas 软链接"
+    if [ -n "$NAS_REAL" ] && [ "$NAS_REAL" != "/" ] && [ -d "$NAS_REAL" ]; then
+        rm -rf "$NAS_REAL"
+        echo "  删除仓库实体 $NAS_REAL（含 data/ 面板数据库）"
+    fi
+elif [ -d "/opt/nas" ]; then
+    rm -rf /opt/nas
+    echo "  删除 /opt/nas 目录"
 fi
+for CAND in /root/soft/nas "${HOME}/soft/nas"; do
+    if [ -d "$CAND" ]; then
+        rm -rf "$CAND"
+        echo "  删除仓库目录 $CAND"
+    fi
+done
 
 # 清理 UFW（如果已重新安装）
 if command -v ufw &>/dev/null; then
