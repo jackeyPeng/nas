@@ -386,6 +386,64 @@ func handlePoolExtend(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// poolUsageKernel 是 PoolUsage() 导出的内核：只读 vgs 查询 + 换算，
+// 逻辑与 handlePoolStatus 的 VG 用量计算分支一致（机械抽取，不改既有
+// 行为）。vgs 无输出（池不存在）时返回 ErrPoolNotExist。
+func poolUsageKernel() (totalGB, usedGB float64, usePercent int, err error) {
+	vgsOut, _ := common.SudoOutput("vgs", "--noheadings", "--units", "g", "-o", "vg_name,vg_size,vg_free")
+	vgsOut = strings.TrimSpace(vgsOut)
+	if vgsOut == "" {
+		// 无 LVM VG：可能是 RAID/直挂池（产品形态固定挂载点 /data/nas1）。
+		// F2 真机验收实抓：raid1 直挂机上水位 cron 因 ErrPoolNotExist 永远
+		// 静默跳过、周报存储显示 0 B——补 findmnt+df 回退分支。
+		if src, _ := common.ExecOutput("findmnt", "-n", "-o", "SOURCE", "/data/nas1"); strings.TrimSpace(src) != "" {
+			dfOut, _ := common.ExecOutput("df", "-BG", "--output=size,used", "/data/nas1")
+			if t, u, ok := parseDfSizeUsedGB(dfOut); ok {
+				pct := 0
+				if t > 0 {
+					pct = int(u / t * 100)
+				}
+				return t, u, pct, nil
+			}
+		}
+		return 0, 0, 0, ErrPoolNotExist
+	}
+	var vgSize, vgFree string
+	for _, line := range strings.Split(vgsOut, "\n") {
+		fields := strings.Fields(strings.TrimSpace(line))
+		if len(fields) >= 3 {
+			vgSize = fields[1]
+			vgFree = fields[2]
+		}
+	}
+	totalGB = parseFloatSafe(strings.TrimRight(vgSize, "gG"))
+	freeGB := parseFloatSafe(strings.TrimRight(vgFree, "gG"))
+	usedGB = totalGB - freeGB
+	if totalGB > 0 {
+		usePercent = int((usedGB / totalGB) * 100)
+	}
+	return totalGB, usedGB, usePercent, nil
+}
+
+// parseDfSizeUsedGB 解析 `df -BG --output=size,used <mnt>` 输出（首行表头，
+// 次行形如 "50G 2G"），返回 (totalGB, usedGB, ok)。纯函数，供单测。
+func parseDfSizeUsedGB(dfOut string) (totalGB, usedGB float64, ok bool) {
+	lines := strings.Split(strings.TrimSpace(dfOut), "\n")
+	if len(lines) < 2 {
+		return 0, 0, false
+	}
+	f := strings.Fields(lines[len(lines)-1])
+	if len(f) < 2 {
+		return 0, 0, false
+	}
+	t := parseFloatSafe(strings.TrimRight(f[0], "Gg"))
+	u := parseFloatSafe(strings.TrimRight(f[1], "Gg"))
+	if t <= 0 {
+		return 0, 0, false
+	}
+	return t, u, true
+}
+
 func parseFloatSafe(s string) float64 {
 	s = strings.TrimSpace(strings.TrimRight(s, "gG "))
 	var f float64

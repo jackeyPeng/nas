@@ -1,6 +1,6 @@
 # NAS 面板 功能清单 + 操作项分类（测试验证清单）
 
-> 最后更新: 2026-10-22
+> 最后更新: 2026-10-23
 > 代码基准: /home/jacky/soft/nas（Go 后端 web/ + Alpine.js 前端 web/frontend/）
 > 用途: 逐项测试验证。每个「操作项」标注三种分类之一，测试时按行逐个过。
 >
@@ -440,7 +440,43 @@
 
 ---
 
-## 21. 系统自动任务汇总（跨模块）
+## 21. 通知中心（Notifications）
+
+**功能说明**: 面板内置的轻量收件箱（`web/modules/notifications/`），依附 AI 模块开关（关断时整个通知中心零足迹：入口隐藏、REST 403、事件不入箱）。订阅 eventbus 事件（`task.done`/`task.failed`/`health.*`/`rclone.sync_failed`/`suggestion.created`/`report.generated`，`task.progress` 不入箱防刷屏），转成 i18n 键通知落库；铃铛在侧边栏顶部（sidebar-header），30s 轮询未读数。
+
+| 操作项 | 分类 | 说明 |
+|---|---|---|
+| 铃铛未读徽标 | 只显示 | `GET /api/notifications/unread-count`，30s 轮询（`document.hidden` 时暂停） |
+| 通知列表查看 | 只显示 | `GET /api/notifications?limit=&unread=1`，按创建时间新到旧 |
+| 标记单条已读 | 用户操作 | `POST /api/notifications/{id}/read`，点击通知列表项触发 |
+| 全部标记已读 | 用户操作 | `POST /api/notifications/read-all` |
+| 清空已读通知 | 用户操作 | `POST /api/notifications/clear`（只删 read=1 行） |
+| 点击通知按 kind 跳转 | 用户操作 | task→任务 tab；health→健康页；其余留在面板内 |
+| 事件转通知（订阅式入箱） | 系统自动 | 订阅 `task.done`/`task.failed`/`health.*`/`rclone.sync_failed`/`suggestion.created`/`report.generated` → i18n 键通知（data_json 带插值参数）；guard=false 时事件被丢弃不入箱 |
+
+---
+
+## 22. 主动管家（Triggers）
+
+**功能说明**: 面板从「被动等命令」升级为「主动发现、提出建议」的内核（`web/modules/triggers/`），依附 AI 模块开关（关断时建议卡/周报全部停摆，零足迹）。事件迁移（健康状态变差、备份/同步失败）与磁盘水位（每 6 小时检查，用量 ≥85% 即提醒）触发建议卡；同一 trigger_key 24 小时内只提醒一次、同时最多 5 条待处理建议，管家不会反复唠叨。建议卡分两类：`task_plan` 类走接受链转任务执行（经既有 AI 确认门二次确认）；`navigate` 类前端直接跳转查看对应页面。另有周日 9 点自动生成的家庭周报（存储/本周任务/健康三块数字），也走手动重新生成端点。
+
+| 操作项 | 分类 | 说明 |
+|---|---|---|
+| 建议卡列表查看 | 只显示 | `GET /api/triggers/suggestions?all=1`，默认只返回待处理（state=new） |
+| 建议卡「执行」（task_plan 类接受） | 用户操作 | `POST /api/triggers/suggestions/{id}/accept` → 返回待确认操作卡（action_id/confirm_word/summary/job_id）→ 前端开确认弹窗 |
+| 接受确认（输入确认词执行） | 用户操作 | 复用既有 `POST /api/ai/action/confirm`（零新确认语义），确认后任务开跑 |
+| 建议卡「去看看」（navigate 类） | 用户操作 | 前端直接跳转对应页面 + 同步 dismiss，不调 accept 端点 |
+| 忽略建议 | 用户操作 | `POST /api/triggers/suggestions/{id}/dismiss`（仅 state=new 可忽略，重复忽略/已接受/已过期返回 409 语义） |
+| 周报查看 | 只显示 | 通知面板「周报卡」渲染最新一条 kind=report 通知的存储/任务/健康三块数字 |
+| 手动重新生成周报 | 用户操作 | `POST /api/triggers/report/generate`（审计），面板「重新生成」按钮 |
+| 事件迁移触发建议卡 | 系统自动 | 订阅健康状态迁移为异常（`health.storage` error）、备份失败（`backup.data_failed`）、云同步失败（`rclone.sync_failed`）→ 人话建议卡（navigate 类） |
+| 磁盘水位 cron 检查 | 系统自动 | 每 6 小时（`0 */6 * * *`）检查存储池用量，≥85% 触发「清理重复照片」建议卡（task_plan 类），6 小时窗口内不重复检查 |
+| 冷却/上限反骚扰 | 系统自动 | 同 trigger_key 24 小时内已有记录即拒绝新建；待处理建议（state=new）达 5 条上限即拒绝新建，直到有建议被处理 |
+| 周报自动生成 | 系统自动 | 周日 9 点（`0 9 * * 0`）cron 自动生成并落收件箱（kind=report），当天内不重复生成 |
+
+---
+
+## 23. 系统自动任务汇总（跨模块）
 
 > 本表把散布在各模块里的「系统自动」项集中列一遍，方便单独对「无人值守」链路做验证。
 
@@ -459,6 +495,10 @@
 | 任务引擎 worker 后台执行 | 系统自动 | 单 goroutine 串行消费队列，断点续传幂等跳过已完成步骤 |
 | 任务崩溃恢复置 paused | 系统自动 | 面板重启时所有 running 任务改 paused，不自动续传 |
 | 任务进度/终态事件上报 | 系统自动 | 里程碑 + done/failed 经 EmitEvent 上报 task.progress/done/failed |
+| 事件转通知（订阅式入箱） | 系统自动 | notifications 订阅 task.done/failed、health.*、sync_failed、suggestion.created、report.generated → i18n 键通知 |
+| 磁盘水位 cron 检查 | 系统自动 | triggers 每 6 小时检查存储池用量，≥85% 触发建议卡 |
+| 建议冷却/上限反骚扰 | 系统自动 | 同 trigger_key 24 小时冷却 + 待处理上限 5 条 |
+| 周报自动生成 | 系统自动 | 周日 9 点 cron 自动生成家庭周报并落收件箱 |
 
 ---
 
@@ -466,13 +506,13 @@
 
 | 分类 | 操作项数 |
 |---|---|
-| 只显示 | 66 |
-| 用户操作 | 110 |
-| 系统自动 | 34 |
-| **合计** | **210** |
-| 功能模块数 | 21 |
+| 只显示 | 70 |
+| 用户操作 | 119 |
+| 系统自动 | 43 |
+| **合计** | **232** |
+| 功能模块数 | 23 |
 
-> 注：「系统自动」项里，第 21 节「系统自动任务汇总」是对散落在模块 3/5/6/14/15/16/17/18/19 里的无人值守任务的跨模块汇总（重复计数），测试时可直接按第 21 节这张汇总表一次过完所有无人值守链路。
+> 注：「系统自动」项里，第 23 节「系统自动任务汇总」是对散落在模块 3/5/6/14/15/16/17/18/19/21/22 里的无人值守任务的跨模块汇总（重复计数），测试时可直接按第 23 节这张汇总表一次过完所有无人值守链路。
 
 ---
 

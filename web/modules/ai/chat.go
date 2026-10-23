@@ -155,11 +155,9 @@ func handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if result.PendingAction != nil {
-		result.PendingAction.ID = newPendingActionID()
-		result.PendingAction.Summary = pendingActionSummary(result.PendingAction.ToolName, result.PendingAction.ArgsJSON)
-		result.PendingAction.ConfirmWord = pendingActionConfirmWord
-		result.PendingAction.CreatedAt = nowFunc()
-		defaultPendingStore.Put(*result.PendingAction)
+		summary := pendingActionSummary(result.PendingAction.ToolName, result.PendingAction.ArgsJSON)
+		action := buildPendingAction(result.PendingAction.ToolName, result.PendingAction.ArgsJSON, summary)
+		result.PendingAction = &action
 	}
 
 	common.LogAuditRequest(r, "AI", "AI对话", "conv="+convID, "success")
@@ -268,11 +266,9 @@ func handleChatSSE(w http.ResponseWriter, r *http.Request, convID, message strin
 	}
 
 	if result.PendingAction != nil {
-		result.PendingAction.ID = newPendingActionID()
-		result.PendingAction.Summary = pendingActionSummary(result.PendingAction.ToolName, result.PendingAction.ArgsJSON)
-		result.PendingAction.ConfirmWord = pendingActionConfirmWord
-		result.PendingAction.CreatedAt = nowFunc()
-		defaultPendingStore.Put(*result.PendingAction)
+		summary := pendingActionSummary(result.PendingAction.ToolName, result.PendingAction.ArgsJSON)
+		action := buildPendingAction(result.PendingAction.ToolName, result.PendingAction.ArgsJSON, summary)
+		result.PendingAction = &action
 		sendSSEEvent(w, sseEvent{Type: "pending_action", PendingAction: result.PendingAction})
 	}
 

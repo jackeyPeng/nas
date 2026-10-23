@@ -28,11 +28,13 @@ import (
 	"nas-panel/modules/health"
 	"nas-panel/modules/logs"
 	"nas-panel/modules/monitor"
+	"nas-panel/modules/notifications"
 	"nas-panel/modules/rclone"
 	"nas-panel/modules/services"
 	"nas-panel/modules/storage"
 	"nas-panel/modules/system"
 	"nas-panel/modules/tasks"
+	"nas-panel/modules/triggers"
 	"nas-panel/modules/update"
 	"nas-panel/modules/users"
 	"nas-panel/modules/vault"
@@ -133,6 +135,22 @@ func main() {
 		tasks.SetEnabledGuard(ai.IsEnabled)
 		tasks.StartWorker()
 	}
+	if err := notifications.InitNotifications(dataDir); err != nil {
+		log.Printf("WARNING: notifications init failed: %v", err)
+	} else {
+		// 同 tasks 接线模式：notifications 是叶子模块，不 import ai，
+		// enabled 守卫由 main.go 注入（零足迹语义，关断时事件不入箱）。
+		notifications.SetEnabledGuard(ai.IsEnabled)
+		notifications.StartSubscriber()
+	}
+	if err := triggers.InitTriggers(dataDir); err != nil {
+		log.Printf("WARNING: triggers init failed: %v", err)
+	} else {
+		// 同 tasks/notifications 接线模式：guard 由 main.go 注入，关断时
+		// 后台循环不产生建议/通知/周报（零足迹语义）。
+		triggers.SetEnabledGuard(ai.IsEnabled)
+		triggers.StartLoops()
+	}
 
 	if addr := os.Getenv("LISTEN_ADDR"); addr != "" {
 		listenAddr = addr
@@ -167,6 +185,8 @@ func main() {
 	filemgmt.RegisterRoutes(mux)
 	ai.RegisterRoutes(mux)
 	tasks.RegisterRoutes(mux, ai.IsEnabled)
+	notifications.RegisterRoutes(mux, ai.IsEnabled)
+	triggers.RegisterRoutes(mux, ai.IsEnabled)
 
 	// Serve frontend
 	frontendRoot, _ := fs.Sub(frontendFS, "frontend")

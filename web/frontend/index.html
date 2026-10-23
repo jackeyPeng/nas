@@ -82,8 +82,74 @@
     <div class="app" x-show="token" x-cloak>
         <!-- Sidebar -->
         <nav class="sidebar">
-            <div class="sidebar-header">
+            <div class="sidebar-header" style="display:flex;align-items:center;justify-content:space-between;gap:var(--sp-2)">
                 <img src="logo.svg" alt="Z1 NAS" class="brand-logo">
+                <!-- 通知中心铃铛：AI 关断时整个入口隐藏（硬约束 1） -->
+                <div x-show="notificationsVisible" x-cloak style="position:relative">
+                    <button class="btn btn-sm" @click="toggleNotifPanel()" :aria-label="$t('notif.bell_label')" :title="$t('notif.bell_label')" style="position:relative;padding:6px 10px">
+                        🔔
+                        <span x-show="notifPanel.unreadCount > 0" class="badge-xs" style="position:absolute;top:-6px;right:-6px;background:var(--danger);color:#fff;min-width:16px;text-align:center" x-text="notifPanel.unreadCount > 99 ? '99+' : notifPanel.unreadCount"></span>
+                    </button>
+
+                    <div x-show="notifPanel.open" x-cloak @click.outside="closeNotifPanel()"
+                         style="position:absolute;top:100%;right:0;z-index:100;margin-top:var(--sp-2);width:360px;max-height:70vh;overflow-y:auto;background: var(--card-bg);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 8px 24px rgba(0,0,0,0.15)">
+                        <div style="padding:var(--sp-3) var(--sp-4);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+                            <strong x-text="$t('notif.panel_title')"></strong>
+                            <div class="actions">
+                                <button class="btn btn-sm badge-xs" @click="notifMarkAllRead()" x-text="$t('notif.btn_mark_all_read')"></button>
+                                <button class="btn btn-sm badge-xs" @click="notifClearRead()" x-text="$t('notif.btn_clear_read')"></button>
+                            </div>
+                        </div>
+
+                        <!-- 建议卡区 -->
+                        <div style="padding:var(--sp-3) var(--sp-4)">
+                            <div style="font-size:var(--fs-xs);color: var(--text-light);font-weight:600;margin-bottom:var(--sp-2)" x-text="$t('notif.suggestions_title')"></div>
+                            <div class="empty-state empty-state--inline" x-show="!notifPanel.suggestions.length"><span class="empty-state__icon">💡</span><span class="empty-state__title" x-text="$t('notif.empty_suggestions')"></span></div>
+                            <template x-for="sg in notifPanel.suggestions" :key="sg.id">
+                                <div style="background: var(--card-bg-alt);border-radius:var(--radius-sm);padding:var(--sp-3);margin-bottom:var(--sp-2)">
+                                    <div style="font-weight:600;font-size:var(--fs-sm)" x-text="notifTitle(sg)"></div>
+                                    <div style="font-size:var(--fs-xs);color: var(--text-secondary);margin-top:2px" x-text="notifBody(sg)"></div>
+                                    <div class="actions" style="margin-top:var(--sp-2)">
+                                        <button class="btn btn-sm btn-primary badge-xs" x-show="notifSuggestionAction(sg).type === 'task_plan'" @click="notifAcceptSuggestion(sg)" x-text="$t('notif.btn_execute')"></button>
+                                        <button class="btn btn-sm badge-xs" x-show="notifSuggestionAction(sg).type === 'navigate'" @click="notifSuggestionNavigate(sg)" x-text="$t('notif.btn_navigate')"></button>
+                                        <button class="btn btn-sm badge-xs" @click="notifDismissSuggestion(sg.id)" x-text="$t('notif.btn_dismiss')"></button>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+
+                        <!-- 周报卡 -->
+                        <div style="padding:var(--sp-3) var(--sp-4);border-top:1px solid var(--border)">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--sp-2)">
+                                <span style="font-size:var(--fs-xs);color: var(--text-light);font-weight:600" x-text="$t('notif.report_section_title')"></span>
+                                <button class="btn btn-sm badge-xs" @click="notifGenerateReport()" x-text="$t('notif.btn_regenerate')"></button>
+                            </div>
+                            <div class="empty-state empty-state--inline" x-show="!notifPanel.report"><span class="empty-state__icon">📰</span><span class="empty-state__title" x-text="$t('notif.empty_report')"></span></div>
+                            <template x-if="notifPanel.report">
+                                <div style="background: var(--card-bg-alt);border-radius:var(--radius-sm);padding:var(--sp-3);font-size:var(--fs-xs);color: var(--text-secondary);display:flex;flex-direction:column;gap:4px">
+                                    <div><strong x-text="$t('notif.report_storage_label')"></strong>: <span x-text="$t('notif.report_storage_fmt', {used: formatSize((notifReportData(notifPanel.report).storage?.used_gb || 0) * 1024 * 1024 * 1024), total: formatSize((notifReportData(notifPanel.report).storage?.total_gb || 0) * 1024 * 1024 * 1024), pct: notifReportData(notifPanel.report).storage?.use_percent || 0})"></span></div>
+                                    <div><strong x-text="$t('notif.report_tasks_label')"></strong>: <span x-text="$t('notif.report_tasks_fmt', {done: notifReportData(notifPanel.report).tasks?.done || 0, failed: notifReportData(notifPanel.report).tasks?.failed || 0, moved: notifReportData(notifPanel.report).tasks?.moved_files || 0, freed: formatSize(notifReportData(notifPanel.report).tasks?.freed_bytes || 0)})"></span></div>
+                                    <div><strong x-text="$t('notif.report_health_label')"></strong>: <span x-text="$t('notif.report_health_fmt', {pass: notifReportData(notifPanel.report).health?.pass || 0, warn: notifReportData(notifPanel.report).health?.warn || 0, fail: notifReportData(notifPanel.report).health?.fail || 0})"></span></div>
+                                </div>
+                            </template>
+                        </div>
+
+                        <!-- 通知列表 -->
+                        <div style="padding:var(--sp-3) var(--sp-4);border-top:1px solid var(--border)">
+                            <div style="font-size:var(--fs-xs);color: var(--text-light);font-weight:600;margin-bottom:var(--sp-2)" x-text="$t('notif.list_title')"></div>
+                            <div class="empty-state empty-state--inline" x-show="!notifPanel.notifications.length"><span class="empty-state__icon">🔔</span><span class="empty-state__title" x-text="$t('notif.empty_notifications')"></span></div>
+                            <template x-for="n in notifPanel.notifications" :key="n.id">
+                                <div @click="notifClickNotification(n)" style="padding:var(--sp-2) 0;border-bottom:1px solid var(--border-light);cursor:pointer;display:flex;gap:var(--sp-2);align-items:flex-start">
+                                    <span x-show="!n.read" class="badge-xs" style="background:var(--primary);color:#fff;border-radius:50%;width:6px;height:6px;padding:0;margin-top:6px;flex-shrink:0"></span>
+                                    <div style="flex:1;min-width:0">
+                                        <div :style="(n.read ? 'color: var(--text-light);' : 'color: var(--text-secondary);font-weight:600;') + 'font-size:var(--fs-sm)'" x-text="notifTitle(n)"></div>
+                                        <div style="font-size:var(--fs-xs);color: var(--text-muted)" x-text="notifBody(n)"></div>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </div>
             </div>
             <ul class="nav">
                 <!-- 总览 -->
@@ -2972,6 +3038,25 @@
                         <div class="modal-actions">
                             <button class="btn" @click="cancelAIAction()" x-text="$t('ai.cancel')"></button>
                             <button class="btn btn-danger" @click="confirmAIAction()" :disabled="aiConfirmDisabled()" x-text="$t('ai.confirm_execute')"></button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 通知中心接受确认弹窗（type-to-confirm）：独立状态对象 notifConfirm，
+                     不复用 aiConfirm 实例（硬约束 8）。不挂 @click.self——点击弹窗外部
+                     不关闭，只能通过取消/确认按钮退出（硬约束 3 逐字）。 -->
+                <div class="modal" x-show="notifConfirm.show" x-cloak>
+                    <div class="modal-box" x-show="notifConfirm.action">
+                        <h3 x-text="$t('notif.confirm_title')"></h3>
+                        <p x-text="notifConfirm.action ? notifConfirm.action.summary : ''"></p>
+
+                        <div class="form-group" style="margin-top:var(--sp-3)">
+                            <label x-text="notifConfirm.action ? $t('notif.confirm_word_label', [notifConfirm.action.confirm_word]) : ''"></label>
+                            <input type="text" x-model="notifConfirm.confirmWordInput" :placeholder="notifConfirm.action ? notifConfirm.action.confirm_word : ''">
+                        </div>
+                        <div class="modal-actions">
+                            <button class="btn" @click="closeNotifConfirm()" x-text="$t('notif.cancel')"></button>
+                            <button class="btn btn-danger" @click="confirmNotifAction()" :disabled="notifConfirmDisabled()" x-text="$t('notif.confirm_execute')"></button>
                         </div>
                     </div>
                 </div>

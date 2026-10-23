@@ -37,7 +37,7 @@ var allowedModuleDeps = map[string][]string{
 	"update":   {"version"},
 	"users":    {"diskmgmt"},
 	"tasks":    {"filemgmt"},
-	"triggers": {"tasks", "ai"}, // 预留，F2 落地
+	"triggers": {"tasks", "ai", "diskmgmt", "notifications", "health"}, // F2 Task 2 开白名单；health 是 Task 4 周报新增依赖（GenerateWeeklyReport 读 health.Summary）
 }
 
 // coreModules 是不得反向依赖 ai/tasks/triggers 的核心模块集合。
@@ -45,6 +45,16 @@ var coreModules = []string{
 	"diskmgmt", "users", "firewall", "monitor", "diagnostics", "logs", "system",
 	"filemgmt", "vault", "rclone", "events", "hardware", "update", "storage",
 	"version", "dashboard",
+}
+
+// restrictedConsumers 约束"谁能 import 某个叶子模块"：module -> 允许
+// import 它的模块集合（白名单外一律违规）。notifications 是零上游依赖的
+// 收件箱叶子模块；F2 Task 4 落地周报时把 triggers 加入这里——triggers
+// 直接 import notifications.AddNotification 是拍板的例外（计划 Task 4
+// 「依赖拍板」：经 eventbus 绕行会把整个报告 JSON 负载塞进事件参数，
+// 得不偿失）。notifications 仍不得反向 import 任何业务模块。
+var restrictedConsumers = map[string][]string{
+	"notifications": {"triggers"},
 }
 
 // moduleImportPrefix 是跨模块 import 路径前缀；Go module 名见 web/go.mod。
@@ -175,6 +185,23 @@ func TestArchBoundaries(t *testing.T) {
 			if forbidden[d] {
 				t.Errorf("规则3违规: modules/%s（核心模块）import 了 modules/%s —— 核心模块不得反向依赖 ai/tasks/triggers",
 					mod, d)
+			}
+		}
+	}
+
+	// 规则 4：restrictedConsumers 里的叶子模块只能被白名单内的模块 import。
+	for leaf, allowedConsumers := range restrictedConsumers {
+		for mod, depSet := range deps {
+			if mod == leaf {
+				continue
+			}
+			if !depSet[leaf] {
+				continue
+			}
+			if !contains(allowedConsumers, mod) {
+				t.Errorf("规则4违规: modules/%s import 了 modules/%s，"+
+					"不在 restrictedConsumers[%q]=%v 内——%s 是零上游依赖的叶子模块",
+					mod, leaf, leaf, allowedConsumers, leaf)
 			}
 		}
 	}
