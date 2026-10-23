@@ -1409,5 +1409,31 @@
     "task_resume": "继续",
     "task_cancel": "取消",
     "task_error_title": "错误"
+  },
+  "trig": {
+    "watermark_title": "存储空间快满了",
+    "watermark_body": "已用 {pct}%，剩 {free}。我可以帮你找出重复的照片视频，清理前会先给你过目",
+    "storage_error_title": "一块硬盘出了问题",
+    "storage_error_body": "数据目前还有一份完整副本，但请尽快处理。点开查看哪块盘、怎么办",
+    "backup_failed_title": "备份没能完成",
+    "backup_failed_body": "刚才的数据备份失败了，建议去检查一下备份设置",
+    "sync_failed_title": "云同步没能完成",
+    "sync_failed_body": "刚才的云端同步失败了，建议去检查一下网络或同步设置"
+  },
+  "notif": {
+    "task_done_title": "任务完成",
+    "task_done_body": "你交给管家的任务已经做完了，点开看看结果",
+    "task_failed_title": "任务没能完成",
+    "task_failed_body": "有个任务没跑完，点开看看哪里出了问题",
+    "health_warn_title": "有个地方需要注意",
+    "health_warn_body": "健康检查发现一个小问题，点开看看怎么处理",
+    "health_error_title": "健康检查发现异常",
+    "health_error_body": "健康检查发现一个需要尽快处理的问题，点开查看详情",
+    "sync_failed_title": "云同步没能完成",
+    "sync_failed_body": "刚才的云端同步失败了，点开看看怎么处理",
+    "suggestion_title": "管家有个新建议",
+    "suggestion_body": "管家发现了一件值得你看看的事，点开查看",
+    "report_title": "本周家庭报告已生成",
+    "report_body": "存储、任务、健康状况都整理好了，点开看看这一周的情况"
   }
 }

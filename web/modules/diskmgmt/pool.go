@@ -386,6 +386,32 @@ func handlePoolExtend(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// poolUsageKernel 是 PoolUsage() 导出的内核：只读 vgs 查询 + 换算，
+// 逻辑与 handlePoolStatus 的 VG 用量计算分支一致（机械抽取，不改既有
+// 行为）。vgs 无输出（池不存在）时返回 ErrPoolNotExist。
+func poolUsageKernel() (totalGB, usedGB float64, usePercent int, err error) {
+	vgsOut, _ := common.SudoOutput("vgs", "--noheadings", "--units", "g", "-o", "vg_name,vg_size,vg_free")
+	vgsOut = strings.TrimSpace(vgsOut)
+	if vgsOut == "" {
+		return 0, 0, 0, ErrPoolNotExist
+	}
+	var vgSize, vgFree string
+	for _, line := range strings.Split(vgsOut, "\n") {
+		fields := strings.Fields(strings.TrimSpace(line))
+		if len(fields) >= 3 {
+			vgSize = fields[1]
+			vgFree = fields[2]
+		}
+	}
+	totalGB = parseFloatSafe(strings.TrimRight(vgSize, "gG"))
+	freeGB := parseFloatSafe(strings.TrimRight(vgFree, "gG"))
+	usedGB = totalGB - freeGB
+	if totalGB > 0 {
+		usePercent = int((usedGB / totalGB) * 100)
+	}
+	return totalGB, usedGB, usePercent, nil
+}
+
 func parseFloatSafe(s string) float64 {
 	s = strings.TrimSpace(strings.TrimRight(s, "gG "))
 	var f float64

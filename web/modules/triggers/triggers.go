@@ -24,12 +24,18 @@ import (
 )
 
 // Suggestion 是一张主动管家建议卡。
+//
+// ParamsJSON（F2 Task 3 补充字段）：title/body 存的是 i18n 键（人话层
+// 约束，服务端不产自然语言），需要插值的参数（如 watermark_high 的
+// {pct}/{free}）存这里，前端 t(key, JSON.parse(params_json)) 渲染。
+// 无参数的建议（多数 navigate 类）留空对象 "{}"。
 type Suggestion struct {
 	ID          string `json:"id"`
 	TriggerKey  string `json:"trigger_key"`
 	Title       string `json:"title"`
 	Body        string `json:"body"`
 	ActionsJSON string `json:"actions_json"`
+	ParamsJSON  string `json:"params_json"`
 	State       string `json:"state"` // new/accepted/dismissed/expired
 	ExpireAt    string `json:"expire_at"`
 	CreatedAt   string `json:"created_at"`
@@ -78,6 +84,7 @@ func InitTriggers(dataDir string) error {
 			title TEXT NOT NULL DEFAULT '',
 			body TEXT NOT NULL DEFAULT '',
 			actions_json TEXT NOT NULL DEFAULT '[]',
+			params_json TEXT NOT NULL DEFAULT '{}',
 			state TEXT NOT NULL DEFAULT 'new',
 			expire_at TEXT NOT NULL DEFAULT '',
 			created_at TEXT NOT NULL
@@ -145,11 +152,21 @@ func validateActions(actionsJSON string) error {
 // CreateSuggestion 创建一张新建议卡：冷却/上限在这里守。
 //   - 同 triggerKey 24h 内已有任意状态记录 → (zero, false, nil)
 //   - state=new 的活跃数 ≥ activeSuggestionLimit → (zero, false, nil)
-//   - 创建成功时发 suggestion.created 事件（notifications 订阅入收件箱）
+//   - 创建成功时发 suggestion.created 事件（notifications 订阅入收件箱，
+//     事件 params 带 suggestion_id/trigger_key；建议自身的插值参数走
+//     Suggestion.ParamsJSON，不混进这个事件，REST 层直接读建议行即可）
 //
 // guard=false（enabledGuard 注入）时直接拒绝：返回 error，不产生记录、
 // 不发事件（零足迹语义）。
 func CreateSuggestion(triggerKey, title, body, actionsJSON string, ttl time.Duration) (Suggestion, bool, error) {
+	return CreateSuggestionWithParams(triggerKey, title, body, actionsJSON, "", ttl)
+}
+
+// CreateSuggestionWithParams 同 CreateSuggestion，额外接受 paramsJSON——
+// 存入 Suggestion.ParamsJSON，供前端 body 文案插值（如 watermark_high 的
+// {pct}/{free}）。paramsJSON 为空时存 "{}"。F2 Task 3 新增，CreateSuggestion
+// 是它的零参数薄包装，保持既有调用点签名不变。
+func CreateSuggestionWithParams(triggerKey, title, body, actionsJSON, paramsJSON string, ttl time.Duration) (Suggestion, bool, error) {
 	if !guardAllows() {
 		return Suggestion{}, false, fmt.Errorf("triggers: 功能未启用")
 	}
@@ -200,21 +217,26 @@ func CreateSuggestion(triggerKey, title, body, actionsJSON string, ttl time.Dura
 		expireAt = formatTime(now.Add(ttl))
 	}
 
+	if paramsJSON == "" {
+		paramsJSON = "{}"
+	}
+
 	sg := Suggestion{
 		ID:          id,
 		TriggerKey:  triggerKey,
 		Title:       title,
 		Body:        body,
 		ActionsJSON: actionsJSON,
+		ParamsJSON:  paramsJSON,
 		State:       StateNew,
 		ExpireAt:    expireAt,
 		CreatedAt:   formatTime(now),
 	}
 
 	_, err = db.Exec(
-		`INSERT INTO suggestions (id, trigger_key, title, body, actions_json, state, expire_at, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		sg.ID, sg.TriggerKey, sg.Title, sg.Body, sg.ActionsJSON, sg.State, sg.ExpireAt, sg.CreatedAt,
+		`INSERT INTO suggestions (id, trigger_key, title, body, actions_json, params_json, state, expire_at, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		sg.ID, sg.TriggerKey, sg.Title, sg.Body, sg.ActionsJSON, sg.ParamsJSON, sg.State, sg.ExpireAt, sg.CreatedAt,
 	)
 	if err != nil {
 		return Suggestion{}, false, fmt.Errorf("插入建议失败: %w", err)
@@ -251,7 +273,7 @@ func ListSuggestions(includeInactive bool) []Suggestion {
 	}
 	expireActiveSuggestionsLocked(time.Now().UTC())
 
-	query := `SELECT id, trigger_key, title, body, actions_json, state, expire_at, created_at FROM suggestions`
+	query := `SELECT id, trigger_key, title, body, actions_json, params_json, state, expire_at, created_at FROM suggestions`
 	if !includeInactive {
 		query += ` WHERE state = '` + StateNew + `'`
 	}
@@ -282,7 +304,7 @@ type scanner interface {
 func scanSuggestion(row scanner) (Suggestion, error) {
 	var sg Suggestion
 	if err := row.Scan(&sg.ID, &sg.TriggerKey, &sg.Title, &sg.Body, &sg.ActionsJSON,
-		&sg.State, &sg.ExpireAt, &sg.CreatedAt); err != nil {
+		&sg.ParamsJSON, &sg.State, &sg.ExpireAt, &sg.CreatedAt); err != nil {
 		return Suggestion{}, err
 	}
 	return sg, nil
@@ -296,7 +318,7 @@ func GetSuggestion(id string) (Suggestion, bool) {
 		return Suggestion{}, false
 	}
 	row := db.QueryRow(
-		`SELECT id, trigger_key, title, body, actions_json, state, expire_at, created_at
+		`SELECT id, trigger_key, title, body, actions_json, params_json, state, expire_at, created_at
 		 FROM suggestions WHERE id = ?`, id)
 	sg, err := scanSuggestion(row)
 	if err != nil {

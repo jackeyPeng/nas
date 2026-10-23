@@ -1,10 +1,21 @@
 package triggers
 
-import "time"
+import (
+	"sync"
+	"time"
+
+	"nas-panel/common"
+)
 
 // loopsStop 用于单测停止后台循环（StartLoops 的测试专用镜像，对齐
 // tasks.StopWorkerForTest / notifications.StopSubscriberForTest 模式）。
 var loopsStop chan struct{}
+
+// loopsWG 配合 loopsStop：StopLoopsForTest 等两个后台 goroutine 真正退出
+// 后才返回，避免单测里"关一个循环、起下一个测试"时跟尚未退出的旧
+// goroutine 产生数据竞争（如 guardAllows 读跟下个用例的 SetEnabledGuard
+// 写撞上）。
+var loopsWG sync.WaitGroup
 
 // loopTickInterval 是水位/周报 cron 的扫描间隔（照 rclone scheduler 的
 // 30s ticker 模式）。
@@ -21,16 +32,20 @@ func StartLoops() {
 	}
 	stop := make(chan struct{})
 	loopsStop = stop
-	go cronLoop(stop)
+	loopsWG.Add(2)
+	go func() { defer loopsWG.Done(); cronLoop(stop) }()
+	ch := common.Subscribe()
+	go func() { defer loopsWG.Done(); eventLoop(ch, stop) }()
 }
 
-// StopLoopsForTest 停止后台循环并清空单例状态，仅供单测调用。生产路径
-// （main.go）从不调用它。
+// StopLoopsForTest 停止后台循环、等待两个 goroutine 真正退出后再清空
+// 单例状态，仅供单测调用。生产路径（main.go）从不调用它。
 func StopLoopsForTest() {
 	if loopsStop == nil {
 		return
 	}
 	close(loopsStop)
+	loopsWG.Wait()
 	loopsStop = nil
 }
 
@@ -53,6 +68,6 @@ func runCronChecks(now time.Time) {
 	if !guardAllows() {
 		return
 	}
-	// 锚点：Task 3 在此处挂水位检查（watermark_high，cron "0 */6 * * *"）。
+	runWatermarkCronIfDue(now)
 	// 锚点：Task 4 在此处挂周报生成（report.generated，cron "0 9 * * 0"）。
 }

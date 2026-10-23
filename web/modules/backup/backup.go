@@ -197,6 +197,9 @@ func handleBackupData(w http.ResponseWriter, r *http.Request) {
 	}
 	out, err := common.SudoExec("/opt/nas/scripts/backup-data.sh", target)
 	if err != nil {
+		common.LogAuditRequest(r, "BACKUP", "数据备份", "target="+target, "failed")
+		common.EmitEvent("backup", common.EventError, "backup.data_failed",
+			map[string]interface{}{"target": target}, "")
 		b, _ := json.Marshal(map[string]string{"error": "数据备份失败: " + out})
 		http.Error(w, string(b), http.StatusInternalServerError)
 		return

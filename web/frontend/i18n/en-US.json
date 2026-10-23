@@ -1409,5 +1409,31 @@
     "task_resume": "Resume",
     "task_cancel": "Cancel",
     "task_error_title": "Error"
+  },
+  "trig": {
+    "watermark_title": "Storage is almost full",
+    "watermark_body": "{pct}% used, {free} left. I can find duplicate photos and videos for you to review before cleaning up",
+    "storage_error_title": "A hard drive has a problem",
+    "storage_error_body": "Your data still has one full copy for now, but please act soon. Open to see which drive and what to do",
+    "backup_failed_title": "Backup didn't finish",
+    "backup_failed_body": "The last data backup failed. You may want to check your backup settings",
+    "sync_failed_title": "Cloud sync didn't finish",
+    "sync_failed_body": "The last cloud sync failed. You may want to check your network or sync settings"
+  },
+  "notif": {
+    "task_done_title": "Task finished",
+    "task_done_body": "The task you asked for is done, open it to see the result",
+    "task_failed_title": "Task didn't finish",
+    "task_failed_body": "A task didn't complete, open it to see what went wrong",
+    "health_warn_title": "Something needs attention",
+    "health_warn_body": "The health check found a minor issue, open it to see how to handle it",
+    "health_error_title": "Health check found a problem",
+    "health_error_body": "The health check found an issue that needs attention soon, open it for details",
+    "sync_failed_title": "Cloud sync didn't finish",
+    "sync_failed_body": "The last cloud sync failed, open it to see how to handle it",
+    "suggestion_title": "Your housekeeper has a new suggestion",
+    "suggestion_body": "Your housekeeper found something worth a look, open it to see",
+    "report_title": "This week's home report is ready",
+    "report_body": "Storage, tasks, and health are all summarized, open it to see this week's status"
   }
 }
