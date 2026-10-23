@@ -12,6 +12,8 @@
 - **家庭周报**（`fb21339`）：周日 9 点 cron + 手动生成端点（`POST /api/triggers/report/generate`），存储/本周任务/健康三块模板化数据落收件箱（kind=report，零 LLM 依赖）。
 - **建议接受链**（`c523618`）：`ai.CreatePendingAction` 导出（复用既有确认门/TTL/确认词）+ `POST /api/triggers/suggestions/{id}/accept` 端点（建议 plan 固化 → 待确认操作卡 → 既有 `/api/ai/action/confirm` 确认即执行）+ 重放/过期/空计划对抗用例。
 - **前端通知中心**（`31bae7b`）：侧边栏铃铛 + 未读徽标（30s 轮询）/ 建议卡（执行/忽略/去看看）/ 周报卡/通知列表 + `t()` 插值渲染 + 接受确认弹窗（复用 type-to-confirm 交互，独立状态对象）；AI 关闭时整个通知中心隐藏，零足迹。
+- **周报通知去重**（`5d2e5fc`，真机验收发现）：`report.generated` 事件不再被 notifications 订阅侧映射入箱——周报由 triggers 直连 `AddNotification`（完整报告负载）唯一落箱，此前双路径会产生一条只有 notification_id 的空壳重复通知（48 真机 E2E 实抓）；补订阅器在跑时的防重复回归测试。
+- **PoolUsage 补 RAID/直挂池回退**（`6ec56a5`，真机验收发现）：导出内核此前只查 LVM `vgs`——raid1 直挂机（md0 挂 /data/nas1，无 VG）上水位 cron 因 ErrPoolNotExist 永远静默跳过、周报存储显示 0 B；补 findmnt+df 回退分支（解析抽纯函数 + 单测），48 实测周报存储数字变真（50G/1G/2%）。
 - **文档**：操作清单新增「通知中心」「主动管家」两个模块节（统计实算：只显示 70/用户操作 119/系统自动 43，合计 232，23 个功能模块）；产品手册 11.6 节补「通知中心与主动管家」小节（铃铛位置/建议卡限流说明/接受确认流程/周报内容与时间/关闭 AI 后零足迹）。
 
 ## 版本变更一览
