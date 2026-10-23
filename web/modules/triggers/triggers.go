@@ -412,8 +412,8 @@ func handleListSuggestions(w http.ResponseWriter, r *http.Request) {
 	common.JSONResponse(w, map[string]interface{}{"suggestions": ListSuggestions(includeInactive)})
 }
 
-// handleSuggestionSubroute 分发 /api/triggers/suggestions/{id}/dismiss。
-// accept 子路由在 Task 5 接入。
+// handleSuggestionSubroute 分发 /api/triggers/suggestions/{id}/dismiss
+// 与 /api/triggers/suggestions/{id}/accept（F2 Task 5 接入）。
 func handleSuggestionSubroute(w http.ResponseWriter, r *http.Request) {
 	rest := strings.TrimPrefix(r.URL.Path, "/api/triggers/suggestions/")
 	rest = strings.Trim(rest, "/")
@@ -423,7 +423,15 @@ func handleSuggestionSubroute(w http.ResponseWriter, r *http.Request) {
 	}
 	parts := strings.SplitN(rest, "/", 2)
 	id := parts[0]
-	if len(parts) != 2 || parts[1] != "dismiss" {
+	if len(parts) != 2 {
+		jsonError(w, "未知子路由", http.StatusNotFound)
+		return
+	}
+	if parts[1] == "accept" {
+		handleAcceptSuggestion(w, r, id)
+		return
+	}
+	if parts[1] != "dismiss" {
 		jsonError(w, "未知子路由", http.StatusNotFound)
 		return
 	}

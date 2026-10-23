@@ -296,6 +296,7 @@ func TestAPIGuardFalseForbidsAllEndpoints(t *testing.T) {
 		{"GET", "/api/triggers/suggestions"},
 		{"GET", "/api/triggers/suggestions?all=1"},
 		{"POST", "/api/triggers/suggestions/sg-x/dismiss"},
+		{"POST", "/api/triggers/suggestions/sg-x/accept"}, // F2 Task 5
 	}
 	for _, c := range cases {
 		rec := httptest.NewRecorder()
