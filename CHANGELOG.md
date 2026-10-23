@@ -2,24 +2,13 @@
 
 ## [未发布]
 
-### 家庭管家底座 F2（主动管家：triggers + notifications + 通知中心 + 周报）
-
-面板从「被动等命令」升级为「主动发现、提出建议、经确认后干活」：事件/水位触发建议卡，通知中心统一收件，接受建议走既有确认门转任务执行，每周自动生成家庭周报。
-
-- **notifications 轻量收件箱**（`b70e8ee`）：新增 `web/modules/notifications/` —— notes 表 + `AddNotification`/`ListNotifications`/`MarkRead`/`MarkAllRead`/`ClearRead`/`UnreadCount` 内核 + REST（enabled 守卫）+ eventbus 订阅（`task.done`/`task.failed`/`health.*`/`rclone.sync_failed`/`suggestion.created` → i18n 键通知，`task.progress` 不入箱防刷屏）。
-- **triggers 主动管家骨架**（`5478ed2`）：新增 `web/modules/triggers/` —— suggestions 表 + 冷却 24h/活跃上限 5 条内核 + actions_json 校验 + REST；`common.CronMatch` 从 rclone 调度器抽取为共享 5 段 cron 匹配器（rclone 行为不变）。
-- **事件源接线**（`a562d4f`）：health 状态迁移为异常/备份失败/云同步失败 → 人话建议卡（navigate 类）；磁盘水位 6 小时 cron（用量 ≥85% 触发「清理重复照片」建议）；人话翻译表第一批（双语）；backup 模块补失败路径 `backup.data_failed` 生产点（原先只有成功事件）。
-- **家庭周报**（`fb21339`）：周日 9 点 cron + 手动生成端点（`POST /api/triggers/report/generate`），存储/本周任务/健康三块模板化数据落收件箱（kind=report，零 LLM 依赖）。
-- **建议接受链**（`c523618`）：`ai.CreatePendingAction` 导出（复用既有确认门/TTL/确认词）+ `POST /api/triggers/suggestions/{id}/accept` 端点（建议 plan 固化 → 待确认操作卡 → 既有 `/api/ai/action/confirm` 确认即执行）+ 重放/过期/空计划对抗用例。
-- **前端通知中心**（`31bae7b`）：侧边栏铃铛 + 未读徽标（30s 轮询）/ 建议卡（执行/忽略/去看看）/ 周报卡/通知列表 + `t()` 插值渲染 + 接受确认弹窗（复用 type-to-confirm 交互，独立状态对象）；AI 关闭时整个通知中心隐藏，零足迹。
-- **周报通知去重**（`5d2e5fc`，真机验收发现）：`report.generated` 事件不再被 notifications 订阅侧映射入箱——周报由 triggers 直连 `AddNotification`（完整报告负载）唯一落箱，此前双路径会产生一条只有 notification_id 的空壳重复通知（48 真机 E2E 实抓）；补订阅器在跑时的防重复回归测试。
-- **PoolUsage 补 RAID/直挂池回退**（`6ec56a5`，真机验收发现）：导出内核此前只查 LVM `vgs`——raid1 直挂机（md0 挂 /data/nas1，无 VG）上水位 cron 因 ErrPoolNotExist 永远静默跳过、周报存储显示 0 B；补 findmnt+df 回退分支（解析抽纯函数 + 单测），48 实测周报存储数字变真（50G/1G/2%）。
-- **文档**：操作清单新增「通知中心」「主动管家」两个模块节（统计实算：只显示 70/用户操作 119/系统自动 43，合计 232，23 个功能模块）；产品手册 11.6 节补「通知中心与主动管家」小节（铃铛位置/建议卡限流说明/接受确认流程/周报内容与时间/关闭 AI 后零足迹）。
+（暂无未发布变更）
 
 ## 版本变更一览
 
 | 版本 | 日期 | 主要变化 |
 |------|------|---------|
+| v1.4.0-beta.32 | 2026-10-23 | 家庭管家底座 F2（主动管家）— 面板从「被动等命令」升级为「主动发现、提出建议、经确认后干活」：notifications 轻量收件箱（eventbus 订阅式）+ triggers 建议卡引擎（健康异常/备份失败/同步失败/磁盘水位≥85% 触发，同事项 24h 冷却+最多 5 条待处理反骚扰）+ 建议接受链（点「执行」→ 确认卡 → 任务引擎，零新确认语义）+ 家庭周报（周日 9 点自动生成，存储/任务/健康三块，零 LLM 依赖）+ 前端通知中心（铃铛/未读徽标/建议卡/周报卡/人话文案插值，关 AI 即整体隐藏）+ cronMatch 抽取 common 共享。附验收修复：周报通知去重、PoolUsage 补 RAID/直挂池回退（此前 raid 直挂机水位检查永远哑火）、cleanup.sh 重置补删仓库实体（防旧数据库穿越复活）。真机验收：F2 E2E 15/15 + UI 全流程 Chrome 实测 + AI E2E 31 项 + 套件 38/38 + 真实 DeepSeek 回归 |
 | v1.4.0-beta.31 | 2026-10-23 | 家庭管家底座 F1（任务引擎垂直切片）— AI 助手从「会聊天」升级为「能干活」：任务引擎（jobs 六态状态机/单 worker 串行/checkpoint 断点续跑/暂停恢复取消/REST+SSE 进度流/崩溃重启落 paused 保守恢复）+ photo_dedupe 重复照片清理全链（两级哈希扫描/最短路径保留/删除只进回收站）+ AI 任务工具 7 枚（规划只读、启动/取消/恢复走确认门，执行体服务端固化模型不可改写）+ 前端任务 tab（六态徽章/进度轮询/完成报告）+ 架构边界测试（import 图机器锁分层：tasks 不依赖 ai、核心模块不依赖 ai/tasks）+ filemgmt 回收站内核抽取复用。真机验收：任务 E2E 18/18（含 kill -9 续跑与计数器持久化修复）、验收套件 38/38、本机 Chrome UI 实测、真实 DeepSeek 回归 |
 | v1.4.0-beta.30 | 2026-10-22 | AI 配置保存与错误反馈修复（用户实报：保存成功后点「测试连通性」无反应）——① 配置保存的 key 覆盖根修：保存后前端清空 key、「测试连通性」先保存再测试，空 key 被 POST 回后端直接覆盖已存真 key（掩码回显 `****xxxx` 原样保存同理会存进掩码串）；现在空值/掩码回显一律视为「未修改」保留原 key，仅非空新值才更新 ② ai 模块 34 处错误响应从 text/plain 改 JSON content-type——此前前端 api() 不识别、失败完全静默，现在错误原因（如 DeepSeek 返回的「api key is invalid」）直接弹 toast ③ 前端 testAIConnection 补失败兜底分支；补 5 个单测（空值保留/掩码保留/新值更新+Verified 重置/JSON content-type）。实机验证：真实 DeepSeek 端点测试连通、开关开启、对话与三工具链全通过 |
 | v1.4.0-beta.29 | 2026-10-21 | AI 助手入口可发现性修复 — 关闭态侧边栏此前无任何「AI」字样（仅剩工具箱组头部一个 27px 小 emoji，用户实测找不到模块）：导航项改为常驻可见并带「未启用」灰徽标（开启后自动消失），点击进入引导卡+开启向导；移除冗余小入口；引导文案同步更新（删除「开启后才出现在工具箱」过时表述，补「关闭态零足迹」说明，双语） |
@@ -41,6 +30,25 @@
 | v1.4.0-beta.13 | 2026-09-19 | NFS 导出对所有网段开放（跨网段客户端可挂载） |
 | v1.4.0-beta.12 | 2026-09-18 | 创建向导按已选磁盘实时预估容量（选目标后预览面板 + 各方案可用容量/注意事项）+ 登录页品牌 slogan |
 | v1.4.0-beta.11 | 2026-09-18 | 当前连接展示（监控页，SMB 会话 + 各协议端口归类）+ 回收站改 per-share `.recycle/`（删除=rename 零拷贝，恢复保留目录树，旧 `#recycle` 兼容）+ 存储页 tab 切换跳动修复 |
+
+---
+
+## [2026-10-23] - v1.4.0-beta.32 — 家庭管家底座 F2（主动管家）
+
+分支 `feat/agent-f2` 合入 master（merge 2666b9f）。AI 助手从「能干活」再进一步：面板会**主动发现问题、提出建议、经你确认后自己把活干完**——硬盘出异常/备份失败/云同步失败/存储快满时，铃铛里出现一张人话建议卡（如「一块硬盘出了问题，数据目前还有一份完整副本，但请尽快处理」），点「执行」弹确认卡（影响面明示），输确认词后任务引擎开工；每周日 9 点自动生成家庭周报（存储/本周任务/健康三块数字）。
+
+- **notifications 轻量收件箱**（`b70e8ee`）：新增 `web/modules/notifications/` —— notes 表 + `AddNotification`/`ListNotifications`/`MarkRead`/`MarkAllRead`/`ClearRead`/`UnreadCount` 内核 + REST（enabled 守卫）+ eventbus 订阅（`task.done`/`task.failed`/`health.*`/`rclone.sync_failed`/`suggestion.created` → i18n 键通知，`task.progress` 不入箱防刷屏）。
+- **triggers 主动管家骨架**（`5478ed2`）：新增 `web/modules/triggers/` —— suggestions 表 + 冷却 24h/活跃上限 5 条内核 + actions_json 校验 + REST；`common.CronMatch` 从 rclone 调度器抽取为共享 5 段 cron 匹配器（rclone 行为不变）。
+- **事件源接线**（`a562d4f`）：health 状态迁移为异常/备份失败/云同步失败 → 人话建议卡（navigate 类）；磁盘水位 6 小时 cron（用量 ≥85% 触发「清理重复照片」建议）；人话翻译表第一批（双语）；backup 模块补失败路径 `backup.data_failed` 生产点（原先只有成功事件）。
+- **家庭周报**（`fb21339`）：周日 9 点 cron + 手动生成端点（`POST /api/triggers/report/generate`），存储/本周任务/健康三块模板化数据落收件箱（kind=report，零 LLM 依赖）。
+- **建议接受链**（`c523618`）：`ai.CreatePendingAction` 导出（复用既有确认门/TTL/确认词）+ `POST /api/triggers/suggestions/{id}/accept` 端点（建议 plan 固化 → 待确认操作卡 → 既有 `/api/ai/action/confirm` 确认即执行）+ 重放/过期/空计划对抗用例。
+- **前端通知中心**（`31bae7b`）：侧边栏铃铛 + 未读徽标（30s 轮询）/ 建议卡（执行/忽略/去看看）/ 周报卡/通知列表 + `t()` 插值渲染 + 接受确认弹窗（复用 type-to-confirm 交互，独立状态对象）；AI 关闭时整个通知中心隐藏，零足迹。
+- **周报通知去重**（`5d2e5fc`，真机验收发现）：`report.generated` 事件不再被 notifications 订阅侧映射入箱——周报由 triggers 直连 `AddNotification`（完整报告负载）唯一落箱，此前双路径会产生一条只有 notification_id 的空壳重复通知（48 真机 E2E 实抓）；补订阅器在跑时的防重复回归测试。
+- **PoolUsage 补 RAID/直挂池回退**（`6ec56a5`，真机验收发现）：导出内核此前只查 LVM `vgs`——raid1 直挂机（md0 挂 /data/nas1，无 VG）上水位 cron 因 ErrPoolNotExist 永远静默跳过、周报存储显示 0 B；补 findmnt+df 回退分支（解析抽纯函数 + 单测），48 实测周报存储数字变真（50G/1G/2%）。
+- **文档**：操作清单新增「通知中心」「主动管家」两个模块节（统计实算：只显示 70/用户操作 119/系统自动 43，合计 232，23 个功能模块）；产品手册 11.6 节补「通知中心与主动管家」小节（铃铛位置/建议卡限流说明/接受确认流程/周报内容与时间/关闭 AI 后零足迹）。
+
+- **cleanup.sh 重置补删仓库实体**（2b9d5b7，发布复验实锤）：安装布局是 /opt/nas → $HOME/soft/nas 软链接，旧版重置只删软链接——重装后面板「继承」旧 ai/tasks/audit 数据库（factory reset 实际不是 factory）。现在软链接 readlink 解实体删除 + /root 与 $HOME 双候选兜底。
+- **验收**（两台测试机）：F2 E2E 15/15（建议接受链全链/冷却 24h 真机断言/kill -9 重启通知建议不丢不重/关断态全端点 403/周报三块数据落箱）；UI 全流程本机 Chrome 实测（人话文案与 {参数} 插值渲染/执行→确认词→自动跳任务 tab→报告数字与种子精确对应/去看看→健康页+自动消卡/全部已读/AI 关断铃铛隐藏）；AI E2E 31 项 + acceptance-suite 38/38 无回归；另一台真实 DeepSeek 配置回归（配置零扰动）。
 
 ---
 
