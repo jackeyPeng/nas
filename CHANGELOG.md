@@ -2,7 +2,11 @@
 
 ## [未发布]
 
-（暂无未发布变更）
+### 安装/运维脚本修复（beta.32 tag 后，脚本类改动 push 即生效、不在二进制内）
+
+- **setup.sh rclone 升级三重防线**（f6847f2，48 用户级部署实抓）：apt 装完后 unattended-upgrades 持 dpkg 锁时 `dpkg -i` 静默失败（`2>/dev/null || true` 吞错误）且照报「✓ 已升级」——机器留下 apt 版 rclone 1.60（无 serve s3），rclone-s3 崩溃循环、注册表 40/41。现在等锁 + 保留 dpkg 错误输出并 apt -f 修复重试 + 装后版本验证，不达标显式 ✗ 并给手动修复命令。
+- **setup.sh rclone 版本比较去 bc 依赖**（6cf345c，57 机实抓）：最小化 Debian 无 bc 时装后验证误报「升级未生效」（实际已是 1.75.2）；改 awk 精确比较，升级触发判断同步修正（无 bc 时不再恒重复升级）。
+- **get.z1.sale 线上 install.sh 陈旧修复**（upload-r2 重传）：线上分发的 install.sh 是 beta.24 之前的版本（服务验证列表含已移除的 filebrowser，每次安装都 ✗ 并把结尾总结误报成「部分服务可能未正常启动」）；重传后线上 md5 与仓库一致。脚本类改动必须跑 upload-r2.sh 的既有规矩再次实证。
 
 ## 版本变更一览
 
