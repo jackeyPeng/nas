@@ -32,6 +32,7 @@ import (
 	"nas-panel/modules/services"
 	"nas-panel/modules/storage"
 	"nas-panel/modules/system"
+	"nas-panel/modules/tasks"
 	"nas-panel/modules/update"
 	"nas-panel/modules/users"
 	"nas-panel/modules/vault"
@@ -123,6 +124,15 @@ func main() {
 	}
 	common.InitAuditLog(dataDir)
 	common.InitEventBus(dataDir)
+	if err := tasks.InitTasks(dataDir); err != nil {
+		log.Printf("WARNING: tasks engine init failed: %v", err)
+	} else {
+		// worker 生命周期挂 ai enabled 守卫：AI 关断时运行中任务在当前步骤
+		// 边界暂停落库，不再消费新任务——零足迹语义（tasks 不 import ai，
+		// 这里 main.go 做接线，保持架构边界测试要求的单向依赖）。
+		tasks.SetEnabledGuard(ai.IsEnabled)
+		tasks.StartWorker()
+	}
 
 	if addr := os.Getenv("LISTEN_ADDR"); addr != "" {
 		listenAddr = addr
@@ -156,6 +166,7 @@ func main() {
 	events.RegisterRoutes(mux)
 	filemgmt.RegisterRoutes(mux)
 	ai.RegisterRoutes(mux)
+	tasks.RegisterRoutes(mux, ai.IsEnabled)
 
 	// Serve frontend
 	frontendRoot, _ := fs.Sub(frontendFS, "frontend")

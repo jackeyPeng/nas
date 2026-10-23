@@ -2781,6 +2781,7 @@
                 <!-- Tab 导航 -->
                 <div class="tab-nav" style="display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:var(--sp-5)">
                     <button :class="{'tab-active': aiTab === 'chat'}" class="tab-btn" @click="aiTab = 'chat'" x-text="$t('ai.tab_chat')"></button>
+                    <button :class="{'tab-active': aiTab === 'tasks'}" class="tab-btn" @click="aiTab = 'tasks'; loadAITasks()" x-text="$t('ai.tab_tasks')"></button>
                     <button :class="{'tab-active': aiTab === 'settings'}" class="tab-btn" @click="aiTab = 'settings'" x-text="$t('ai.tab_settings')"></button>
                 </div>
 
@@ -2848,6 +2849,60 @@
                             </div>
                         </div>
                     </template>
+                </div>
+
+                <!-- Tab: 任务 -->
+                <div x-show="aiTab === 'tasks'" x-transition.opacity.duration.200ms>
+                    <div class="empty-state" x-show="!taskJobs.length"><span class="empty-state__icon">🗂️</span><span class="empty-state__title" x-text="$t('ai.task_empty')"></span></div>
+
+                    <div x-show="taskJobs.length" style="display:flex;flex-direction:column;gap:var(--sp-3)">
+                        <template x-for="job in taskJobs" :key="job.id">
+                            <div style="background: var(--card-bg);border:1px solid var(--border);border-radius:var(--radius);padding:var(--sp-4)">
+                                <div style="display:flex;justify-content:space-between;align-items:center;gap:var(--sp-2)">
+                                    <div style="display:flex;align-items:center;gap:var(--sp-2)">
+                                        <strong x-text="taskKindLabel(job.kind)"></strong>
+                                        <span class="badge-xs" :style="taskStatusBadgeStyle(job.status)" x-text="taskStatusLabel(job.status)"></span>
+                                    </div>
+                                    <div class="actions" style="white-space:nowrap">
+                                        <button class="btn btn-sm badge-xs" x-show="job.status === 'running'" @click="taskAction(job.id, 'pause')" x-text="$t('ai.task_pause')"></button>
+                                        <button class="btn btn-sm btn-primary badge-xs" x-show="job.status === 'paused'" @click="taskAction(job.id, 'resume')" x-text="$t('ai.task_resume')"></button>
+                                        <button class="btn btn-sm btn-danger badge-xs" x-show="job.status === 'running' || job.status === 'paused'" @click="taskAction(job.id, 'cancel')" x-text="$t('ai.task_cancel')"></button>
+                                    </div>
+                                </div>
+
+                                <p style="color: var(--text-light);font-size:var(--fs-xs);margin:var(--sp-2) 0 0" x-text="$t('ai.task_impact', [job.impact?.groups || 0, formatSize(job.impact?.bytes)])"></p>
+
+                                <template x-if="job.status === 'pending_confirm'">
+                                    <p style="color: var(--text-muted);font-size:var(--fs-xs);margin-top:var(--sp-2)" x-text="$t('ai.task_hint_confirm')"></p>
+                                </template>
+
+                                <template x-if="job.status === 'running' || job.status === 'paused'">
+                                    <div style="margin-top:var(--sp-3)">
+                                        <div class="progress-bar"><div class="progress-fill" :style="'width:' + (job.progress_total ? Math.round(job.progress_cur / job.progress_total * 100) : 0) + '%'"></div></div>
+                                        <div style="display:flex;gap:var(--sp-3);font-size:var(--fs-xs);color: var(--text-light);margin-top:var(--sp-1)">
+                                            <span x-text="job.progress_cur + ' / ' + job.progress_total"></span>
+                                            <span x-show="job.progress_note" x-text="job.progress_note"></span>
+                                        </div>
+                                    </div>
+                                </template>
+
+                                <template x-if="job.status === 'done' && taskResult(job)">
+                                    <details style="margin-top:var(--sp-3)">
+                                        <summary style="cursor:pointer;color: var(--text-light);font-size:var(--fs-xs)" x-text="$t('ai.task_report_title')"></summary>
+                                        <div style="display:flex;gap:var(--sp-4);font-size:var(--fs-xs);color: var(--text-secondary);margin-top:var(--sp-2)">
+                                            <span x-text="$t('ai.task_report_moved') + ': ' + (taskResult(job).moved ?? 0)"></span>
+                                            <span x-text="$t('ai.task_report_freed') + ': ' + formatSize(taskResult(job).freed)"></span>
+                                            <span x-text="$t('ai.task_report_skipped') + ': ' + (taskResult(job).skipped ?? 0)"></span>
+                                        </div>
+                                    </details>
+                                </template>
+
+                                <template x-if="job.status === 'failed'">
+                                    <p style="color: var(--danger);font-size:var(--fs-xs);margin-top:var(--sp-2)" x-text="$t('ai.task_error_title') + ': ' + job.error"></p>
+                                </template>
+                            </div>
+                        </template>
+                    </div>
                 </div>
 
                 <!-- Tab: 设置 -->

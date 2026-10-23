@@ -1,5 +1,20 @@
 # NAS 项目变更日志
 
+## [未发布]
+
+### 家庭管家底座 F1（任务引擎垂直切片）
+
+开发中，分支 `feat/agent-foundation`，尚未合并/发版——以下条目随正式发版转正到「版本变更一览」并归入对应 beta 版本号。
+
+- **任务引擎骨架**（`web/modules/tasks/`，8a3c221/3a1307e/389739c/8553d13/ab9dcd9/e6dcb3a）：新增 jobs 表（SQLite，plan/checkpoint/result 存 TEXT）+ 六态状态机（待确认/运行中/已暂停/已完成/失败/已取消，非法迁移机器拒绝）+ 单 goroutine worker（串行消费队列，断点续传按 checkpoint 幂等跳过已完成步骤，暂停/取消在步骤边界响应，不打断正在执行的单步）+ REST/SSE API（`/api/tasks`、`/api/tasks/{id}`、pause/resume/cancel、`/api/tasks/{id}/stream` 进度流，复用既有 enabled 守卫与 SSE 模式）。崩溃恢复语义比原计划保守：面板重启后把所有 `running` 任务改 `paused`、不自动续传，需用户手动点「继续」——无人值守移动文件的风险大于自动续传的便利。
+- **架构边界测试**（e6dcb3a）：新增 `web/arch_boundary_test.go`，用 `go/parser` 解析各模块 import 图，机器强制锁定分层——`tasks` 不得依赖 `ai`，核心模块（diskmgmt/users/firewall/monitor/…）不得依赖 `ai`/`tasks`/`triggers`，违规提交无法通过 `go test`。
+- **filemgmt 内核抽取**（8553d13）：新增 `web/modules/filemgmt/export.go`，把既有 `handleDelete` 的回收站逻辑抽成可跨模块调用的 `MoveToRecycle`/`ResolvePoolPath`，哨兵错误（`ErrNotInPool`/`ErrIsRecycleContent`/`ErrIsShareRoot`/`ErrNotFound`/`ErrBadActor`）供调用方 `errors.Is` 判定；`handleDelete` 改为调内核，HTTP 层行为逐字不变（防前端回归）。任务引擎的文件清理复用同一套回收站守卫，不重新实现一遍。
+- **photo_dedupe 任务**（389739c）：两级哈希扫描器（按文件大小分桶 → 头 64KB 哈希 → 全量哈希比对成组，避免大文件重复全量读取）+ 保留策略（组内路径最短者，并列取最早修改时间）+ 预算控制（扫描超时返回已扫部分 + partial 标记，不卡死对话）+ 执行接线（`move_to_recycle` 步骤直调 `filemgmt.MoveToRecycle`，源文件已不存在时记跳过而非整任务失败）。
+- **AI 任务工具 7 枚**（3a1307e，`web/modules/ai/tools_tasks.go`）：`plan_task`（只读，同步扫描生成计划）/`start_task`/`cancel_task`/`resume_task`（写，走确认门）/`pause_task`（只读，暂停无破坏性）/`get_task_list`/`get_task_detail`（只读）。确认卡摘要文案按任务类型人性化展示影响面（组数/释放空间）；对抗测试覆盖恶意文件名注入（文件名本身带指令性文字不会让计划步骤跑偏）与 `job_id` 参数注入（参数化查询，库结构不受影响）。
+- **前端任务 tab**（8a3c221）：AI 助手页新增「任务」tab——六态徽章（待确认/运行中/已暂停/已完成/失败/已取消）、运行中进度条 + 2 秒轮询、按状态显隐的暂停/继续/取消按钮、完成态展开报告（已移动/释放空间/已跳过）、失败态展示错误原因；i18n 双语键全部过 `check-i18n.py`。
+- **任务计数器持久化**（b532ef0，真机验收发现）：kill -9 后续跑段的完成报告此前只统计续跑段（内存累计值随进程消失，实测 moved=23 实为 149）——jobs 表新增 `counters_json` 列，副作用步骤逐个 `AddCounters` 落库，ResultBuilder 从库读累计值；老库 ALTER 自动迁移；补重启续计与迁移双回归测试。
+- **文档**：操作清单新增「任务引擎」模块节（统计重算为 66/110/34，合计 210，21 个功能模块）；产品手册 11.6 节补「任务」小节（对话发起方式/确认卡影响面/六态说明/暂停继续取消语义/回收站联动/崩溃重启后置暂停的安全设计说明）。
+
 ## 版本变更一览
 
 | 版本 | 日期 | 主要变化 |

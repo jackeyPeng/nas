@@ -1146,7 +1146,11 @@
     "create_failed": "创建失败",
     "save_failed": "保存失败",
     "start_failed": "启动失败",
-    "reset_progress_pct": "重置中..."
+    "reset_progress_pct": "重置中...",
+    "task_cancel_confirm": "确定取消此任务？",
+    "task_action_pause_ok": "任务已暂停",
+    "task_action_resume_ok": "任务已继续",
+    "task_action_cancel_ok": "任务已取消"
   },
   "component": {
     "file_sharing": "文件共享",
@@ -1336,6 +1340,7 @@
     "title": "AI 助手",
     "tab_chat": "对话",
     "tab_settings": "设置",
+    "tab_tasks": "任务",
     "enabled": "AI 助手已开启",
     "disabled_hint": "AI 助手当前未启用。配置模型端点并通过连通性测试后即可开启。",
     "nav_off": "未启用",
@@ -1384,6 +1389,25 @@
     "action_summary_restart_service": "重启系统服务",
     "action_summary_run_diagnostics": "运行磁盘自检",
     "action_summary_create_folder": "创建共享文件夹",
-    "action_summary_default": "执行一项写操作"
+    "action_summary_default": "执行一项写操作",
+    "task_kind_photo_dedupe": "清理重复照片/视频",
+    "task_status_pending_confirm": "待确认",
+    "task_status_running": "运行中",
+    "task_status_paused": "已暂停",
+    "task_status_done": "已完成",
+    "task_status_failed": "失败",
+    "task_status_cancelled": "已取消",
+    "task_progress": "进度",
+    "task_impact": "{0} 组 · {1}",
+    "task_report_title": "完成报告",
+    "task_report_moved": "已移动",
+    "task_report_freed": "释放空间",
+    "task_report_skipped": "已跳过",
+    "task_empty": "暂无任务",
+    "task_hint_confirm": "请在对话中确认启动",
+    "task_pause": "暂停",
+    "task_resume": "继续",
+    "task_cancel": "取消",
+    "task_error_title": "错误"
   }
 }

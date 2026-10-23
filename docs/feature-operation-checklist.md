@@ -1,6 +1,6 @@
 # NAS 面板 功能清单 + 操作项分类（测试验证清单）
 
-> 最后更新: 2026-10-21
+> 最后更新: 2026-10-22
 > 代码基准: /home/jacky/soft/nas（Go 后端 web/ + Alpine.js 前端 web/frontend/）
 > 用途: 逐项测试验证。每个「操作项」标注三种分类之一，测试时按行逐个过。
 >
@@ -400,7 +400,27 @@
 
 ---
 
-## 19. AI 助手（AI Assistant）
+## 19. 任务引擎（Tasks）
+
+**功能说明**: 面板内置的后台任务执行引擎（`web/modules/tasks/`），F1 首个任务类型是 `photo_dedupe`（清理重复照片/视频）。任务走两阶段：先由 AI 助手对话生成计划（只读扫描，不改任何文件）并在确认卡展示影响面，用户确认后才真正启动执行；执行由单 goroutine worker 串行消费，逐步落 checkpoint，断点续传幂等；文件删除复用 filemgmt 回收站内核（`MoveToRecycle`），永不硬删。依附 AI 模块开关：AI 关闭时 `/api/tasks/*` 全部 403，worker 不消费新任务。
+
+| 操作项 | 分类 | 说明 |
+|---|---|---|
+| 任务列表查看 | 只显示 | `GET /api/tasks?limit=`，按创建时间新到旧 |
+| 任务详情 / 完成报告查看 | 只显示 | `GET /api/tasks/{id}`；done 态展示 `result`（已移动/释放空间/已跳过），failed 态展示 `error` |
+| AI 对话中规划任务（如"帮我清理重复照片"） | 用户操作 | 模型调用 `plan_task` 工具，同步扫描（120s 预算，超时返回 partial 标记）生成计划，只读不执行，落一条 `pending_confirm` 任务 |
+| 确认启动任务 | 用户操作 | 模型调用 `start_task`（写工具）→ 确认门弹卡 → 确认后 `pending_confirm → running`，入队交给 worker 执行 |
+| 暂停任务 | 用户操作 | `pause_task` 工具或任务页「暂停」按钮直接执行（暂停无破坏性，不走确认门）；worker 在当前步骤边界落 `paused` |
+| 继续任务 | 用户操作 | `resume_task`（写工具，确认门）或任务页「继续」按钮；`paused → running` 重新入队，按 checkpoint 跳过已完成步骤 |
+| 取消任务 | 用户操作 | `cancel_task`（写工具，确认门）或任务页「取消」按钮；`pending_confirm`/`paused` 直接落终态，`running` 由 worker 在步骤边界感知后落终态 |
+| worker 后台执行（断点续传/幂等跳过） | 系统自动 | 单 goroutine 串行消费队列，逐步执行 `move_to_recycle`，每步成功后落 checkpoint；源文件已不存在时记 skipped 计数而非整体失败 |
+| 崩溃恢复：面板重启后 running 任务置 paused | 系统自动 | `InitTasks` 启动时把所有 `status=running` 的行改为 `paused` 并在进度备注追加提示，不自动续传——无人值守移动文件的风险大于自动续传带来的便利，需用户手动点「继续」 |
+| 进度事件上报 | 系统自动 | worker 在 10/25/50/75% 里程碑 + 终态（done/failed）经 `common.EmitEvent` 上报 `task.progress`/`task.done`/`task.failed`，供事件中心/未来通知中心消费 |
+| photo_dedupe 两级哈希扫描 | 系统自动 | 按扩展名白名单（jpg/jpeg/png/heic/gif/webp/bmp/mp4/mov/avi/mkv/webm）→ 按文件大小分桶 → 桶内头 64KB 哈希 → 相同者全量哈希比对成组；隐藏文件/符号链接/回收站内容一律跳过，保留组内路径最短者 |
+
+---
+
+## 20. AI 助手（AI Assistant）
 
 **功能说明**: 面板内置的自然语言 NAS 助手（`web/modules/ai/`），默认关闭（零足迹）。对话走 function-calling 直调既有模块内核（只读工具即时执行，写工具必须经服务端 pending 存储 + 前端 type-to-confirm 二次确认才会真正执行）。支持 DeepSeek（云端）/Ollama（本地）两种预设端点；云端端点会接收对话与工具调用上下文，面板内有显式隐私提示。
 
@@ -414,12 +434,13 @@
 | 会话列表 / 历史回放 | 只显示 | `GET /api/ai/conversations`、`GET /api/ai/conversations/{id}` |
 | 只读工具调用（6 项：系统概览/监控快照/磁盘健康/存储池/用户列表/审计日志） | 用户操作 | 模型按需调用，结果即时执行并回填模型，参数/结果均有长度上限，不读取仓库外内容 |
 | 写操作确认门（6 个写工具：配额/建用户/防火墙规则/重启服务/磁盘自检/建文件夹） | 用户操作 | 模型请求写工具 → 服务端生成 PendingAction（TTL 5 分钟，参数留在服务端不回传客户端）→ 前端弹窗 type-to-confirm（函数级守卫）→ `POST /api/ai/action/confirm` 校验确认词后直调既有内核执行；`create_user` 的初始密码由前端一次性生成器生成，经 `client_payload.password` 单独通道送达，全程不进模型上下文/消息落库/审计 detail |
+| 任务工具调用（7 项：plan_task/start_task/cancel_task/pause_task/resume_task/get_task_list/get_task_detail） | 用户操作 | 对接第 19 节任务引擎——plan/pause/list/detail 为只读工具即时执行，start/cancel/resume 为写工具走与上一行相同的确认门流程 |
 | 取消待确认操作 | 用户操作 | `POST /api/ai/action/cancel`；Take 后丢弃，不执行 |
 | 工具调用审计 | 系统自动 | 每次工具 Exec（只读）/确认执行（写）均写一条 `AI`/`AI_TOOL` 审计，detail 为脱敏后的工具名+参数摘要 |
 
 ---
 
-## 20. 系统自动任务汇总（跨模块）
+## 21. 系统自动任务汇总（跨模块）
 
 > 本表把散布在各模块里的「系统自动」项集中列一遍，方便单独对「无人值守」链路做验证。
 
@@ -435,6 +456,9 @@
 | 审计日志自动清理 | 系统自动 | 默认 90 天保留 |
 | 事件上报与落库 | 系统自动 | 各模块 EmitEvent → eventbus 异步写 events.db |
 | 文件访问路径锚定校验 | 系统自动 | filemgmt 所有 /api/files/* 请求过 resolvePoolPath（fail-closed） |
+| 任务引擎 worker 后台执行 | 系统自动 | 单 goroutine 串行消费队列，断点续传幂等跳过已完成步骤 |
+| 任务崩溃恢复置 paused | 系统自动 | 面板重启时所有 running 任务改 paused，不自动续传 |
+| 任务进度/终态事件上报 | 系统自动 | 里程碑 + done/failed 经 EmitEvent 上报 task.progress/done/failed |
 
 ---
 
@@ -442,13 +466,13 @@
 
 | 分类 | 操作项数 |
 |---|---|
-| 只显示 | 64 |
-| 用户操作 | 104 |
-| 系统自动 | 27 |
-| **合计** | **195** |
-| 功能模块数 | 20 |
+| 只显示 | 66 |
+| 用户操作 | 110 |
+| 系统自动 | 34 |
+| **合计** | **210** |
+| 功能模块数 | 21 |
 
-> 注：「系统自动」项里，第 20 节「系统自动任务汇总」是对散落在模块 3/5/6/14/15/16/17/18 里的无人值守任务的跨模块汇总（重复计数），测试时可直接按第 20 节这张汇总表一次过完所有无人值守链路。
+> 注：「系统自动」项里，第 21 节「系统自动任务汇总」是对散落在模块 3/5/6/14/15/16/17/18/19 里的无人值守任务的跨模块汇总（重复计数），测试时可直接按第 21 节这张汇总表一次过完所有无人值守链路。
 
 ---
 

@@ -352,6 +352,9 @@ function nasPanel() {
         // genPassword 是 create_user 专用的一次性生成密码（只在本次会话内存里，
         // 确认成功/取消/弹窗关闭都要清空，绝不进 aiMessages/任何持久化状态）。
         aiConfirm: { show: false, action: null, confirmWordInput: '', genPassword: '', submitting: false },
+        // 任务引擎：任务 tab 的任务列表 + 进度轮询句柄（running/paused 存在时 2s 一轮）
+        taskJobs: [],
+        taskJobsTimer: null,
 
         init() {
             if (this.token) {
@@ -375,6 +378,7 @@ function nasPanel() {
             });
             window.addEventListener('beforeunload', () => {
                 if (this.vaultState === 'unlocked') this.vaultLock();
+                this.stopTaskJobsPolling();
             });
         },
 
@@ -621,6 +625,7 @@ function nasPanel() {
 
         navigate(page) {
             if (this.page === 'vault' && page !== 'vault') this.vaultLock();
+            if (this.page === 'ai' && page !== 'ai') this.stopTaskJobsPolling();
             this.page = page;
             switch (page) {
                 case 'dashboard': this.loadDashboard(); break;
@@ -636,7 +641,7 @@ function nasPanel() {
                 case 'backup': this.loadBackups(); break;
                 case 'vault': this.vaultOnEnter(); break;
                 case 'pwgen': this.pwgenOnEnter(); break;
-                case 'ai': this.loadAIStatus(); this.loadAIConversations(); break;
+                case 'ai': this.loadAIStatus(); this.loadAIConversations(); this.loadAITasks(); break;
                 case 'rclone': this.loadRcloneStatus(); this.loadRcloneRemotes(); this.loadRcloneTasks().then(() => { if (this.rcloneRunningTasks.length) this.startRcloneProgressPolling(); }); this.loadRcloneLogs(); this.loadSharedDirs(); break;
                 case 'logs': this.loadAuditLogs(); break;
                 case 'events': this.loadEvents(); this.loadEventStats(); break;
@@ -3840,6 +3845,99 @@ function nasPanel() {
         aiActionSummaryKey(toolName) {
             const known = ['set_user_quota', 'create_user', 'add_firewall_rule', 'restart_service', 'run_diagnostics', 'create_folder'];
             return known.includes(toolName) ? ('ai.action_summary_' + toolName) : 'ai.action_summary_default';
+        },
+
+        // ═══ 任务引擎（ai 页「任务」tab） ═══
+        // GET /api/tasks → {"jobs":[...]}（api() 对非对象/非 JSON 响应已经 toast 过，
+        // 这里按计划要求再做一层字符串守卫：必须是带 jobs 数组的对象才接受）。
+        async loadAITasks() {
+            const data = await this.api('/tasks');
+            if (!data || typeof data !== 'object' || !Array.isArray(data.jobs)) {
+                if (typeof data === 'string' && data.trim()) this.showToast(data.trim(), 'error');
+                return;
+            }
+            this.taskJobs = data.jobs;
+            this.syncTaskJobsPolling();
+        },
+
+        // taskRunningOrPaused：running/paused 任一存在即需要轮询刷新进度。
+        get taskRunningOrPaused() {
+            return this.taskJobs.filter(j => j.status === 'running' || j.status === 'paused');
+        },
+
+        // 存在 running/paused 任务时启动 2s 轮询，否则停止——由 loadAITasks()
+        // 每次加载后自动校准，不需要调用方单独管理启停（对照 rclone 进度轮询模式，
+        // 这里不需要单独任务的细粒度 progress 接口，job 列表本身已带 progress_cur/total）。
+        syncTaskJobsPolling() {
+            if (this.taskRunningOrPaused.length) {
+                this.startTaskJobsPolling();
+            } else {
+                this.stopTaskJobsPolling();
+            }
+        },
+
+        startTaskJobsPolling() {
+            if (this.taskJobsTimer) return;
+            this.taskJobsTimer = setInterval(() => {
+                if (this.page !== 'ai') { this.stopTaskJobsPolling(); return; }
+                this.loadAITasks();
+            }, 2000);
+        },
+
+        stopTaskJobsPolling() {
+            if (this.taskJobsTimer) { clearInterval(this.taskJobsTimer); this.taskJobsTimer = null; }
+        },
+
+        // taskAction：POST /api/tasks/{id}/{action}，action ∈ pause/resume/cancel。
+        // REST 层无确认门（该写操作已经过 AI 对话侧的确认卡/或本身是暂停这种无
+        // 破坏性操作），cancel 前用原生 confirm() 承担确认语义，与面板其它危险
+        // 操作一致（见 msg.*_confirm 系列）。
+        async taskAction(id, action) {
+            if (action === 'cancel' && !confirm(this.t('msg.task_cancel_confirm'))) return;
+            const data = await this.api('/tasks/' + encodeURIComponent(id) + '/' + action, { method: 'POST' });
+            if (!data || typeof data !== 'object' || !data.ok) {
+                if (typeof data === 'string' && data.trim()) this.showToast(data.trim(), 'error');
+                return;
+            }
+            this.showToast(this.t('msg.task_action_' + action + '_ok'), 'success');
+            this.loadAITasks();
+        },
+
+        // taskKindLabel/taskStatusLabel：kind/status 映射到 i18n 文案，未知值兜底原值。
+        taskKindLabel(kind) {
+            const k = 'ai.task_kind_' + kind;
+            return window.t(k) !== k ? window.t(k) : kind;
+        },
+
+        taskStatusLabel(status) {
+            const k = 'ai.task_status_' + status;
+            return window.t(k) !== k ? window.t(k) : status;
+        },
+
+        // taskStatusBadgeStyle：六态六色，与 i18n/CSS 变量保持一致（黄/蓝/灰/绿/红/灰）。
+        taskStatusBadgeStyle(status) {
+            const styles = {
+                pending_confirm: 'background: var(--warn-light);color: var(--warn)',
+                running: 'background: var(--primary-light);color: var(--primary)',
+                paused: 'background: var(--card-bg-alt);color: var(--text-secondary)',
+                done: 'background: var(--success-light);color: var(--success)',
+                failed: 'background: var(--danger-light);color: var(--danger)',
+                cancelled: 'background: var(--card-bg-alt);color: var(--text-muted)'
+            };
+            return styles[status] || 'background: var(--card-bg-alt);color: var(--text-muted)';
+        },
+
+        // taskResult：解析 done 任务的 Result JSON（{"moved":N,"freed":M,"skipped":K}），
+        // 解析失败（如空字符串/脏数据）兜底 null，调用方据此隐藏报告行。
+        taskResult(job) {
+            if (!job || !job.result) return null;
+            try {
+                const r = JSON.parse(job.result);
+                if (!r || typeof r !== 'object') return null;
+                return r;
+            } catch (e) {
+                return null;
+            }
         },
 
         // 面板更新（OTA 签名校验）

@@ -8,11 +8,13 @@ import (
 )
 
 // buildRegistry 组装 agent loop 使用的工具注册表：nas 域的只读工具
-// （M1/T5）+ 写工具（M2/T10）。RunAgent/handleChat 只认 *Registry，
-// 写工具的 Write=true 标记让 agent loop 自动转 PendingAction，不需要
-// 调用方额外区分。
+// （M1/T5）+ 写工具（M2/T10）+ 任务工具（F1 T5，plan/start/cancel/pause/
+// resume/list/detail）。RunAgent/handleChat 只认 *Registry，写工具的
+// Write=true 标记让 agent loop 自动转 PendingAction，不需要调用方额外
+// 区分。
 func buildRegistry() *Registry {
 	tools := append(nasReadTools(), nasWriteTools()...)
+	tools = append(tools, nasTasksTools()...)
 	return NewRegistry(Domain{
 		Name:  "nas",
 		Tools: tools,
@@ -66,6 +68,14 @@ func RegisterRoutes(mux *http.ServeMux) {
 // aiEnabled 读内存缓存的配置，避免每请求读盘；SaveConfig 刷新缓存后即时生效。
 func aiEnabled() bool {
 	return LoadConfig().Enabled
+}
+
+// IsEnabled 是 aiEnabled 的包级薄导出（不改行为），供其它模块接入同一个
+// enabled 守卫——tasks 模块的 worker/REST 关断守卫即走这里（main.go:
+// tasks.RegisterRoutes(mux, ai.IsEnabled)），保持"AI 关=任务引擎也零足迹"
+// 的语义单一来源，不在 tasks 里重复判断配置。
+func IsEnabled() bool {
+	return aiEnabled()
 }
 
 // requireEnabled 包裹需要功能模块已开启才能访问的 handler；

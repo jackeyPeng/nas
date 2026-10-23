@@ -620,6 +620,10 @@ func recycleConflictFree(target string) string {
 // handleDelete — POST /api/files/delete,JSON body {path}。
 // 删除 = os.Rename 到所属共享(或池根)的 .recycle/<admin>/ 下,零拷贝;
 // 与回收站页(diskmgmt/recycle.go)keeptree 布局同构,删除后天然可见可 restore。
+//
+// F1 Task 3:守卫链已抽取进 export.go 的 MoveToRecycle(内核用哨兵错误),
+// 本函数只负责"解析路径 → 调内核 → 把哨兵错误映射回原 HTTP 码/文案"，
+// 逐字保留原行为(前端与验收套件依赖这些文案)。
 func handleDelete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -637,55 +641,24 @@ func handleDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if srcAbs == normalizedRoot() {
-		http.Error(w, "不能删除池根", http.StatusBadRequest)
-		return
-	}
-	// 防套娃(Task 10 review Important#1):基于解析后路径判定,不用原始 req.Path——
-	// resolvePoolPath 会 TrimSpace+Clean,前导空格绕过(" .recycle/x")在此归一后必现形;
-	// 再对真实路径(EvalSymlinks)判定,堵池内符号链接指向 .recycle 的绕过。
-	if litRel, relErr := filepath.Rel(normalizedRoot(), srcAbs); relErr == nil && pathHasRecycleSegment(litRel) {
-		http.Error(w, "回收站内容请在回收站页管理", http.StatusBadRequest)
-		return
-	}
-	if realSrc, evalErr := filepath.EvalSymlinks(srcAbs); evalErr == nil {
-		realRel, relErr := filepath.Rel(normalizedRoot(), realSrc)
-		if relErr == nil && pathHasRecycleSegment(realRel) {
-			http.Error(w, "回收站内容请在回收站页管理", http.StatusBadRequest)
-			return
-		}
-	}
-	// (源不存在时 EvalSymlinks 报错跳过真实路径判定,由下方 Lstat 统一 404)
-	meta, found := ownerShareOfVia(srcAbs)
-	if found && srcAbs == filepath.Clean(meta.Path) {
-		http.Error(w, "不能删除共享文件夹本身,请在存储页操作", http.StatusBadRequest)
-		return
-	}
-	if _, err := os.Lstat(srcAbs); err != nil {
-		http.Error(w, "源不存在", http.StatusNotFound)
-		return
-	}
 
 	admin := recycleAdminUser(r)
-	// admin 用户名纵深校验(Task 10 review Minor#3,对照 diskmgmt resolveRecyclePath):
-	// 现有用户白名单已挡住,此处纯防御。
-	if strings.Contains(admin, "/") || strings.Contains(admin, "..") {
-		http.Error(w, "删除者用户名非法", http.StatusBadRequest)
-		return
-	}
-	recycleTarget, err := resolveRecycleTarget(srcAbs, admin)
+	recycleTarget, err := MoveToRecycle(srcAbs, admin)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	recycleTarget = recycleConflictFree(recycleTarget)
-
-	if err := os.MkdirAll(filepath.Dir(recycleTarget), 0700); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if err := os.Rename(srcAbs, recycleTarget); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		switch {
+		case errors.Is(err, ErrNotInPool):
+			http.Error(w, "不能删除池根", http.StatusBadRequest)
+		case errors.Is(err, ErrIsRecycleContent):
+			http.Error(w, "回收站内容请在回收站页管理", http.StatusBadRequest)
+		case errors.Is(err, ErrIsShareRoot):
+			http.Error(w, "不能删除共享文件夹本身,请在存储页操作", http.StatusBadRequest)
+		case errors.Is(err, ErrNotFound):
+			http.Error(w, "源不存在", http.StatusNotFound)
+		case errors.Is(err, ErrBadActor):
+			http.Error(w, "删除者用户名非法", http.StatusBadRequest)
+		default:
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 		return
 	}
 

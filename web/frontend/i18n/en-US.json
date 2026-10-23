@@ -1146,7 +1146,11 @@
     "create_failed": "Create failed",
     "save_failed": "Save failed",
     "start_failed": "Start failed",
-    "reset_progress_pct": "Resetting..."
+    "reset_progress_pct": "Resetting...",
+    "task_cancel_confirm": "Cancel this task?",
+    "task_action_pause_ok": "Task paused",
+    "task_action_resume_ok": "Task resumed",
+    "task_action_cancel_ok": "Task cancelled"
   },
   "component": {
     "file_sharing": "File Sharing",
@@ -1336,6 +1340,7 @@
     "title": "AI Assistant",
     "tab_chat": "Chat",
     "tab_settings": "Settings",
+    "tab_tasks": "Tasks",
     "enabled": "AI Assistant is on",
     "disabled_hint": "AI Assistant is not enabled yet. Configure a model endpoint and pass the connectivity test to turn it on.",
     "nav_off": "Off",
@@ -1384,6 +1389,25 @@
     "action_summary_restart_service": "Restart a system service",
     "action_summary_run_diagnostics": "Run a disk self-test",
     "action_summary_create_folder": "Create a shared folder",
-    "action_summary_default": "Perform a write action"
+    "action_summary_default": "Perform a write action",
+    "task_kind_photo_dedupe": "Clean up duplicate photos/videos",
+    "task_status_pending_confirm": "Pending confirmation",
+    "task_status_running": "Running",
+    "task_status_paused": "Paused",
+    "task_status_done": "Done",
+    "task_status_failed": "Failed",
+    "task_status_cancelled": "Cancelled",
+    "task_progress": "Progress",
+    "task_impact": "{0} groups · {1}",
+    "task_report_title": "Completion report",
+    "task_report_moved": "Moved",
+    "task_report_freed": "Freed",
+    "task_report_skipped": "Skipped",
+    "task_empty": "No tasks yet",
+    "task_hint_confirm": "Please confirm the start in chat",
+    "task_pause": "Pause",
+    "task_resume": "Resume",
+    "task_cancel": "Cancel",
+    "task_error_title": "Error"
   }
 }
