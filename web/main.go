@@ -28,6 +28,7 @@ import (
 	"nas-panel/modules/health"
 	"nas-panel/modules/logs"
 	"nas-panel/modules/monitor"
+	"nas-panel/modules/notifications"
 	"nas-panel/modules/rclone"
 	"nas-panel/modules/services"
 	"nas-panel/modules/storage"
@@ -133,6 +134,14 @@ func main() {
 		tasks.SetEnabledGuard(ai.IsEnabled)
 		tasks.StartWorker()
 	}
+	if err := notifications.InitNotifications(dataDir); err != nil {
+		log.Printf("WARNING: notifications init failed: %v", err)
+	} else {
+		// 同 tasks 接线模式：notifications 是叶子模块，不 import ai，
+		// enabled 守卫由 main.go 注入（零足迹语义，关断时事件不入箱）。
+		notifications.SetEnabledGuard(ai.IsEnabled)
+		notifications.StartSubscriber()
+	}
 
 	if addr := os.Getenv("LISTEN_ADDR"); addr != "" {
 		listenAddr = addr
@@ -167,6 +176,7 @@ func main() {
 	filemgmt.RegisterRoutes(mux)
 	ai.RegisterRoutes(mux)
 	tasks.RegisterRoutes(mux, ai.IsEnabled)
+	notifications.RegisterRoutes(mux, ai.IsEnabled)
 
 	// Serve frontend
 	frontendRoot, _ := fs.Sub(frontendFS, "frontend")
