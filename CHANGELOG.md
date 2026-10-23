@@ -2,23 +2,13 @@
 
 ## [未发布]
 
-### 家庭管家底座 F1（任务引擎垂直切片）
-
-开发中，分支 `feat/agent-foundation`，尚未合并/发版——以下条目随正式发版转正到「版本变更一览」并归入对应 beta 版本号。
-
-- **任务引擎骨架**（`web/modules/tasks/`，8a3c221/3a1307e/389739c/8553d13/ab9dcd9/e6dcb3a）：新增 jobs 表（SQLite，plan/checkpoint/result 存 TEXT）+ 六态状态机（待确认/运行中/已暂停/已完成/失败/已取消，非法迁移机器拒绝）+ 单 goroutine worker（串行消费队列，断点续传按 checkpoint 幂等跳过已完成步骤，暂停/取消在步骤边界响应，不打断正在执行的单步）+ REST/SSE API（`/api/tasks`、`/api/tasks/{id}`、pause/resume/cancel、`/api/tasks/{id}/stream` 进度流，复用既有 enabled 守卫与 SSE 模式）。崩溃恢复语义比原计划保守：面板重启后把所有 `running` 任务改 `paused`、不自动续传，需用户手动点「继续」——无人值守移动文件的风险大于自动续传的便利。
-- **架构边界测试**（e6dcb3a）：新增 `web/arch_boundary_test.go`，用 `go/parser` 解析各模块 import 图，机器强制锁定分层——`tasks` 不得依赖 `ai`，核心模块（diskmgmt/users/firewall/monitor/…）不得依赖 `ai`/`tasks`/`triggers`，违规提交无法通过 `go test`。
-- **filemgmt 内核抽取**（8553d13）：新增 `web/modules/filemgmt/export.go`，把既有 `handleDelete` 的回收站逻辑抽成可跨模块调用的 `MoveToRecycle`/`ResolvePoolPath`，哨兵错误（`ErrNotInPool`/`ErrIsRecycleContent`/`ErrIsShareRoot`/`ErrNotFound`/`ErrBadActor`）供调用方 `errors.Is` 判定；`handleDelete` 改为调内核，HTTP 层行为逐字不变（防前端回归）。任务引擎的文件清理复用同一套回收站守卫，不重新实现一遍。
-- **photo_dedupe 任务**（389739c）：两级哈希扫描器（按文件大小分桶 → 头 64KB 哈希 → 全量哈希比对成组，避免大文件重复全量读取）+ 保留策略（组内路径最短者，并列取最早修改时间）+ 预算控制（扫描超时返回已扫部分 + partial 标记，不卡死对话）+ 执行接线（`move_to_recycle` 步骤直调 `filemgmt.MoveToRecycle`，源文件已不存在时记跳过而非整任务失败）。
-- **AI 任务工具 7 枚**（3a1307e，`web/modules/ai/tools_tasks.go`）：`plan_task`（只读，同步扫描生成计划）/`start_task`/`cancel_task`/`resume_task`（写，走确认门）/`pause_task`（只读，暂停无破坏性）/`get_task_list`/`get_task_detail`（只读）。确认卡摘要文案按任务类型人性化展示影响面（组数/释放空间）；对抗测试覆盖恶意文件名注入（文件名本身带指令性文字不会让计划步骤跑偏）与 `job_id` 参数注入（参数化查询，库结构不受影响）。
-- **前端任务 tab**（8a3c221）：AI 助手页新增「任务」tab——六态徽章（待确认/运行中/已暂停/已完成/失败/已取消）、运行中进度条 + 2 秒轮询、按状态显隐的暂停/继续/取消按钮、完成态展开报告（已移动/释放空间/已跳过）、失败态展示错误原因；i18n 双语键全部过 `check-i18n.py`。
-- **任务计数器持久化**（b532ef0，真机验收发现）：kill -9 后续跑段的完成报告此前只统计续跑段（内存累计值随进程消失，实测 moved=23 实为 149）——jobs 表新增 `counters_json` 列，副作用步骤逐个 `AddCounters` 落库，ResultBuilder 从库读累计值；老库 ALTER 自动迁移；补重启续计与迁移双回归测试。
-- **文档**：操作清单新增「任务引擎」模块节（统计重算为 66/110/34，合计 210，21 个功能模块）；产品手册 11.6 节补「任务」小节（对话发起方式/确认卡影响面/六态说明/暂停继续取消语义/回收站联动/崩溃重启后置暂停的安全设计说明）。
+（暂无未发布变更）
 
 ## 版本变更一览
 
 | 版本 | 日期 | 主要变化 |
 |------|------|---------|
+| v1.4.0-beta.31 | 2026-10-23 | 家庭管家底座 F1（任务引擎垂直切片）— AI 助手从「会聊天」升级为「能干活」：任务引擎（jobs 六态状态机/单 worker 串行/checkpoint 断点续跑/暂停恢复取消/REST+SSE 进度流/崩溃重启落 paused 保守恢复）+ photo_dedupe 重复照片清理全链（两级哈希扫描/最短路径保留/删除只进回收站）+ AI 任务工具 7 枚（规划只读、启动/取消/恢复走确认门，执行体服务端固化模型不可改写）+ 前端任务 tab（六态徽章/进度轮询/完成报告）+ 架构边界测试（import 图机器锁分层：tasks 不依赖 ai、核心模块不依赖 ai/tasks）+ filemgmt 回收站内核抽取复用。真机验收：任务 E2E 18/18（含 kill -9 续跑与计数器持久化修复）、验收套件 38/38、本机 Chrome UI 实测、真实 DeepSeek 回归 |
 | v1.4.0-beta.30 | 2026-10-22 | AI 配置保存与错误反馈修复（用户实报：保存成功后点「测试连通性」无反应）——① 配置保存的 key 覆盖根修：保存后前端清空 key、「测试连通性」先保存再测试，空 key 被 POST 回后端直接覆盖已存真 key（掩码回显 `****xxxx` 原样保存同理会存进掩码串）；现在空值/掩码回显一律视为「未修改」保留原 key，仅非空新值才更新 ② ai 模块 34 处错误响应从 text/plain 改 JSON content-type——此前前端 api() 不识别、失败完全静默，现在错误原因（如 DeepSeek 返回的「api key is invalid」）直接弹 toast ③ 前端 testAIConnection 补失败兜底分支；补 5 个单测（空值保留/掩码保留/新值更新+Verified 重置/JSON content-type）。实机验证：真实 DeepSeek 端点测试连通、开关开启、对话与三工具链全通过 |
 | v1.4.0-beta.29 | 2026-10-21 | AI 助手入口可发现性修复 — 关闭态侧边栏此前无任何「AI」字样（仅剩工具箱组头部一个 27px 小 emoji，用户实测找不到模块）：导航项改为常驻可见并带「未启用」灰徽标（开启后自动消失），点击进入引导卡+开启向导；移除冗余小入口；引导文案同步更新（删除「开启后才出现在工具箱」过时表述，补「关闭态零足迹」说明，双语） |
 | v1.4.0-beta.28 | 2026-10-21 | AI 助手模块（M1+M2）— 可开关内置功能模块（默认关闭零足迹）：OpenAI 兼容端点接入（DeepSeek/Ollama 预设+连通性测试+Key 0600 存储掩码回显）、NAS 域 15 工具（9 只读+6 写，ToolDomain 抽象+schema 校验，直调既有模块内核）、SSE 流式对话+SQLite 会话历史、写操作 type-to-confirm 确认门（参数服务端留存/一次性 Take/TTL 5 分钟）、create_user 密码前端生成直注（永不进模型上下文/落库/审计）、对抗性安全测试集（注入/schema 攻击/Key 泄漏面/开关守卫）。附验收修复集：删用户补 WebDAV 凭据撤销（被删用户仍能过 rclone 认证）、shell 管道调用点清零、AI 页 Alpine 响应式修复（气泡/工具轨迹不随流式更新）、控制面守卫豁免（关闭态无法存配置）、建池文案按模式报实际用盘数；双机重置用户级全流程验收（RAID1+LVM merge 各 38 项套件+31 项 AI E2E 全 PASS+本机 Chrome UI 实测） |
@@ -39,6 +29,24 @@
 | v1.4.0-beta.13 | 2026-09-19 | NFS 导出对所有网段开放（跨网段客户端可挂载） |
 | v1.4.0-beta.12 | 2026-09-18 | 创建向导按已选磁盘实时预估容量（选目标后预览面板 + 各方案可用容量/注意事项）+ 登录页品牌 slogan |
 | v1.4.0-beta.11 | 2026-09-18 | 当前连接展示（监控页，SMB 会话 + 各协议端口归类）+ 回收站改 per-share `.recycle/`（删除=rename 零拷贝，恢复保留目录树，旧 `#recycle` 兼容）+ 存储页 tab 切换跳动修复 |
+
+---
+
+## [2026-10-23] - v1.4.0-beta.31 — 家庭管家底座 F1（任务引擎垂直切片）
+
+分支 `feat/agent-foundation` 合入 master（merge 32e695c）。AI 助手从「会聊天」升级为「能干活」的第一步：用户对话说「帮我清理重复照片」→ AI 只读扫描出影响面 → 确认卡（N 组文件/释放 X）→ 确认后后台任务执行 → 任务页看进度/报告。全程删除只进回收站、执行体服务端固化、写操作过确认门。
+
+- **任务引擎骨架**（`web/modules/tasks/`，8a3c221/3a1307e/389739c/8553d13/ab9dcd9/e6dcb3a）：新增 jobs 表（SQLite，plan/checkpoint/result 存 TEXT）+ 六态状态机（待确认/运行中/已暂停/已完成/失败/已取消，非法迁移机器拒绝）+ 单 goroutine worker（串行消费队列，断点续传按 checkpoint 幂等跳过已完成步骤，暂停/取消在步骤边界响应，不打断正在执行的单步）+ REST/SSE API（`/api/tasks`、`/api/tasks/{id}`、pause/resume/cancel、`/api/tasks/{id}/stream` 进度流，复用既有 enabled 守卫与 SSE 模式）。崩溃恢复语义比原计划保守：面板重启后把所有 `running` 任务改 `paused`、不自动续传，需用户手动点「继续」——无人值守移动文件的风险大于自动续传的便利。
+- **架构边界测试**（e6dcb3a）：新增 `web/arch_boundary_test.go`，用 `go/parser` 解析各模块 import 图，机器强制锁定分层——`tasks` 不得依赖 `ai`，核心模块（diskmgmt/users/firewall/monitor/…）不得依赖 `ai`/`tasks`/`triggers`，违规提交无法通过 `go test`。
+- **filemgmt 内核抽取**（8553d13）：新增 `web/modules/filemgmt/export.go`，把既有 `handleDelete` 的回收站逻辑抽成可跨模块调用的 `MoveToRecycle`/`ResolvePoolPath`，哨兵错误（`ErrNotInPool`/`ErrIsRecycleContent`/`ErrIsShareRoot`/`ErrNotFound`/`ErrBadActor`）供调用方 `errors.Is` 判定；`handleDelete` 改为调内核，HTTP 层行为逐字不变（防前端回归）。任务引擎的文件清理复用同一套回收站守卫，不重新实现一遍。
+- **photo_dedupe 任务**（389739c）：两级哈希扫描器（按文件大小分桶 → 头 64KB 哈希 → 全量哈希比对成组，避免大文件重复全量读取）+ 保留策略（组内路径最短者，并列取最早修改时间）+ 预算控制（扫描超时返回已扫部分 + partial 标记，不卡死对话）+ 执行接线（`move_to_recycle` 步骤直调 `filemgmt.MoveToRecycle`，源文件已不存在时记跳过而非整任务失败）。
+- **AI 任务工具 7 枚**（3a1307e，`web/modules/ai/tools_tasks.go`）：`plan_task`（只读，同步扫描生成计划）/`start_task`/`cancel_task`/`resume_task`（写，走确认门）/`pause_task`（只读，暂停无破坏性）/`get_task_list`/`get_task_detail`（只读）。确认卡摘要文案按任务类型人性化展示影响面（组数/释放空间）；对抗测试覆盖恶意文件名注入（文件名本身带指令性文字不会让计划步骤跑偏）与 `job_id` 参数注入（参数化查询，库结构不受影响）。
+- **前端任务 tab**（8a3c221）：AI 助手页新增「任务」tab——六态徽章（待确认/运行中/已暂停/已完成/失败/已取消）、运行中进度条 + 2 秒轮询、按状态显隐的暂停/继续/取消按钮、完成态展开报告（已移动/释放空间/已跳过）、失败态展示错误原因；i18n 双语键全部过 `check-i18n.py`。
+- **任务计数器持久化**（b532ef0，真机验收发现）：kill -9 后续跑段的完成报告此前只统计续跑段（内存累计值随进程消失，实测 moved=23 实为 149）——jobs 表新增 `counters_json` 列，副作用步骤逐个 `AddCounters` 落库，ResultBuilder 从库读累计值；老库 ALTER 自动迁移；补重启续计与迁移双回归测试。
+- **文档**：操作清单新增「任务引擎」模块节（统计重算为 66/110/34，合计 210，21 个功能模块）；产品手册 11.6 节补「任务」小节（对话发起方式/确认卡影响面/六态说明/暂停继续取消语义/回收站联动/崩溃重启后置暂停的安全设计说明）。
+
+- **验收**（两台测试机）：任务 E2E 18/18（对话工具链/确认卡影响面/回收站落位/对照组不误伤/kill -9 中途→重启落 paused→resume 无双重移动/关断态 403）；acceptance-suite 38/38；ai-e2e2 旧场景回归 ALL PASS；本机 Chrome 任务 tab UI 实测（六态徽章/报告/按钮状态绑定）；另一台真实 DeepSeek 配置回归（对话/工具链无回归，用户配置零扰动）。
+- **文档**：`docs/recent-changes-2026-10-23.md` 新增 beta.23→beta.30+F1 变更 digest（时间线/五主线/验收方法论）。
 
 ---
 
