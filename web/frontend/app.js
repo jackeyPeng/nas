@@ -356,6 +356,17 @@ function nasPanel() {
         taskJobs: [],
         taskJobsTimer: null,
 
+        // ═══ 通知中心（铃铛 + 建议卡 + 周报，F2 Task 6）═══
+        // notifPanel：铃铛展开态 + 未读数 + 面板三段数据（建议卡/周报/通知列表）。
+        // AI 关断时整个通知中心隐藏（notificationsVisible getter），轮询 30s 一轮，
+        // document.hidden 时暂停、navigate 离开/卸载时清定时器（对照 taskJobsTimer 模式）。
+        notifPanel: { open: false, unreadCount: 0, notifications: [], suggestions: [], report: null, loading: false },
+        notifPollTimer: null,
+        // notifConfirm：接受建议的确认弹窗独立状态对象，不与 aiConfirm 共用实例
+        // （避免聊天确认门与通知中心确认门互踩）。字段形状与 aiConfirm 对齐，
+        // action 存 accept 端点返回的 {action_id, confirm_word, summary, job_id}。
+        notifConfirm: { show: false, action: null, confirmWordInput: '', submitting: false },
+
         init() {
             if (this.token) {
                 this.navigate('dashboard');
@@ -364,7 +375,7 @@ function nasPanel() {
             // api() 会带上空 Authorization，后端 AuthMiddleware 会拒绝——这里跟随登录态，
             // 登录后 navigate('dashboard') 不会主动加载 ai 状态，所以在 init 里单独拉一次）。
             if (this.token) {
-                this.loadAIStatus();
+                this.loadAIStatus().then(() => this.syncNotifPolling());
             }
             // Listen for i18n changes
             window.addEventListener('i18n:changed', (e) => {
@@ -376,9 +387,19 @@ function nasPanel() {
                     if (this.page === 'vault' && this.vaultState === 'unlocked') this.resetVaultIdleTimer();
                 }, { passive: true });
             });
+            // document.hidden 时暂停铃铛轮询，恢复可见时立即补一次并重新校准定时器
+            // （对照任务 tab 轮询清理模式，这里额外加 visibility 这一档）。
+            document.addEventListener('visibilitychange', () => {
+                if (document.hidden) {
+                    this.stopNotifPolling();
+                } else {
+                    this.syncNotifPolling();
+                }
+            });
             window.addEventListener('beforeunload', () => {
                 if (this.vaultState === 'unlocked') this.vaultLock();
                 this.stopTaskJobsPolling();
+                this.stopNotifPolling();
             });
         },
 
@@ -621,6 +642,7 @@ function nasPanel() {
             this.token = '';
             localStorage.removeItem('nas_token');
             this.page = 'dashboard';
+            this.stopNotifPolling();
         },
 
         navigate(page) {
@@ -3601,6 +3623,9 @@ function nasPanel() {
                 this.aiStatus.enabled = data.enabled;
                 if (!data.enabled) this.showToast(this.t('ai.turn_off'), 'success');
                 else { this.showToast(this.t('ai.enabled'), 'success'); this.loadAIStatus(); }
+                // 关断/开启 AI 属 triggers/notifications 的运行态守卫来源，通知中心
+                // 跟随 enabled 显隐与轮询启停（关断零足迹的 UI 表达，硬约束 1）。
+                this.syncNotifPolling();
             }
             // 失败（如未配置/未验证）时 api() 已经把后端中文原因 toast 出来。
         },
@@ -3938,6 +3963,251 @@ function nasPanel() {
             } catch (e) {
                 return null;
             }
+        },
+
+        // ═══ 通知中心（铃铛 + 建议卡 + 周报，F2 Task 6）═══
+        // notificationsVisible：AI 关断时整个通知中心隐藏（triggers/notifications
+        // 属 AI 功能面，关断零足迹的 UI 表达，硬约束 1）。模板上用这个 getter
+        // 控制铃铛入口的 x-show，不单独在每处重复判断 aiStatus.enabled。
+        get notificationsVisible() {
+            return !!this.aiStatus.enabled;
+        },
+
+        // syncNotifPolling：按 aiStatus.enabled 校准轮询启停，由 init()/toggleAI()/
+        // visibilitychange 统一调用（不需要调用方各自判断，对照 taskJobs 的
+        // syncTaskJobsPolling 模式）。启用时立即拉一次，不等 30s 第一轮。
+        syncNotifPolling() {
+            if (this.notificationsVisible) {
+                this.loadNotifUnreadCount();
+                this.startNotifPolling();
+            } else {
+                this.notifPanel.open = false;
+                this.stopNotifPolling();
+            }
+        },
+
+        startNotifPolling() {
+            if (this.notifPollTimer) return;
+            this.notifPollTimer = setInterval(() => {
+                if (document.hidden) return; // 双重保险：即便定时器没被 visibilitychange 清掉也不发请求
+                this.loadNotifUnreadCount();
+            }, 30000);
+        },
+
+        stopNotifPolling() {
+            if (this.notifPollTimer) { clearInterval(this.notifPollTimer); this.notifPollTimer = null; }
+        },
+
+        // GET /api/notifications/unread-count → {"count":N}，30s 轮询驱动铃铛徽标。
+        async loadNotifUnreadCount() {
+            const data = await this.api('/notifications/unread-count');
+            if (data && typeof data === 'object' && typeof data.count === 'number') {
+                this.notifPanel.unreadCount = data.count;
+            }
+        },
+
+        // toggleNotifPanel：点击铃铛展开/收起。展开时加载三段数据（建议卡/
+        // 周报/通知列表），收起不清空数据（下次展开前轮询仍可能刷新未读数）。
+        toggleNotifPanel() {
+            this.notifPanel.open = !this.notifPanel.open;
+            if (this.notifPanel.open) this.loadNotifPanelData();
+        },
+
+        closeNotifPanel() {
+            this.notifPanel.open = false;
+        },
+
+        // loadNotifPanelData：并行拉通知列表 + 建议卡；周报从通知列表里挑最新
+        // 一条 kind=report 的渲染（不是单独端点，计划 Task 6 交付明细 2 原文）。
+        async loadNotifPanelData() {
+            this.notifPanel.loading = true;
+            try {
+                const [notifData, sugData] = await Promise.all([
+                    this.api('/notifications?limit=20'),
+                    this.api('/triggers/suggestions')
+                ]);
+                if (notifData && typeof notifData === 'object' && Array.isArray(notifData.notifications)) {
+                    this.notifPanel.notifications = notifData.notifications;
+                    this.notifPanel.report = notifData.notifications.find(n => n.kind === 'report') || null;
+                }
+                if (sugData && typeof sugData === 'object' && Array.isArray(sugData.suggestions)) {
+                    this.notifPanel.suggestions = sugData.suggestions;
+                }
+            } finally {
+                this.notifPanel.loading = false;
+            }
+        },
+
+        // notifParseData：data_json/params_json JSON.parse 失败容错——坏 JSON
+        // 不炸渲染，调用方拿不到对象时退回空对象，t() 插值自然跳过所有 {key}
+        // 占位符替换（硬约束 6）。
+        notifParseData(jsonStr) {
+            if (!jsonStr) return {};
+            try {
+                const v = JSON.parse(jsonStr);
+                return (v && typeof v === 'object') ? v : {};
+            } catch (e) {
+                return {};
+            }
+        },
+
+        // notifTitle/notifBody：对通知/建议的 title/body i18n 键做 t() 插值渲染；
+        // 键缺失时 window.t 已经兜底返回键名最后一段，这里不用再额外处理（硬约束
+        // 3 的"键缺失不炸页面"由 i18n.js 的 translateWith 统一兜底）。
+        notifTitle(item) {
+            return this.t(item.title, this.notifParseData(item.params_json || item.data_json));
+        },
+        notifBody(item) {
+            return this.t(item.body, this.notifParseData(item.params_json || item.data_json));
+        },
+
+        // notifSuggestionActions：解析建议卡 actions_json 第一项，用于判断按钮
+        // 展示（task_plan→执行；navigate→去看看）。坏 JSON/空数组兜底空对象。
+        notifSuggestionAction(sg) {
+            try {
+                const actions = JSON.parse(sg.actions_json || '[]');
+                return (Array.isArray(actions) && actions.length) ? actions[0] : {};
+            } catch (e) {
+                return {};
+            }
+        },
+
+        // notifDismissSuggestion：POST /api/triggers/suggestions/{id}/dismiss，
+        // 成功后从列表移除（不整面板重拉，减少一次网络往返）。
+        async notifDismissSuggestion(id) {
+            const data = await this.api('/triggers/suggestions/' + encodeURIComponent(id) + '/dismiss', { method: 'POST' });
+            if (!data || typeof data !== 'object' || !data.ok) {
+                if (typeof data === 'string' && data.trim()) this.showToast(data.trim(), 'error');
+                return;
+            }
+            this.notifPanel.suggestions = this.notifPanel.suggestions.filter(s => s.id !== id);
+        },
+
+        // notifSuggestionNavigate：navigate 类建议卡「去看看」= navigate(page) +
+        // dismiss 一次完成（硬约束 9，navigate 类建议不走 accept 端点）。
+        notifSuggestionNavigate(sg) {
+            const action = this.notifSuggestionAction(sg);
+            if (action.page) this.navigate(action.page);
+            this.closeNotifPanel();
+            this.notifDismissSuggestion(sg.id);
+        },
+
+        // notifAcceptSuggestion：task_plan 类建议卡「执行」→ POST accept →
+        // {action_id, confirm_word, summary, job_id} → 开 notifConfirm 弹窗
+        // （独立状态对象，不复用 aiConfirm 实例，硬约束 8）。
+        async notifAcceptSuggestion(sg) {
+            const data = await this.api('/triggers/suggestions/' + encodeURIComponent(sg.id) + '/accept', { method: 'POST' });
+            if (!data || typeof data !== 'object' || !data.action_id) {
+                if (typeof data === 'string' && data.trim()) this.showToast(data.trim(), 'error');
+                return;
+            }
+            this.notifPanel.suggestions = this.notifPanel.suggestions.filter(s => s.id !== sg.id);
+            this.notifConfirm = { show: true, action: data, confirmWordInput: '', submitting: false };
+        },
+
+        closeNotifConfirm() {
+            this.notifConfirm = { show: false, action: null, confirmWordInput: '', submitting: false };
+        },
+
+        notifConfirmDisabled() {
+            const action = this.notifConfirm.action;
+            if (!action) return true;
+            if (this.notifConfirm.submitting) return true;
+            return this.notifConfirm.confirmWordInput !== action.confirm_word;
+        },
+
+        // confirmNotifAction：复用既有 POST /api/ai/action/confirm（零新确认
+        // 语义，与 chat 确认门同一条路径）。成功后 toast + 跳任务 tab +
+        // loadAITasks()（硬约束 8 逐字）。
+        async confirmNotifAction() {
+            if (this.notifConfirmDisabled()) return;
+            const action = this.notifConfirm.action;
+            this.notifConfirm.submitting = true;
+            try {
+                const res = await fetch('/api/ai/action/confirm', {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + this.token, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action_id: action.action_id, confirm_word: this.notifConfirm.confirmWordInput })
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    this.showToast(data.error || this.t('ai.error_prefix'), 'error');
+                    return;
+                }
+                this.showToast(this.t('msg.op_success'), 'success');
+                this.closeNotifConfirm();
+                this.closeNotifPanel();
+                this.navigate('ai');
+                this.aiTab = 'tasks';
+                this.loadAITasks();
+            } catch (e) {
+                this.showToast(String(e.message || e), 'error');
+            } finally {
+                this.notifConfirm.submitting = false;
+            }
+        },
+
+        // notifReportStorageText/notifReportTasksText：周报卡三块数字渲染，大小
+        // 走既有 formatSize 复用（硬约束 10，不重写格式化逻辑）。report.data_json
+        // JSON.parse 失败容错，拿不到字段时用 0/'-' 兜底，不炸渲染。
+        notifReportData(report) {
+            return this.notifParseData(report && report.data_json);
+        },
+
+        // notifClickNotification：点击通知列表项→标记已读 + 按 kind 跳转
+        // （task→任务 tab；health→健康页；其余 kind 不跳转，只标已读）。
+        async notifClickNotification(n) {
+            if (!n.read) await this.notifMarkRead(n.id);
+            if (n.kind === 'task') {
+                this.closeNotifPanel();
+                this.navigate('ai');
+                this.aiTab = 'tasks';
+                this.loadAITasks();
+            } else if (n.kind === 'suggestion') {
+                // suggestion 通知本身只是提示，具体动作在建议卡区——跳转到面板
+                // 顶部即可，不额外导航到业务页。
+            } else if ((n.title || '').indexOf('notif.health_') === 0) {
+                this.closeNotifPanel();
+                this.navigate('health');
+            }
+        },
+
+        async notifMarkRead(id) {
+            const data = await this.api('/notifications/' + encodeURIComponent(id) + '/read', { method: 'POST' });
+            if (data && typeof data === 'object' && data.ok) {
+                const item = this.notifPanel.notifications.find(x => x.id === id);
+                if (item) item.read = true;
+                this.loadNotifUnreadCount();
+            }
+        },
+
+        async notifMarkAllRead() {
+            const data = await this.api('/notifications/read-all', { method: 'POST' });
+            if (data && typeof data === 'object' && data.ok) {
+                this.notifPanel.notifications.forEach(n => { n.read = true; });
+                this.loadNotifUnreadCount();
+            }
+        },
+
+        async notifClearRead() {
+            const data = await this.api('/notifications/clear', { method: 'POST' });
+            if (!data || typeof data !== 'object' || !data.ok) {
+                if (typeof data === 'string' && data.trim()) this.showToast(data.trim(), 'error');
+                return;
+            }
+            this.notifPanel.notifications = this.notifPanel.notifications.filter(n => !n.read);
+        },
+
+        // notifGenerateReport：周报卡「重新生成」→ POST generate 后刷新列表
+        // （硬约束 10 逐字）。
+        async notifGenerateReport() {
+            const data = await this.api('/triggers/report/generate', { method: 'POST' });
+            if (!data || typeof data !== 'object' || !data.notification_id) {
+                if (typeof data === 'string' && data.trim()) this.showToast(data.trim(), 'error');
+                return;
+            }
+            this.showToast(this.t('notif.report_regen_ok'), 'success');
+            this.loadNotifPanelData();
         },
 
         // 面板更新（OTA 签名校验）
