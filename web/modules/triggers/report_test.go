@@ -158,6 +158,44 @@ func TestGenerateWeeklyReportLandsNotificationAndEmitsEvent(t *testing.T) {
 	}
 }
 
+// ── 2b. 防重复回归：notifications 订阅器在跑时，生成周报只落一条 report 通知 ──
+// （F2 真机 E2E 实抓：直连 AddNotification + 订阅器映射 report.generated 双路径
+// 产生一条完整报告 + 一条空壳重复；修复为订阅侧不映射该事件，本测试锁死。）
+func TestGenerateWeeklyReportNoDuplicateWithSubscriberRunning(t *testing.T) {
+	resetForTest(t)
+	resetReportDepsForTest(t)
+	common.InitEventBusForTest(t.TempDir())
+	t.Cleanup(common.CloseEventBusForTest)
+
+	notifications.StartSubscriber()
+	t.Cleanup(notifications.StopSubscriberForTest)
+
+	if _, err := GenerateWeeklyReport(); err != nil {
+		t.Fatalf("GenerateWeeklyReport: %v", err)
+	}
+
+	// 订阅是异步的：轮询到出现通知后再等一拍确认没有第二条
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if len(notifications.ListNotifications(10, false)) >= 1 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	time.Sleep(300 * time.Millisecond)
+
+	list := notifications.ListNotifications(10, false)
+	reports := 0
+	for _, n := range list {
+		if n.Kind == "report" {
+			reports++
+		}
+	}
+	if reports != 1 || len(list) != 1 {
+		t.Fatalf("want 恰好 1 条 report 通知, got total=%d reports=%d: %+v", len(list), reports, list)
+	}
+}
+
 // ── 3. guard=false 报错不产生 ──
 
 func TestGenerateWeeklyReportGuardFalse(t *testing.T) {

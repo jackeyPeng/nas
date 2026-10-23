@@ -205,13 +205,21 @@ func TestSubscriberFullMapping(t *testing.T) {
 		{"health_error", common.Event{Code: "health.disk_smart", Type: common.EventError}, "notif.health_error", "system"},
 		{"sync_failed", common.Event{Code: "rclone.sync_failed", Type: common.EventError}, "notif.sync_failed", "system"},
 		{"suggestion_created", common.Event{Code: "suggestion.created", Type: common.EventInfo}, "notif.suggestion", "suggestion"},
-		{"report_generated", common.Event{Code: "report.generated", Type: common.EventInfo}, "notif.report", "report"},
+		// report.generated 不入箱：周报由 triggers 直连 AddNotification 落箱，
+		// 订阅侧再映射会产生空壳重复通知（F2 真机 E2E 实抓后的修复断言）。
+		{"report_generated", common.Event{Code: "report.generated", Type: common.EventInfo}, "", ""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			resetForTest(t)
 			handleEvent(c.ev)
 			got := ListNotifications(10, false)
+			if c.wantRoot == "" {
+				if len(got) != 0 {
+					t.Fatalf("%s: 不应入箱, got %d 条", c.name, len(got))
+				}
+				return
+			}
 			if len(got) != 1 {
 				t.Fatalf("%s: want 1 notification, got %d", c.name, len(got))
 			}

@@ -43,8 +43,10 @@ func notifKeyRootForEvent(ev common.Event) string {
 		return "notif.sync_failed"
 	case ev.Code == codeSuggestionCreate:
 		return "notif.suggestion"
-	case ev.Code == codeReportGenerated:
-		return "notif.report"
+	// report.generated 刻意不入收件箱：周报由 triggers.GenerateWeeklyReport
+	// 直接 AddNotification(kind=report, 完整报告负载) 落箱，订阅侧再映射一次
+	// 会产生一条只有 notification_id 的空壳重复通知（F2 真机 E2E 实抓）。
+	// 事件本身照发——将来的微信网关等消费者从事件拿 notification_id 自取。
 	default:
 		return ""
 	}
@@ -57,8 +59,8 @@ func kindForEvent(ev common.Event) string {
 		return "task"
 	case ev.Code == codeSuggestionCreate:
 		return "suggestion"
-	case ev.Code == codeReportGenerated:
-		return "report"
+	// report.generated 不入箱（见 notifKeyRootForEvent 注释：周报走直连
+	// AddNotification，订阅侧再映射会重复）。
 	default:
 		return "system"
 	}
