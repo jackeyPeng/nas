@@ -83,10 +83,10 @@ Pick "Data Safety" or "Max Capacity" — the system recommends the best option. 
 
 ```bash
 # Default install (uses factory password when NAS_PASS is not set; forced change on first panel login)
-curl -fsSL https://get.z1.sale/install.sh | sudo bash
+curl -fsSL https://get.z1.sale/install.sh | bash
 
-# Custom password (note: sudo clears env vars, pass NAS_PASS via `sudo env`)
-curl -fsSL https://get.z1.sale/install.sh | sudo env NAS_PASS=mySecurePass123 bash
+# Custom password (unattended/CI)
+curl -fsSL https://get.z1.sale/install.sh | env NAS_PASS=mySecurePass123 bash
 ```
 
 The installer will:

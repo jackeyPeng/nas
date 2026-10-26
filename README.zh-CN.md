@@ -127,10 +127,10 @@ nas/
 
 ```bash
 # 默认安装（未设置 NAS_PASS 时使用出厂默认密码，首次登录面板强制修改）
-curl -fsSL https://get.z1.sale/install.sh | sudo bash
+curl -fsSL https://get.z1.sale/install.sh | bash
 
-# 自定义密码安装（注意: sudo 会清空环境变量，必须用 sudo env 透传）
-curl -fsSL https://get.z1.sale/install.sh | sudo env NAS_PASS=mySecurePass123 bash
+# 自定义密码安装（无人值守/CI）
+curl -fsSL https://get.z1.sale/install.sh | env NAS_PASS=mySecurePass123 bash
 ```
 
 安装脚本会自动：

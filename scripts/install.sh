@@ -2,15 +2,16 @@
 # ═══════════════════════════════════════════════════════════════
 # Z1 NAS — 一键安装脚本
 #
-# 用法:
-#   wget -qO- https://gitee.com/gitdogcat/nas/raw/master/scripts/install.sh | sudo bash
-#   wget -qO- https://gitee.com/gitdogcat/nas/raw/master/scripts/install.sh | sudo env NAS_PASS=myPass123456 bash
+# 用法（以普通用户身份直跑，脚本按需逐条 sudo，交互式密码只问一次）:
+#   curl -fsSL https://get.z1.sale/install.sh | bash
+#   curl -fsSL https://get.z1.sale/install.sh | env NAS_PASS=mySecurePass123 bash
 #
 # 或本地运行:
-#   sudo bash install.sh
+#   bash install.sh
 #
-# 注意: sudo 默认清空环境变量，NAS_PASS 必须用 `sudo env NAS_PASS=... bash` 透传，
-#       否则脚本读不到密码会进入交互分支（非 TTY 下报 stty ioctl 错误）。
+# 注意: NAS_PASS 走 `env NAS_PASS=... bash` 透传（curl|bash 管道下 env 直接可见，
+#       不需要 sudo），否则脚本读不到密码会进入交互分支（非 TTY 下报 stty ioctl 错误）。
+# 仍兼容 root 直跑（如 sudo bash install.sh）：特权命令自动降级为无 sudo 前缀直执行。
 # ═══════════════════════════════════════════════════════════════
 set -euo pipefail
 
@@ -21,6 +22,18 @@ REPO_DIR="$HOME/soft/nas"
 MIN_PASS_LEN=12
 PANEL_BIN="/usr/local/bin/nas-panel"
 PANEL_PORT=8090
+
+# ── 特权命令封装 ────────────────────────────────────────────
+# EUID=0（root 直跑）时 SUDO 为空串，特权命令原样直跑，完全兼容旧用法；
+# EUID≠0（fm 等普通用户跑）时 SUDO=sudo，逐条命令加前缀。
+# curl|bash 管道下 stdin 是脚本自身文本，不能用 read/read -s 问密码——
+# sudo 密码在开头一次性 `sudo -v` 缓存（tty 交互由 sudo 自己处理，不走脚本 stdin），
+# 缓存有效期内（通常 15 分钟）后续 $SUDO 调用不会再次提示。
+if [ "$EUID" -eq 0 ]; then
+    SUDO=""
+else
+    SUDO="sudo"
+fi
 
 # ── 颜色 ────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[0;33m'
@@ -70,19 +83,16 @@ echo ""
 # ── 1. 环境检测 ────────────────────────────────────────────
 step_begin "检测系统环境"
 
-if [ "$EUID" -ne 0 ]; then
-    echo ""
-    echo -e "${RED}错误: 请使用 sudo 运行${NC}"
-    echo ""
-    echo "  wget -qO- https://gitee.com/gitdogcat/nas/raw/master/scripts/install.sh | sudo bash"
-    echo ""
-    exit 1
+# 普通用户直跑时先一次性缓存 sudo 密码（tty 交互由 sudo 自己完成，不走本脚本 stdin），
+# 后续所有 $SUDO 前缀命令在缓存有效期内不再提示密码。root 直跑（EUID=0）跳过，SUDO 为空串。
+if [ -n "$SUDO" ]; then
+    sudo -v
 fi
 
 NAS_USER="${SUDO_USER:-$USER}"
 if [ -z "$NAS_USER" ] || [ "$NAS_USER" = "root" ]; then
     echo ""
-    echo -e "${RED}错误: 无法检测用户名，请使用 sudo 运行（不要直接以 root 登录）${NC}"
+    echo -e "${RED}错误: 无法检测用户名，请不要直接以 root 账号登录运行（可用 sudo 或普通用户身份）${NC}"
     exit 1
 fi
 
@@ -132,8 +142,8 @@ else
     fi
 fi
 
-# 创建 /opt/nas 软链接
-ln -sfn "$REPO_DIR" "$INSTALL_DIR" 2>/dev/null || true
+# 创建 /opt/nas 软链接（/opt 是系统目录，需要特权）
+$SUDO ln -sfn "$REPO_DIR" "$INSTALL_DIR" 2>/dev/null || true
 
 step_ok
 
@@ -172,8 +182,8 @@ if [ -f "$APT_SOURCES" ] && grep -q "deb.debian.org" "$APT_SOURCES"; then
         "http://deb.debian.org/debian/dists/trixie/main/binary-amd64/Packages.gz" 2>/dev/null || echo "0")
     SPEED_INT=$(echo "$SPEED" | cut -d. -f1)
     if [ -z "$SPEED_INT" ] || [ "$SPEED_INT" -lt 100000 ]; then
-        sed -i 's|http://deb\.debian\.org|http://mirrors.tuna.tsinghua.edu.cn|g' "$APT_SOURCES"
-        sed -i 's|http://security\.debian\.org|http://mirrors.tuna.tsinghua.edu.cn|g' "$APT_SOURCES"
+        $SUDO sed -i 's|http://deb\.debian\.org|http://mirrors.tuna.tsinghua.edu.cn|g' "$APT_SOURCES"
+        $SUDO sed -i 's|http://security\.debian\.org|http://mirrors.tuna.tsinghua.edu.cn|g' "$APT_SOURCES"
         sub_done "官方源较慢，已切换到清华镜像"
     else
         sub_done "官方源速度正常"
@@ -182,7 +192,7 @@ fi
 
 sub_step "更新软件包索引 (apt-get update) ..."
 SUB_START=$(date +%s)
-apt-get update -qq 2>/dev/null
+$SUDO apt-get update -qq 2>/dev/null
 sub_done "软件包索引已更新"
 
 sub_step "下载安装 16 个软件包 (samba/nfs/vsftpd/rclone/fail2ban/ufw 等)"
@@ -196,7 +206,9 @@ APT_LOG=$(mktemp)
   done ) &
 TIMER_PID=$!
 APT_RC=0
-DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+# DEBIAN_FRONTEND 是环境变量赋值，`sudo VAR=val cmd` 不会按预期传递——
+# 用 `sudo env VAR=val cmd` 显式透传（root 直跑时 $SUDO 为空，env 直接生效）。
+$SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
     curl samba nfs-kernel-server vsftpd rclone fail2ban ufw \
     smartmontools unattended-upgrades smbclient nfs-common \
     xfsprogs mdadm lvm2 apache2-utils \
@@ -219,8 +231,11 @@ echo ""
 echo -e "${BOLD}${BLUE}═══ 开始配置 NAS 服务 ═══${NC}"
 
 # 用子 shell 跑 setup.sh，捕获输出但不影响主流程
+# fm 用 sudo 跑时 SUDO_USER=fm 天然成立，setup.sh 自身的 ${NAS_USER:-${SUDO_USER:-$USER}}
+# 兜底链能正确识别；root 直跑时 $SUDO 为空、$NAS_USER 显式透传（root 下 SUDO_USER 为空，
+# 此处显式传入避免 setup.sh 兜底到 $USER=root 被拒）。
 SETUP_LOG=$(mktemp)
-if bash "$INSTALL_DIR/scripts/setup.sh" > "$SETUP_LOG" 2>&1; then
+if $SUDO env NAS_USER="$NAS_USER" bash "$INSTALL_DIR/scripts/setup.sh" > "$SETUP_LOG" 2>&1; then
     SETUP_OK=true
 else
     SETUP_OK=false
@@ -238,18 +253,18 @@ if [ ! -f "$PANEL_BIN" ]; then
     echo -e "${RED}✗ nas-panel 二进制下载失败${NC}"
     echo -e "  ${YELLOW}请手动编译后重新安装:${NC}"
     echo ""
-    echo -e "  apt-get install -y golang-go"
+    echo -e "  sudo apt-get install -y golang-go"
     echo -e "  cd $REPO_DIR/web"
     echo -e "  GOPROXY=https://goproxy.cn,direct go build -buildvcs=false -o $PANEL_BIN ."
-    echo -e "  sudo bash $REPO_DIR/scripts/setup.sh"
+    echo -e "  sudo env NAS_USER=$NAS_USER bash $REPO_DIR/scripts/setup.sh"
     echo ""
     exit 1
 fi
 
 # 确保面板服务正常运行
 if [ -f "$PANEL_BIN" ]; then
-    systemctl reset-failed nas-panel 2>/dev/null || true
-    systemctl restart nas-panel 2>/dev/null || true
+    $SUDO systemctl reset-failed nas-panel 2>/dev/null || true
+    $SUDO systemctl restart nas-panel 2>/dev/null || true
 fi
 
 # ── 11. 验证安装 ────────────────────────────────────────────
