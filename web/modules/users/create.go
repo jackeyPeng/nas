@@ -141,7 +141,9 @@ func CreateUserWithPassword(username, password string, svcSamba, svcFtp, svcWebd
 		}
 	}
 	// Set password
-	out, cerr = common.SudoExecStdin(username+":"+password+"\n", "chpasswd")
+	// S1-R3b：改调用收口脚本 set-user-pass.sh，理由同 users.go:changePassword
+	// （裸 chpasswd 白名单路径错配 sbin + root-equivalent 后门，一并收口）。
+	out, cerr = common.SudoExecStdin(username+":"+password+"\n", "/opt/nas/scripts/set-user-pass.sh")
 	if cerr != nil {
 		return steps, fmt.Errorf("设置密码失败: %s", out+": "+cerr.Error())
 	}

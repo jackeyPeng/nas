@@ -373,7 +373,13 @@ func handleUserAction(w http.ResponseWriter, r *http.Request) {
 
 // changePassword 修改系统 + Samba + WebDAV 密码
 func changePassword(username, password string) error {
-	out, err := common.SudoExecStdin(username+":"+password+"\n", "chpasswd")
+	// S1-R3b：裸 /usr/bin/chpasswd 在 sudoers 白名单里是 root-equivalent
+	// 后门（echo "root:x" | sudo chpasswd 可改 root 密码），且 Debian 13
+	// 实际将 chpasswd 解析到 /usr/sbin/chpasswd（白名单原写 /usr/bin，
+	// sudo 按解析后绝对路径匹配，条目实际从未命中，设密码必炸）。两处问题
+	// 一并收口：改调用收口脚本 set-user-pass.sh（整脚本在白名单里，脚本
+	// 内部校验用户名形状+拒绝 root/系统用户后才 exec 真正的 chpasswd）。
+	out, err := common.SudoExecStdin(username+":"+password+"\n", "/opt/nas/scripts/set-user-pass.sh")
 	if err != nil {
 		return fmt.Errorf("chpasswd 失败: %s: %v", out, err)
 	}

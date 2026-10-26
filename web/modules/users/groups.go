@@ -222,26 +222,31 @@ func deleteGroup(name string) error {
 }
 
 // setGroupMembers 设置组成员（替换式）
+//
+// S1-R3b：原直调裸 gpasswd -a/-M——sudoers 白名单里组名无约束
+// （/usr/bin/gpasswd -a * *），fm 可以 `sudo gpasswd -a fm sudo` 把自己
+// 加进 sudo 组完整提权，root-equivalent 后门。改调用收口脚本
+// nas-group-member.sh（整脚本进白名单替代三条裸 gpasswd 条目），脚本内部
+// 拒绝 {root,sudo,wheel,admin,shadow,disk,adm} 特权组黑名单后才 exec 真正
+// 的 gpasswd——与 Go 层 isManagedGroup（GID 范围过滤）构成纵深防御第二道。
 func setGroupMembers(groupName, membersStr string) error {
-	// 先清空组（-M 后跟空字符串成员列表，直传参，等价于原 shell 里的 -M ''）
-	out, err := common.SudoExec("gpasswd", "-M", "", groupName)
-	if err != nil {
-		return fmt.Errorf("清空组成员失败: %s: %v", out, err)
-	}
+	const script = "/opt/nas/scripts/nas-group-member.sh"
 
-	// 再添加成员
+	// set 子命令支持空成员列表（等价于原 gpasswd -M "" 的清空语义）
+	members := []string{}
 	if membersStr != "" {
-		members := strings.Split(membersStr, ",")
-		for _, m := range members {
+		for _, m := range strings.Split(membersStr, ",") {
 			m = strings.TrimSpace(m)
-			if m == "" {
-				continue
-			}
-			out, err := common.SudoExec("gpasswd", "-a", m, groupName)
-			if err != nil {
-				return fmt.Errorf("添加成员 %s 失败: %s: %v", m, out, err)
+			if m != "" {
+				members = append(members, m)
 			}
 		}
+	}
+
+	args := append([]string{"set", groupName}, members...)
+	out, err := common.SudoExec(script, args...)
+	if err != nil {
+		return fmt.Errorf("设置组成员失败: %s: %v", out, err)
 	}
 
 	return nil
