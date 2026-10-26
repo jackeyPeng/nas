@@ -47,6 +47,12 @@ func ExecOutput(name string, args ...string) (string, error) {
 // SafeWriteFile writes content to a file safely using a temp file + sudo mv.
 // Avoids shell injection issues with echo/tee patterns.
 func SafeWriteFile(destPath, content string) error {
+	// S1: 先尝试直接写——面板以 NAS_USER 运行时,自有数据目录(/opt/nas/data 等
+	// fm 属主路径)直写即可,不必绕 sudo cp(白名单 cp 形状只覆盖 /etc/*,写自己
+	// 的 .last_reload 曾被拒,48 强化验收 journal 实证)。权限不够再走 sudo 路径。
+	if err := os.WriteFile(destPath, []byte(content), 0644); err == nil {
+		return nil
+	}
 	tmpFile, err := os.CreateTemp("", "nas-panel-*.tmp")
 	if err != nil {
 		return err
