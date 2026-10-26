@@ -308,14 +308,19 @@ else
                 chown -R "$NAS_USER:$NAS_USER" "$pool_root/$managed"
             fi
         done
+        SCRIPT_DIR_REAL="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
         for h in "$pool_root"/*/; do
             [ -d "$h" ] || continue
             hname=$(basename "$h")
             case "$hname" in public|.recycle|.webdav|.s3|.photos) continue ;; esac
             if [ "$(stat -c %U "${h%/}")" = "root" ] && id "$hname" >/dev/null 2>&1; then
+                # root 面板时代遗留的 home 孤儿:归还对应用户
                 chown -R "$hname:$hname" "${h%/}"
-                SCRIPT_DIR_REAL="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-                [ -x "$SCRIPT_DIR_REAL/nas-home-acl.sh" ] && "$SCRIPT_DIR_REAL/nas-home-acl.sh" "${h%/}" "$NAS_USER" >/dev/null 2>&1 || true
+            fi
+            # S1: 所有池内单段目录(用户 home + 专属用户共享)幂等补管理 ACL,
+            # 否则 fm 面板进不去 755 属主目录(建不了 share 级 .recycle,48 实证)
+            if [ -x "$SCRIPT_DIR_REAL/nas-home-acl.sh" ]; then
+                "$SCRIPT_DIR_REAL/nas-home-acl.sh" "${h%/}" "$NAS_USER" >/dev/null 2>&1 || true
             fi
         done
     done

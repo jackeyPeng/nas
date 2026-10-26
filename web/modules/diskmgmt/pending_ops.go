@@ -229,6 +229,11 @@ func executeCreateFolder(op PendingOp) error {
 	if op.FolderName != "public" {
 		ensureFolderUser(op.FolderName)
 		common.SudoExec("chown", "-R", op.FolderName+":"+op.FolderName, folderPath)
+		// S1: 共享目录属主是专属隔离用户(755)，fm 面板进去建不了 share 级
+		// .recycle(48 强化验收实证:share级回收站 missing)。挂管理 ACL(与用户
+		// home 同一机制,路径形状校验天然覆盖共享目录),默认 ACL 让后续新建
+		// 文件自动带 fm 管理权。public 属主本就是 NAS_USER,无需 ACL。
+		common.ApplyHomeACL(folderPath, getNASUser())
 	} else {
 		nasUser := getNASUser()
 		common.SudoExec("chown", "-R", nasUser+":"+nasUser, folderPath)
