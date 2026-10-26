@@ -1,6 +1,6 @@
 # NAS 面板 功能清单 + 操作项分类（测试验证清单）
 
-> 最后更新: 2026-10-23
+> 最后更新: 2026-10-23（S1 最小权限：面板运行身份/安装方式/sudoers 白名单条目数变化，见下方运行身份说明）
 > 代码基准: /home/jacky/soft/nas（Go 后端 web/ + Alpine.js 前端 web/frontend/）
 > 用途: 逐项测试验证。每个「操作项」标注三种分类之一，测试时按行逐个过。
 >
@@ -13,6 +13,16 @@
 > 拦截一切非 GET 的 `/api/*` 请求（含失败请求，result=failed），登录成功/失败单独记录；
 > handler 内用 `common.LogAuditRequest` 补记富 detail 并防双写；SSE 流式接口由前端 GET 触发，
 > 在 handler 内显式补记（wizard setup/reset-stream、pool extend-stream、raid expand-stream）。
+>
+> **运行身份约定（S1 最小权限，2026-10-23 起）**: `nas-panel` 常驻进程不再以 root 运行，
+> `configs/nas-panel.service` 带 `User=__NAS_USER__`/`Group=__NAS_USER__`（装机/升级时渲染成实际
+> 管理员账号，如 `fm`）；需要系统级特权的操作（服务重启、挂载、建池、建号等）统一经
+> `common.SudoExec`/`SudoOutput` 走 `sudo`，受 `/etc/sudoers.d/nas-panel` 白名单约束（当前
+> 145 条精确形状，禁止 root-equivalent 通配，详见 `docs/release-system.md`「sudoers 白名单原则」）；
+> 不在白名单内的系统调用会在真机上被拒绝（非面板 bug）。安装方式同步改为「用户身份直跑，特权步骤
+> 逐条 sudo」（`curl -fsSL https://get.z1.sale/install.sh | bash`，无需整条命令前置 `sudo`），
+> 仓库落在执行用户的 home 下（如 `/home/fm/soft/nas`），而非 `/root/soft/nas`。下表中标「用户操作」
+> /「系统自动」的条目如涉及系统级命令，均已走上述白名单机制，不代表面板本身仍以 root 运行。
 
 ---
 
@@ -373,7 +383,7 @@
 
 ## 18. 文件管理（FileMgmt）
 
-**功能说明**: 面板内置整池文件管理器（v3 权限管理已落地；beta.24 起 FileBrowser 已彻底移除）。前端「文件」页：目录浏览 + 面包屑导航 + 下载 + 预览 + 用量展示 + 多选工具栏（上传/新建/移动/复制/删除/改权限）+ 行内属性对话框（chmod/chown）；用户页每行「修复 home 权限」。安全核心：所有 handler 入参一律池根相对路径，经 `resolvePoolPath`（filemgmt/path.go）锚定——拒绝绝对路径 / `..` 子串 / 符号链接逃逸（对最深已存在祖先 EvalSymlinks）；写操作双重锚定 + renameat2/mkdir O_EXCL 原子兜底；权限操作 mode 白名单（^[0-7]{3,4}$ 且 ≤0777，setuid/setgid/sticky 拒绝）、递归 Walk 符号链接 chmod 跳过/chown 用 Lchown、池根拒绝、fix-home-perms home 根 Lstat 拒符号链接；面板 root 进程直接 os.Chmod/os.Chown 免 sudo（sudoers 无 chmod -R，刻意不扩）。
+**功能说明**: 面板内置整池文件管理器（v3 权限管理已落地；beta.24 起 FileBrowser 已彻底移除）。前端「文件」页：目录浏览 + 面包屑导航 + 下载 + 预览 + 用量展示 + 多选工具栏（上传/新建/移动/复制/删除/改权限）+ 行内属性对话框（chmod/chown）；用户页每行「修复 home 权限」。安全核心：所有 handler 入参一律池根相对路径，经 `resolvePoolPath`（filemgmt/path.go）锚定——拒绝绝对路径 / `..` 子串 / 符号链接逃逸（对最深已存在祖先 EvalSymlinks）；写操作双重锚定 + renameat2/mkdir O_EXCL 原子兜底；权限操作 mode 白名单（^[0-7]{3,4}$ 且 ≤0777，setuid/setgid/sticky 拒绝）、递归 Walk 符号链接 chmod 跳过/chown 用 Lchown、池根拒绝、fix-home-perms home 根 Lstat 拒符号链接；chmod/chown 直调 `os.Chmod`/`os.Chown`（禁 SudoExec，sudoers 无 chmod -R，刻意不扩）。**S1 降权影响（2026-10-23 起）**：面板进程从 root 改为以 `NAS_USER`（如 fm）运行——同属主改 mode（chmod）与改到 `/data` 树内已属该用户的 uid/gid 不受影响；`handleChown`/`fix-home-perms` 把文件属主改成**另一个**系统用户时依赖进程自带 `CAP_CHOWN`，fm 身份下无此能力，`os.Chown`/`chownTree` 会返回 EPERM 并 500 报错给用户（非静默，可感知）；仅「上传后自动权限对齐」（`alignNewFilePerms`）这一条路径 chown 失败只记日志不报错，静默保留为 fm:fm 属主而非目标共享用户——这是 S1 残留风险，已记入产品手册安全说明，后续如需补齐需评估 `chown -R *:* /data*` 白名单改走 SudoExec 或授予受限 capability。
 
 | 操作项 | 分类 | 说明 |
 |---|---|---|

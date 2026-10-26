@@ -2,6 +2,40 @@
 
 ## [未发布]
 
+### S1 最小权限 — 面板降权 + 安装 fm 化 + sudoers 白名单收紧（分支 feat/least-privilege）
+
+面板从 7×24 常驻 root 降为以家庭管理员账号（如 `fm`）运行，面板 RCE 不再等同整机 root；安装方式
+同步改为「用户身份直跑，特权步骤逐条 sudo」；sudoers 白名单按实际调用面逐条收窄/补齐/铲除死条目。
+
+- **面板服务降权 NAS_USER**（`2aea84a`）：`nas-panel.service` 加 `User=`/`Group=`；`setup.sh`/
+  `apply-upgrade.sh` 幂等属主迁移（仓库实体/面板数据库/.env/监控状态目录）+ rclone 配置迁移
+  （`/root/.config/rclone` → `~NAS_USER/.config/rclone`，源文件留 `.migrated` 标记不直接删）+
+  HTTPS 证书可读性处理（目录 750、私钥 640 root:NAS_USER）；常驻攻击面从 root 收敛到白名单。
+- **install.sh/cleanup.sh 支持 fm 身份直跑**（`23f4e3a`）：开头 `sudo -v` 一次缓存密码 + 特权步骤
+  逐条 `sudo` 前缀封装（`SUDO` 变量，root 直跑时退化为空，兼容旧用法）；仓库落用户 home 下可见可
+  管（不再强制 `/root/soft/nas`）；安装命令六载体（README 中英/release-system/install.sh 头注释/
+  官网中英）同步去掉命令前 `sudo` 前缀，逐字一致。
+- **sudoers 白名单 root-equivalence 复审**（`ea3550e`）：按面板 Go 代码实际调用面逐条对帐——
+  `chown -R *` 收窄到仅 `/data` 树、`openssl ... -out` 任意路径收窄到证书固定路径三常量、
+  `usermod *` 收窄到仅允许加入 `nasusers` 组、`mount`/`umount`/`smartctl`/`mkfs.*`/`findmnt` 等
+  补全真实参数形状；删除 `blkid`/`/sbin/*` 系 LVM 重复挂载/`userdel` 等零调用方死条目；补齐此前
+  完全缺失但真实裸奔的调用（`apt`/`systemd-run`/`chmod`/`cp`/`groupdel` 等）；`visudo -cf` 校验通过
+  （条目数 115 → 145，净增主体是「补齐裸奔调用」与「收窄一拆多」，非权限面扩大）。Go 侧顺带修复
+  真实提权缺口：用户组操作补 `isManagedGroup`（GID 1000-59999 过滤，堵住把用户加入 `sudo` 组的
+  越权路径）、`removeUser`/`handleUnmount` 补输入校验、`wizard.go` 的 `sh -c` 拼接改纯 Go
+  `SafeAppendFile`。
+- **残留风险拍板（诚实记录，非静默放过）**：`mdadm *`/`rclone *`/`apt upgrade *`/
+  `update-initramfs *`/`useradd -g *`/`groupadd *`+`gpasswd` 等条目因产品功能必需（系统更新/RAID
+  管理/文件同步本就是高权能特性）无法进一步收窄到零特权，缓解措施见
+  `docs/plans/2026-10-23-least-privilege-s1-plan.md` Task 3 残留风险表；另发现 filemgmt 的
+  `handleChown`/`fix-home-perms`（跨用户改属主）依赖进程自带 `CAP_CHOWN`，fm 身份下该能力缺失，
+  失败会显式 500（不静默），仅「上传后自动权限对齐」一条内部路径静默只记日志，记入产品手册安全
+  说明与操作清单。
+- **文档**（S1 T4）：操作清单补运行身份/安装方式说明 + 文件管理模块 chown 残留风险备注；产品手册
+  新增 8.4 节「面板以家庭管理员身份运行」（用户视角诚实说明安全含义）+ 安装命令改用户身份直跑形态；
+  release-system.md 补「sudoers 白名单原则」小节（root-equivalence 判定标准 + `sed -i *` 死后门
+  案例）+ 安装命令同步说明。
+
 ### 安装/运维脚本修复（beta.32 tag 后，脚本类改动 push 即生效、不在二进制内）
 
 - **setup.sh rclone 升级三重防线**（f6847f2，48 用户级部署实抓）：apt 装完后 unattended-upgrades 持 dpkg 锁时 `dpkg -i` 静默失败（`2>/dev/null || true` 吞错误）且照报「✓ 已升级」——机器留下 apt 版 rclone 1.60（无 serve s3），rclone-s3 崩溃循环、注册表 40/41。现在等锁 + 保留 dpkg 错误输出并 apt -f 修复重试 + 装后版本验证，不达标显式 ✗ 并给手动修复命令。

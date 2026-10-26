@@ -83,6 +83,39 @@ NAS_PASS=*** NAS_CHANNEL=beta curl -fsSL https://get.z1.sale/install.sh | bash
 
 install.sh 流程：先尝试下载预编译包 → 可用则直接解压跑 setup.sh → 不可用则回退到 git clone + 源码构建。
 
+**安装身份（S1 最小权限，2026-10-23 起）**：上述命令不再要求整条命令前置 `sudo`——`install.sh`
+开头检测 `EUID`，普通用户（如 `fm`）直跑时先 `sudo -v` 缓存一次密码，特权步骤（装包/建软链接/调
+`setup.sh`/重启服务）逐条加 `sudo` 前缀；`EUID=0`（如 `sudo bash install.sh`）时特权前缀原样退化
+为空，兼容旧用法。仓库落在执行用户的 home 下（如 `/home/fm/soft/nas`），不再强制落 `/root/soft/nas`。
+`cleanup.sh` 同款封装。
+
+## sudoers 白名单原则
+
+`nas-panel` 常驻进程以 `NAS_USER`（装机时探测的管理员账号，如 `fm`）运行，不再是 root（S1 最小权限，
+2026-10-23 起，`configs/nas-panel.service` 带 `User=__NAS_USER__`/`Group=__NAS_USER__`）。面板需要
+的系统级特权操作统一经 `web/common/sudo.go` 的 `SudoExec`/`SudoOutput`/`SudoExecStdin` 走 `sudo`，
+受 `/etc/sudoers.d/nas-panel`（`scripts/setup.sh` 生成，`visudo -cf` 校验）白名单约束——白名单只收
+面板代码实际调用面用到的精确命令形状，当前 145 条（2026-10-23 sudoers 收紧后的实测值，`awk` 对
+`scripts/setup.sh` 的 `NOPASSWD:` 行按 `, ` 分隔计数可复算；收紧前为 115 条）。
+
+**root-equivalence 复审判定标准**：新增/修改白名单条目前，问一句——「这条规则能不能被用来改写
+`/etc/shadow` 或 `/etc/sudoers.d/*` 本身，或者等价于拿到无约束 root？」能，就是后门，必须收窄到
+具体路径/参数或整条拒绝，不能因为「功能需要」就放行通配。
+
+- **死后门案例（已铲，不得以任何形式加回）**：`/usr/bin/sed -i *`。`sed -i` 对任意文件做原地替换，
+  参数通配意味着可以直接 `sudo sed -i 's/root:.*/root::.../' /etc/shadow` 或改写 `sudoers.d` 自身，
+  等价无约束 root。该条目在面板 Go 代码仍有 `sed`/`sh -c` 管道调用点时曾短暂存在，beta.26 起面板
+  改用纯 Go 行级重写（`updateNasPassLine`/`removeExactLine` 等）替代 shell 管道后，`sed -i *` 条目
+  已于 2026-10-23 永久移除（`scripts/setup.sh` 内有拍板注释），不再有任何功能依赖它。
+- **判定方法**：对白名单里的通配条目（含 `*` 的参数位），逐条问「`*` 位置能不能填一个指向系统敏感
+  文件的路径/用户名/组名，从而达成上面的效果」。能且无法通过缩小 `*` 的匹配范围消除风险的，才允许
+  以「功能必需 + 明示残留风险」的方式保留（例如 `apt-get upgrade *`、`mdadm *`、`rclone *`——这些本
+  身就是系统更新/磁盘管理/文件同步的高权能功能面，家用 NAS 管理员面板的产品定位决定了它们无法被
+  收窄到零特权，残留风险表与缓解措施见 `docs/plans/2026-10-23-least-privilege-s1-plan.md` Task 3）。
+  能收窄的（如 `chown -R *` → 限定到 `/data` 树、`openssl ... -out *` 任意路径 → 固化成证书实际
+  路径三个常量、`usermod *` 任意组 → 仅允许 `-aG nasusers`），一律收窄，不保留"大概率没人会这么用"
+  的侥幸通配。
+
 ## release.sh 脚本
 
 `scripts/release.sh` 负责完整发版流程：
