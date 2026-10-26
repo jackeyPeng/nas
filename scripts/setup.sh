@@ -624,21 +624,27 @@ echo "[10/10] 安装 NAS Web 管理面板..."
 if [ "$CONFIG_ONLY" = true ]; then
     echo "  --config-only 模式跳过面板安装（二进制由 upgrade.sh / OTA 负责）"
 elif [ -f "$NAS_DIR/web/nas-panel" ]; then
-    cp "$NAS_DIR/web/nas-panel" /usr/local/bin/nas-panel
-    chmod +x /usr/local/bin/nas-panel
+    # 原子替换：直接 cp 覆盖运行中的二进制会 ETXTBSY(文本文件忙)导致 setup 在此中止,
+    # 且中止点在 sudoers 写入之前 → 白名单停留旧版(48 重装实证)。cp 到 .new 再 mv,
+    # rename 对忙 inode 合法,运行中进程持旧 inode 不受影响,重启后生效。
+    cp "$NAS_DIR/web/nas-panel" /usr/local/bin/nas-panel.new
+    chmod +x /usr/local/bin/nas-panel.new
+    mv -f /usr/local/bin/nas-panel.new /usr/local/bin/nas-panel
 elif [ -n "$OFFLINE_BUNDLE" ] && tar tzf "$OFFLINE_BUNDLE" 2>/dev/null | grep -q "bin/nas-panel"; then
     echo "  从离线包安装 nas-panel..."
     mkdir -p /tmp/nas-offline
     tar xzf "$OFFLINE_BUNDLE" -C /tmp/nas-offline
-    cp /tmp/nas-offline/bin/nas-panel /usr/local/bin/
-    chmod +x /usr/local/bin/nas-panel
+    cp /tmp/nas-offline/bin/nas-panel /usr/local/bin/nas-panel.new
+    chmod +x /usr/local/bin/nas-panel.new
+    mv -f /usr/local/bin/nas-panel.new /usr/local/bin/nas-panel
     rm -rf /tmp/nas-offline
     echo "  ✓ 离线安装完成"
-elif download_file /usr/local/bin/nas-panel \
+elif download_file /usr/local/bin/nas-panel.new \
     "https://get.z1.sale/control/nas-panel-${ARCH}.latest" \
     "https://get.z1.sale/control/nas-panel.latest" \
     "https://ghfast.top/https://github.com/gitdogcat/nas/releases/download/v1.0.0/nas-panel-linux-${ARCH}"; then
-    chmod +x /usr/local/bin/nas-panel
+    chmod +x /usr/local/bin/nas-panel.new
+    mv -f /usr/local/bin/nas-panel.new /usr/local/bin/nas-panel
 else
     echo "  警告: 无法获取 nas-panel 二进制文件，跳过 Web 面板安装"
     echo "  请手动编译: cd $NAS_DIR/web && GOPROXY=https://goproxy.cn,direct go build -buildvcs=false -o nas-panel ."

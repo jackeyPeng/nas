@@ -245,6 +245,13 @@ fi
 grep -E '^\[|✓|✗|⚠|服务状态|部署完成|通过|失败|警告' "$SETUP_LOG" 2>/dev/null | while read line; do
     echo "  $line"
 done
+if [ "$SETUP_OK" != true ]; then
+    echo ""
+    echo -e "${RED}✗ setup.sh 执行失败(退出码非零),安装中止${NC}"
+    echo -e "  完整日志已保留: 重新运行可查看;常见原因: 磁盘空间/网络/依赖冲突"
+    rm -f "$SETUP_LOG"
+    exit 1
+fi
 rm -f "$SETUP_LOG"
 
 # ── 检查 nas-panel 是否安装成功 ────────────────────────────
