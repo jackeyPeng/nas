@@ -117,8 +117,8 @@ func parseLastCommand(limit int) []LoginLogEntry {
 func parseSSHFailedLogs(limit int) []LoginLogEntry {
 	var entries []LoginLogEntry
 
-	// 尝试从 journalctl 获取
-	out, err := common.ExecOutput("journalctl", "-u", "sshd", "-n", strconv.Itoa(limit), "--no-pager", "-o", "short")
+	// 尝试从 journalctl 获取（fm 不在 adm/systemd-journal 组，需要 root，S1-R3c）
+	out, err := common.SudoOutput("journalctl", "-u", "sshd", "-n", strconv.Itoa(limit), "--no-pager", "-o", "short")
 	if err != nil {
 		// 备用：读 /var/log/auth.log
 		out, err = common.ExecOutput("grep", "sshd", "/var/log/auth.log")

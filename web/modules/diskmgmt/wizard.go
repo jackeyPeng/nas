@@ -289,10 +289,14 @@ func setupSingleDisk(dev, mountPoint, nasUser string) []string {
 		return steps
 	}
 	steps = append(steps, "挂载 → "+mountPoint)
-	// fstab
-	uuidOut, _ := common.ExecOutput("blkid", "-s", "UUID", "-o", "value", partDev)
+	// fstab — blkid 读超级块需 root，必须走 sudo（S1-R3c：此前用 ExecOutput 不带
+	// sudo，fm 下读不到 UUID，writeFstab 静默跳过，步骤仍 append"成功"）
+	uuidOut, _ := common.SudoOutput("blkid", "-s", "UUID", "-o", "value", partDev)
 	uuid := strings.TrimSpace(uuidOut)
-	writeFstab(uuid, mountPoint, "xfs")
+	if err := writeFstab(uuid, mountPoint, "xfs"); err != nil {
+		steps = append(steps, "失败: 写入 fstab 持久化 - "+err.Error())
+		return steps
+	}
 	steps = append(steps, "写入 fstab 持久化")
 	// chown
 	common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountPoint)
@@ -325,10 +329,13 @@ func setupMergeDisks(devs []string, mountPoint, nasUser string) []string {
 	common.SudoExec("mkdir", "-p", mountPoint)
 	common.SudoExec("mount", "-o", "prjquota", lvPath, mountPoint)
 	steps = append(steps, "挂载 → "+mountPoint)
-	// fstab
-	uuidOut, _ := common.ExecOutput("blkid", "-s", "UUID", "-o", "value", lvPath)
+	// fstab — blkid 读超级块需 root，必须走 sudo（同 setupSingleDisk 注释）
+	uuidOut, _ := common.SudoOutput("blkid", "-s", "UUID", "-o", "value", lvPath)
 	uuid := strings.TrimSpace(uuidOut)
-	writeFstab(uuid, mountPoint, "xfs")
+	if err := writeFstab(uuid, mountPoint, "xfs"); err != nil {
+		steps = append(steps, "失败: 写入 fstab 持久化 - "+err.Error())
+		return steps
+	}
 	steps = append(steps, "写入 fstab 持久化")
 	// chown
 	common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountPoint)
@@ -374,10 +381,13 @@ func setupRaid1(devs []string, mountPoint, nasUser string) []string {
 	common.SudoExec("mkdir", "-p", mountPoint)
 	common.SudoExec("mount", "-o", "prjquota", mdDev, mountPoint)
 	steps = append(steps, "挂载 → "+mountPoint)
-	// fstab
-	uuidOut, _ := common.ExecOutput("blkid", "-s", "UUID", "-o", "value", mdDev)
+	// fstab — blkid 读超级块需 root，必须走 sudo（同 setupSingleDisk 注释）
+	uuidOut, _ := common.SudoOutput("blkid", "-s", "UUID", "-o", "value", mdDev)
 	uuid := strings.TrimSpace(uuidOut)
-	writeFstab(uuid, mountPoint, "xfs")
+	if err := writeFstab(uuid, mountPoint, "xfs"); err != nil {
+		steps = append(steps, "失败: 写入 fstab 持久化 - "+err.Error())
+		return steps
+	}
 	steps = append(steps, "写入 fstab 持久化")
 	// chown
 	common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountPoint)
@@ -424,10 +434,13 @@ func setupRaidN(devs []string, mountPoint, nasUser string, level int) []string {
 	common.SudoExec("mkdir", "-p", mountPoint)
 	common.SudoExec("mount", "-o", "prjquota", mdDev, mountPoint)
 	steps = append(steps, "挂载 → "+mountPoint)
-	// fstab
-	uuidOut, _ := common.ExecOutput("blkid", "-s", "UUID", "-o", "value", mdDev)
+	// fstab — blkid 读超级块需 root，必须走 sudo（同 setupSingleDisk 注释）
+	uuidOut, _ := common.SudoOutput("blkid", "-s", "UUID", "-o", "value", mdDev)
 	uuid := strings.TrimSpace(uuidOut)
-	writeFstab(uuid, mountPoint, "xfs")
+	if err := writeFstab(uuid, mountPoint, "xfs"); err != nil {
+		steps = append(steps, "失败: 写入 fstab 持久化 - "+err.Error())
+		return steps
+	}
 	steps = append(steps, "写入 fstab 持久化")
 	// Save mdadm config (read output, then write to file — exec.Command doesn't use shell).
 	// 曾用 `/bin/sh -c "echo ... >> mdadm.conf"` 做字符串拼接追加，等价于把 mdadmConf
@@ -447,13 +460,18 @@ func setupRaidN(devs []string, mountPoint, nasUser string, level int) []string {
 	return steps
 }
 
-// writeFstab appends UUID mount line to /etc/fstab, with mount point dedup check
-func writeFstab(uuid, mountPoint, fstype string) {
+// writeFstab appends UUID mount line to /etc/fstab, with mount point dedup check。
+// 返回 error 而不是静默吞错——S1-R3c 实证修复：uuid 为空（blkid 失败/未授权）
+// 或 cat/写回失败时，调用方必须能把"失败"报给向导步骤列表，而不是假装成功。
+func writeFstab(uuid, mountPoint, fstype string) error {
 	if uuid == "" {
-		return
+		return fmt.Errorf("UUID 为空（blkid 未能读取设备 UUID）")
 	}
 	fstabLine := fmt.Sprintf("UUID=%s %s %s %s 0 2\n", uuid, mountPoint, fstype, fstabOptions(fstype))
-	data, _ := common.SudoOutput("cat", "/etc/fstab")
+	data, err := common.SudoOutput("cat", "/etc/fstab")
+	if err != nil {
+		return fmt.Errorf("读取 /etc/fstab 失败: %w", err)
+	}
 	content := data
 	if !strings.HasSuffix(content, "\n") {
 		content += "\n"
@@ -488,6 +506,9 @@ func writeFstab(uuid, mountPoint, fstype string) {
 	}
 	newContent := strings.Join(newLines, "\n")
 	if newContent != content {
-		common.SafeWriteFile("/etc/fstab", newContent)
+		if err := common.SafeWriteFile("/etc/fstab", newContent); err != nil {
+			return fmt.Errorf("写入 /etc/fstab 失败: %w", err)
+		}
 	}
+	return nil
 }

@@ -835,6 +835,9 @@ func EnsurePoolStructure(mountPoint, nasUser string) error {
 		os.Chmod(p, 0700)
 	}
 	common.SudoExec("chown", "-R", nasUser+":"+nasUser, homePath)
+	// S1-R3c：挂管理员 ACL（幂等），让 fm 面板能浏览该 home；默认 ACL 保证
+	// 后续新建文件也继承。失败只记日志不阻断建池主流程。
+	common.ApplyHomeACL(homePath, nasUser)
 
 	// 3. 写入 folders.db（upsert）：public = samba+nfs；home = 仅 samba
 	SyncFolderMeta(FolderMeta{Name: "public", Path: pubPath, Pool: mountPoint, Permission: "readwrite", SambaShare: true, NFSExport: true})
@@ -859,6 +862,10 @@ func EnsureUserHome(username string) error {
 		os.Chmod(p, 0700)
 	}
 	common.SudoExec("chown", "-R", username+":"+username, homePath)
+	// S1-R3c：挂管理员 ACL（幂等）——home 是 0700 username:username，fm 面板
+	// 降权运行后天然读不了，ACL 恢复管理员浏览/预览/du 能力，不影响用户互相
+	// 隔离（其他用户没有 ACL 授权，仍被 unix 权限位挡住）。
+	common.ApplyHomeACL(homePath, common.GetNASUser())
 
 	// valid_users=username，write_users 留空（owner 默认 writable，后续授权走 write list）
 	SyncFolderMeta(FolderMeta{Name: username, Path: homePath, Pool: pool, Permission: "readwrite", ValidUsers: username, SambaShare: true})

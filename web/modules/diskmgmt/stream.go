@@ -245,6 +245,18 @@ func checkExecError(w http.ResponseWriter, stepName, output string, err error) b
 	return false
 }
 
+// mountAndWriteFstab 挂载后读 UUID 写 fstab 的共用逻辑（S1-R3c：blkid 必须带 sudo
+// 才能读超级块，writeFstab 失败必须显式报给 SSE 并中止——不能像此前那样吞错后
+// 仍对外报"挂载并配置成功"）。devPath 是分区/LV/md 设备路径。返回 true 表示应中止。
+func mountAndWriteFstab(w http.ResponseWriter, stepName, devPath, mountPoint string) bool {
+	uuidOut, _ := common.SudoOutput("blkid", "-s", "UUID", "-o", "value", devPath)
+	if err := writeFstab(strings.TrimSpace(uuidOut), mountPoint, "xfs"); err != nil {
+		stepError(w, stepName, "写入 fstab 失败: "+err.Error())
+		return true
+	}
+	return false
+}
+
 // setupLVMSingleStream: LVM on single disk for future expansion
 func setupLVMSingleStream(w http.ResponseWriter, dev, mountPoint, nasUser string,
 	stepRunning, stepDone func(string), totalSteps int) {
@@ -293,8 +305,9 @@ func setupLVMSingleStream(w http.ResponseWriter, dev, mountPoint, nasUser string
 	if checkExecError(w, "挂载", out, err) {
 		return
 	}
-	uuidOut, _ := common.ExecOutput("blkid", "-s", "UUID", "-o", "value", lvPath)
-	writeFstab(strings.TrimSpace(uuidOut), mountPoint, "xfs")
+	if mountAndWriteFstab(w, "挂载并配置", lvPath, mountPoint) {
+		return
+	}
 	common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountPoint)
 	EnsurePoolStructure(mountPoint, nasUser)
 	stepDone("挂载并配置 Samba 共享")
@@ -349,8 +362,9 @@ func setupLVMMergeStream(w http.ResponseWriter, devs []string, mountPoint, nasUs
 	if checkExecError(w, "挂载", out, err) {
 		return
 	}
-	uuidOut, _ := common.ExecOutput("blkid", "-s", "UUID", "-o", "value", lvPath)
-	writeFstab(strings.TrimSpace(uuidOut), mountPoint, "xfs")
+	if mountAndWriteFstab(w, "挂载并配置", lvPath, mountPoint) {
+		return
+	}
 	common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountPoint)
 	EnsurePoolStructure(mountPoint, nasUser)
 	stepDone("挂载并配置 Samba 共享")
@@ -401,8 +415,9 @@ func setupRAIDStream(w http.ResponseWriter, devs []string, level int, mountPoint
 	if checkExecError(w, "挂载", out, err) {
 		return
 	}
-	uuidOut, _ := common.ExecOutput("blkid", "-s", "UUID", "-o", "value", mdDev)
-	writeFstab(strings.TrimSpace(uuidOut), mountPoint, "xfs")
+	if mountAndWriteFstab(w, "挂载并配置", mdDev, mountPoint) {
+		return
+	}
 	common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountPoint)
 	stepDone("挂载并写入 fstab")
 
@@ -482,8 +497,9 @@ func setupSeparateStream(w http.ResponseWriter, devs []string, nasUser string,
 		if checkExecError(w, fmt.Sprintf("磁盘%d挂载", i+1), out, err) {
 			return
 		}
-		uuidOut, _ := common.ExecOutput("blkid", "-s", "UUID", "-o", "value", partDev)
-		writeFstab(strings.TrimSpace(uuidOut), mountPoint, "xfs")
+		if mountAndWriteFstab(w, fmt.Sprintf("磁盘%d挂载", i+1), partDev, mountPoint) {
+			return
+		}
 		common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountPoint)
 		stepDone(fmt.Sprintf("磁盘 %d: 挂载到存储空间%d", i+1, i+1))
 

@@ -2,6 +2,7 @@ package filemgmt
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"net/http"
@@ -18,6 +19,72 @@ import (
 
 // modeRe 匹配 3~4 位八进制权限字符串(如 "644"、"0644"、"0777")。
 var modeRe = regexp.MustCompile(`^[0-7]{3,4}$`)
+
+// isPermissionDenied 判断错误是否是"权限不够"（EPERM/EACCES）。
+// 用于 chmod/chown 的"先试纯 Go 系统调用，失败再回退 sudo"策略：
+// 面板进程跑在 NAS_USER（如 fm）下，对自己属主的文件直接 os.Chmod/os.Chown
+// 即可；对其他用户属主文件（如 alice:alice 的 home）POSIX 强制要求 CAP_CHOWN/
+// CAP_FOWNER（root），此时走 sudo + 白名单限定 /data/* 形状。
+func isPermissionDenied(err error) bool {
+	if err == nil {
+		return false
+	}
+	return errors.Is(err, os.ErrPermission) || errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.EACCES)
+}
+
+// sudoChmod 通过 sudo 执行 chmod（白名单限定 /data/*，S1-R3c）。
+// mode 已由 parseMode 校验为 ≤0777 的八进制，路径已由 resolvePoolPath 锚定池内。
+func sudoChmod(path string, mode os.FileMode) error {
+	modeStr := strconv.FormatUint(uint64(mode.Perm()), 8)
+	out, err := common.SudoExec("chmod", modeStr, path)
+	if err != nil {
+		return fmt.Errorf("sudo chmod %s %s 失败: %s: %w", modeStr, path, out, err)
+	}
+	return nil
+}
+
+// sudoChown 通过 sudo 执行 chown（白名单限定 /data/*，S1-R3c）。
+// owner/group 任一为空时用 ":" 占位保持 chown 语法（"user:" / ":group" / "user:group"）。
+// 路径已由 resolvePoolPath 锚定池内。
+func sudoChown(path, owner, group string) error {
+	spec := owner + ":" + group
+	out, err := common.SudoExec("chown", spec, path)
+	if err != nil {
+		return fmt.Errorf("sudo chown %s %s 失败: %s: %w", spec, path, out, err)
+	}
+	return nil
+}
+
+// chmodOne 先试 os.Chmod，权限不够再回退 sudo。
+func chmodOne(path string, mode os.FileMode) error {
+	if err := os.Chmod(path, mode); err != nil {
+		if isPermissionDenied(err) {
+			return sudoChmod(path, mode)
+		}
+		return err
+	}
+	return nil
+}
+
+// chownOne 先试 os.Chown/os.Lchown，权限不够再回退 sudo。
+// isSymlink=true 时优先 Lchown（改链接本身）；回退到 sudo 时用普通 chown
+// （chown 默认不跟随符号链接，与 Lchown 语义一致——Linux chown(1) 默认 -h
+// 行为等价于不跟随，除非显式 -H/-L/-P 组合，本处不传这些标志）。
+func chownOne(path string, uid, gid int, owner, group string, isSymlink bool) error {
+	var err error
+	if isSymlink {
+		err = os.Lchown(path, uid, gid)
+	} else {
+		err = os.Chown(path, uid, gid)
+	}
+	if err != nil {
+		if isPermissionDenied(err) {
+			return sudoChown(path, owner, group)
+		}
+		return err
+	}
+	return nil
+}
 
 // parseMode 校验并解析 chmod 请求里的 mode 字符串。
 // 必须匹配 ^[0-7]{3,4}$ 且数值 ≤ 0777(即不放行 setuid/setgid/sticky 等高位)。
@@ -94,8 +161,11 @@ func handleStat(w http.ResponseWriter, r *http.Request) {
 
 // handleChmod — POST /api/files/chmod,JSON body {path, mode, recursive}。
 // 池根拒绝;符号链接非递归拒绝(os.Chmod 会跟随链接改到目标,与递归 Walk
-// "跳过链接"语义冲突,防误改);递归用 filepath.Walk + os.Chmod(禁 SudoExec,
-// sudoers 白名单无 chmod -R)。
+// "跳过链接"语义冲突,防误改);递归用 filepath.Walk + chmodOne。
+// chmodOne 优先纯 Go os.Chmod(面板进程 fm 对自己属主的文件直接成功,零额外
+// 特权);仅当目标属主不是 fm(如 alice 的 home,EPERM/EACCES)才回退
+// sudo chmod,sudoers 白名单限定 /data/* 路径形状(S1-R3c:48 真机验收发现
+// fm 面板下管理员无法修复非自己 home 的权限,之前完全没有回退机制)。
 func handleChmod(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -145,7 +215,7 @@ func handleChmod(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "符号链接不支持 chmod(会作用于目标)", http.StatusBadRequest)
 			return
 		}
-		if err := os.Chmod(targetAbs, mode); err != nil {
+		if err := chmodOne(targetAbs, mode); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -159,6 +229,7 @@ func handleChmod(w http.ResponseWriter, r *http.Request) {
 // chmodTree 对 root 整树递归 chmod。filepath.Walk 不跟随符号链接,用
 // d.Type()&os.ModeSymlink 判别并跳过(根自身是链接的情形已在 handleChmod
 // 调用前被拦)。单个失败立即停止并返回错误(已完成部分不回滚)。
+// 每个文件走 chmodOne(纯 Go 优先,属主不是 fm 时回退 sudo,见 handleChmod 注释)。
 func chmodTree(root string, mode os.FileMode) error {
 	return filepath.Walk(root, func(path string, d os.FileInfo, err error) error {
 		if err != nil {
@@ -167,7 +238,7 @@ func chmodTree(root string, mode os.FileMode) error {
 		if d.Mode()&os.ModeSymlink != 0 {
 			return nil
 		}
-		if cerr := os.Chmod(path, mode); cerr != nil {
+		if cerr := chmodOne(path, mode); cerr != nil {
 			return fmt.Errorf("chmod %s 失败: %w", path, cerr)
 		}
 		return nil
@@ -180,8 +251,9 @@ func chmodTree(root string, mode os.FileMode) error {
 
 // handleChown — POST /api/files/chown,JSON body {path, owner, group, recursive}。
 // owner/group 均可选:空串=不变(传 -1);两者全空 400;非空者必须 user.Lookup/
-// user.LookupGroup 解析成功,否则 400。符号链接非递归用 os.Lchown(改链接本身,
-// 放行);递归用 filepath.Walk,符号链接用 os.Lchown,其余 os.Chown。
+// user.LookupGroup 解析成功,否则 400。符号链接非递归用 Lchown(改链接本身,
+// 放行);递归用 filepath.Walk,符号链接用 Lchown,其余 Chown——均经 chownOne
+// (纯 Go 优先,属主不是 fm 时回退 sudo chown,白名单限定 /data/*,S1-R3c)。
 func handleChown(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -248,22 +320,15 @@ func handleChown(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "recursive 仅适用于目录", http.StatusBadRequest)
 			return
 		}
-		if err := chownTree(targetAbs, uid, gid); err != nil {
+		if err := chownTree(targetAbs, uid, gid, req.Owner, req.Group); err != nil {
 			http.Error(w, fmt.Sprintf("递归 chown 失败: %v", err), http.StatusInternalServerError)
 			return
 		}
 	} else {
 		isSymlink := info.Mode()&os.ModeSymlink != 0
-		if isSymlink {
-			if err := os.Lchown(targetAbs, uid, gid); err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-		} else {
-			if err := os.Chown(targetAbs, uid, gid); err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
+		if err := chownOne(targetAbs, uid, gid, req.Owner, req.Group, isSymlink); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 	}
 
@@ -272,20 +337,16 @@ func handleChown(w http.ResponseWriter, r *http.Request) {
 	common.JSONResponse(w, map[string]interface{}{"ok": true})
 }
 
-// chownTree 对 root 整树递归 chown。符号链接用 os.Lchown(不改目标),其余用
-// os.Chown。单个失败立即停止并返回错误(已完成部分不回滚)。
-func chownTree(root string, uid, gid int) error {
+// chownTree 对 root 整树递归 chown。符号链接用 Lchown(不改目标),其余用
+// Chown。单个失败立即停止并返回错误(已完成部分不回滚)。每个文件走 chownOne
+// (纯 Go 优先,属主不是 fm 时回退 sudo,见 handleChown 注释)。
+func chownTree(root string, uid, gid int, owner, group string) error {
 	return filepath.Walk(root, func(path string, d os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
-		if d.Mode()&os.ModeSymlink != 0 {
-			if cerr := os.Lchown(path, uid, gid); cerr != nil {
-				return fmt.Errorf("chown %s 失败: %w", path, cerr)
-			}
-			return nil
-		}
-		if cerr := os.Chown(path, uid, gid); cerr != nil {
+		isSymlink := d.Mode()&os.ModeSymlink != 0
+		if cerr := chownOne(path, uid, gid, owner, group, isSymlink); cerr != nil {
 			return fmt.Errorf("chown %s 失败: %w", path, cerr)
 		}
 		return nil
@@ -310,7 +371,8 @@ func validUsernameSegment(username string) bool {
 // handleFixHomePerms — POST /api/files/fix-home-perms,JSON body {username}。
 // 一键修复用户 home 目录权限属主,与 config_sync.go 的 EnsureUserHome 权限基准
 // 同源(0700 owner:owner)。只改权限/属主,不创建缺失子目录(provisioning 是
-// EnsureUserHome 的职责,本端点不越权)。
+// EnsureUserHome 的职责,本端点不越权)。S1-R3c:修完权限后同步调用
+// nas-home-acl.sh 补挂管理员 ACL(幂等),让 fm 面板能继续浏览该 home。
 func handleFixHomePerms(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -355,17 +417,26 @@ func handleFixHomePerms(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("gid 解析失败: %s", req.Username), http.StatusInternalServerError)
 		return
 	}
+	groupName := req.Username
 	if g, gerr := user.LookupGroup(req.Username); gerr == nil {
 		if parsedGid, perr := strconv.Atoi(g.Gid); perr == nil {
 			gid = parsedGid
 		}
+	} else {
+		// 同名组不存在时,用主组名(数字回退)作为 sudo chown 的 group 段——
+		// LookupGroupId 能拿到名字则用名字,否则留空让 chown "user:" 只改 owner。
+		if g, gerr := user.LookupGroupId(u.Gid); gerr == nil {
+			groupName = g.Name
+		} else {
+			groupName = ""
+		}
 	}
 
-	if err := os.Chmod(home, 0700); err != nil {
+	if err := chmodOne(home, 0700); err != nil {
 		http.Error(w, fmt.Sprintf("chmod %s 失败: %v", home, err), http.StatusInternalServerError)
 		return
 	}
-	if err := os.Chown(home, uid, gid); err != nil {
+	if err := chownOne(home, uid, gid, req.Username, groupName, false); err != nil {
 		http.Error(w, fmt.Sprintf("chown %s 失败: %v", home, err), http.StatusInternalServerError)
 		return
 	}
@@ -373,10 +444,13 @@ func handleFixHomePerms(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("递归 chmod 失败: %v", err), http.StatusInternalServerError)
 		return
 	}
-	if err := chownTree(home, uid, gid); err != nil {
+	if err := chownTree(home, uid, gid, req.Username, groupName); err != nil {
 		http.Error(w, fmt.Sprintf("递归 chown 失败: %v", err), http.StatusInternalServerError)
 		return
 	}
+
+	// 修完权限后补挂管理员 ACL(幂等)——否则下一秒 fm 又读不了这个 0700 home
+	common.ApplyHomeACL(home, common.GetNASUser())
 
 	common.LogAuditRequest(r, "files", "fix-home-perms",
 		fmt.Sprintf("username=%s", req.Username), "success")

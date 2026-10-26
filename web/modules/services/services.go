@@ -43,8 +43,9 @@ func controlService(name, action string) (string, error) {
 }
 
 // getServiceLogs returns recent journal logs for a service
+// fm 不在 adm/systemd-journal 组，journalctl -u 读其他单元日志需要 root（S1-R3c）
 func getServiceLogs(name string) string {
-	out, err := common.ExecOutput("journalctl", "-u", name, "-n", "50", "--no-pager")
+	out, err := common.SudoOutput("journalctl", "-u", name, "-n", "50", "--no-pager")
 	if err != nil {
 		return ""
 	}

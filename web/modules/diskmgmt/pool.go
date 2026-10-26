@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 
 	"nas-panel/common"
@@ -263,20 +262,14 @@ func handlePoolCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	steps = append(steps, "挂载 "+lvPath+" → "+mountPoint)
 
-	// 7. fstab
-	uuidOut, _ := common.ExecOutput("blkid", "-s", "UUID", "-o", "value", lvPath)
+	// 7. fstab — blkid 读超级块需 root，必须走 sudo；失败显式返回（S1-R3c）
+	uuidOut, _ := common.SudoOutput("blkid", "-s", "UUID", "-o", "value", lvPath)
 	uuid := strings.TrimSpace(uuidOut)
-	if uuid != "" {
-		fstabLine := fmt.Sprintf("UUID=%s %s %s %s 0 2", uuid, mountPoint, fstype, fstabOptions(fstype))
-		fstabData, _ := os.ReadFile("/etc/fstab")
-		content := string(fstabData)
-		if !strings.HasSuffix(content, "\n") {
-			content += "\n"
-		}
-		content += fstabLine + "\n"
-		common.SafeWriteFile("/etc/fstab", content)
-		steps = append(steps, "写入 fstab (UUID="+uuid+")")
+	if err := writeFstab(uuid, mountPoint, fstype); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"写入 fstab 失败: %s"}`, err.Error()), http.StatusInternalServerError)
+		return
 	}
+	steps = append(steps, "写入 fstab (UUID="+uuid+")")
 
 	// 8. chown
 	nasUser := common.GetNASUser()

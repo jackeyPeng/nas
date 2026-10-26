@@ -76,6 +76,14 @@ chown -R "$USERNAME:$USERNAME" "$POOL_DIR/$USERNAME"
 chmod 700 "$POOL_DIR/$USERNAME"
 echo "  ✓ 主目录创建完成: $POOL_DIR/$USERNAME"
 
+# 3b. 挂管理员 ACL（S1-R3c：面板降权为 NAS_USER 运行后，0700 home 对面板进程
+# 天然不可读，补一条 ACL 让管理员能继续用文件管理器浏览此用户）。本脚本是
+# root 身份直跑的独立 CLI 工具（不在面板 systemd 环境里），不传 nas_user
+# 第二参数，走脚本内默认值 "fm"（与 common.GetNASUser() 的兜底值一致）。
+if [ -x /opt/nas/scripts/nas-home-acl.sh ]; then
+    /opt/nas/scripts/nas-home-acl.sh "$POOL_DIR/$USERNAME" 2>/dev/null || true
+fi
+
 # 4. 写入 folders.db（home 条目），由面板托管段统一生成 SMB 共享
 echo "[4/5] 写入元数据..."
 python3 - "$POOL_DIR" "$USERNAME" << 'PYEOF'

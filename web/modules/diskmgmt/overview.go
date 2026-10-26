@@ -878,8 +878,9 @@ func handleOperationsLog(w http.ResponseWriter, r *http.Request) {
 		limit = "20"
 	}
 
-	// 过滤 nas-panel 日志中与存储操作相关的条目
-	out, err := common.ExecOutput("journalctl", "-u", "nas-panel", "--no-pager", "-n", limit, "-o", "short-iso")
+	// 过滤 nas-panel 日志中与存储操作相关的条目（fm 不在 adm/systemd-journal 组，
+	// journalctl -u 读其他单元日志需要 root，S1-R3c）
+	out, err := common.SudoOutput("journalctl", "-u", "nas-panel", "--no-pager", "-n", limit, "-o", "short-iso")
 	if err != nil {
 		common.JSONResponse(w, map[string]interface{}{"operations": []OpLogEntry{}})
 		return

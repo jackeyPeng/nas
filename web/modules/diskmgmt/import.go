@@ -53,7 +53,9 @@ func detectImportablePools() []ImportablePool {
 				continue
 			}
 			sizeOut, _ := common.SudoOutput("/usr/sbin/lvs", "--noheadings", "--units", "g", "-o", "lv_size", vg+"/"+lvName)
-			fsOut, _ := common.ExecOutput("blkid", "-s", "TYPE", "-o", "value", lvPath)
+			// blkid 读超级块需 root，必须走 sudo（S1-R3c：此前 ExecOutput 不带 sudo，
+			// fm 下 FSType 静默读空，可导入池列表显示空文件系统类型）
+			fsOut, _ := common.SudoOutput("blkid", "-s", "TYPE", "-o", "value", lvPath)
 			result = append(result, ImportablePool{
 				VGName: vg, PVs: pvs, Size: strings.TrimSpace(sizeOut),
 				LVName: lvName, LVPath: lvPath, FSType: strings.TrimSpace(fsOut),
@@ -126,36 +128,38 @@ func handleImportPool(w http.ResponseWriter, r *http.Request) {
 		common.SudoExec("mount", "-o", "remount,prjquota", mountPoint)
 	}
 
-	// 5. fstab（按 UUID，避免设备名漂移）
-	uuidOut, _ := common.ExecOutput("blkid", "-s", "UUID", "-o", "value", lvPath)
+	// 5. fstab（按 UUID，避免设备名漂移）。blkid 读超级块需 root，必须走 sudo；
+	// 挂载本身已经成功，fstab 写入失败不回滚挂载（导入是非破坏性操作），但必须
+	// 显式告知调用方持久化未完成，而不是静默吞错后谎称"已导入"（S1-R3c）。
+	uuidOut, _ := common.SudoOutput("blkid", "-s", "UUID", "-o", "value", lvPath)
 	uuid := strings.TrimSpace(uuidOut)
-	if uuid != "" {
-		if data, err := os.ReadFile("/etc/fstab"); err == nil {
-			content := string(data)
-			if !strings.Contains(content, mountPoint) {
-				if !strings.HasSuffix(content, "\n") {
-					content += "\n"
-				}
-				content += fmt.Sprintf("UUID=%s %s %s %s 0 2\n", uuid, mountPoint, fsType, fstabOptions(fsType))
-				common.SafeWriteFile("/etc/fstab", content)
-			}
-		}
+	fstabWarning := ""
+	if err := writeFstab(uuid, mountPoint, fsType); err != nil {
+		fstabWarning = "挂载成功，但写入 fstab 持久化失败（重启后需重新导入）: " + err.Error()
 	}
 
-	// 5. 重建共享文件夹元数据（目录扫描，不新建目录）
+	// 6. 重建共享文件夹元数据（目录扫描，不新建目录）
 	rebuildFoldersFromDisk(mountPoint)
 
-	// 6. 重生成 SMB/NFS 托管配置
+	// 7. 重生成 SMB/NFS 托管配置
 	SyncAllConfigs()
 
-	common.LogAuditRequest(r, "STORAGE", "导入存储池", "vg="+vgName, "success")
+	auditDetail := "vg=" + vgName
+	if fstabWarning != "" {
+		auditDetail += " warning=" + fstabWarning
+	}
+	common.LogAuditRequest(r, "STORAGE", "导入存储池", auditDetail, "success")
 	common.EmitEvent("storage", common.EventSuccess, "storage.pool_imported",
 		map[string]interface{}{"vg": vgName}, "")
-	common.JSONResponse(w, map[string]interface{}{
+	resp := map[string]interface{}{
 		"message":    "存储池已导入并挂载到 " + mountPoint,
 		"vg_name":    vgName,
 		"mountpoint": mountPoint,
-	})
+	}
+	if fstabWarning != "" {
+		resp["warning"] = fstabWarning
+	}
+	common.JSONResponse(w, resp)
 }
 
 // rebuildFoldersFromDisk 扫描挂载点下的目录，重建 folders.db 元数据。

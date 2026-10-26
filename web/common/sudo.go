@@ -1,6 +1,7 @@
 package common
 
 import (
+	"log"
 	"os"
 	"os/exec"
 	"strings"
@@ -81,4 +82,18 @@ func ExecFirstLine(name string, args ...string) string {
 		return strings.TrimSpace(lines[0])
 	}
 	return ""
+}
+
+// ApplyHomeACL 调用 /opt/nas/scripts/nas-home-acl.sh 给用户 home 目录挂管理员
+// POSIX ACL（S1-R3c：面板降权为 NAS_USER 运行后，其他用户的 0700 home 对面板
+// 进程天然不可读，管理员文件管理器浏览/预览/du 统计全部 EACCES——这是 fm 面板
+// 下最大的功能回归。ACL 恢复管理员能力，同时不影响用户互相之间的隔离）。
+// 失败只记日志不返回 error——调用方（建池/建户/fix-home-perms）的主流程不应
+// 因为 ACL 这层"管理员便利层"失败而中止，用户本身已经能通过 SMB 正常访问
+// 自己的 home。
+func ApplyHomeACL(homePath, nasUser string) {
+	out, err := SudoExec("/opt/nas/scripts/nas-home-acl.sh", homePath, nasUser)
+	if err != nil {
+		log.Printf("WARNING: ApplyHomeACL(%s, %s) 失败: %s: %v", homePath, nasUser, out, err)
+	}
 }
