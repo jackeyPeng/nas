@@ -204,6 +204,13 @@ migrate_ownership_to_nas_user() {
             echo "  ✓ rclone 配置迁移: $root_rclone_conf → $user_rclone_conf（源文件留 .migrated 标记）"
         fi
     fi
+    # 属主自愈: 历史版本面板用 sudo rclone 管理远端,会在 fm 的 conf 路径写出
+    # root:root 600 文件 → rclone-webdav/s3 单元(User=fm)读不了自己的配置,
+    # 崩溃循环(48 强化验收实证,restart counter 69)。幂等修正属主。
+    if [ -e "$user_rclone_conf" ] && [ "$(stat -c %U "$user_rclone_conf")" != "$NAS_USER" ]; then
+        chown -R "$NAS_USER:$NAS_USER" "$user_rclone_dir"
+        echo "  ✓ rclone conf 属主自愈 → $NAS_USER"
+    fi
 
     # 6. /etc/nas/certs 可读性：面板降权后仍需按原路径读取证书/私钥（go 侧读取逻辑不变），
     # 私钥收窄为 640 root:NAS_USER（不开 644，私钥不给 other），证书保持 644。
