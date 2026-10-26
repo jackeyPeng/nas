@@ -561,7 +561,11 @@ echo "${NAS_USER} ALL=(ALL) NOPASSWD: /usr/bin/pdbedit, /opt/nas/scripts/add-use
 chmod 440 "$SUDOERS_FILE"
 visudo -cf "$SUDOERS_FILE" 2>/dev/null || { echo "  错误: sudoers 语法检查失败"; rm -f "$SUDOERS_FILE"; }
 # 追加改密码需要的命令（sed）
-echo "${NAS_USER} ALL=(ALL) NOPASSWD: /usr/bin/sed -i *" >> "$SUDOERS_FILE"
+# 安全红线（beta.27 自定原则）：白名单禁止 root-equivalent 通配。
+# 曾在此处追加过 `NOPASSWD: /usr/bin/sed -i *`——sed -i 通配可改写
+# /etc/shadow、sudoers 本身，等价无约束 root，且面板 Go 代码自 beta.26
+# 起已全部改用纯 Go 行级重写（updateNasPassLine/removeExactLine 等），
+# 该条目是死后门。永久移除，不要再以任何形式加回（2026-10-23 拍板）。
 visudo -cf "$SUDOERS_FILE" 2>/dev/null || true
 echo "  ✓ NAS Web 管理面板配置完成"
 
