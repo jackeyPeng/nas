@@ -4,6 +4,8 @@ After=network.target
 
 [Service]
 Type=simple
+User=__NAS_USER__
+Group=__NAS_USER__
 EnvironmentFile=/opt/nas/.env
 Environment=NAS_USER=__NAS_USER__
 ExecStart=/usr/local/bin/nas-panel

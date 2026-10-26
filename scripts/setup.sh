@@ -142,6 +142,91 @@ if [ ! -e "$NAS_DIR" ]; then
     ln -sfn "$SCRIPT_DIR" "$NAS_DIR"
 fi
 
+# ==================== 属主迁移：root → NAS_USER（面板降权，幂等） ====================
+# 老机器（root 面板 + root 属主数据）跑 apply-upgrade.sh 时经由其对
+# `setup.sh --config-only` 的既有调用自动触达本段——同一份逻辑，不建第二处。
+# 本段不受 CONFIG_ONLY 影响（新装机器首次跑 setup.sh 全量模式时同样需要，
+# 覆盖 install.sh 以 root 落地 .env / 面板以 root 首次启动写出的 data/ 等文件）。
+# 幂等关键：每步先判断当前属主/内容，已是目标状态则跳过，重复执行零副作用。
+migrate_ownership_to_nas_user() {
+    echo ""
+    echo "检查属主迁移 (root → $NAS_USER)..."
+
+    # 路径操作认实体不认链接：readlink -f 解析 /opt/nas 软链接后对实体目录操作
+    local repo_real
+    repo_real=$(readlink -f "$NAS_DIR" 2>/dev/null || true)
+
+    # 1. 仓库实体目录（含 web/、scripts/、configs/ 等，fm 需可见可管）
+    if [ -n "$repo_real" ] && [ -d "$repo_real" ]; then
+        if [ "$(stat -c '%U' "$repo_real" 2>/dev/null)" != "$NAS_USER" ]; then
+            chown -R "$NAS_USER:$NAS_USER" "$repo_real"
+            echo "  ✓ 仓库实体目录属主迁移: $repo_real → $NAS_USER"
+        fi
+
+        # 2. 面板数据目录 data/（folders.db / operations.db / ai.db 等，面板以 NAS_USER 运行后直写）
+        if [ -d "$repo_real/data" ] && [ "$(stat -c '%U' "$repo_real/data" 2>/dev/null)" != "$NAS_USER" ]; then
+            chown -R "$NAS_USER:$NAS_USER" "$repo_real/data"
+            echo "  ✓ 面板数据目录属主迁移: $repo_real/data → $NAS_USER"
+        fi
+
+        # 3. .env（含 NAS_PASS/JWT_SECRET，面板 EnvironmentFile 需 NAS_USER 可读）
+        if [ -f "$repo_real/.env" ]; then
+            if [ "$(stat -c '%U' "$repo_real/.env" 2>/dev/null)" != "$NAS_USER" ]; then
+                chown "$NAS_USER:$NAS_USER" "$repo_real/.env"
+                echo "  ✓ .env 属主迁移: $repo_real/.env → $NAS_USER"
+            fi
+            chmod 600 "$repo_real/.env" 2>/dev/null || true
+        fi
+    fi
+
+    # 4. 监控状态目录（cron 段创建于本脚本末尾，此处只迁移老机器已存在的）
+    if [ -d /var/lib/nas-monitor ] && [ "$(stat -c '%U' /var/lib/nas-monitor 2>/dev/null)" != "$NAS_USER" ]; then
+        chown -R "$NAS_USER:$NAS_USER" /var/lib/nas-monitor
+        echo "  ✓ 监控状态目录属主迁移: /var/lib/nas-monitor → $NAS_USER"
+    fi
+
+    # 5. rclone 配置迁移: /root/.config/rclone/rclone.conf → ~NAS_USER/.config/rclone/
+    # 存在才迁；不拿空文件覆盖已有目标；迁移后源文件留 .migrated 标记（而非直接删除——
+    # 降权是新流程，留标记便于真机验收阶段核对迁移是否发生、异常时可比对原文件，
+    # 对比直接删除更保守，机器稳定运行几个版本后可在后续清理脚本里统一清除 .migrated）。
+    local root_rclone_conf="/root/.config/rclone/rclone.conf"
+    local user_rclone_dir="/home/$NAS_USER/.config/rclone"
+    local user_rclone_conf="$user_rclone_dir/rclone.conf"
+    if [ -s "$root_rclone_conf" ]; then
+        if [ -s "$user_rclone_conf" ]; then
+            echo "  ⚠ rclone 配置迁移跳过: $user_rclone_conf 已存在且非空，不覆盖"
+        else
+            mkdir -p "$user_rclone_dir"
+            cp -a "$root_rclone_conf" "$user_rclone_conf"
+            chown -R "$NAS_USER:$NAS_USER" "$user_rclone_dir"
+            chmod 600 "$user_rclone_conf"
+            mv "$root_rclone_conf" "${root_rclone_conf}.migrated"
+            echo "  ✓ rclone 配置迁移: $root_rclone_conf → $user_rclone_conf（源文件留 .migrated 标记）"
+        fi
+    fi
+
+    # 6. /etc/nas/certs 可读性：面板降权后仍需按原路径读取证书/私钥（go 侧读取逻辑不变），
+    # 私钥收窄为 640 root:NAS_USER（不开 644，私钥不给 other），证书保持 644。
+    # 已知残留风险（报告记录）：面板内「重新生成/上传证书」会以 root 身份重新创建这两个
+    # 文件（走 common.SudoExec openssl/cp），届时权限会被重置——该路径的收口留给后续
+    # sudoers 白名单任务，此处只保证当前已存在证书在装机/升级这一刻对 NAS_USER 可读。
+    if [ -d /etc/nas/certs ]; then
+        chgrp "$NAS_USER" /etc/nas/certs 2>/dev/null || true
+        chmod 750 /etc/nas/certs 2>/dev/null || true
+        if [ -f /etc/nas/certs/server.key ]; then
+            chgrp "$NAS_USER" /etc/nas/certs/server.key 2>/dev/null || true
+            chmod 640 /etc/nas/certs/server.key 2>/dev/null || true
+        fi
+        if [ -f /etc/nas/certs/server.crt ]; then
+            chgrp "$NAS_USER" /etc/nas/certs/server.crt 2>/dev/null || true
+            chmod 644 /etc/nas/certs/server.crt 2>/dev/null || true
+        fi
+    fi
+
+    echo "  ✓ 属主迁移检查完成"
+}
+migrate_ownership_to_nas_user
+
 # 通用下载函数：尝试多个源，第一个成功就返回
 download_file() {
     local dest="$1"
