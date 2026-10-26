@@ -19,7 +19,7 @@ TARBALL="${BACKUP_DIR}/${BACKUP_NAME}.tar.gz"
 
 # 临时工作目录
 WORK_DIR=$(mktemp -d)
-trap "rm -rf $WORK_DIR" EXIT
+trap 'rm -rf "$WORK_DIR"' EXIT
 
 mkdir -p "${BACKUP_PATH}"
 

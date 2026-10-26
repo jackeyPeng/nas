@@ -12,6 +12,20 @@ LOG="/tmp/nas-upgrade.log"
 
 log() { echo "[$(date '+%H:%M:%S')] $*" >> "$LOG"; }
 
+# 路径形状校验（纵深防御）：本脚本整条在 sudoers 白名单里，调用方固定是
+# update.go 用 systemd-run 派发、路径恒为 /tmp/nas-panel-upgrade-<unix秒>
+# （二进制在此之前已过下载签名校验）。校验前缀与 setup.sh 里收紧的
+# systemd-run sudoers 条目参数形状保持一致，防止脚本被绕过面板直接
+# sudo 调用时传入任意路径（如 /etc/shadow 式的"新二进制"替换目标仍是
+# 固定的 $PANEL，风险有限，但路径形状不符直接拒绝更安全）。
+case "$NEW" in
+    /tmp/nas-panel-upgrade-*) ;;
+    *)
+        log "错误: 新二进制路径形状非法: $NEW"
+        exit 1
+        ;;
+esac
+
 if [ ! -f "$NEW" ]; then
     log "错误: 找不到新二进制 $NEW"
     exit 1

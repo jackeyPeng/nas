@@ -56,6 +56,18 @@ func handleGroupAction(w http.ResponseWriter, r *http.Request) {
 	}
 	groupName := parts[0]
 
+	// 安全红线：组操作端点此前只在"创建"路径校验组名格式+无 GID 范围过滤，
+	// "改成员/删除"两条路径直接把 URL 路径段当 groupName 传给 gpasswd -a/-M、
+	// groupdel——面板若被 RCE，攻击者可 PUT /api/user-groups/sudo/members
+	// members=fm 一步把 fm 加进 sudo 组，绕过本轮 sudoers 白名单收紧的全部工作。
+	// 收口：groupName 必须过白名单格式校验，且必须是面板管理的组（GID
+	// 1000-59999，与 listGroups 展示策略一致）——sudo/root/adm/disk 等系统组
+	// GID 均 <1000，一律拒绝；成员名同样过 isValidUsername。
+	if !isValidUsername(groupName) || !isManagedGroup(groupName) {
+		http.Error(w, `{"error":"非法或禁止操作的用户组"}`, http.StatusBadRequest)
+		return
+	}
+
 	// PUT /api/user-groups/{name}/members — 设置组成员
 	if len(parts) >= 2 && parts[1] == "members" {
 		if r.Method != http.MethodPut && r.Method != http.MethodPost {
@@ -63,6 +75,10 @@ func handleGroupAction(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		members := r.FormValue("members") // 逗号分隔
+		if err := validateMemberNames(members); err != nil {
+			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
+			return
+		}
 		if err := setGroupMembers(groupName, members); err != nil {
 			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
 			return
@@ -82,6 +98,44 @@ func handleGroupAction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+}
+
+// isManagedGroup 组名是否为面板可管理的用户组：GID 在 [1000, 60000) 区间
+// （与 listGroups 的展示过滤策略一致）。组不存在时视为不可管理（防止
+// groupadd 时序竞争：组还未创建就被当"可管理"放行成员操作）。
+// sudo/root/adm/disk/shadow 等系统组 GID 均在此区间之外，天然被排除。
+func isManagedGroup(name string) bool {
+	data, err := common.ExecOutput("cat", "/etc/group")
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(data, "\n") {
+		parts := strings.Split(strings.TrimSpace(line), ":")
+		if len(parts) < 3 || parts[0] != name {
+			continue
+		}
+		gid := 0
+		fmt.Sscanf(parts[2], "%d", &gid)
+		return gid >= 1000 && gid < 60000
+	}
+	return false
+}
+
+// validateMemberNames 校验逗号分隔的成员名列表，逐个过用户名白名单。
+func validateMemberNames(membersStr string) error {
+	if membersStr == "" {
+		return nil
+	}
+	for _, m := range strings.Split(membersStr, ",") {
+		m = strings.TrimSpace(m)
+		if m == "" {
+			continue
+		}
+		if !isValidUsername(m) {
+			return fmt.Errorf("非法成员名: %s", m)
+		}
+	}
+	return nil
 }
 
 // listGroups 列出系统用户组（排除系统组，只列 GID >= 1000 的）

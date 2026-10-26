@@ -272,6 +272,17 @@ func handleUnmount(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error": "target (mountpoint or device) required"}`, http.StatusBadRequest)
 		return
 	}
+	// 安全检查：target 可以是挂载点或设备路径，此前直接把 FormValue 拼进
+	// umount 命令，没有走 handleMount 那条 ValidateMountPoint/ValidateBlockDevice
+	// 校验链（加固轮1 #1 漏补的一处）——umount 本身不能改写 /etc/shadow，但
+	// 未经校验的 target 能卸载任意已挂载路径（如 /、/boot），属于可用面板
+	// API 发起的系统级 DoS。按两种合法形状之一校验，都不满足才拒绝。
+	if cleaned, err := common.ValidateMountPoint(target); err == nil {
+		target = cleaned
+	} else if devErr := common.ValidateBlockDevice(target); devErr != nil {
+		http.Error(w, fmt.Sprintf(`{"error": %q}`, err.Error()), http.StatusBadRequest)
+		return
+	}
 	common.LockDiskOp()
 	defer common.UnlockDiskOp()
 	out, err := common.SudoExec("umount", target)

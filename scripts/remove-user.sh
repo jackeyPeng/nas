@@ -23,6 +23,15 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+# 用户名白名单校验（纵深防御——Go 侧 removeUser() 已校验一次，这里再挡
+# 一次：本脚本整条在 sudoers 白名单里，任何能以 fm 登录执行 sudo 的人都能
+# 直接 sudo 本脚本绕过面板，USERNAME 若含 ".." 或 "/" 会让下面
+# --delete-data 的 `rm -rf "$POOL_DIR/$USERNAME"` 逃出 $POOL_DIR）。
+if ! [[ "$USERNAME" =~ ^[A-Za-z][A-Za-z0-9_-]{1,31}$ ]]; then
+    echo "错误: 用户名格式非法（只能字母开头+字母数字下划线短横线）"
+    exit 1
+fi
+
 # 防止删除 root 和部署用户
 DEPLOY_USER="${SUDO_USER:-$USER}"
 if [ "$USERNAME" = "root" ] || [ "$USERNAME" = "$DEPLOY_USER" ]; then
@@ -75,7 +84,7 @@ fi
 echo "[4/5] 处理用户数据..."
 if [ "$DELETE_DATA" = "--delete-data" ]; then
     echo "  删除用户目录: $POOL_DIR/$USERNAME"
-    rm -rf "$POOL_DIR/$USERNAME"
+    rm -rf "$POOL_DIR/${USERNAME:?}"
     echo "  ✓ 用户数据已删除"
 else
     echo "  保留用户目录: $POOL_DIR/$USERNAME"

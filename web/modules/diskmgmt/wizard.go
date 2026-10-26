@@ -429,10 +429,15 @@ func setupRaidN(devs []string, mountPoint, nasUser string, level int) []string {
 	uuid := strings.TrimSpace(uuidOut)
 	writeFstab(uuid, mountPoint, "xfs")
 	steps = append(steps, "写入 fstab 持久化")
-	// Save mdadm config (read output, then write to file — exec.Command doesn't use shell)
+	// Save mdadm config (read output, then write to file — exec.Command doesn't use shell).
+	// 曾用 `/bin/sh -c "echo ... >> mdadm.conf"` 做字符串拼接追加，等价于把 mdadmConf
+	// 内容直接喂进 shell -c，任何特殊字符都是潜在的 shell 注入面，且 sudoers 若要放行
+	// 这个形状必须整条放行 /bin/sh -c（root-equivalent 通配）。改用既有的
+	// SafeAppendFile（cat 读旧内容 + SafeWriteFile 的 cp 落地，无 shell 解释）与
+	// stream.go setupRAIDStream 的同款逻辑一致。
 	mdadmConf, err := common.SudoOutput(mdadmPath, "--detail", "--scan")
 	if err == nil && mdadmConf != "" {
-		common.SudoExec("/bin/sh", "-c", fmt.Sprintf("echo '%s' >> /etc/mdadm/mdadm.conf", strings.TrimSpace(mdadmConf)))
+		common.SafeAppendFile("/etc/mdadm/mdadm.conf", strings.TrimSpace(mdadmConf)+"\n")
 	}
 	common.SudoExec("update-initramfs", "-u")
 	steps = append(steps, "保存 RAID 配置")

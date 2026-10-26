@@ -29,7 +29,7 @@ if [ ! -f "$BACKUP_FILE" ]; then
 fi
 
 WORK_DIR=$(mktemp -d)
-trap "rm -rf $WORK_DIR" EXIT
+trap 'rm -rf "$WORK_DIR"' EXIT
 
 echo "========================================="
 echo "NAS 配置恢复"

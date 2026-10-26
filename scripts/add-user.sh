@@ -24,6 +24,14 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+# 用户名白名单校验（纵深防御——本脚本整条在 sudoers 白名单里，USERNAME
+# 若含特殊字符会流入 useradd/grep 正则/mkdir 路径拼接，与面板侧
+# isValidUsername 保持同一白名单口径）
+if ! [[ "$USERNAME" =~ ^[A-Za-z][A-Za-z0-9_-]{1,31}$ ]]; then
+    echo "错误: 用户名格式非法（只能字母开头+字母数字下划线短横线）"
+    exit 1
+fi
+
 # 检查用户名是否已存在
 if id "$USERNAME" &>/dev/null; then
     echo "错误: 用户 $USERNAME 已存在"

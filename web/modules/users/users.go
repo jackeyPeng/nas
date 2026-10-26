@@ -481,6 +481,14 @@ func updateRcloneS3EnvFile(content, accessKey, secret string) string {
 }
 
 func removeUser(username string, deleteData bool) (string, error) {
+	// 用户名来自 URL 路径段，此前零校验直通 remove-user.sh——脚本内部
+	// `rm -rf "$POOL_DIR/$USERNAME"`（--delete-data 时）与 sed 正则都假定
+	// 调用方已校验，username="." 这类值能让 `..` 片段逃出 $POOL_DIR（加固
+	// 轮1 #1 覆盖了 create 路径，delete 路径漏补）。与 CreateUserWithPassword
+	// 同一白名单，纵深防御：Go 层挡一次，脚本内部仍保留第二道校验。
+	if !isValidUsername(username) {
+		return "", fmt.Errorf("非法用户名")
+	}
 	args := []string{username}
 	if deleteData {
 		args = append(args, "--delete-data")
