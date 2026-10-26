@@ -231,6 +231,21 @@ func handleChmod(w http.ResponseWriter, r *http.Request) {
 // 调用前被拦)。单个失败立即停止并返回错误(已完成部分不回滚)。
 // 每个文件走 chmodOne(纯 Go 优先,属主不是 fm 时回退 sudo,见 handleChmod 注释)。
 func chmodTree(root string, mode os.FileMode) error {
+	err := chmodTreeWalk(root, mode)
+	if err != nil && errors.Is(err, fs.ErrPermission) && strings.HasPrefix(root, "/data/") {
+		// S1: fm 面板进不去 mask 被压掉的 700+ACL home(filepath.Walk 根部即
+		// EACCES,48 实证 fix-home-perms 卡死在 ACL 重挂之前)——回退 sudo chmod -R
+		// (白名单限定 /data/* 路径)。
+		modeStr := fmt.Sprintf("%04o", mode.Perm())
+		if out, serr := common.SudoExec("chmod", "-R", modeStr, root); serr != nil {
+			return fmt.Errorf("sudo chmod -R %s %s 失败: %s: %w", modeStr, root, out, serr)
+		}
+		return nil
+	}
+	return err
+}
+
+func chmodTreeWalk(root string, mode os.FileMode) error {
 	return filepath.Walk(root, func(path string, d os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -341,6 +356,19 @@ func handleChown(w http.ResponseWriter, r *http.Request) {
 // Chown。单个失败立即停止并返回错误(已完成部分不回滚)。每个文件走 chownOne
 // (纯 Go 优先,属主不是 fm 时回退 sudo,见 handleChown 注释)。
 func chownTree(root string, uid, gid int, owner, group string) error {
+	err := chownTreeWalk(root, uid, gid, owner, group)
+	if err != nil && errors.Is(err, fs.ErrPermission) && strings.HasPrefix(root, "/data/") {
+		// S1: 同 chmodTree——fm 进不去的树回退 sudo chown -R(白名单限 /data/*)。
+		spec := owner + ":" + group
+		if out, serr := common.SudoExec("chown", "-R", spec, root); serr != nil {
+			return fmt.Errorf("sudo chown -R %s %s 失败: %s: %w", spec, root, out, serr)
+		}
+		return nil
+	}
+	return err
+}
+
+func chownTreeWalk(root string, uid, gid int, owner, group string) error {
 	return filepath.Walk(root, func(path string, d os.FileInfo, err error) error {
 		if err != nil {
 			return err

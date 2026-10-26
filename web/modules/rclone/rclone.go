@@ -169,13 +169,17 @@ func appendLog(log TaskLog) {
 
 var rcloneConfPath = "/root/.config/rclone/rclone.conf"
 
-// getRcloneConf 返回 rclone 配置文件路径
+// getRcloneConf 返回 rclone 配置文件路径。
+// S1 修复：永远取"面板进程自身 home"——root 面板 → /root/.config(旧行为不变)，
+// fm 面板 → /home/fm/.config，与 rclone-webdav/s3 单元(User=fm, 无 --config,
+// 走 HOME 默认路径)天然一致。旧实现优先探测 /root 路径 + sudo rclone 管理，
+// root 写出的 conf 属 root:600，fm 单元读不了 → 崩溃循环(48 强化验收实证,
+// restart counter 69)。root→fm 升级的 conf 迁移由 setup.sh 负责(R1)。
 func getRcloneConf() string {
-	if _, err := os.Stat(rcloneConfPath); err == nil {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
 		return rcloneConfPath
 	}
-	// fallback: 当前用户 home
-	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".config", "rclone", "rclone.conf")
 }
 
@@ -187,10 +191,14 @@ func rcloneCmd(args ...string) *exec.Cmd {
 }
 
 // rcloneCmdSudo 以 sudo 运行 rclone（需要访问 /data 等 root 目录）
-func rcloneCmdSudo(args ...string) *exec.Cmd {
+// rcloneCmdConf 以面板自身身份跑 rclone 并显式 --config（S1：去 sudo。
+// rclone 管理的是面板进程自己 home 下的 conf，无需 root；sudo 版会让
+// root 写出 fm 读不了的 conf（600 root:root），且白名单里的 sudo rclone *
+// 本身是 root 级数据外带通道，已随本轮从 sudoers 移除）。
+func rcloneCmdConf(args ...string) *exec.Cmd {
 	conf := getRcloneConf()
 	fullArgs := append([]string{"--config", conf}, args...)
-	return exec.Command("sudo", append([]string{"rclone"}, fullArgs...)...)
+	return exec.Command("rclone", fullArgs...)
 }
 
 // ---------- API Handlers ----------
@@ -311,10 +319,11 @@ func toFrontendRemote(rtype string, config map[string]string) (string, map[strin
 // 用于 list 时把「指向本地路径的 alias」显示为 local 类型。
 func aliasRemoteTargets() map[string]string {
 	conf := getRcloneConf()
-	data, err := common.SudoOutput("cat", conf)
+	dataB, err := os.ReadFile(conf)
 	if err != nil {
 		return nil
 	}
+	data := string(dataB)
 	targets := map[string]string{}
 	var cur string
 	for _, line := range strings.Split(data, "\n") {
@@ -373,7 +382,7 @@ func handleCreateRemote(w http.ResponseWriter, r *http.Request) {
 		args = append(args, k+"="+v)
 	}
 
-	cmd := rcloneCmdSudo(args...)
+	cmd := rcloneCmdConf(args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":%q}`, string(out)), http.StatusInternalServerError)
@@ -399,11 +408,12 @@ func handleGetRemote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	conf := getRcloneConf()
-	data, err := common.SudoOutput("cat", conf)
+	dataB, err := os.ReadFile(conf)
 	if err != nil {
 		http.Error(w, `{"error":"读取 rclone 配置失败"}`, http.StatusInternalServerError)
 		return
 	}
+	data := string(dataB)
 	// 解析 ini 段落
 	section := "[" + name + "]"
 	inSection := false
@@ -483,7 +493,7 @@ func handleUpdateRemote(w http.ResponseWriter, r *http.Request) {
 		common.JSONResponse(w, map[string]interface{}{"message": "没有需要修改的字段"})
 		return
 	}
-	cmd := rcloneCmdSudo(args...)
+	cmd := rcloneCmdConf(args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":%q}`, string(out)), http.StatusInternalServerError)
@@ -554,7 +564,7 @@ func handleDeleteRemote(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"name required"}`, http.StatusBadRequest)
 		return
 	}
-	cmd := rcloneCmdSudo("config", "delete", name)
+	cmd := rcloneCmdConf("config", "delete", name)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":%q}`, string(out)), http.StatusInternalServerError)
@@ -575,7 +585,7 @@ func handleTestRemote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// 用 lsd 测试连接（只列目录，不传输）
-	cmd := rcloneCmdSudo("lsd", name+":")
+	cmd := rcloneCmdConf("lsd", name+":")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		common.JSONResponse(w, map[string]interface{}{
@@ -1092,7 +1102,7 @@ func executeTask(task SyncTask) {
 	args = append(args, "--stats", "5s", "-v")
 
 	// 流式执行：边读输出边更新进度，不再等进程结束才拿到日志
-	cmd := rcloneCmdSudo(args...)
+	cmd := rcloneCmdConf(args...)
 	var runErr error
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

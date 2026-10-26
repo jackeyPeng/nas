@@ -1,6 +1,7 @@
 package common
 
 import (
+	"path/filepath"
 	"log"
 	"os"
 	"os/exec"
@@ -53,6 +54,15 @@ func SafeWriteFile(destPath, content string) error {
 	if err := os.WriteFile(destPath, []byte(content), 0644); err == nil {
 		return nil
 	}
+	// 目标文件存在但属主/权限不容直写(如 root 面板时代 sudo cp 写出的 600 root
+	// 遗留在 fm 属主数据目录里,48 实证 .last_reload):父目录可写则删除重建,
+	// 仍不必动用 sudo。
+	if dir := filepath.Dir(destPath); isDirWritable(dir) {
+		_ = os.Remove(destPath)
+		if err := os.WriteFile(destPath, []byte(content), 0644); err == nil {
+			return nil
+		}
+	}
 	tmpFile, err := os.CreateTemp("", "nas-panel-*.tmp")
 	if err != nil {
 		return err
@@ -102,4 +112,17 @@ func ApplyHomeACL(homePath, nasUser string) {
 	if err != nil {
 		log.Printf("WARNING: ApplyHomeACL(%s, %s) 失败: %s: %v", homePath, nasUser, out, err)
 	}
+}
+
+
+// isDirWritable 报告当前进程能否在 dir 内创建/删除文件（实测探针,不猜权限位）。
+func isDirWritable(dir string) bool {
+	f, err := os.CreateTemp(dir, ".nas-probe-*")
+	if err != nil {
+		return false
+	}
+	name := f.Name()
+	f.Close()
+	_ = os.Remove(name)
+	return true
 }
