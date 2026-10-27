@@ -1,11 +1,12 @@
 #!/bin/bash
 # NAS 清除脚本
 # 用于将系统恢复到安装前的状态
-# 用法: ./cleanup.sh [--keep-data]（fm 等普通用户直跑，特权命令按需 sudo）
-#       sudo ./cleanup.sh [--keep-data]（root 直跑同样兼容）
+# 用法: ./cleanup.sh [--keep-data] [-y|--yes]（fm 等普通用户直跑，特权命令按需 sudo）
+#       sudo ./cleanup.sh [--keep-data] [-y|--yes]（root 直跑同样兼容）
 #
 # 选项:
 #   --keep-data    保留 /data 目录（默认会删除）
+#   -y, --yes      跳过交互确认，直接执行（自动化/管道场景；也可用 ASSUME_YES=1 环境变量）
 
 set -e
 
@@ -22,9 +23,14 @@ else
 fi
 
 KEEP_DATA=false
-if [ "$1" = "--keep-data" ]; then
-    KEEP_DATA=true
-fi
+ASSUME_YES="${ASSUME_YES:-false}"
+for arg in "$@"; do
+    case "$arg" in
+        --keep-data) KEEP_DATA=true ;;
+        -y|--yes)    ASSUME_YES=true ;;
+        *) echo "未知选项: $arg"; echo "用法: $0 [--keep-data] [-y|--yes]"; exit 2 ;;
+    esac
+done
 
 echo "========================================="
 echo "NAS 清除脚本"
@@ -38,10 +44,14 @@ else
 fi
 
 echo ""
-read -p "确定要继续吗？(输入 yes 确认): " confirm
-if [ "$confirm" != "yes" ]; then
-    echo "已取消"
-    exit 0
+if [ "$ASSUME_YES" = true ]; then
+    echo "（-y/--yes：跳过交互确认，直接执行）"
+else
+    read -p "确定要继续吗？(输入 yes 确认): " confirm
+    if [ "$confirm" != "yes" ]; then
+        echo "已取消"
+        exit 0
+    fi
 fi
 
 echo ""
@@ -165,23 +175,24 @@ if [ -f /etc/fstab ]; then
     echo "  清除 fstab 数据盘条目"
 fi
 
-# 识别系统盘（根挂载所在磁盘），排除后得到数据盘
-SYS_DISK=$(findmnt -n -o SOURCE / 2>/dev/null | sed 's|/dev/||; s|[0-9]*$||; s|p[0-9]*$||')
-DATA_DISKS=$(lsblk -nd -o NAME,TYPE | awk '$2=="disk"{print $1}' | grep -v "^$SYS_DISK$")
-for disk in $DATA_DISKS; do
-    # 停止该磁盘相关的 RAID 阵列
-    $SUDO mdadm --stop "/dev/${disk}" 2>/dev/null || true
-    # 擦除签名
-    if $SUDO wipefs -a "/dev/${disk}" 2>/dev/null | grep -q "erased"; then
-        echo "  ✓ /dev/${disk} 签名已擦除"
-    fi
-done
-# 停止所有 RAID 阵列
+# 先停止所有 RAID 阵列：active 阵列会持有成员盘，若不先 stop，下面对成员盘的
+# wipefs 会 EBUSY 失败并被 2>/dev/null 静默吞掉，残留 linux_raid_member 签名。
+# （48 机实踩：旧顺序把 stop /dev/md* 放在 wipefs 循环之后，导致 sdb/sdc 签名残留）
 for md in /dev/md*; do
     [ -e "$md" ] && $SUDO mdadm --stop "$md" 2>/dev/null && echo "  ✓ $md 已停止" || true
 done
 # 清理 mdadm.conf
 $SUDO sed -i '/^ARRAY/d' /etc/mdadm/mdadm.conf 2>/dev/null || true
+
+# 识别系统盘（根挂载所在磁盘），排除后得到数据盘
+SYS_DISK=$(findmnt -n -o SOURCE / 2>/dev/null | sed 's|/dev/||; s|[0-9]*$||; s|p[0-9]*$||')
+DATA_DISKS=$(lsblk -nd -o NAME,TYPE | awk '$2=="disk"{print $1}' | grep -v "^$SYS_DISK$")
+for disk in $DATA_DISKS; do
+    # 擦除签名（阵列已停，成员盘不再 busy，wipefs 可擦净 RAID/LVM 签名）
+    if $SUDO wipefs -a "/dev/${disk}" 2>/dev/null | grep -q "erased"; then
+        echo "  ✓ /dev/${disk} 签名已擦除"
+    fi
+done
 echo "  ✓ 磁盘签名清理完成"
 
 # ==================== [6/8] 卸载软件包 ====================

@@ -19,6 +19,11 @@ set -euo pipefail
 cd "$(dirname "$0")/../web"
 
 # ── 版本号决定 ────────────────────────────────────────────
+# 记录 VERSION 是否来自环境变量覆盖：若是，则 RELEASE.md 非真相源，
+# 末尾的「RELEASE.md 版本 vs git tag」一致性提示应跳过（否则会打印与
+# 本次构建无关的陈旧 RELEASE_VERSION tag 提示，误导发版）。
+VERSION_FROM_ENV=false
+[ -n "${VERSION:-}" ] && VERSION_FROM_ENV=true
 if [ -z "${VERSION:-}" ]; then
     # 2) RELEASE.md
     if [ -f ../RELEASE.md ]; then
@@ -76,8 +81,9 @@ if [ -n "$(git status --porcelain 2>/dev/null)" ] && [[ "$VERSION" != *dev* ]]; 
     echo "     正式发版请先 commit 所有改动!"
 fi
 
-# RELEASE.md 版本与 git tag 一致性提示
-if [ -f ../RELEASE.md ]; then
+# RELEASE.md 版本与 git tag 一致性提示（仅当版本取自 RELEASE.md 时才有意义；
+# VERSION 环境变量覆盖时 RELEASE.md 非真相源，跳过以免打印无关的陈旧 tag 提示）
+if [ "$VERSION_FROM_ENV" != true ] && [ -f ../RELEASE.md ]; then
     RELEASE_VERSION=$(grep -E "^VERSION=" ../RELEASE.md | head -1 | cut -d= -f2- | tr -d '[:space:]')
     if [ -n "$RELEASE_VERSION" ]; then
         if git rev-parse "refs/tags/${RELEASE_VERSION}" >/dev/null 2>&1; then
