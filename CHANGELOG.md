@@ -2,6 +2,43 @@
 
 ## [未发布]
 
+_（暂无）_
+
+## 版本变更一览
+
+| 版本 | 日期 | 主要变化 |
+|------|------|---------|
+| v1.4.0-beta.33 | 2026-10-27 | S1 最小权限 — 面板从 7×24 常驻 root 降为以家庭管理员账号（如 `fm`）运行，面板 RCE 不再等同整机 root；安装/清理脚本改「用户身份直跑 + 特权步骤逐条 sudo」（`curl|bash` 去 sudo 前缀，六载体同步）；sudoers 白名单 root-equivalence 复审（115→145 条：按实际调用面收窄/补齐裸奔调用/铲除死条目，灭裸 chpasswd/gpasswd/`sed -i *` 提权后门）。附 S1 强化验收修复轮（48/57 真机 journal 实证）：chpasswd 路径错配、隐性 root 依赖（blkid/fstab/journalctl）、重装 ETXTBSY 原子替换、用户 home ACL、share 级回收站 fm 失效等七轮根修 + cleanup.sh 非交互 `--yes` 与 RAID wipefs 顺序修复。真机验收：48(LVM merge)+57(RAID1) 双机用户级全流程，acceptance-suite 38/38 + AI E2E 31 项 + F2 E2E 全 PASS + 本机 Chrome UI 实测 |
+| v1.4.0-beta.32 | 2026-10-23 | 家庭管家底座 F2（主动管家）— 面板从「被动等命令」升级为「主动发现、提出建议、经确认后干活」：notifications 轻量收件箱（eventbus 订阅式）+ triggers 建议卡引擎（健康异常/备份失败/同步失败/磁盘水位≥85% 触发，同事项 24h 冷却+最多 5 条待处理反骚扰）+ 建议接受链（点「执行」→ 确认卡 → 任务引擎，零新确认语义）+ 家庭周报（周日 9 点自动生成，存储/任务/健康三块，零 LLM 依赖）+ 前端通知中心（铃铛/未读徽标/建议卡/周报卡/人话文案插值，关 AI 即整体隐藏）+ cronMatch 抽取 common 共享。附验收修复：周报通知去重、PoolUsage 补 RAID/直挂池回退（此前 raid 直挂机水位检查永远哑火）、cleanup.sh 重置补删仓库实体（防旧数据库穿越复活）。真机验收：F2 E2E 15/15 + UI 全流程 Chrome 实测 + AI E2E 31 项 + 套件 38/38 + 真实 DeepSeek 回归 |
+| v1.4.0-beta.31 | 2026-10-23 | 家庭管家底座 F1（任务引擎垂直切片）— AI 助手从「会聊天」升级为「能干活」：任务引擎（jobs 六态状态机/单 worker 串行/checkpoint 断点续跑/暂停恢复取消/REST+SSE 进度流/崩溃重启落 paused 保守恢复）+ photo_dedupe 重复照片清理全链（两级哈希扫描/最短路径保留/删除只进回收站）+ AI 任务工具 7 枚（规划只读、启动/取消/恢复走确认门，执行体服务端固化模型不可改写）+ 前端任务 tab（六态徽章/进度轮询/完成报告）+ 架构边界测试（import 图机器锁分层：tasks 不依赖 ai、核心模块不依赖 ai/tasks）+ filemgmt 回收站内核抽取复用。真机验收：任务 E2E 18/18（含 kill -9 续跑与计数器持久化修复）、验收套件 38/38、本机 Chrome UI 实测、真实 DeepSeek 回归 |
+| v1.4.0-beta.30 | 2026-10-22 | AI 配置保存与错误反馈修复（用户实报：保存成功后点「测试连通性」无反应）——① 配置保存的 key 覆盖根修：保存后前端清空 key、「测试连通性」先保存再测试，空 key 被 POST 回后端直接覆盖已存真 key（掩码回显 `****xxxx` 原样保存同理会存进掩码串）；现在空值/掩码回显一律视为「未修改」保留原 key，仅非空新值才更新 ② ai 模块 34 处错误响应从 text/plain 改 JSON content-type——此前前端 api() 不识别、失败完全静默，现在错误原因（如 DeepSeek 返回的「api key is invalid」）直接弹 toast ③ 前端 testAIConnection 补失败兜底分支；补 5 个单测（空值保留/掩码保留/新值更新+Verified 重置/JSON content-type）。实机验证：真实 DeepSeek 端点测试连通、开关开启、对话与三工具链全通过 |
+| v1.4.0-beta.29 | 2026-10-21 | AI 助手入口可发现性修复 — 关闭态侧边栏此前无任何「AI」字样（仅剩工具箱组头部一个 27px 小 emoji，用户实测找不到模块）：导航项改为常驻可见并带「未启用」灰徽标（开启后自动消失），点击进入引导卡+开启向导；移除冗余小入口；引导文案同步更新（删除「开启后才出现在工具箱」过时表述，补「关闭态零足迹」说明，双语） |
+| v1.4.0-beta.28 | 2026-10-21 | AI 助手模块（M1+M2）— 可开关内置功能模块（默认关闭零足迹）：OpenAI 兼容端点接入（DeepSeek/Ollama 预设+连通性测试+Key 0600 存储掩码回显）、NAS 域 15 工具（9 只读+6 写，ToolDomain 抽象+schema 校验，直调既有模块内核）、SSE 流式对话+SQLite 会话历史、写操作 type-to-confirm 确认门（参数服务端留存/一次性 Take/TTL 5 分钟）、create_user 密码前端生成直注（永不进模型上下文/落库/审计）、对抗性安全测试集（注入/schema 攻击/Key 泄漏面/开关守卫）。附验收修复集：删用户补 WebDAV 凭据撤销（被删用户仍能过 rclone 认证）、shell 管道调用点清零、AI 页 Alpine 响应式修复（气泡/工具轨迹不随流式更新）、控制面守卫豁免（关闭态无法存配置）、建池文案按模式报实际用盘数；双机重置用户级全流程验收（RAID1+LVM merge 各 38 项套件+31 项 AI E2E 全 PASS+本机 Chrome UI 实测） |
+| v1.4.0-beta.27 | 2026-10-21 | 运维脚本审计修复 + 收尾 — cleanup.sh 存储拆除段前置到卸载软件包与删 /data 之前（修复 set -e 下 rm 挂载点 busy 即中止、RAID/LVM/软链接全残留的实踩事故；数据目录删除加"仍有挂载即跳过并警告"守卫）；配置备份/恢复补面板数据库整目录（folders.db/vault.db/registry.db/2fa.json/rclone tasks 等）、rclone.conf（root+用户）、/etc/projects+projid——重装恢复不再丢保险箱/云同步/共享元数据/2FA；rclone 升级下载按架构取 deb（arm64 不再必败，R2 已补 arm64 制品）；sudoers 白名单按实测调用面补全并收敛为具体子命令/路径粒度（115 条，拒绝 bash -c/cat */rm -rf * 等 root-equivalent 通配，visudo 校验通过）；仪表盘存储池卡片类型标签不再写死「单盘」（RAID 显示级别、LVM 按盘数区分单盘/合并，双语 i18n） |
+| v1.4.0-beta.26 | 2026-10-20 | 安全审计全量修复 — P0：命令/sed 注入根除（证书 domain 校验+openssl 直传参、chpasswd/smbpasswd 走 stdin、.env 与 rclone-s3 unit 改纯 Go 行级重写、htpasswd 直传参、密码统一拒绝换行/控制字符）、/api/system/check 免认证暴露收口（loopback+JWT）、登录/TOTP IP 限流（5 次失败锁 15 分钟）、服务开关白名单、Samba/SSH 配置注入防护、备份路径穿越防护；P1：面板 HTTPS 真正生效（TLS_CERT/TLS_KEY→ListenAndServeTLS）、XFS 配额根修（建池挂载+fstab 加 prjquota、/etc/projects 改标准 id:path、建文件夹配额真正落地）、防火墙端口范围/备注回显/sudoers 补齐、xfs_growfs 改挂载点（扩容静默失败根除）、NVMe 分区名+mkfs 参数、删池/重置清脏数据、诊断三 bug；P2：磁盘操作全局锁补漏、rclone 状态事务锁、SQLite 统一 WAL（顺带根治 logger/eventbus 旧 DSN 参数被驱动静默忽略）、monitor 后台采样（1.5s→<1ms）+du/smartctl 缓存（不再反复唤醒休眠盘）、RAID 注册表区分初始重建与降级；双机重置验收全 PASS（用户一键安装 RAID5 机 + 分支构建 LVM 机，套件 33 项+五协议+配额 E2E+限流/注入实测） |
+| v1.4.0-beta.25 | 2026-10-20 | 零知识凭证保险箱 v2（浏览器端 PBKDF2-600k+AES-256-GCM，服务器只存密文；独立口令/5 错锁 30 分钟/自动锁定/查看自动遮罩/旧版一键迁移）+ 独立密码生成器页 + 侧边栏「🧰 工具箱」分组；附发布前审查与体检修复集：迁移失败即停防明文丢失、解锁失败计数原子化、改口令实时拉取+覆盖校验、输错保险箱口令误踢登录修复、PWA sw.js 网络优先+旧缓存清理（根治升级后界面陈旧）、rclone 状态真实版本显示、配置一致性不再误报池根用户目录、staticcheck 清零；第八轮双机重置用户级全流程验收（merge/RAID1 各 33 项全 PASS + Chrome 实测） |
+| v1.4.0-beta.24 | 2026-10-19 | 彻底移除 FileBrowser — 面板文件管理已完全取代；装机链/服务页/注册表(46→41)/HTTPS/密码同步/监控/备份/i18n/文档全链路清理；setup.sh 升级迁移自动卸载存量并备份 /etc/filebrowser；R2 安装包同步清理。附验收修复集：升级机注册表幽灵项剪枝、用户服务开关静默失败×2、x-for 重复 key 崩溃（'after' 错误真身，导航失效根因）、关于页 hardware null 守卫；第七轮双机重置完整验收全 PASS + Chrome 实测 |
+| v1.4.0-beta.23 | 2026-10-17 | UI 巡检修复集 — 共享影子身份（建共享时的 nologin 占位用户）不再泄漏为用户页幻影用户；仪表盘/用户页 null 数组崩溃修复；面板停止的服务不再误标「失败」（is-active exit3 四态归一 + rclone unit SuccessExitStatus=143，已停止显黄色徽章）；健康中心口径对齐（not-installed 不计 warn、新增「N 个已停止」warn）；权限报错文案与校验对齐；第六轮双机重置完整验收（merge/RAID1 各 34 项全 PASS）+ Chrome 实测 |
+| v1.4.0-beta.22 | 2026-10-16 | rclone 安全升级 v1.75.2（修 serve webdav 路径遍历 GHSA-44pm-2q5p-fm63 等命中我方暴露面的高危项 + Go 1.26.9 HTTP/2 CVE；新装必落 pin 版本；服务页重装路径 serve 根对齐 /data/nas1/public 消除越权隐患）+ 系统健康注册表存储层 6 项按池模式感知（RAID 池机器不再恒 fail，46/46 可达）；双机重置重装完整验收（merge/RAID1 各 35 项断言全 PASS） |
+| v1.4.0-beta.21 | 2026-10-15 | 文件管理页新增「上传目录」— webkitdirectory 整目录树保留子路径上传（后端 Content-Disposition 原始 filename 逐段消毒、缺失父目录逐段 0755 创建、既有目录权限一律不动、409 覆盖重试不拍平、并发 EEXIST 加固）；穿越用例（`../pwn`）由 stdlib 剥路径后巧合放行改为显式 400 拒绝；修复仪表盘把未安装的可选服务（FileBrowser）计入异常导致全新安装恒显「1 个异常」假告警；两台 Debian 13 测试机部署 + Chrome 实机 E2E 全过 |
+| v1.4.0-beta.20 | 2026-10-15 | beta.19 后续修复 — 回收站合并式恢复（原位已有同名目录时逐子项合并回原位，替代整树 .restored 旁落）+ folders.db 读取加固（坏行跳过+日志，不再静默半填充）+ install.sh FileBrowser 条件化补漏（全新安装不再报假「验证未通过」）+ 服务管理页状态徽章四态修复；两台 Debian 13 测试机重置后全新安装完整验收（各 34 项断言全 PASS） |
+| v1.4.0-beta.19 | 2026-10-13 | 文件管理器 M3 权限管理全量落地 — stat/chmod/chown/fix-home-perms 四 API + 前端 v3（属性对话框八进制输入+符号位实时预览+预设、批量改权限串行进度、用户页一键修复 home 权限）；递归 Walk 免 sudo（符号链接 chmod 跳过/chown Lchown）；mode 白名单拒 setuid/setgid/sticky；三场景 type-to-confirm；FileBrowser 存量机器可经 cleanup.sh 卸载 |
+| v1.4.0-beta.18 | 2026-10-13 | 文件管理器 M2 写操作全量落地 — 上传(XHR 进度)/新建/重命名/移动/复制/删除(进 .recycle 与回收站页联动) 六 API + 前端多选工具栏；setup.sh 新装默认不装 FileBrowser(--with-filebrowser 保留一版)；注册表 FileBrowser 4 项按安装态条件化(保 46/46) |
+| v1.4.0-beta.17 | 2026-10-12 | 面板文件管理器 M1 v1 只读基线 — 内置「文件」页取代 FileBrowser 外链（浏览/面包屑/下载/zip 打包/预览/用量）+ resolvePoolPath 路径安全核心（穿越/符号链接逃逸 fail-closed）+ checklist 新增模块 17（166 项/18 模块，修正存量统计口径）+ 产品手册 7.8 章节 |
+| v1.4.0-beta.16 | 2026-10-08 | 文档快照 — 新增《协议服务配置详解》(docs/protocol-service-configs.md，6 协议 + 横切配置代码逐项核对)+ 修正 GenerateNFSConfig 过期注释(与 no_root_squash 默认行为对齐)。文件管理器开发前的回滚基线，不含二进制变更 |
+| v1.4.0-beta.15 | 2026-09-24 | 家用可用性优先 — NFS 默认 no_root_squash+insecure（挂载即可写、NAT 后可挂）+ public 共享 guest ok + fail2ban 放宽（ban 10 分钟/10 次）+ S3 短用户名 access key 修复 + 审计日志全覆盖加固 + rclone 同步实时进度 |
+| v1.4.0-beta.14 | 2026-09-19 | 在线升级加固 — 二进制原子替换 + CLI 升级验签 + 升级后配置幂等迁移（setup.sh --config-only）+ FileBrowser 版本单一事实源 |
+| v1.4.0-beta.13 | 2026-09-19 | NFS 导出对所有网段开放（跨网段客户端可挂载） |
+| v1.4.0-beta.12 | 2026-09-18 | 创建向导按已选磁盘实时预估容量（选目标后预览面板 + 各方案可用容量/注意事项）+ 登录页品牌 slogan |
+| v1.4.0-beta.11 | 2026-09-18 | 当前连接展示（监控页，SMB 会话 + 各协议端口归类）+ 回收站改 per-share `.recycle/`（删除=rename 零拷贝，恢复保留目录树，旧 `#recycle` 兼容）+ 存储页 tab 切换跳动修复 |
+
+---
+
+## [2026-10-27] - v1.4.0-beta.33 — S1 最小权限（面板降权 + 安装 fm 化 + 白名单收紧）
+
+分支 `feat/least-privilege` 合入 master（面板常驻身份 root → 家庭管理员，安装改用户身份直跑，sudoers 白名单按实际调用面逐条收窄）。以下含 S1 主体、强化验收修复轮、本次发版脚本修复与 beta.32 后累积的脚本修复。
+
+
 ### S1 最小权限 — 面板降权 + 安装 fm 化 + sudoers 白名单收紧（分支 feat/least-privilege）
 
 面板从 7×24 常驻 root 降为以家庭管理员账号（如 `fm`）运行，面板 RCE 不再等同整机 root；安装方式
@@ -36,40 +73,28 @@
   release-system.md 补「sudoers 白名单原则」小节（root-equivalence 判定标准 + `sed -i *` 死后门
   案例）+ 安装命令同步说明。
 
+### S1 强化验收修复轮（48/57 两台真机跑用户级全流程 + 降权强化验收，journal/实测实证驱动）
+
+初期 S1 提交后，在测试机上以 fm 降权身份反复跑完整验收，逐轮抓出「root 时代隐性成立、降权后静默失败」的真实缺陷并根修：
+
+- **白名单实证修复**（`5ab12a2`）：`chpasswd` 路径错配（`/usr/sbin` vs `/usr/bin`，sudoers 从不匹配致面板改密静默失败）根修；密码/组成员管理收口成校验脚本 `set-user-pass.sh`/`nas-group-member.sh`（灭裸 `chpasswd` 读 stdin 可设 root 密码、`gpasswd -a` 可自加 sudo 组两个提权后门）；全二进制路径按 `readlink -f $(command -v …)` 对帐。
+- **隐性 root 依赖系统修复**（`6f619ab`）：`blkid`/fstab 写入降权后返回空被吞成「假成功」根修（改走 sudo 白名单）；`journalctl` 白名单补三形状；`chown`/`chmod` 池内形状补齐；用户 home ACL 方案 `nas-home-acl.sh`（管理员经 POSIX ACL 恢复全 home 浏览/管理能力，用户间隔离不变）；`htpasswd`/`smbpasswd`/`pdbedit` 裸条目收窄。
+- **强化验收第二轮残留收口**（`ed6f2d4`）：`SafeWriteFile` 直写优先（自有数据目录免 sudo，灭 `.last_reload` 拒绝）；白名单补裸 `vgs`/`pvs`/`lvs` 三形状（sudoers trailing `*` 不匹配零参数，journal 实证）；`stat smb.conf` 只读形状（config_sync mtime）。
+- **重装场景 ETXTBSY 根修**（`da41b6b`）：`setup.sh` 二进制原子替换（`cp .new` + `mv`，直接 cp 运行中二进制「文本文件忙」致 setup 中止且 sudoers 停留旧版，48 实证）；`install.sh` 不再吞 setup 失败（`SETUP_OK=false` 显式中止，消灭静默假成功）。
+- **强化验收第三轮修复**（`0ff0664`）：`setup.sh` 禁 `chown -R` 整 `/data`（用户 home 属主被清，作用域收敛为：池管理区仅 root 遗留迁移 + home 孤儿归还对应用户）；rclone 管理去 sudo（conf 永远面板自身 home 与 unit 一致，灭「root 写 conf、fm 单元读不了」崩溃循环 + 白名单删 `sudo rclone *` 数据外带通道）；`fix-home-perms` 树操作 EACCES 回退 `sudo -R`（灭 ACL mask 压掉后重挂死锁）；`SafeWriteFile` 同目录可写时删除重建。
+- **rclone conf 属主自愈**（`79e39e5`）：历史 `sudo rclone` 写出的 `root:root` conf 让 fm 单元崩溃循环（48 实证 restart counter 69），`setup.sh` 幂等 chown 修正。
+- **share 级回收站在 fm 面板下失效根修**（`f1decf4`）：共享目录属主是专属隔离用户（755），fm 建不了 `.recycle`（48 强化验收实证）；`executeCreateFolder` 挂管理 ACL（与 home 同机制）+ `setup.sh` 存量池内目录幂等补 ACL。
+
+### 本次发版验收修复（beta.33，48 用户级全流程部署实证）
+
+- **cleanup.sh 非交互 + RAID 擦除顺序**（`afaaf60`）：加 `-y/--yes`（+ `ASSUME_YES` 环境变量）跳过交互 `read yes`（旧版自动化/管道场景会挂起）；停 md 阵列重排到 per-disk `wipefs` 之前——旧顺序下 active 阵列持有成员盘致 `wipefs` EBUSY 被静默吞掉、`linux_raid_member` 签名残留（57 raid1 实证修后签名全净，无需人工补 wipefs）。
+- **build.sh 陈旧 tag 提示**（`afaaf60`）：`VERSION` 环境变量覆盖时跳过 RELEASE.md 的 git-tag 一致性提示（RELEASE.md 存了陈旧版本号，与本次构建无关，误导发版）。
+
 ### 安装/运维脚本修复（beta.32 tag 后，脚本类改动 push 即生效、不在二进制内）
 
 - **setup.sh rclone 升级三重防线**（f6847f2，48 用户级部署实抓）：apt 装完后 unattended-upgrades 持 dpkg 锁时 `dpkg -i` 静默失败（`2>/dev/null || true` 吞错误）且照报「✓ 已升级」——机器留下 apt 版 rclone 1.60（无 serve s3），rclone-s3 崩溃循环、注册表 40/41。现在等锁 + 保留 dpkg 错误输出并 apt -f 修复重试 + 装后版本验证，不达标显式 ✗ 并给手动修复命令。
 - **setup.sh rclone 版本比较去 bc 依赖**（6cf345c，57 机实抓）：最小化 Debian 无 bc 时装后验证误报「升级未生效」（实际已是 1.75.2）；改 awk 精确比较，升级触发判断同步修正（无 bc 时不再恒重复升级）。
 - **get.z1.sale 线上 install.sh 陈旧修复**（upload-r2 重传）：线上分发的 install.sh 是 beta.24 之前的版本（服务验证列表含已移除的 filebrowser，每次安装都 ✗ 并把结尾总结误报成「部分服务可能未正常启动」）；重传后线上 md5 与仓库一致。脚本类改动必须跑 upload-r2.sh 的既有规矩再次实证。
-
-## 版本变更一览
-
-| 版本 | 日期 | 主要变化 |
-|------|------|---------|
-| v1.4.0-beta.32 | 2026-10-23 | 家庭管家底座 F2（主动管家）— 面板从「被动等命令」升级为「主动发现、提出建议、经确认后干活」：notifications 轻量收件箱（eventbus 订阅式）+ triggers 建议卡引擎（健康异常/备份失败/同步失败/磁盘水位≥85% 触发，同事项 24h 冷却+最多 5 条待处理反骚扰）+ 建议接受链（点「执行」→ 确认卡 → 任务引擎，零新确认语义）+ 家庭周报（周日 9 点自动生成，存储/任务/健康三块，零 LLM 依赖）+ 前端通知中心（铃铛/未读徽标/建议卡/周报卡/人话文案插值，关 AI 即整体隐藏）+ cronMatch 抽取 common 共享。附验收修复：周报通知去重、PoolUsage 补 RAID/直挂池回退（此前 raid 直挂机水位检查永远哑火）、cleanup.sh 重置补删仓库实体（防旧数据库穿越复活）。真机验收：F2 E2E 15/15 + UI 全流程 Chrome 实测 + AI E2E 31 项 + 套件 38/38 + 真实 DeepSeek 回归 |
-| v1.4.0-beta.31 | 2026-10-23 | 家庭管家底座 F1（任务引擎垂直切片）— AI 助手从「会聊天」升级为「能干活」：任务引擎（jobs 六态状态机/单 worker 串行/checkpoint 断点续跑/暂停恢复取消/REST+SSE 进度流/崩溃重启落 paused 保守恢复）+ photo_dedupe 重复照片清理全链（两级哈希扫描/最短路径保留/删除只进回收站）+ AI 任务工具 7 枚（规划只读、启动/取消/恢复走确认门，执行体服务端固化模型不可改写）+ 前端任务 tab（六态徽章/进度轮询/完成报告）+ 架构边界测试（import 图机器锁分层：tasks 不依赖 ai、核心模块不依赖 ai/tasks）+ filemgmt 回收站内核抽取复用。真机验收：任务 E2E 18/18（含 kill -9 续跑与计数器持久化修复）、验收套件 38/38、本机 Chrome UI 实测、真实 DeepSeek 回归 |
-| v1.4.0-beta.30 | 2026-10-22 | AI 配置保存与错误反馈修复（用户实报：保存成功后点「测试连通性」无反应）——① 配置保存的 key 覆盖根修：保存后前端清空 key、「测试连通性」先保存再测试，空 key 被 POST 回后端直接覆盖已存真 key（掩码回显 `****xxxx` 原样保存同理会存进掩码串）；现在空值/掩码回显一律视为「未修改」保留原 key，仅非空新值才更新 ② ai 模块 34 处错误响应从 text/plain 改 JSON content-type——此前前端 api() 不识别、失败完全静默，现在错误原因（如 DeepSeek 返回的「api key is invalid」）直接弹 toast ③ 前端 testAIConnection 补失败兜底分支；补 5 个单测（空值保留/掩码保留/新值更新+Verified 重置/JSON content-type）。实机验证：真实 DeepSeek 端点测试连通、开关开启、对话与三工具链全通过 |
-| v1.4.0-beta.29 | 2026-10-21 | AI 助手入口可发现性修复 — 关闭态侧边栏此前无任何「AI」字样（仅剩工具箱组头部一个 27px 小 emoji，用户实测找不到模块）：导航项改为常驻可见并带「未启用」灰徽标（开启后自动消失），点击进入引导卡+开启向导；移除冗余小入口；引导文案同步更新（删除「开启后才出现在工具箱」过时表述，补「关闭态零足迹」说明，双语） |
-| v1.4.0-beta.28 | 2026-10-21 | AI 助手模块（M1+M2）— 可开关内置功能模块（默认关闭零足迹）：OpenAI 兼容端点接入（DeepSeek/Ollama 预设+连通性测试+Key 0600 存储掩码回显）、NAS 域 15 工具（9 只读+6 写，ToolDomain 抽象+schema 校验，直调既有模块内核）、SSE 流式对话+SQLite 会话历史、写操作 type-to-confirm 确认门（参数服务端留存/一次性 Take/TTL 5 分钟）、create_user 密码前端生成直注（永不进模型上下文/落库/审计）、对抗性安全测试集（注入/schema 攻击/Key 泄漏面/开关守卫）。附验收修复集：删用户补 WebDAV 凭据撤销（被删用户仍能过 rclone 认证）、shell 管道调用点清零、AI 页 Alpine 响应式修复（气泡/工具轨迹不随流式更新）、控制面守卫豁免（关闭态无法存配置）、建池文案按模式报实际用盘数；双机重置用户级全流程验收（RAID1+LVM merge 各 38 项套件+31 项 AI E2E 全 PASS+本机 Chrome UI 实测） |
-| v1.4.0-beta.27 | 2026-10-21 | 运维脚本审计修复 + 收尾 — cleanup.sh 存储拆除段前置到卸载软件包与删 /data 之前（修复 set -e 下 rm 挂载点 busy 即中止、RAID/LVM/软链接全残留的实踩事故；数据目录删除加"仍有挂载即跳过并警告"守卫）；配置备份/恢复补面板数据库整目录（folders.db/vault.db/registry.db/2fa.json/rclone tasks 等）、rclone.conf（root+用户）、/etc/projects+projid——重装恢复不再丢保险箱/云同步/共享元数据/2FA；rclone 升级下载按架构取 deb（arm64 不再必败，R2 已补 arm64 制品）；sudoers 白名单按实测调用面补全并收敛为具体子命令/路径粒度（115 条，拒绝 bash -c/cat */rm -rf * 等 root-equivalent 通配，visudo 校验通过）；仪表盘存储池卡片类型标签不再写死「单盘」（RAID 显示级别、LVM 按盘数区分单盘/合并，双语 i18n） |
-| v1.4.0-beta.26 | 2026-10-20 | 安全审计全量修复 — P0：命令/sed 注入根除（证书 domain 校验+openssl 直传参、chpasswd/smbpasswd 走 stdin、.env 与 rclone-s3 unit 改纯 Go 行级重写、htpasswd 直传参、密码统一拒绝换行/控制字符）、/api/system/check 免认证暴露收口（loopback+JWT）、登录/TOTP IP 限流（5 次失败锁 15 分钟）、服务开关白名单、Samba/SSH 配置注入防护、备份路径穿越防护；P1：面板 HTTPS 真正生效（TLS_CERT/TLS_KEY→ListenAndServeTLS）、XFS 配额根修（建池挂载+fstab 加 prjquota、/etc/projects 改标准 id:path、建文件夹配额真正落地）、防火墙端口范围/备注回显/sudoers 补齐、xfs_growfs 改挂载点（扩容静默失败根除）、NVMe 分区名+mkfs 参数、删池/重置清脏数据、诊断三 bug；P2：磁盘操作全局锁补漏、rclone 状态事务锁、SQLite 统一 WAL（顺带根治 logger/eventbus 旧 DSN 参数被驱动静默忽略）、monitor 后台采样（1.5s→<1ms）+du/smartctl 缓存（不再反复唤醒休眠盘）、RAID 注册表区分初始重建与降级；双机重置验收全 PASS（用户一键安装 RAID5 机 + 分支构建 LVM 机，套件 33 项+五协议+配额 E2E+限流/注入实测） |
-| v1.4.0-beta.25 | 2026-10-20 | 零知识凭证保险箱 v2（浏览器端 PBKDF2-600k+AES-256-GCM，服务器只存密文；独立口令/5 错锁 30 分钟/自动锁定/查看自动遮罩/旧版一键迁移）+ 独立密码生成器页 + 侧边栏「🧰 工具箱」分组；附发布前审查与体检修复集：迁移失败即停防明文丢失、解锁失败计数原子化、改口令实时拉取+覆盖校验、输错保险箱口令误踢登录修复、PWA sw.js 网络优先+旧缓存清理（根治升级后界面陈旧）、rclone 状态真实版本显示、配置一致性不再误报池根用户目录、staticcheck 清零；第八轮双机重置用户级全流程验收（merge/RAID1 各 33 项全 PASS + Chrome 实测） |
-| v1.4.0-beta.24 | 2026-10-19 | 彻底移除 FileBrowser — 面板文件管理已完全取代；装机链/服务页/注册表(46→41)/HTTPS/密码同步/监控/备份/i18n/文档全链路清理；setup.sh 升级迁移自动卸载存量并备份 /etc/filebrowser；R2 安装包同步清理。附验收修复集：升级机注册表幽灵项剪枝、用户服务开关静默失败×2、x-for 重复 key 崩溃（'after' 错误真身，导航失效根因）、关于页 hardware null 守卫；第七轮双机重置完整验收全 PASS + Chrome 实测 |
-| v1.4.0-beta.23 | 2026-10-17 | UI 巡检修复集 — 共享影子身份（建共享时的 nologin 占位用户）不再泄漏为用户页幻影用户；仪表盘/用户页 null 数组崩溃修复；面板停止的服务不再误标「失败」（is-active exit3 四态归一 + rclone unit SuccessExitStatus=143，已停止显黄色徽章）；健康中心口径对齐（not-installed 不计 warn、新增「N 个已停止」warn）；权限报错文案与校验对齐；第六轮双机重置完整验收（merge/RAID1 各 34 项全 PASS）+ Chrome 实测 |
-| v1.4.0-beta.22 | 2026-10-16 | rclone 安全升级 v1.75.2（修 serve webdav 路径遍历 GHSA-44pm-2q5p-fm63 等命中我方暴露面的高危项 + Go 1.26.9 HTTP/2 CVE；新装必落 pin 版本；服务页重装路径 serve 根对齐 /data/nas1/public 消除越权隐患）+ 系统健康注册表存储层 6 项按池模式感知（RAID 池机器不再恒 fail，46/46 可达）；双机重置重装完整验收（merge/RAID1 各 35 项断言全 PASS） |
-| v1.4.0-beta.21 | 2026-10-15 | 文件管理页新增「上传目录」— webkitdirectory 整目录树保留子路径上传（后端 Content-Disposition 原始 filename 逐段消毒、缺失父目录逐段 0755 创建、既有目录权限一律不动、409 覆盖重试不拍平、并发 EEXIST 加固）；穿越用例（`../pwn`）由 stdlib 剥路径后巧合放行改为显式 400 拒绝；修复仪表盘把未安装的可选服务（FileBrowser）计入异常导致全新安装恒显「1 个异常」假告警；两台 Debian 13 测试机部署 + Chrome 实机 E2E 全过 |
-| v1.4.0-beta.20 | 2026-10-15 | beta.19 后续修复 — 回收站合并式恢复（原位已有同名目录时逐子项合并回原位，替代整树 .restored 旁落）+ folders.db 读取加固（坏行跳过+日志，不再静默半填充）+ install.sh FileBrowser 条件化补漏（全新安装不再报假「验证未通过」）+ 服务管理页状态徽章四态修复；两台 Debian 13 测试机重置后全新安装完整验收（各 34 项断言全 PASS） |
-| v1.4.0-beta.19 | 2026-10-13 | 文件管理器 M3 权限管理全量落地 — stat/chmod/chown/fix-home-perms 四 API + 前端 v3（属性对话框八进制输入+符号位实时预览+预设、批量改权限串行进度、用户页一键修复 home 权限）；递归 Walk 免 sudo（符号链接 chmod 跳过/chown Lchown）；mode 白名单拒 setuid/setgid/sticky；三场景 type-to-confirm；FileBrowser 存量机器可经 cleanup.sh 卸载 |
-| v1.4.0-beta.18 | 2026-10-13 | 文件管理器 M2 写操作全量落地 — 上传(XHR 进度)/新建/重命名/移动/复制/删除(进 .recycle 与回收站页联动) 六 API + 前端多选工具栏；setup.sh 新装默认不装 FileBrowser(--with-filebrowser 保留一版)；注册表 FileBrowser 4 项按安装态条件化(保 46/46) |
-| v1.4.0-beta.17 | 2026-10-12 | 面板文件管理器 M1 v1 只读基线 — 内置「文件」页取代 FileBrowser 外链（浏览/面包屑/下载/zip 打包/预览/用量）+ resolvePoolPath 路径安全核心（穿越/符号链接逃逸 fail-closed）+ checklist 新增模块 17（166 项/18 模块，修正存量统计口径）+ 产品手册 7.8 章节 |
-| v1.4.0-beta.16 | 2026-10-08 | 文档快照 — 新增《协议服务配置详解》(docs/protocol-service-configs.md，6 协议 + 横切配置代码逐项核对)+ 修正 GenerateNFSConfig 过期注释(与 no_root_squash 默认行为对齐)。文件管理器开发前的回滚基线，不含二进制变更 |
-| v1.4.0-beta.15 | 2026-09-24 | 家用可用性优先 — NFS 默认 no_root_squash+insecure（挂载即可写、NAT 后可挂）+ public 共享 guest ok + fail2ban 放宽（ban 10 分钟/10 次）+ S3 短用户名 access key 修复 + 审计日志全覆盖加固 + rclone 同步实时进度 |
-| v1.4.0-beta.14 | 2026-09-19 | 在线升级加固 — 二进制原子替换 + CLI 升级验签 + 升级后配置幂等迁移（setup.sh --config-only）+ FileBrowser 版本单一事实源 |
-| v1.4.0-beta.13 | 2026-09-19 | NFS 导出对所有网段开放（跨网段客户端可挂载） |
-| v1.4.0-beta.12 | 2026-09-18 | 创建向导按已选磁盘实时预估容量（选目标后预览面板 + 各方案可用容量/注意事项）+ 登录页品牌 slogan |
-| v1.4.0-beta.11 | 2026-09-18 | 当前连接展示（监控页，SMB 会话 + 各协议端口归类）+ 回收站改 per-share `.recycle/`（删除=rename 零拷贝，恢复保留目录树，旧 `#recycle` 兼容）+ 存储页 tab 切换跳动修复 |
-
----
 
 ## [2026-10-23] - v1.4.0-beta.32 — 家庭管家底座 F2（主动管家）
 
