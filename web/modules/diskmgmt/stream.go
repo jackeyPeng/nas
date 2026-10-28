@@ -535,9 +535,15 @@ func handleWizardResetStream(w http.ResponseWriter, r *http.Request) {
 		nasUser = "root"
 	}
 
+	// consensus P0-A2：在任何拆除动作之前（LVM/PV/RAID 都还活着）收集纳管擦盘
+	// 目标集合——pvs/mdstat 一旦等 LVM/PV 被拆了再查就是空的，必须在最前面采集。
+	mounts := getExistingDataMounts()
+	pvsOutPre, _ := common.SudoOutput("/usr/sbin/pvs", "--noheadings", "-o", "pv_name,vg_name")
+	mdstatPre, _ := common.SudoOutput("cat", "/proc/mdstat")
+	managedTargets := collectManagedWipeTargets(pvsOutPre, mdstatPre, mounts)
+
 	// 1. Unmount
 	stepRunning("卸载数据目录")
-	mounts := getExistingDataMounts()
 	var resetMountPoints []string
 	for _, m := range mounts {
 		mount := m["mount"]
@@ -599,18 +605,28 @@ func handleWizardResetStream(w http.ResponseWriter, r *http.Request) {
 	// 4. Stop RAID — only /dev/mdN devices, not --scan
 	stepRunning("停止 RAID")
 	stopRAIDArrays()
-	// Zero superblock on all data disks (dynamic scan)
-	dataDisks := getDataDisks()
-	for _, dev := range dataDisks {
-		common.SudoExec("/usr/sbin/mdadm", "--zero-superblock", dev)
-	}
 	common.SafeWriteFile("/etc/mdadm/mdadm.conf", "")
 	stepDone("停止 RAID")
 
-	// 5. Wipe disks — dynamic scan
+	// 5. Wipe disks — consensus P0-A2：擦盘集合收敛为面板纳管盘，不再对
+	// getDataDisks()（全部非系统整盘）无差别 zero-superblock + wipefs，只对
+	// 最前面采集到的 managedTargets 执行擦除；外来 USB 备份盘等从未纳管的盘
+	// 完全不碰。每个目标落命令前再过 isSystemDisk（命中跳过记日志，不中止
+	// 整个 reset）。
 	stepRunning("清除磁盘签名")
-	for _, dev := range dataDisks {
+	for _, dev := range managedTargets {
+		if isSystemDisk(dev) {
+			continue
+		}
+		common.SudoExec("/usr/sbin/mdadm", "--zero-superblock", dev)
 		common.SudoExec("/usr/sbin/wipefs", "-a", dev)
+	}
+	dataDisks := getDataDisks()
+	if unmanaged := skipUnmanagedDisks(dataDisks, managedTargets); len(unmanaged) > 0 {
+		sendProgress(w, ProgressEvent{
+			Step: "清除磁盘签名", Status: "running", Index: step + 1, Total: totalSteps,
+			Detail: "跳过未纳管盘: " + strings.Join(unmanaged, ", "),
+		})
 	}
 	stepDone("清除磁盘签名")
 

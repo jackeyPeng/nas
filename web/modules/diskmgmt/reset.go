@@ -31,8 +31,14 @@ func handleWizardReset(w http.ResponseWriter, r *http.Request) {
 
 	var steps []string
 
-	// 1. Unmount all /data/nas* and /data (if it's LVM/RAID)
+	// consensus P0-A2：在任何拆除动作之前（LVM/PV/RAID 都还活着）收集纳管擦盘
+	// 目标集合——pvs/mdstat 一旦等 LVM/PV 被拆了再查就是空的，必须在最前面采集。
 	mounts := getExistingDataMounts()
+	pvsOutPre, _ := common.SudoOutput("/usr/sbin/pvs", "--noheadings", "-o", "pv_name,vg_name")
+	mdstatPre, _ := common.SudoOutput("cat", "/proc/mdstat")
+	managedTargets := collectManagedWipeTargets(pvsOutPre, mdstatPre, mounts)
+
+	// 1. Unmount all /data/nas* and /data (if it's LVM/RAID)
 	var resetMountPoints []string
 	for _, m := range mounts {
 		mount := m["mount"]
@@ -101,22 +107,23 @@ func handleWizardReset(w http.ResponseWriter, r *http.Request) {
 
 	// 5. Stop RAID (only /dev/mdN devices, not --scan)
 	stopRAIDArrays()
-	// Zero superblock on all data disks
-	dataDisks := getDataDisks()
-	for _, dev := range dataDisks {
-		common.SudoExec("/usr/sbin/mdadm", "--zero-superblock", dev)
-	}
-	// Clear mdadm config
+
+	// consensus P0-A2：擦盘集合收敛为面板纳管盘 —— 不再对 getDataDisks()
+	// （全部非系统整盘）无差别 zero-superblock + wipefs，只对最前面采集到的
+	// managedTargets（PV、RAID成员、/data/nas*挂载点解析出的底层盘）执行擦除；
+	// 外来 USB 备份盘等从未纳管的盘完全不碰。每个目标落命令前再过 isSystemDisk
+	// （命中则跳过该盘记日志，不中止整个 reset —— 与 handlePoolDelete 的
+	// "拒绝整个操作"语义不同，这里是尽力拆除）。
+	steps = append(steps, wipeManagedTargets(managedTargets)...)
 	common.SafeWriteFile("/etc/mdadm/mdadm.conf", "")
 	steps = append(steps, "清除 RAID 配置")
 
-	// 6. Wipe disk signatures on all data disks
-	for _, dev := range dataDisks {
-		common.SudoExec("/usr/sbin/wipefs", "-a", dev)
+	dataDisks := getDataDisks()
+	for _, dev := range skipUnmanagedDisks(dataDisks, managedTargets) {
+		steps = append(steps, "跳过未纳管盘 "+dev)
 	}
-	steps = append(steps, "清除磁盘签名")
 
-	// 7. 清理 folders.db 元数据 + 重投影托管配置（权威源模式）
+	// 6. 清理 folders.db 元数据 + 重投影托管配置（权威源模式）
 	// 文件系统/LVM 已拆除完成，此时清掉 folders.db 里属于这些挂载点的行，
 	// 再调 SyncAllConfigs() 重新生成 smb.conf/exports 的 Z1 托管段——
 	// 元数据少了行，托管段自然收敛，不用再手工删 smb.conf 片段（旧的 removeSambaSharesByPrefix
@@ -135,7 +142,7 @@ func handleWizardReset(w http.ResponseWriter, r *http.Request) {
 		steps = append(steps, "重新生成 Samba/NFS 托管配置")
 	}
 
-	// 8. Recreate base /data directory
+	// 7. Recreate base /data directory
 	common.SudoExec("mkdir", "-p", "/data")
 	nasUser := common.GetNASUser()
 	if nasUser == "" {
