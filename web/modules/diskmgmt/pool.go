@@ -543,9 +543,28 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 	case "lvm":
 		// 1. Find VG name + member PVs BEFORE any destructive action
 		// （consensus P0-A1：系统盘闸门必须在 lvremove/vgremove/wipefs 之前判定）
+		// consensus R2 Item B：extractVGName 从错误的"两分支都返回
+		// filepath.Base"修正为支持 mapper/LV 路径形态后，这里新增两道闸门
+		// （均在 lvremove 循环即第一条破坏性命令之前）：
+		//   a) vgName 必须在 `vgs -o vg_name` 真实存在的卷组列表里，否则
+		//      说明名称解析失败或卷组已不存在，409 拒绝；
+		//   b) pvs 成功但 memberPVs 为空——真实存在的 VG 必有成员 PV，
+		//      空集合意味着名称/状态异常，这是比"pvs 执行失败"更隐蔽的
+		//      异常（不报错但查不到东西），同样安全拒绝，不能让后续
+		//      lvremove/vgremove 在成员列表为空的情况下裸奔。
 		vgName := extractVGName(poolDevice)
 		if vgName == "" {
 			vgName = "vg_nas"
+		}
+		vgsOut, vgsErr := common.SudoOutput("/usr/sbin/vgs", "--noheadings", "-o", "vg_name")
+		if vgsErr != nil {
+			jsonError(w, fmt.Sprintf("无法确认卷组 %s 是否存在（vgs 执行失败），为安全起见拒绝删除: %s", vgName, vgsErr.Error()), http.StatusInternalServerError)
+			return
+		}
+		if !vgsOutputContainsVGName(vgsOut, vgName) {
+			common.LogAuditRequest(r, "STORAGE", "删除存储池", fmt.Sprintf("type=%s device=%s name=%s rejected=卷组%s不存在或名称解析失败", poolType, poolDevice, poolName, vgName), "rejected")
+			jsonError(w, fmt.Sprintf("卷组 %s 不存在或名称解析失败", vgName), http.StatusConflict)
+			return
 		}
 		// pvs 失败时不能静默当"无成员"处理——memberPVs 为空、后续破坏照常执行，
 		// 这些 PV 就永远查不出来了，磁盘留着 LVM2_member 签名复现幽灵盘（Minor finding）。
@@ -556,6 +575,11 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		memberPVs := strings.Fields(pvsOut)
+		if len(memberPVs) == 0 {
+			common.LogAuditRequest(r, "STORAGE", "删除存储池", fmt.Sprintf("type=%s device=%s name=%s rejected=卷组%s成员PV为空", poolType, poolDevice, poolName, vgName), "rejected")
+			jsonError(w, fmt.Sprintf("卷组 %s 没有查到任何物理卷成员，为安全起见拒绝删除", vgName), http.StatusInternalServerError)
+			return
+		}
 		// consensus P0-A1：系统盘闸门 —— 对每个即将被 wipefs/pvremove 的成员 PV
 		// 做系统盘检查。任一命中立即放弃整个删除，不执行任何破坏动作。
 		if dev, hit := anySystemDisk(memberPVs, isSystemDisk); hit {
@@ -800,6 +824,22 @@ func filterFstabForDeletedPool(fstab string, deletedMounts []string, deletedUUID
 		newLines = append(newLines, line)
 	}
 	return strings.Join(newLines, "\n")
+}
+
+// vgsOutputContainsVGName 判断 `vgs --noheadings -o vg_name` 的输出中是否
+// 精确包含给定 vgName（逐行 trim 后精确比较，不用 Contains 子串匹配——避免
+// "vg_nas" 误命中"vg_nas_backup"这类前缀相似但实际是另一个卷组的情况）。
+// 纯函数，供 handlePoolDelete 的 lvm 分支闸门单测。
+func vgsOutputContainsVGName(vgsOut, vgName string) bool {
+	if vgName == "" {
+		return false
+	}
+	for _, line := range strings.Split(vgsOut, "\n") {
+		if strings.TrimSpace(line) == vgName {
+			return true
+		}
+	}
+	return false
 }
 
 // parseMdMemberDisks extracts member disk paths from "mdadm --detail" output.

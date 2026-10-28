@@ -246,6 +246,40 @@ func TestAnySystemDisk(t *testing.T) {
 	})
 }
 
+// TestVgsOutputContainsVGName 验证 consensus R2 Item B 的 vgs 存在性闸门：
+// 精确行匹配，不被前缀相似的其他 VG 误命中。
+func TestVgsOutputContainsVGName(t *testing.T) {
+	vgsOut := "  vg_nas\n  vg_nas_backup\n  vg_other\n"
+	cases := []struct {
+		name   string
+		vgName string
+		want   bool
+	}{
+		{"精确命中", "vg_nas", true},
+		{"精确命中_另一个", "vg_other", true},
+		{"前缀相似但不应误命中", "vg_na", false},
+		{"不存在的VG", "vg_ghost", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := vgsOutputContainsVGName(vgsOut, c.vgName)
+			if got != c.want {
+				t.Errorf("vgsOutputContainsVGName(vgsOut, %q) = %v, want %v", c.vgName, got, c.want)
+			}
+		})
+	}
+	t.Run("空输出", func(t *testing.T) {
+		if got := vgsOutputContainsVGName("", "vg_nas"); got {
+			t.Error("空输出不应命中任何 VG 名")
+		}
+	})
+	t.Run("空VG名不应命中输出中的空行", func(t *testing.T) {
+		if got := vgsOutputContainsVGName("  vg_nas\n\n  \n", ""); got {
+			t.Error("空字符串 VG 名不应命中输出里 trim 后的空行")
+		}
+	})
+}
+
 // TestParseMdMemberDisks 覆盖正常/空/畸形 mdadm --detail 输出（consensus R1
 // Fix 1：handlePoolDelete 的 raid 分支在 parseMdMemberDisks 结果为空时必须安全
 // 拒绝删除，这里先确认解析函数本身在空输出/畸形输出下确实返回空切片，

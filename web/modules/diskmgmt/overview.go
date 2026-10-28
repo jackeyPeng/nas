@@ -616,13 +616,68 @@ func matchVGForMapper(mapperName string, vgList []string) string {
 	return ""
 }
 
-// extractVGName 从 /dev/vg_nas 提取 vg_nas
+// extractVGName 从设备路径提取 VG 名，支持三种形态（consensus R2 Item B）：
+//   - `/dev/vg_nas` → `vg_nas`（整盘/VG 路径本身，取 base，现状保持）
+//   - `/dev/vg_nas/data` → `vg_nas`（LV 路径形式，VG 是父目录名）
+//   - `/dev/mapper/vg_nas-data` → `vg_nas`（dm-mapper 命名：VG 名里的字面 "-"
+//     被转义为 "--"，VG 与 LV 之间用单个未转义的 "-" 分隔；解析时要先在
+//     mapper 名里找到第一个"落单"的 "-"（即不是 "--" 转义对的一部分），
+//     左边部分把 "--" 还原成 "-" 就是真实 VG 名）
+//   - `/dev/mapper/control` → `""`（control 是 device-mapper 控制设备，不是
+//     任何 VG 的 LV，特判返回空串）
+//
+// 此前两个分支（mapper 与非 mapper）都直接 filepath.Base(device)，对
+// `/dev/mapper/vg_nas-data` 会得出整段 "vg_nas-data" 当 VG 名——pvs -S
+// vg_name= 查询用这个错误值永远查空但不报错，调用点（handlePoolDelete 的
+// lvm 分支、overview.go 池显示名、pool.go 扩容路径）全部受影响，详见
+// 报告的调用点说明。
 func extractVGName(device string) string {
+	if strings.HasPrefix(device, "/dev/mapper/") {
+		mapperName := strings.TrimPrefix(device, "/dev/mapper/")
+		if mapperName == "control" {
+			return ""
+		}
+		return unescapeMapperVGName(mapperName)
+	}
 	base := filepath.Base(device)
-	if strings.HasPrefix(base, "vg_") {
+	if base == device {
+		// 没有任何 "/" 分隔，device 本身就是末段（如 "/dev/vg_nas"）。
 		return base
 	}
+	// LV 直路径 /dev/vg_nas/data：VG 是父目录名，即 filepath.Dir 的 base。
+	parent := filepath.Dir(device)
+	parentBase := filepath.Base(parent)
+	if parentBase != "" && parentBase != "." && parentBase != "/" && parentBase != "dev" {
+		return parentBase
+	}
 	return base
+}
+
+// unescapeMapperVGName 从 dm-mapper 命名（如 "vg_nas-data"、"my--vg-data"）中
+// 解析出 VG 名部分。LVM mapper 命名规则：VG/LV 名内的字面 "-" 转义为 "--"，
+// VG 与 LV 名之间用单个未转义的 "-" 分隔。算法：逐字符扫描，遇到 "--" 就是
+// 转义对（还原成一个 "-" 并跳过两个字符），遇到单个 "-"（后面不是另一个
+// "-"）就是分隔符，扫描到此停止，之前积累的内容就是还原后的 VG 名。
+// 找不到分隔符（整串都是转义对，没有真正的分隔符）时，把整串还原后返回
+// （调用方后续会用 vgs 校验这个名字是否真实存在）。
+func unescapeMapperVGName(mapperName string) string {
+	var sb strings.Builder
+	i := 0
+	for i < len(mapperName) {
+		if mapperName[i] == '-' {
+			if i+1 < len(mapperName) && mapperName[i+1] == '-' {
+				// "--" 转义对：还原成一个 "-"，跳过两个字符。
+				sb.WriteByte('-')
+				i += 2
+				continue
+			}
+			// 单个 "-"：VG/LV 分隔符，停止。
+			break
+		}
+		sb.WriteByte(mapperName[i])
+		i++
+	}
+	return sb.String()
 }
 
 // findDiskPoolDevice 找到物理盘属于哪个 Pool device

@@ -62,6 +62,53 @@ func TestMatchVGForMapper(t *testing.T) {
 	}
 }
 
+// TestExtractVGName 验证 consensus R2 Item B：extractVGName 支持 VG 路径、
+// LV 直路径、dm-mapper 三种设备形态，mapper 形态需要正确处理 "--" 转义还原。
+func TestExtractVGName(t *testing.T) {
+	cases := []struct {
+		name   string
+		device string
+		want   string
+	}{
+		{"VG路径本身_base现状保持", "/dev/vg_nas", "vg_nas"},
+		{"LV直路径取父目录名", "/dev/vg_nas/data", "vg_nas"},
+		{"mapper命名_第一个落单连字符分隔", "/dev/mapper/vg_nas-data", "vg_nas"},
+		{"mapper命名_转义还原", "/dev/mapper/my--vg-data", "my-vg"},
+		{"mapper_control设备特判空串", "/dev/mapper/control", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := extractVGName(c.device)
+			if got != c.want {
+				t.Errorf("extractVGName(%q) = %q, want %q", c.device, got, c.want)
+			}
+		})
+	}
+}
+
+// TestUnescapeMapperVGName 单独覆盖 mapper 名转义还原算法的边界情况。
+func TestUnescapeMapperVGName(t *testing.T) {
+	cases := []struct {
+		name       string
+		mapperName string
+		want       string
+	}{
+		{"简单VG无连字符", "vg_nas-data", "vg_nas"},
+		{"VG名含一个转义连字符", "my--vg-data", "my-vg"},
+		{"VG名含多个转义连字符", "a--b--c-lv", "a-b-c"},
+		{"整串都是转义对无分隔符_还原整串", "a--b--c", "a-b-c"},
+		{"空字符串", "", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := unescapeMapperVGName(c.mapperName)
+			if got != c.want {
+				t.Errorf("unescapeMapperVGName(%q) = %q, want %q", c.mapperName, got, c.want)
+			}
+		})
+	}
+}
+
 // TestOverviewCachesConcurrentAccess 验证 consensus P1-B（C1）的修法：
 // cachedPVMappings/cachedRAIDMembers 两个包级变量在并发场景下读写不再 data race。
 // 多 goroutine 并发调用 getCachedPVMappings/getCachedRAIDMappings 以及
