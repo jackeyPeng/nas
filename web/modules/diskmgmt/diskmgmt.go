@@ -23,11 +23,13 @@ func RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/disk/smart-detail", common.AuthMiddleware(handleSmartDetail))
 	mux.HandleFunc("/api/disk/partitions", common.AuthMiddleware(handlePartitions))
 	mux.HandleFunc("/api/disk/fstab", common.AuthMiddleware(handleFstab))
-	// Operations (deprecated low-level APIs — kept for debugging, not used by frontend)
-	mux.HandleFunc("/api/disk/format", common.AuthMiddleware(handleFormat))
-	mux.HandleFunc("/api/disk/mount", common.AuthMiddleware(handleMount))
-	mux.HandleFunc("/api/disk/unmount", common.AuthMiddleware(handleUnmount))
-	mux.HandleFunc("/api/disk/mkdir", common.AuthMiddleware(handleMkdir))
+	// Operations (deprecated low-level APIs — kept for debugging, not used by frontend;
+	// B1：专用整机定位下这几个接口不再走正常产品路径，默认关闭，只有显式开调试
+	// 开关才放行，避免被当成面板支持的"通用挂载/格式化"能力误用)
+	mux.HandleFunc("/api/disk/format", common.AuthMiddleware(debugDiskGate(handleFormat)))
+	mux.HandleFunc("/api/disk/mount", common.AuthMiddleware(debugDiskGate(handleMount)))
+	mux.HandleFunc("/api/disk/unmount", common.AuthMiddleware(debugDiskGate(handleUnmount)))
+	mux.HandleFunc("/api/disk/mkdir", common.AuthMiddleware(debugDiskGate(handleMkdir)))
 	// Storage pool (LVM)
 	mux.HandleFunc("/api/disk/pool/status", common.AuthMiddleware(handlePoolStatus))
 	mux.HandleFunc("/api/disk/pool/create", common.AuthMiddleware(handlePoolCreate))
@@ -173,6 +175,20 @@ func handlePartitions(w http.ResponseWriter, r *http.Request) {
 // ═══════════════════════════════════════
 // 操作 API
 // ═══════════════════════════════════════
+
+// debugDiskGate 包一层守卫：只有显式开启 NAS_DISK_DEBUG=1 才放行底层
+// format/mount/unmount/mkdir 四个接口，否则一律 403。这四个接口在专用整机
+// 定位下已无正常产品入口（前端零引用，B1），保留 handler 本体只是方便调试，
+// 不应作为面板对外的常规能力继续暴露。
+func debugDiskGate(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if os.Getenv("NAS_DISK_DEBUG") != "1" {
+			http.Error(w, `{"error":"低级别磁盘接口已禁用（调试模式未开启）"}`, http.StatusForbidden)
+			return
+		}
+		next(w, r)
+	}
+}
 
 // handleFormat 格式化分区
 func handleFormat(w http.ResponseWriter, r *http.Request) {

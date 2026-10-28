@@ -56,10 +56,6 @@ function nasPanel() {
         diskIOStat: '',
         diskSmartDetail: '',
         diskPartitions: '',
-        diskMkdirForm: { path: '' },
-        mountForm: { device: '', mountpoint: '', fstype: '' },
-        unmountForm: { target: '' },
-        formatForm: { device: '', fstype: 'ext4' },
         // Disk management - new
         diskStatus: [],
         diskFstab: '',
@@ -1892,66 +1888,6 @@ function nasPanel() {
             if (data) this.diskPartitions = data;
         },
 
-        async diskMkdir() {
-            if (!this.diskMkdirForm.path) { this.showToast(this.t('msg.enter_path'), 'error'); return; }
-            const data = await this.api('/disk/mkdir', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: `path=${encodeURIComponent(this.diskMkdirForm.path)}`
-            });
-            if (data) {
-                this.showToast(this.t('msg.create_success'), 'success');
-                this.diskMkdirForm.path = '';
-            }
-        },
-
-        async diskMount() {
-            if (!this.mountForm.device || !this.mountForm.mountpoint) { this.showToast(this.t('msg.device_mount_required'), 'error'); return; }
-            const data = await this.api('/disk/mount', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: new URLSearchParams(this.mountForm).toString()
-            });
-            if (data) {
-                this.showToast(this.t('msg.mount_success'), 'success');
-                this.loadDiskMounts();
-            }
-        },
-
-        async diskUnmount() {
-            if (!this.unmountForm.target) { this.showToast(this.t('msg.enter_mount_or_device'), 'error'); return; }
-            const data = await this.api('/disk/unmount', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: `target=${encodeURIComponent(this.unmountForm.target)}`
-            });
-            if (data) {
-                this.showToast(this.t('msg.unmount_success'), 'success');
-                this.unmountForm.target = '';
-                this.loadDiskMounts();
-            }
-        },
-
-        async diskFormat() {
-            if (!this.formatForm.device) { this.showToast(this.t('msg.enter_device'), 'error'); return; }
-            if (!confirm(this.t('msg.format_confirm', [this.formatForm.device, this.formatForm.fstype]))) return;
-            const confirmToken = prompt(this.t('msg.confirm_type_device', [this.formatForm.device]));
-            if (confirmToken !== this.formatForm.device) {
-                this.showToast(this.t('msg.name_mismatch'), 'error');
-                return;
-            }
-            const data = await this.api('/disk/format', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: `device=${encodeURIComponent(this.formatForm.device)}&fstype=${this.formatForm.fstype}&confirm=yes&confirm_token=${encodeURIComponent(this.formatForm.device)}`
-            });
-            if (data) {
-                this.showToast(this.t('msg.format_success'), 'success');
-                this.formatForm.device = '';
-                this.loadDiskStatus();
-            }
-        },
-
         // New: disk status overview
         async loadDiskStatus() {
             const data = await this.api('/disk/status');
@@ -2146,7 +2082,7 @@ function nasPanel() {
                 case 'raid1': return Math.min(sizes[0], sizes[1] !== undefined ? sizes[1] : sizes[0]);
                 case 'raid5': return n >= 3 ? min * (n - 1) : 0;
                 case 'raid6': return n >= 4 ? min * (n - 2) : 0;
-                default: return total; // merge / raid0 / separate
+                default: return total; // merge / raid0
             }
         },
         wizUsableText(opt) {
@@ -2211,7 +2147,7 @@ function nasPanel() {
         // Wizard: setup (streaming with progress)
         async wizardSetup(mode) {
             if (!mode) { this.showToast(this.t('msg.select_mode'), 'error'); return; }
-            const modeName = {single: this.t('msg.mode_single'), merge: this.t('msg.mode_merge'), separate: this.t('msg.mode_separate'), raid1: this.t('msg.mode_raid1')}[mode];
+            const modeName = {single: this.t('msg.mode_single'), merge: this.t('msg.mode_merge'), raid1: this.t('msg.mode_raid1')}[mode];
             if (!confirm(this.t('msg.run_mode_confirm', [modeName]))) return;
 
             // Show progress panel

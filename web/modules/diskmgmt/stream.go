@@ -89,6 +89,14 @@ func handleWizardSetupStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// B2：separate（独立多池）创建模式已下线——产品定位收敛为专用整机、
+	// 一机一主池，不再在创建主流程里支持这条路径。单独拦在最前面，不进入
+	// 后续的步数计算/validateMode/实际建池分支。
+	if mode == "separate" {
+		sendProgress(w, ProgressEvent{Step: "模式检查", Status: "error", Detail: "separate 多池模式已下线，单池模型请使用 merge/RAID"})
+		return
+	}
+
 	// Calculate total steps based on mode
 	totalSteps := getModeStepCount(mode, len(unusedDevs))
 	if totalSteps == 0 {
@@ -116,12 +124,11 @@ func handleWizardSetupStream(w http.ResponseWriter, r *http.Request) {
 
 	// 固定单池挂载 /data/nas1（新模型：整个系统一个存储池）。
 	// 不再自动挑选下一个空闲挂载点——那会把池挂到 nas2/nas3，违背单池设计。
+	// separate 模式已在上面被拦截，这里不再需要按模式分叉判断。
 	mountPoint := "/data/nas1"
-	if mode != "separate" {
-		if mntOut, _ := common.ExecOutput("findmnt", "-n", "-o", "TARGET", mountPoint); strings.TrimSpace(mntOut) != "" {
-			sendProgress(w, ProgressEvent{Step: "检查存储池", Status: "error", Detail: "存储池 /data/nas1 已存在，无需重复创建"})
-			return
-		}
+	if mntOut, _ := common.ExecOutput("findmnt", "-n", "-o", "TARGET", mountPoint); strings.TrimSpace(mntOut) != "" {
+		sendProgress(w, ProgressEvent{Step: "检查存储池", Status: "error", Detail: "存储池 /data/nas1 已存在，无需重复创建"})
+		return
 	}
 
 	// Fix 3：setup*Stream 现在返回 error —— 非 nil 时内部已经把 error 事件发往 SSE
@@ -153,10 +160,6 @@ func handleWizardSetupStream(w http.ResponseWriter, r *http.Request) {
 	case "raid6":
 		// RAID6 — 4+ disks
 		setupErr = setupRAIDStream(w, unusedDevs, 6, mountPoint, nasUser, stepRunning, stepDone, totalSteps)
-
-	case "separate":
-		// Each disk independent
-		setupErr = setupSeparateStream(w, unusedDevs, nasUser, stepRunning, stepDone, totalSteps)
 	}
 	if setupErr != nil {
 		return
@@ -216,7 +219,7 @@ func validateMode(mode string, diskCount int) string {
 		if diskCount < 1 {
 			return "至少需要 1 块磁盘"
 		}
-	case "merge", "raid0", "separate":
+	case "merge", "raid0":
 		if diskCount < 2 {
 			return "至少需要 2 块磁盘"
 		}
@@ -247,8 +250,6 @@ func getModeStepCount(mode string, diskCount int) int {
 		return 5 + diskCount // per-disk wipe+pvcreate, vgcreate, lvcreate, format, mount
 	case "raid0", "raid1", "raid5", "raid6":
 		return 7 // wipe, create raid, wait, format, mount, fstab, samba
-	case "separate":
-		return 5 * diskCount // per-disk: wipe, partition, format, mount, samba
 	default:
 		return 0
 	}
@@ -493,56 +494,6 @@ func getNextMDDevice() string {
 		}
 	}
 	return "/dev/md127"
-}
-
-// setupSeparateStream: each disk independent（Fix 3：签名改为返回 error，见
-// setupLVMSingleStream 顶部注释说明动机）。
-func setupSeparateStream(w http.ResponseWriter, devs []string, nasUser string,
-	stepRunning, stepDone func(string), totalSteps int) error {
-
-	for i, dev := range devs {
-		mountPoint := fmt.Sprintf("/data/nas%d", i+1)
-
-		stepRunning(fmt.Sprintf("磁盘 %d: 清除签名", i+1))
-		out, err := common.SudoExec("/usr/sbin/wipefs", "-a", dev)
-		if checkExecError(w, fmt.Sprintf("磁盘%d清除", i+1), out, err) {
-			return fmt.Errorf("磁盘%d清除: %s: %w", i+1, out, err)
-		}
-		stepDone(fmt.Sprintf("磁盘 %d: 清除签名", i+1))
-
-		stepRunning(fmt.Sprintf("磁盘 %d: 创建分区", i+1))
-		out, err = common.SudoExec("/usr/sbin/parted", "-s", dev, "mklabel", "gpt", "mkpart", "primary", "xfs", "0%", "100%")
-		if checkExecError(w, fmt.Sprintf("磁盘%d分区", i+1), out, err) {
-			return fmt.Errorf("磁盘%d分区: %s: %w", i+1, out, err)
-		}
-		time.Sleep(500 * time.Millisecond)
-		partDev := partitionDevice(dev, 1)
-		stepDone(fmt.Sprintf("磁盘 %d: 创建分区", i+1))
-
-		stepRunning(fmt.Sprintf("磁盘 %d: 格式化", i+1))
-		out, err = common.SudoExec("mkfs.xfs", "-f", partDev)
-		if checkExecError(w, fmt.Sprintf("磁盘%d格式化", i+1), out, err) {
-			return fmt.Errorf("磁盘%d格式化: %s: %w", i+1, out, err)
-		}
-		stepDone(fmt.Sprintf("磁盘 %d: 格式化", i+1))
-
-		stepRunning(fmt.Sprintf("磁盘 %d: 挂载", i+1))
-		common.SudoExec("mkdir", "-p", mountPoint)
-		out, err = common.SudoExec("mount", "-o", "prjquota", partDev, mountPoint)
-		if checkExecError(w, fmt.Sprintf("磁盘%d挂载", i+1), out, err) {
-			return fmt.Errorf("磁盘%d挂载: %s: %w", i+1, out, err)
-		}
-		if mountAndWriteFstab(w, fmt.Sprintf("磁盘%d挂载", i+1), partDev, mountPoint) {
-			return fmt.Errorf("磁盘%d挂载: 写入 fstab 失败", i+1)
-		}
-		common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountPoint)
-		stepDone(fmt.Sprintf("磁盘 %d: 挂载到存储空间%d", i+1, i+1))
-
-		stepRunning(fmt.Sprintf("磁盘 %d: public + home", i+1))
-		EnsurePoolStructure(mountPoint, nasUser)
-		stepDone(fmt.Sprintf("磁盘 %d: public + home", i+1))
-	}
-	return nil
 }
 
 // handleWizardResetStream does storage reset with real-time progress

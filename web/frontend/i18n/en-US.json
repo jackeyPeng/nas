@@ -490,7 +490,11 @@
     "raid_expand_warn": "RAID expansion triggers a data reshape that takes a long time — do not power off or remove disks during it.",
     "unmanaged_title": "Unmanaged disks (contain existing data)",
     "unmanaged_hint": "Data was detected on these disks, but they are not assigned to any recognized storage pool. Back up the data first, then erase and re-add them once you've confirmed they're no longer needed, to avoid accidental data loss.",
-    "unmanaged": "Unmanaged"
+    "unmanaged": "Unmanaged",
+    "add_mirror_disk": "Add Mirror Disk",
+    "add_mirror_disk_hint": "Adding a disk to RAID1 adds a mirror copy to improve redundancy; it does not increase usable capacity",
+    "raid_mirror_warn": "Adding a mirror disk triggers a data resync that takes a long time — do not power off or remove disks during it.",
+    "start_add_mirror": "Start Adding"
   },
   "users": {
     "title": "User Management",

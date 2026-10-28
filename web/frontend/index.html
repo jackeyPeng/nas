@@ -1941,7 +1941,9 @@
             <!-- ═══════════════ RAID 扩容弹窗 ═══════════════ -->
             <div class="modal" x-show="showRAIDExpand" x-cloak @click.self="showRAIDExpand=false">
                 <div class="modal-box" style="max-width:420px">
-                    <h3><span x-text="$t('storage.expand_pool')"></span> <span style="color:var(--text-muted);font-size:var(--fs-sm)" x-text="'(' + raidExpandForm.raidType + ')'"></span></h3>
+                    <!-- B3：RAID1 加盘实质是加镜像副本，容量不变，不该跟 raid5/6 的扩容混用同一套文案 -->
+                    <h3><span x-text="raidExpandForm.raidType === 'RAID1' ? $t('storage.add_mirror_disk') : $t('storage.expand_pool')"></span> <span style="color:var(--text-muted);font-size:var(--fs-sm)" x-text="'(' + raidExpandForm.raidType + ')'"></span></h3>
+                    <div x-show="raidExpandForm.raidType === 'RAID1'" style="font-size:var(--fs-xs);color: var(--text-light);margin-bottom:var(--sp-2)" x-text="$t('storage.add_mirror_disk_hint')"></div>
                     <div class="form-group">
                         <label><span x-text="$t('storage.raid_device')"></span></label>
                         <input type="text" disabled :value="raidExpandForm.mdDevice" style="background: var(--card-bg-alt)">
@@ -1957,11 +1959,11 @@
                         <div x-show="!(storageOverview.free_disks || []).length" style="font-size:var(--fs-xs);color: var(--warn);margin-top:var(--sp-1)"><span x-text="$t('storage.no_free_disk')"></span></div>
                     </div>
                     <div style="background: var(--warn-light);border:1px solid #f59e0b;border-radius:var(--radius-sm);padding:var(--sp-2) var(--sp-3);font-size:var(--fs-xs);margin-bottom:var(--sp-3)">
-                        <span x-text="$t('storage.raid_expand_warn')"></span>
+                        <span x-text="raidExpandForm.raidType === 'RAID1' ? $t('storage.raid_mirror_warn') : $t('storage.raid_expand_warn')"></span>
                     </div>
                     <div class="modal-actions">
                         <button class="btn" @click="showRAIDExpand=false" x-text="$t('common.cancel')"></button>
-                        <button class="btn btn-primary" @click="expandRAIDStream()"><span x-text="$t('storage.start_expand')"></span></button>
+                        <button class="btn btn-primary" @click="expandRAIDStream()"><span x-text="raidExpandForm.raidType === 'RAID1' ? $t('storage.start_add_mirror') : $t('storage.start_expand')"></span></button>
                     </div>
                 </div>
             </div>

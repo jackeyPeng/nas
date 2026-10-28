@@ -490,7 +490,11 @@
     "raid_expand_warn": "RAID 扩容会进行 reshape 数据重建，耗时长，期间请勿断电或拔出磁盘",
     "unmanaged_title": "未纳管磁盘（含存量数据）",
     "unmanaged_hint": "这些磁盘上检测到数据，但未归属到任何已识别的存储池。建议先备份数据，确认无用后再擦除重新纳管，避免误用导致数据丢失。",
-    "unmanaged": "未纳管"
+    "unmanaged": "未纳管",
+    "add_mirror_disk": "添加镜像盘",
+    "add_mirror_disk_hint": "RAID1 加盘是增加镜像副本，提高冗余，不会增加可用容量",
+    "raid_mirror_warn": "添加镜像盘会进行数据同步重建，耗时长，期间请勿断电或拔出磁盘",
+    "start_add_mirror": "开始添加"
   },
   "users": {
     "title": "用户管理",

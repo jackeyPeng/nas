@@ -163,25 +163,9 @@ func getRaidOptions(diskCount int, minSizeGB float64) []RaidOption {
 		options = append(options, opt)
 	}
 
-	// 7. Independent / Separate (2+ disks) — each disk standalone
-	if diskCount >= 2 {
-		opt := RaidOption{
-			ID:          "separate",
-			Name:        "独立模式",
-			Icon:        "📁",
-			Goal:        "balance",
-			Safety:      "medium",
-			SafetyText:  "各盘独立",
-			UsableRatio: "100%",
-			UsableSize:  formatSize(totalSize),
-			Description: "每块磁盘独立一个存储空间，互不影响",
-			Warning:     "坏一块只丢该盘数据，不影响其他盘。管理稍复杂",
-			Recommended: false,
-			MinDisks:    2,
-			MaxDisks:    0,
-		}
-		options = append(options, opt)
-	}
+	// B2：separate（独立模式）多池创建已从向导选项下线——产品定位收敛为
+	// 专用整机、一机一主池，不再在创建流程里提供"每盘独立"选项。向导数据
+	// 驱动前端渲染，这里不再 append 该选项即可让按钮自动消失。
 
 	return options
 }
