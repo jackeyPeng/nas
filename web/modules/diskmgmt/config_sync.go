@@ -313,17 +313,13 @@ func GetAllFolderMeta() []FolderMeta {
 const managedStart = "# === Z1 MANAGED SHARES START ==="
 const managedEnd = "# === Z1 MANAGED SHARES END ==="
 
-// GenerateSambaConfig generates the managed section of smb.conf from metadata
-func GenerateSambaConfig() error {
-	metas := GetAllFolderMeta()
-	if metas == nil {
-		return fmt.Errorf("无法读取元数据")
-	}
-
-	// Build the managed section
+// buildSambaManagedBlock 构造 smb.conf 的 Z1 托管段完整文本（含 START/END 标记）。
+// 从 GenerateSambaConfig 抽出的纯函数——两者逐字节行为不变，供
+// CheckConfigConsistency（consensus P1-B/C2）与 generateManagedBlock 复用，
+// 避免"期望输出"与"实际写盘内容"用两套独立实现、必然逐渐漂移的问题。
+func buildSambaManagedBlock(metas []FolderMeta, nasUser string) string {
 	var sb strings.Builder
 	sb.WriteString(managedStart + "\n")
-	nasUser := getNASUser()
 	for _, m := range metas {
 		if !m.SambaShare {
 			continue
@@ -372,8 +368,18 @@ func GenerateSambaConfig() error {
 		}
 	}
 	sb.WriteString(managedEnd + "\n")
+	return sb.String()
+}
 
-	managedBlock := sb.String()
+// GenerateSambaConfig generates the managed section of smb.conf from metadata
+func GenerateSambaConfig() error {
+	metas := GetAllFolderMeta()
+	if metas == nil {
+		return fmt.Errorf("无法读取元数据")
+	}
+
+	nasUser := getNASUser()
+	managedBlock := buildSambaManagedBlock(metas, nasUser)
 
 	// Read current smb.conf
 	current, _ := common.SudoOutput("cat", "/etc/samba/smb.conf")
@@ -390,13 +396,9 @@ func GenerateSambaConfig() error {
 	return nil
 }
 
-// GenerateNFSConfig generates the managed section of /etc/exports from metadata
-func GenerateNFSConfig() error {
-	metas := GetAllFolderMeta()
-	if metas == nil {
-		return fmt.Errorf("无法读取元数据")
-	}
-
+// buildNFSManagedBlock 构造 /etc/exports 的 Z1 托管段完整文本（含 START/END 标记）。
+// 从 GenerateNFSConfig 抽出的纯函数，理由同 buildSambaManagedBlock（consensus P1-B/C2）。
+func buildNFSManagedBlock(metas []FolderMeta) string {
 	var sb strings.Builder
 	sb.WriteString(managedStart + "\n")
 	// 所有服务对所有网段开放：NFS 导出用 *（不再限制本机网段）
@@ -409,8 +411,17 @@ func GenerateNFSConfig() error {
 		sb.WriteString(fmt.Sprintf("%s *(%s)\n", m.Path, nfsExportOpts(m)))
 	}
 	sb.WriteString(managedEnd + "\n")
+	return sb.String()
+}
 
-	managedBlock := sb.String()
+// GenerateNFSConfig generates the managed section of /etc/exports from metadata
+func GenerateNFSConfig() error {
+	metas := GetAllFolderMeta()
+	if metas == nil {
+		return fmt.Errorf("无法读取元数据")
+	}
+
+	managedBlock := buildNFSManagedBlock(metas)
 
 	current, _ := common.SudoOutput("cat", "/etc/exports")
 	newConf := replaceManagedBlock(current, managedBlock)
@@ -572,9 +583,14 @@ func CheckConfigConsistency() ConfigIssues {
 	// 真实配置漂移由下面 smb.conf / exports 托管段与 folders.db 的对账覆盖。
 
 	// 3. Check: smb.conf managed section matches metadata
+	// consensus P1-B/C2：此前 expectedSamba 算出来直接 `_ =` 丢弃，只检查托管段
+	// 标记存在性，标记在、内容和 folders.db 已经不一致（配置漂移）的场景完全
+	// 检测不出来。现在提取文件里 managedStart…managedEnd 之间的实际内容，与
+	// generateManagedBlock 的期望输出比对（归一化行尾空白/末尾换行后精确比较）；
+	// 标记存在但内容一致不报——本函数保持只报告不自动修复。
 	smbConf, _ := common.SudoOutput("cat", "/etc/samba/smb.conf")
 	expectedSamba := generateManagedBlock(metas, "samba")
-	hasSambaBlock := strings.Contains(smbConf, managedStart)
+	actualSambaSection, hasSambaBlock := extractManagedSection(smbConf)
 	if len(metas) > 0 && !hasSambaBlock {
 		issues.HasIssues = true
 		issues.Issues = append(issues.Issues, "Samba 配置缺少 Z1 托管段标记")
@@ -584,11 +600,15 @@ func CheckConfigConsistency() ConfigIssues {
 		issues.HasIssues = true
 		issues.Issues = append(issues.Issues, "Samba 配置存在残留的 Z1 托管段标记（无托管文件夹）")
 	}
+	if len(metas) > 0 && hasSambaBlock && managedSectionDrifted(actualSambaSection, expectedSamba) {
+		issues.HasIssues = true
+		issues.Issues = append(issues.Issues, "Samba/NFS 托管段与 folders.db 不一致（配置漂移）")
+	}
 
 	// 4. Check: exports managed section matches metadata
 	exports, _ := common.SudoOutput("cat", "/etc/exports")
 	expectedNFS := generateManagedBlock(metas, "nfs")
-	hasNFSBlock := strings.Contains(exports, managedStart)
+	actualNFSSection, hasNFSBlock := extractManagedSection(exports)
 	if len(metas) > 0 && !hasNFSBlock {
 		issues.HasIssues = true
 		issues.Issues = append(issues.Issues, "NFS 配置缺少 Z1 托管段标记")
@@ -597,6 +617,10 @@ func CheckConfigConsistency() ConfigIssues {
 		issues.HasIssues = true
 		issues.Issues = append(issues.Issues, "NFS 配置存在残留的 Z1 托管段标记（无托管文件夹）")
 	}
+	if len(metas) > 0 && hasNFSBlock && managedSectionDrifted(actualNFSSection, expectedNFS) {
+		issues.HasIssues = true
+		issues.Issues = append(issues.Issues, "Samba/NFS 托管段与 folders.db 不一致（配置漂移）")
+	}
 
 	// 5. Check: services have loaded the latest config
 	serviceIssues := verifyServiceConfig()
@@ -604,9 +628,6 @@ func CheckConfigConsistency() ConfigIssues {
 		issues.HasIssues = true
 		issues.Issues = append(issues.Issues, serviceIssues...)
 	}
-
-	_ = expectedSamba
-	_ = expectedNFS
 
 	return issues
 }
@@ -754,20 +775,55 @@ func removeShareFromBody(body string, m FolderMeta) string {
 	return strings.Join(result, "\n")
 }
 
-// generateManagedBlock generates a preview of the managed block for comparison
+// generateManagedBlock 生成期望的托管段完整文本，供 CheckConfigConsistency
+// 与实际文件内容比对（consensus P1-B/C2）。此前这里是"简化版预览"（samba 只写
+// [name]、nfs 只写 "path ..."），与 GenerateSambaConfig/GenerateNFSConfig 真正
+// 写盘的内容完全不是一回事，没法做有意义的内容比对——现在直接复用同一套
+// buildSambaManagedBlock/buildNFSManagedBlock，期望输出与实际写盘内容由同一份
+// 代码生成，不会出现"期望"和"实际"两套独立实现各自漂移的问题。
 func generateManagedBlock(metas []FolderMeta, configType string) string {
-	// This is a simplified version for comparison
-	var sb strings.Builder
-	sb.WriteString(managedStart + "\n")
-	for _, m := range metas {
-		if configType == "samba" && m.SambaShare {
-			sb.WriteString(fmt.Sprintf("[%s]\n", m.Name))
-		} else if configType == "nfs" && m.NFSExport {
-			sb.WriteString(fmt.Sprintf("%s ...\n", m.Path))
-		}
+	switch configType {
+	case "samba":
+		return buildSambaManagedBlock(metas, getNASUser())
+	case "nfs":
+		return buildNFSManagedBlock(metas)
+	default:
+		return ""
 	}
-	sb.WriteString(managedEnd + "\n")
-	return sb.String()
+}
+
+// extractManagedSection 从配置文件完整内容中提取 managedStart…managedEnd
+// （含标记行）之间的托管段原文。用于 CheckConfigConsistency 比对实际文件内容
+// 与期望输出是否一致（consensus P1-B/C2）。找不到完整的 START...END 区间
+// （缺标记、或只有孤立的一侧标记）返回 ("", false)——调用方应据此判断"无托管段"
+// 而不是当作"空托管段"参与内容比对。多个 START/END 残留时取第一个 START 到
+// 最后一个 END（与 replaceManagedBlock 的拆除逻辑保持一致的区间定义）。
+func extractManagedSection(content string) (string, bool) {
+	startIdx := strings.Index(content, managedStart)
+	endIdx := strings.LastIndex(content, managedEnd)
+	if startIdx < 0 || endIdx < startIdx {
+		return "", false
+	}
+	return content[startIdx : endIdx+len(managedEnd)], true
+}
+
+// normalizeManagedBlock 归一化托管段文本用于比对：统一行尾空白裁剪 + 统一末尾
+// 换行，避免因为 cat 读取残留的尾部换行差异、或个别行末尾多一个空格这类无意义
+// 差异被误报为"配置漂移"。
+func normalizeManagedBlock(s string) string {
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		lines[i] = strings.TrimRight(line, " \t")
+	}
+	return strings.TrimRight(strings.Join(lines, "\n"), "\n") + "\n"
+}
+
+// managedSectionDrifted 判断实际文件内容中的托管段与期望输出是否一致（纯函数，
+// 供单测；比较前都做 normalizeManagedBlock 归一化）。hasSection=false 时表示
+// 文件里找不到完整托管段，调用方应依据已有的"缺标记/残留标记"判据处理，不应
+// 调这个函数做内容比对。
+func managedSectionDrifted(actualSection, expectedSection string) bool {
+	return normalizeManagedBlock(actualSection) != normalizeManagedBlock(expectedSection)
 }
 
 // ═══════════════════════════════════════════════════════════

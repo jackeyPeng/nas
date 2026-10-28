@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"nas-panel/common"
@@ -141,8 +142,7 @@ func handleStorageOverview(w http.ResponseWriter, r *http.Request) {
 // + 总容量 + 告警）。从 handleStorageOverview 抽出的纯函数——handler 现在只负责
 // 调它再序列化，行为逐字节不变。AI 工具域 diskmgmt.OverviewData() 复用同一内核。
 func buildStorageOverview() StorageOverview {
-	cachedPVMappings = nil
-	cachedRAIDMembers = nil
+	resetOverviewCaches()
 
 	overview := StorageOverview{
 		Pools:          []PoolSummary{},
@@ -710,10 +710,34 @@ func detectPoolTypeEx(device, mount string) (string, string) {
 	return "single", ""
 }
 
+// consensus P1-B（C1）：cachedPVMappings/cachedRAIDMembers 是包级变量，此前
+// buildStorageOverview 入口置 nil、getter 懒填充，跨请求并发调用会对同一组
+// 变量产生 data race（go test -race 能直接打出来）。两种修法二选一：
+//   a) 包级 sync.Mutex 保护全部读写点，getter 在锁内执行外部命令并填充；
+//   b) 重构为请求级传参（不用包级变量）。
+//
+// 选 (a)：findDiskPoolDevice→getCachedPVMappings/getCachedRAIDMembers 只有
+// buildStorageOverview 这一条调用路径，改造成请求级传参需要连带改
+// findDiskPoolDevice 的签名和它的单测，影响面更大；而 overview 构建本身不是
+// 高频/低延迟要求的路径（面板总览页请求），串行化可接受。锁粒度覆盖"读取前
+// 判断是否已填充"到"填充完成"的整个临界区，避免 TOCTOU。
+var overviewCacheMu sync.Mutex
+
+// resetOverviewCaches 清空两个包级缓存，用于下一次 buildStorageOverview 重新
+// 懒加载。必须在持锁状态下执行，不单独导出给外部调用。
+func resetOverviewCaches() {
+	overviewCacheMu.Lock()
+	cachedPVMappings = nil
+	cachedRAIDMembers = nil
+	overviewCacheMu.Unlock()
+}
+
 // getCachedPVMappings returns PV→VG mapping (cached per request)
 var cachedPVMappings map[string]string
 
 func getCachedPVMappings() map[string]string {
+	overviewCacheMu.Lock()
+	defer overviewCacheMu.Unlock()
 	if cachedPVMappings != nil {
 		return cachedPVMappings
 	}
@@ -732,6 +756,8 @@ func getCachedPVMappings() map[string]string {
 var cachedRAIDMembers map[string]string
 
 func getCachedRAIDMembers() map[string]string {
+	overviewCacheMu.Lock()
+	defer overviewCacheMu.Unlock()
 	if cachedRAIDMembers != nil {
 		return cachedRAIDMembers
 	}
