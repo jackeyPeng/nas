@@ -2,7 +2,6 @@ package diskmgmt
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -214,7 +213,7 @@ func debugDiskGate(next http.HandlerFunc) http.HandlerFunc {
 // handleFormat 格式化分区
 func handleFormat(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	device := r.FormValue("device")
@@ -223,31 +222,31 @@ func handleFormat(w http.ResponseWriter, r *http.Request) {
 		fstype = "ext4"
 	}
 	if device == "" {
-		http.Error(w, `{"error": "device required (e.g. /dev/sdb1)"}`, http.StatusBadRequest)
+		jsonError(w, "device required (e.g. /dev/sdb1)", http.StatusBadRequest)
 		return
 	}
 	// 白名单校验：只允许 /dev/ 下真实存在的块设备（加固轮1 #1）
 	if err := common.ValidateBlockDevice(device); err != nil {
-		http.Error(w, fmt.Sprintf(`{"error": %q}`, err.Error()), http.StatusBadRequest)
+		jsonError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	// 安全检查：不允许格式化系统盘
 	if isSystemDisk(device) {
-		http.Error(w, `{"error": "不允许格式化系统盘"}`, http.StatusBadRequest)
+		jsonError(w, "不允许格式化系统盘", http.StatusBadRequest)
 		return
 	}
 	// 需要二次确认：必须输入设备路径
 	confirm := r.FormValue("confirm")
 	confirmToken := r.FormValue("confirm_token")
 	if confirm != "yes" || confirmToken != device {
-		http.Error(w, `{"error": "请输入设备路径确认格式化"}`, http.StatusBadRequest)
+		jsonError(w, "请输入设备路径确认格式化", http.StatusBadRequest)
 		return
 	}
 	common.LockDiskOp()
 	defer common.UnlockDiskOp()
 	out, err := common.SudoExec("mkfs."+fstype, mkfsArgs(fstype, device)...)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error": %q}`, out+": "+err.Error()), http.StatusInternalServerError)
+		jsonError(w, out+": "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	common.JSONResponse(w, map[string]interface{}{"message": device + " 已格式化为 " + fstype, "output": out})
@@ -256,23 +255,23 @@ func handleFormat(w http.ResponseWriter, r *http.Request) {
 // handleMount 挂载分区
 func handleMount(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	device := r.FormValue("device")
 	mountPoint := r.FormValue("mountpoint")
 	fstype := r.FormValue("fstype")
 	if device == "" || mountPoint == "" {
-		http.Error(w, `{"error": "device and mountpoint required"}`, http.StatusBadRequest)
+		jsonError(w, "device and mountpoint required", http.StatusBadRequest)
 		return
 	}
 	// 白名单校验：设备 + 挂载点（加固轮1 #1）
 	if err := common.ValidateBlockDevice(device); err != nil {
-		http.Error(w, fmt.Sprintf(`{"error": %q}`, err.Error()), http.StatusBadRequest)
+		jsonError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	if cleaned, err := common.ValidateMountPoint(mountPoint); err != nil {
-		http.Error(w, fmt.Sprintf(`{"error": %q}`, err.Error()), http.StatusBadRequest)
+		jsonError(w, err.Error(), http.StatusBadRequest)
 		return
 	} else {
 		mountPoint = cleaned
@@ -292,7 +291,7 @@ func handleMount(w http.ResponseWriter, r *http.Request) {
 		out, err = common.SudoExec("mount", device, mountPoint)
 	}
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error": %q}`, out+": "+err.Error()), http.StatusInternalServerError)
+		jsonError(w, out+": "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	common.JSONResponse(w, map[string]interface{}{"message": device + " 已挂载到 " + mountPoint})
@@ -301,12 +300,12 @@ func handleMount(w http.ResponseWriter, r *http.Request) {
 // handleUnmount 卸载分区
 func handleUnmount(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	target := r.FormValue("target")
 	if target == "" {
-		http.Error(w, `{"error": "target (mountpoint or device) required"}`, http.StatusBadRequest)
+		jsonError(w, "target (mountpoint or device) required", http.StatusBadRequest)
 		return
 	}
 	// 安全检查：target 可以是挂载点或设备路径，此前直接把 FormValue 拼进
@@ -317,14 +316,14 @@ func handleUnmount(w http.ResponseWriter, r *http.Request) {
 	if cleaned, err := common.ValidateMountPoint(target); err == nil {
 		target = cleaned
 	} else if devErr := common.ValidateBlockDevice(target); devErr != nil {
-		http.Error(w, fmt.Sprintf(`{"error": %q}`, err.Error()), http.StatusBadRequest)
+		jsonError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	common.LockDiskOp()
 	defer common.UnlockDiskOp()
 	out, err := common.SudoExec("umount", target)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error": %q}`, out+": "+err.Error()), http.StatusInternalServerError)
+		jsonError(w, out+": "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	common.JSONResponse(w, map[string]interface{}{"message": target + " 已卸载"})
@@ -333,24 +332,24 @@ func handleUnmount(w http.ResponseWriter, r *http.Request) {
 // handleMkdir 创建目录（用于挂载点或数据目录）
 func handleMkdir(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	path := r.FormValue("path")
 	if path == "" {
-		http.Error(w, `{"error": "path required"}`, http.StatusBadRequest)
+		jsonError(w, "path required", http.StatusBadRequest)
 		return
 	}
 	// 安全检查：Clean 后仍须在 /data 下（加固轮1 #1，阻断 /data/../etc 穿越）
 	cleanedPath, err := common.ValidateDataPath(path, true)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error": %q}`, err.Error()), http.StatusBadRequest)
+		jsonError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	path = cleanedPath
 	out, err := common.SudoExec("mkdir", "-p", path)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error": %q}`, out+": "+err.Error()), http.StatusInternalServerError)
+		jsonError(w, out+": "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	common.JSONResponse(w, map[string]interface{}{"message": "目录 " + path + " 已创建"})

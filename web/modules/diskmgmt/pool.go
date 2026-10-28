@@ -145,7 +145,7 @@ func handlePoolStatus(w http.ResponseWriter, r *http.Request) {
 // handlePoolCreate creates LVM storage pool from multiple disks
 func handlePoolCreate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -172,30 +172,30 @@ func handlePoolCreate(w http.ResponseWriter, r *http.Request) {
 	confirm := r.FormValue("confirm")
 
 	if devicesStr == "" {
-		http.Error(w, `{"error":"请选择至少一块磁盘"}`, http.StatusBadRequest)
+		jsonError(w, "请选择至少一块磁盘", http.StatusBadRequest)
 		return
 	}
 	// 白名单校验：设备列表逐个过 /dev/ 块设备白名单（加固轮1 #1）
 	devices, err := common.ValidateBlockDeviceList(devicesStr)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
+		jsonError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	// VG/LV 名只允许 LVM 命名字符，防止拼进 lvPath/命令
 	if vgName != "" && !common.IsValidLVMName(vgName) {
-		http.Error(w, `{"error":"非法 VG 名称"}`, http.StatusBadRequest)
+		jsonError(w, "非法 VG 名称", http.StatusBadRequest)
 		return
 	}
 	if lvName != "" && !common.IsValidLVMName(lvName) {
-		http.Error(w, `{"error":"非法 LV 名称"}`, http.StatusBadRequest)
+		jsonError(w, "非法 LV 名称", http.StatusBadRequest)
 		return
 	}
 	if confirm != "yes" {
-		http.Error(w, `{"error":"请加 confirm=yes 确认"}`, http.StatusBadRequest)
+		jsonError(w, "请加 confirm=yes 确认", http.StatusBadRequest)
 		return
 	}
 	if !strings.HasPrefix(mountPoint, "/data") {
-		http.Error(w, `{"error":"挂载点必须在 /data 下"}`, http.StatusBadRequest)
+		jsonError(w, "挂载点必须在 /data 下", http.StatusBadRequest)
 		return
 	}
 
@@ -205,12 +205,12 @@ func handlePoolCreate(w http.ResponseWriter, r *http.Request) {
 	for _, dev := range devices {
 		dev = strings.TrimSpace(dev)
 		if isSystemDisk(dev) {
-			http.Error(w, fmt.Sprintf(`{"error":"不允许使用系统盘 %s"}`, dev), http.StatusBadRequest)
+			jsonError(w, fmt.Sprintf("不允许使用系统盘 %s", dev), http.StatusBadRequest)
 			return
 		}
 		out, err := common.SudoExec("/usr/sbin/pvcreate", "-f", dev)
 		if err != nil {
-			http.Error(w, fmt.Sprintf(`{"error":"pvcreate 失败: %s"}`, out), http.StatusInternalServerError)
+			jsonError(w, fmt.Sprintf("pvcreate 失败: %s", out), http.StatusInternalServerError)
 			return
 		}
 		steps = append(steps, "pvcreate "+dev)
@@ -220,7 +220,7 @@ func handlePoolCreate(w http.ResponseWriter, r *http.Request) {
 	vgArgs := append([]string{"-f", vgName}, devices...)
 	out, err := common.SudoExec("/usr/sbin/vgcreate", vgArgs...)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":"vgcreate 失败: %s"}`, out), http.StatusInternalServerError)
+		jsonError(w, fmt.Sprintf("vgcreate 失败: %s", out), http.StatusInternalServerError)
 		return
 	}
 	steps = append(steps, "vgcreate "+vgName+" ("+devicesStr+")")
@@ -228,7 +228,7 @@ func handlePoolCreate(w http.ResponseWriter, r *http.Request) {
 	// 3. lvcreate
 	out, err = common.SudoExec("/usr/sbin/lvcreate", "-y", "-l", "100%FREE", "-n", lvName, vgName)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":"lvcreate 失败: %s"}`, out), http.StatusInternalServerError)
+		jsonError(w, fmt.Sprintf("lvcreate 失败: %s", out), http.StatusInternalServerError)
 		return
 	}
 	lvPath := "/dev/" + vgName + "/" + lvName
@@ -243,7 +243,7 @@ func handlePoolCreate(w http.ResponseWriter, r *http.Request) {
 	mkfsArgs = append(mkfsArgs, lvPath)
 	out, err = common.SudoExec(mkfsCmd, mkfsArgs...)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":"格式化失败: %s"}`, out), http.StatusInternalServerError)
+		jsonError(w, fmt.Sprintf("格式化失败: %s", out), http.StatusInternalServerError)
 		return
 	}
 	steps = append(steps, "格式化 "+lvPath+" 为 "+fstype)
@@ -266,7 +266,7 @@ func handlePoolCreate(w http.ResponseWriter, r *http.Request) {
 	uuidOut, _ := common.SudoOutput("blkid", "-s", "UUID", "-o", "value", lvPath)
 	uuid := strings.TrimSpace(uuidOut)
 	if err := writeFstab(uuid, mountPoint, fstype); err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":"写入 fstab 失败: %s"}`, err.Error()), http.StatusInternalServerError)
+		jsonError(w, fmt.Sprintf("写入 fstab 失败: %s", err.Error()), http.StatusInternalServerError)
 		return
 	}
 	steps = append(steps, "写入 fstab (UUID="+uuid+")")
@@ -292,7 +292,7 @@ func handlePoolCreate(w http.ResponseWriter, r *http.Request) {
 // handlePoolExtend extends existing LVM pool with new disk
 func handlePoolExtend(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -311,28 +311,28 @@ func handlePoolExtend(w http.ResponseWriter, r *http.Request) {
 	confirm := r.FormValue("confirm")
 
 	if device == "" {
-		http.Error(w, `{"error":"请选择磁盘"}`, http.StatusBadRequest)
+		jsonError(w, "请选择磁盘", http.StatusBadRequest)
 		return
 	}
 	// 白名单校验（加固轮1 #1）
 	if err := common.ValidateBlockDevice(device); err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
+		jsonError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	if vgName != "" && !common.IsValidLVMName(vgName) {
-		http.Error(w, `{"error":"非法 VG 名称"}`, http.StatusBadRequest)
+		jsonError(w, "非法 VG 名称", http.StatusBadRequest)
 		return
 	}
 	if lvName != "" && !common.IsValidLVMName(lvName) {
-		http.Error(w, `{"error":"非法 LV 名称"}`, http.StatusBadRequest)
+		jsonError(w, "非法 LV 名称", http.StatusBadRequest)
 		return
 	}
 	if confirm != "yes" {
-		http.Error(w, `{"error":"请加 confirm=yes 确认"}`, http.StatusBadRequest)
+		jsonError(w, "请加 confirm=yes 确认", http.StatusBadRequest)
 		return
 	}
 	if isSystemDisk(device) {
-		http.Error(w, `{"error":"不允许使用系统盘"}`, http.StatusBadRequest)
+		jsonError(w, "不允许使用系统盘", http.StatusBadRequest)
 		return
 	}
 
@@ -341,7 +341,7 @@ func handlePoolExtend(w http.ResponseWriter, r *http.Request) {
 	// 1. pvcreate
 	out, err := common.SudoExec("pvcreate", "-f", device)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":"pvcreate 失败: %s"}`, out), http.StatusInternalServerError)
+		jsonError(w, fmt.Sprintf("pvcreate 失败: %s", out), http.StatusInternalServerError)
 		return
 	}
 	steps = append(steps, "pvcreate "+device)
@@ -349,7 +349,7 @@ func handlePoolExtend(w http.ResponseWriter, r *http.Request) {
 	// 2. vgextend
 	out, err = common.SudoExec("/usr/sbin/vgextend", vgName, device)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":"vgextend 失败: %s"}`, out), http.StatusInternalServerError)
+		jsonError(w, fmt.Sprintf("vgextend 失败: %s", out), http.StatusInternalServerError)
 		return
 	}
 	steps = append(steps, "vgextend "+vgName+" + "+device)
@@ -358,7 +358,7 @@ func handlePoolExtend(w http.ResponseWriter, r *http.Request) {
 	lvPath := "/dev/" + vgName + "/" + lvName
 	out, err = common.SudoExec("/usr/sbin/lvextend", "-l", "+100%FREE", lvPath)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":"lvextend 失败: %s"}`, out), http.StatusInternalServerError)
+		jsonError(w, fmt.Sprintf("lvextend 失败: %s", out), http.StatusInternalServerError)
 		return
 	}
 	steps = append(steps, "lvextend "+lvName+" +100%FREE")
@@ -366,7 +366,7 @@ func handlePoolExtend(w http.ResponseWriter, r *http.Request) {
 	// 4. resize filesystem（按实际文件系统类型选择 xfs_growfs/resize2fs，xfs 用挂载点而非设备路径）
 	growStep, _, growErr := growFilesystemByDevice(lvPath)
 	if growErr != nil {
-		http.Error(w, fmt.Sprintf(`{"error":"resize 失败: %s"}`, growErr.Error()), http.StatusInternalServerError)
+		jsonError(w, fmt.Sprintf("resize 失败: %s", growErr.Error()), http.StatusInternalServerError)
 		return
 	}
 	steps = append(steps, growStep)
@@ -454,7 +454,7 @@ func firstLine(s string) string {
 // handlePoolDelete destroys a storage pool and releases all its disks
 func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 

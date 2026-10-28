@@ -49,6 +49,17 @@ func handleWizardSetupStream(w http.ResponseWriter, r *http.Request) {
 		sendProgress(w, ProgressEvent{Step: "需要确认", Status: "error", Detail: "请加 confirm=yes"})
 		return
 	}
+
+	// B2：separate（独立多池）创建模式已下线——产品定位收敛为专用整机、
+	// 一机一主池，不再在创建主流程里支持这条路径。拦截前移到磁盘扫描/
+	// "没有可用的空闲磁盘"检查之前：无空闲盘机器上（48 实测）此前用户
+	// 看到的是"没有空闲磁盘"而非"separate 已下线"，文案误导；现在
+	// mode=separate 恒定先命中这条下线文案，不再依赖磁盘状态。
+	if mode == "separate" {
+		sendProgress(w, ProgressEvent{Step: "模式检查", Status: "error", Detail: "separate 多池模式已下线，单池模型请使用 merge/RAID"})
+		return
+	}
+
 	common.LogAuditRequest(r, "STORAGE", "存储向导配置(流式)", "mode="+mode, "pending")
 
 	nasUser := common.GetNASUser()
@@ -86,14 +97,6 @@ func handleWizardSetupStream(w http.ResponseWriter, r *http.Request) {
 
 	if len(unusedDevs) == 0 {
 		sendProgress(w, ProgressEvent{Step: "检查磁盘", Status: "error", Detail: "没有可用的空闲磁盘"})
-		return
-	}
-
-	// B2：separate（独立多池）创建模式已下线——产品定位收敛为专用整机、
-	// 一机一主池，不再在创建主流程里支持这条路径。单独拦在最前面，不进入
-	// 后续的步数计算/validateMode/实际建池分支。
-	if mode == "separate" {
-		sendProgress(w, ProgressEvent{Step: "模式检查", Status: "error", Detail: "separate 多池模式已下线，单池模型请使用 merge/RAID"})
 		return
 	}
 

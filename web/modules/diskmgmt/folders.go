@@ -248,7 +248,7 @@ func createFolderKernel(pool, name, permission string, quotaGB int) error {
 // handleCreateFolder creates a shared folder (deferred to pending queue)
 func handleCreateFolder(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -261,7 +261,7 @@ func handleCreateFolder(w http.ResponseWriter, r *http.Request) {
 	nfsExport := r.FormValue("nfs")
 
 	if err := validateFolderNameAndPool(pool, name); err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
+		jsonError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	if permission == "" {
@@ -273,7 +273,7 @@ func handleCreateFolder(w http.ResponseWriter, r *http.Request) {
 		var err error
 		quotaGB, err = strconv.Atoi(quotaGBStr)
 		if err != nil || quotaGB < 0 {
-			http.Error(w, `{"error":"quota_gb 必须是非负整数"}`, http.StatusBadRequest)
+			jsonError(w, "quota_gb 必须是非负整数", http.StatusBadRequest)
 			return
 		}
 	}
@@ -316,7 +316,7 @@ func handleCreateFolder(w http.ResponseWriter, r *http.Request) {
 // handleDeleteFolder deletes a shared folder (deferred to pending queue)
 func handleDeleteFolder(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -324,18 +324,18 @@ func handleDeleteFolder(w http.ResponseWriter, r *http.Request) {
 	confirm := r.FormValue("confirm")
 
 	if path == "" {
-		http.Error(w, `{"error":"path 必填"}`, http.StatusBadRequest)
+		jsonError(w, "path 必填", http.StatusBadRequest)
 		return
 	}
 	// Clean 后仍须在 /data/ 下（加固轮1 #1，阻断 /data/../etc 穿越）
 	cleanedPath, err := common.ValidateDataPath(path, false)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
+		jsonError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	path = cleanedPath
 	if confirm != "yes" {
-		http.Error(w, `{"error":"请加 confirm=yes 确认删除"}`, http.StatusBadRequest)
+		jsonError(w, "请加 confirm=yes 确认删除", http.StatusBadRequest)
 		return
 	}
 
@@ -356,7 +356,7 @@ func handleDeleteFolder(w http.ResponseWriter, r *http.Request) {
 // handleFolderPermission updates folder permissions (deferred to pending queue)
 func handleFolderPermission(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -366,12 +366,12 @@ func handleFolderPermission(w http.ResponseWriter, r *http.Request) {
 	recycleBin := r.FormValue("recycle_bin")
 
 	if path == "" {
-		http.Error(w, `{"error":"path 必填"}`, http.StatusBadRequest)
+		jsonError(w, "path 必填", http.StatusBadRequest)
 		return
 	}
 	// Clean 后仍须在 /data/ 下（加固轮1 #1）
 	if cleanedPath, err := common.ValidateDataPath(path, false); err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
+		jsonError(w, err.Error(), http.StatusBadRequest)
 		return
 	} else {
 		path = cleanedPath

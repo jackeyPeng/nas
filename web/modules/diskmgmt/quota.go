@@ -216,7 +216,7 @@ func handleFolderQuota(w http.ResponseWriter, r *http.Request) {
 		folderName := r.URL.Query().Get("folder")
 		mountPoint := r.URL.Query().Get("mountpoint")
 		if poolName == "" || folderName == "" || mountPoint == "" {
-			http.Error(w, `{"error":"pool, folder, mountpoint required"}`, http.StatusBadRequest)
+			jsonError(w, "pool, folder, mountpoint required", http.StatusBadRequest)
 			return
 		}
 
@@ -257,7 +257,7 @@ func handleFolderQuota(w http.ResponseWriter, r *http.Request) {
 		quotaStr := r.FormValue("quota_gb")
 
 		if poolName == "" || folderName == "" || mountPoint == "" || folderPath == "" {
-			http.Error(w, `{"error":"pool, folder, mountpoint, path required"}`, http.StatusBadRequest)
+			jsonError(w, "pool, folder, mountpoint, path required", http.StatusBadRequest)
 			return
 		}
 
@@ -266,13 +266,13 @@ func handleFolderQuota(w http.ResponseWriter, r *http.Request) {
 			var err error
 			quotaGB, err = strconv.Atoi(quotaStr)
 			if err != nil || quotaGB < 0 {
-				http.Error(w, `{"error":"quota_gb must be a non-negative integer (0=unlimited)"}`, http.StatusBadRequest)
+				jsonError(w, "quota_gb must be a non-negative integer (0=unlimited)", http.StatusBadRequest)
 				return
 			}
 		}
 
 		if err := setFolderQuota(mountPoint, folderPath, poolName, folderName, quotaGB); err != nil {
-			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
+			jsonError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -284,5 +284,5 @@ func handleFolderQuota(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+	jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
 }

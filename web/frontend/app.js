@@ -51,7 +51,6 @@ function nasPanel() {
         svcToggleForm: { service: '' },
         // Disk management
         diskInfo: '',
-        diskMounts: '',
         diskLVM: '',
         diskIOStat: '',
         diskSmartDetail: '',
@@ -1856,12 +1855,6 @@ function nasPanel() {
             this.diskInfo = this.t('common.loading');
             const data = await this.api('/disk/info');
             if (data) this.diskInfo = data;
-        },
-
-        async loadDiskMounts() {
-            this.diskMounts = this.t('common.loading');
-            const data = await this.api('/disk/mounts');
-            if (data) this.diskMounts = data;
         },
 
         async loadDiskLVM() {

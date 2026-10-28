@@ -119,6 +119,15 @@ func handleRAIDExpandStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 纵深防御：与 handleReplaceDisk（maintenance.go）、handlePoolExtendStream
+	// （pool_extend.go）的 isSystemDisk+isDiskInUse 双保险对齐——上面的
+	// Type=="unused" 单层检查当前能拦住大多数场景，但 isDiskInUse 额外识别
+	// PV/RAID 成员或含存量签名的盘，两层互不替代。
+	if isDiskInUse(device) {
+		sendRAIDExpandProgress(w, RAIDExpandEvent{Step: "磁盘检查", Status: "error", Detail: device + " 已被占用（PV/RAID成员或含存量签名），不能用于扩容"})
+		return
+	}
+
 	newDevs := currentDevs + 1
 	raidName := strings.ToUpper(raidLevel)
 
@@ -204,14 +213,14 @@ func handleRAIDExpandStream(w http.ResponseWriter, r *http.Request) {
 // Called separately after user confirms reshape is done
 func handleRAIDExpandFS(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	mdDev := r.FormValue("md_device")
 	confirm := r.FormValue("confirm")
 
 	if mdDev == "" || confirm != "yes" {
-		http.Error(w, `{"error":"md_device and confirm=yes required"}`, http.StatusBadRequest)
+		jsonError(w, "md_device and confirm=yes required", http.StatusBadRequest)
 		return
 	}
 
@@ -233,7 +242,7 @@ func handleRAIDExpandFS(w http.ResponseWriter, r *http.Request) {
 	// Grow filesystem（按实际文件系统类型选择 xfs_growfs/resize2fs，xfs 用挂载点而非设备路径）
 	step, out, err := growFilesystemByDevice(mdDev)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
+		jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -248,7 +257,7 @@ func handleRAIDExpandFS(w http.ResponseWriter, r *http.Request) {
 func handleRAIDReshapeStatus(w http.ResponseWriter, r *http.Request) {
 	mdDev := r.URL.Query().Get("md_device")
 	if mdDev == "" {
-		http.Error(w, `{"error":"md_device required"}`, http.StatusBadRequest)
+		jsonError(w, "md_device required", http.StatusBadRequest)
 		return
 	}
 

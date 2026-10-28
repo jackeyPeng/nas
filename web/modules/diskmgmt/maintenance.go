@@ -98,7 +98,7 @@ func handleReplaceDisk(w http.ResponseWriter, r *http.Request) {
 // handleScrub starts a RAID scrub (data integrity check)
 func handleScrub(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -109,7 +109,7 @@ func handleScrub(w http.ResponseWriter, r *http.Request) {
 		// Find all md devices and scrub them
 		matches, err := filepath.Glob("/dev/md*")
 		if err != nil || len(matches) == 0 {
-			http.Error(w, `{"error":"没有找到 RAID 设备"}`, http.StatusInternalServerError)
+			jsonError(w, "没有找到 RAID 设备", http.StatusInternalServerError)
 			return
 		}
 		var results []string
@@ -129,13 +129,13 @@ func handleScrub(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if confirm != "yes" {
-		http.Error(w, `{"error":"请加 confirm=yes 确认"}`, http.StatusBadRequest)
+		jsonError(w, "请加 confirm=yes 确认", http.StatusBadRequest)
 		return
 	}
 
 	out, err := common.SudoExec("/usr/sbin/mdadm", "--action=check", mdDevice)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":"清理启动失败: %s"}`, out+": "+err.Error()), http.StatusInternalServerError)
+		jsonError(w, fmt.Sprintf("清理启动失败: %s", out+": "+err.Error()), http.StatusInternalServerError)
 		return
 	}
 
@@ -241,7 +241,7 @@ func getRebuildStatus(mdDevice string) map[string]interface{} {
 // handleSMARTScan runs SMART self-test on all or specified disks
 func handleSMARTScan(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -252,18 +252,18 @@ func handleSMARTScan(w http.ResponseWriter, r *http.Request) {
 	}
 	// 白名单校验：testType 只允许 short/long，device 若非空必须过块设备白名单（加固轮1 #1）
 	if testType != "short" && testType != "long" {
-		http.Error(w, `{"error":"type 只允许 short 或 long"}`, http.StatusBadRequest)
+		jsonError(w, "type 只允许 short 或 long", http.StatusBadRequest)
 		return
 	}
 	if device != "" {
 		if err := common.ValidateBlockDevice(device); err != nil {
-			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
+			jsonError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 	}
 	confirm := r.FormValue("confirm")
 	if confirm != "yes" {
-		http.Error(w, `{"error":"请加 confirm=yes 确认"}`, http.StatusBadRequest)
+		jsonError(w, "请加 confirm=yes 确认", http.StatusBadRequest)
 		return
 	}
 

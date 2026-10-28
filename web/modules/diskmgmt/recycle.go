@@ -314,7 +314,7 @@ func mergeTreeRestore(src, dst string) error {
 // handleRecycleRestore POST share, rel_path, user, legacy=yes|""
 func handleRecycleRestore(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	share := r.FormValue("share")
@@ -326,27 +326,27 @@ func handleRecycleRestore(w http.ResponseWriter, r *http.Request) {
 	}
 	sharePath, err := resolveShareOrPoolRootPath(share)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
+		jsonError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	src, err := resolveRecyclePath(sharePath, dirName, user, relPath)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
+		jsonError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	// 目标 = 共享目录内原相对路径
 	dst, err := common.ValidateDataPath(filepath.Join(sharePath, relPath), false)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
+		jsonError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	if !strings.HasPrefix(dst, filepath.Clean(sharePath)+string(filepath.Separator)) {
-		http.Error(w, `{"error":"恢复目标越界"}`, http.StatusBadRequest)
+		jsonError(w, "恢复目标越界", http.StatusBadRequest)
 		return
 	}
 	// 存在性检查 + 冲突处理（目标已存在时加 .restored 后缀，不覆盖用户数据）
 	if _, err := common.SudoOutput("test", "-e", src); err != nil {
-		http.Error(w, `{"error":"回收站条目不存在"}`, http.StatusNotFound)
+		jsonError(w, "回收站条目不存在", http.StatusNotFound)
 		return
 	}
 	// D1 复审 Important 跟进：dst 已存在且 src/dst 都是目录时走合并式恢复
@@ -355,7 +355,7 @@ func handleRecycleRestore(w http.ResponseWriter, r *http.Request) {
 	if dstInfo, dstErr := os.Lstat(dst); dstErr == nil && dstInfo.IsDir() {
 		if srcInfo, srcErr := os.Lstat(src); srcErr == nil && srcInfo.IsDir() {
 			if err := mergeTreeRestore(src, dst); err != nil {
-				http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
+				jsonError(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
 			common.EmitEvent("storage", common.EventSuccess, "recycle.restored",
@@ -371,7 +371,7 @@ func handleRecycleRestore(w http.ResponseWriter, r *http.Request) {
 	common.SudoExec("mkdir", "-p", filepath.Dir(finalDst))
 	out, err := common.SudoExec("mv", src, finalDst)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":%q}`, out+": "+err.Error()), http.StatusInternalServerError)
+		jsonError(w, out+": "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	common.EmitEvent("storage", common.EventSuccess, "recycle.restored",
@@ -382,11 +382,11 @@ func handleRecycleRestore(w http.ResponseWriter, r *http.Request) {
 // handleRecycleDelete POST share, rel_path, user, legacy — 彻底删除条目
 func handleRecycleDelete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	if r.FormValue("confirm") != "yes" {
-		http.Error(w, `{"error":"需要 confirm=yes"}`, http.StatusBadRequest)
+		jsonError(w, "需要 confirm=yes", http.StatusBadRequest)
 		return
 	}
 	share := r.FormValue("share")
@@ -398,17 +398,17 @@ func handleRecycleDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	sharePath, err := resolveShareOrPoolRootPath(share)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
+		jsonError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	src, err := resolveRecyclePath(sharePath, dirName, user, relPath)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
+		jsonError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	out, err := common.SudoExec("rm", "-rf", src)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":%q}`, out+": "+err.Error()), http.StatusInternalServerError)
+		jsonError(w, out+": "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	common.EmitEvent("storage", common.EventWarn, "recycle.deleted",
@@ -419,23 +419,23 @@ func handleRecycleDelete(w http.ResponseWriter, r *http.Request) {
 // handleRecycleClear POST share — 清空某共享的全部回收站（新旧布局都清）
 func handleRecycleClear(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	share := r.FormValue("share")
 	// 破坏性操作：确认词 = 共享名（同删池模式）
 	if r.FormValue("confirm_name") != share || share == "" {
-		http.Error(w, `{"error":"confirm_name 必须等于共享名"}`, http.StatusBadRequest)
+		jsonError(w, "confirm_name 必须等于共享名", http.StatusBadRequest)
 		return
 	}
 	sharePath, err := resolveShareOrPoolRootPath(share)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
+		jsonError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	cleaned, err := common.ValidateDataPath(sharePath, false)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
+		jsonError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	for _, dirName := range []string{recycleDirName, legacyRecycleDirName} {

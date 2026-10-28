@@ -461,7 +461,7 @@ func handlePendingList(w http.ResponseWriter, r *http.Request) {
 
 func handlePendingApply(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	results, err := ApplyPendingOps(r)
@@ -479,7 +479,7 @@ func handlePendingApply(w http.ResponseWriter, r *http.Request) {
 
 func handlePendingDiscard(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	DiscardPendingOps()
@@ -504,7 +504,7 @@ func handleOperationLogs(w http.ResponseWriter, r *http.Request) {
 
 func handleOperationLogsClear(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	db := initPendingDB()

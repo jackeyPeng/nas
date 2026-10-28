@@ -138,7 +138,7 @@ func getExistingDataMounts() []map[string]string {
 // 入口直接拒绝，不进入 switch。
 func handleWizardSetup(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -154,7 +154,7 @@ func handleWizardSetup(w http.ResponseWriter, r *http.Request) {
 	common.LogAuditRequest(r, "STORAGE", "存储向导配置", "mode="+mode, "pending")
 
 	if confirm != "yes" {
-		http.Error(w, `{"error":"请确认操作"}`, http.StatusBadRequest)
+		jsonError(w, "请确认操作", http.StatusBadRequest)
 		return
 	}
 
@@ -184,7 +184,7 @@ func handleWizardSetup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(unusedDevs) == 0 {
-		http.Error(w, `{"error":"没有可用的空闲磁盘"}`, http.StatusBadRequest)
+		jsonError(w, "没有可用的空闲磁盘", http.StatusBadRequest)
 		return
 	}
 
@@ -194,7 +194,7 @@ func handleWizardSetup(w http.ResponseWriter, r *http.Request) {
 	switch mode {
 	case "single":
 		if len(unusedDevs) < 1 {
-			http.Error(w, `{"error":"至少需要 1 块磁盘"}`, http.StatusBadRequest)
+			jsonError(w, "至少需要 1 块磁盘", http.StatusBadRequest)
 			return
 		}
 		dev := unusedDevs[0]
@@ -203,7 +203,7 @@ func handleWizardSetup(w http.ResponseWriter, r *http.Request) {
 
 	case "merge":
 		if len(unusedDevs) < 2 {
-			http.Error(w, `{"error":"合并模式至少需要 2 块磁盘"}`, http.StatusBadRequest)
+			jsonError(w, "合并模式至少需要 2 块磁盘", http.StatusBadRequest)
 			return
 		}
 		resultMount = "/data/nas1"
@@ -211,7 +211,7 @@ func handleWizardSetup(w http.ResponseWriter, r *http.Request) {
 
 	case "raid1":
 		if len(unusedDevs) < 2 {
-			http.Error(w, `{"error":"RAID1 至少需要 2 块磁盘"}`, http.StatusBadRequest)
+			jsonError(w, "RAID1 至少需要 2 块磁盘", http.StatusBadRequest)
 			return
 		}
 		resultMount = "/data/nas1"
@@ -219,7 +219,7 @@ func handleWizardSetup(w http.ResponseWriter, r *http.Request) {
 
 	case "raid0":
 		if len(unusedDevs) < 2 {
-			http.Error(w, `{"error":"RAID0 至少需要 2 块磁盘"}`, http.StatusBadRequest)
+			jsonError(w, "RAID0 至少需要 2 块磁盘", http.StatusBadRequest)
 			return
 		}
 		resultMount = "/data/nas1"
@@ -227,7 +227,7 @@ func handleWizardSetup(w http.ResponseWriter, r *http.Request) {
 
 	case "raid5":
 		if len(unusedDevs) < 3 {
-			http.Error(w, `{"error":"RAID5 至少需要 3 块磁盘"}`, http.StatusBadRequest)
+			jsonError(w, "RAID5 至少需要 3 块磁盘", http.StatusBadRequest)
 			return
 		}
 		resultMount = "/data/nas1"
@@ -235,7 +235,7 @@ func handleWizardSetup(w http.ResponseWriter, r *http.Request) {
 
 	case "raid6":
 		if len(unusedDevs) < 4 {
-			http.Error(w, `{"error":"RAID6 至少需要 4 块磁盘"}`, http.StatusBadRequest)
+			jsonError(w, "RAID6 至少需要 4 块磁盘", http.StatusBadRequest)
 			return
 		}
 		resultMount = "/data/nas1"

@@ -195,7 +195,7 @@ SUB_START=$(date +%s)
 $SUDO apt-get update -qq 2>/dev/null
 sub_done "软件包索引已更新"
 
-sub_step "下载安装 16 个软件包 (samba/nfs/vsftpd/rclone/fail2ban/ufw 等)"
+sub_step "下载安装 17 个软件包 (samba/nfs/vsftpd/rclone/fail2ban/ufw 等)"
 echo -e "    ${YELLOW}此步骤视网络状况约需 2-10 分钟，请耐心等待（下方实时显示耗时）${NC}"
 SUB_START=$(date +%s)
 APT_LOG=$(mktemp)
@@ -211,7 +211,7 @@ APT_RC=0
 $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
     curl samba nfs-kernel-server vsftpd rclone fail2ban ufw \
     smartmontools unattended-upgrades smbclient nfs-common \
-    xfsprogs mdadm lvm2 apache2-utils \
+    xfsprogs parted mdadm lvm2 apache2-utils \
     > "$APT_LOG" 2>&1 || APT_RC=$?
 kill $TIMER_PID 2>/dev/null || true; wait $TIMER_PID 2>/dev/null || true
 printf "\r    %-40s\r" ""

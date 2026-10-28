@@ -789,7 +789,7 @@ func handleConfigCheck(w http.ResponseWriter, r *http.Request) {
 // handleConfigSync regenerates all configs from metadata
 func handleConfigSync(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	if err := SyncAllConfigs(); err != nil {

@@ -283,7 +283,7 @@ else
     DEBIAN_FRONTEND=noninteractive apt-get install -y \
         curl samba nfs-kernel-server vsftpd rclone \
         fail2ban ufw smartmontools unattended-upgrades \
-        smbclient nfs-common xfsprogs mdadm lvm2 rsync acl
+        smbclient nfs-common xfsprogs parted mdadm lvm2 rsync acl
     echo "  ✓ 软件包安装完成"
 fi
 

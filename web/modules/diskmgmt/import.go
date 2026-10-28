@@ -77,7 +77,7 @@ func handleImportList(w http.ResponseWriter, r *http.Request) {
 // handleImportPool 导入（激活+挂载+重建元数据）。非破坏性：不 wipe、不 format、不 remove。
 func handleImportPool(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	common.LockDiskOp()
@@ -85,17 +85,17 @@ func handleImportPool(w http.ResponseWriter, r *http.Request) {
 
 	vgName := r.FormValue("vg_name")
 	if vgName == "" {
-		http.Error(w, `{"error":"缺少 vg_name"}`, http.StatusBadRequest)
+		jsonError(w, "缺少 vg_name", http.StatusBadRequest)
 		return
 	}
 	if r.FormValue("confirm") != "yes" {
-		http.Error(w, `{"error":"请确认导入"}`, http.StatusBadRequest)
+		jsonError(w, "请确认导入", http.StatusBadRequest)
 		return
 	}
 
 	// 1. 激活卷组（幂等）
 	if out, err := common.SudoExec("/usr/sbin/vgchange", "-ay", vgName); err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":"激活卷组失败: %s"}`, strings.TrimSpace(out)), http.StatusInternalServerError)
+		jsonError(w, fmt.Sprintf("激活卷组失败: %s", strings.TrimSpace(out)), http.StatusInternalServerError)
 		return
 	}
 	// 2. 取第一个 LV
@@ -109,7 +109,7 @@ func handleImportPool(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if lvPath == "" {
-		http.Error(w, `{"error":"未找到逻辑卷"}`, http.StatusInternalServerError)
+		jsonError(w, "未找到逻辑卷", http.StatusInternalServerError)
 		return
 	}
 
@@ -117,7 +117,7 @@ func handleImportPool(w http.ResponseWriter, r *http.Request) {
 	mountPoint := "/data/nas1"
 	common.SudoExec("mkdir", "-p", mountPoint)
 	if out, err := common.SudoExec("mount", lvPath, mountPoint); err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":"挂载失败: %s"}`, strings.TrimSpace(out)), http.StatusInternalServerError)
+		jsonError(w, fmt.Sprintf("挂载失败: %s", strings.TrimSpace(out)), http.StatusInternalServerError)
 		return
 	}
 
