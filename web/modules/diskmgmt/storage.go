@@ -157,6 +157,53 @@ func getDiskSerial(devName string) string {
 	return ""
 }
 
+// classifyChildPartition 推导子分区类型，并返回联动后的父盘类型（Fix 1a）。
+// parentType 是推导前父盘的当前类型（整盘无 FSTYPE 时的默认 "unused"，
+// 或挂载点匹配系统路径时已置的 "system"）。
+//
+// 规则：
+//   - 子分区挂载点是系统路径（/、/boot、/boot/efi）→ 子/父都置 "system"。
+//   - 子分区是 swap（含未挂载的 swap 分区）→ 子置 "swap"；父若已是 "system" 保持，
+//     否则置 "data"（swap 签名说明整盘已被使用，不是空闲盘）。
+//   - 子分区有挂载点（非 swap/系统路径）→ 子置 "data"；父若已是 "system" 保持，否则置 "data"。
+//   - 子分区无挂载点但有 FSType（含未挂载的 xfs/ext4 等）→ 子置 "data"；父同上联动。
+//     这是本次修复的核心：未挂载但带文件系统签名的分区 = 存量数据，不是空闲盘，
+//     否则会被 overview.go 的 FreeDisks 收录，扩容/向导对其 wipefs 造成数据丢失。
+//   - 子分区既无挂载点也无 FSType → 子置 "unused"，父类型不变。
+//
+// 已是 "system" 的父盘类型不会被本函数覆盖成 "data"（职责边界由调用方保证：
+// parentType 传入时若是 "system"，本函数只会保持或不变，不会降级）。
+func classifyChildPartition(childMountpoint, childFSType, parentType string) (childType, newParentType string) {
+	newParentType = parentType
+	switch {
+	case childMountpoint == "/" || childMountpoint == "/boot" || childMountpoint == "/boot/efi":
+		childType = "system"
+		newParentType = "system"
+	case childFSType == "swap":
+		// swap 分区不改父盘类型为 swap — 系统盘上的 swap 不应把 system 覆盖成 data，
+		// 但 swap 签名说明整盘不是空闲盘。
+		childType = "swap"
+		if newParentType != "system" {
+			newParentType = "data"
+		}
+	case childMountpoint != "":
+		childType = "data"
+		// 只有非系统盘才覆盖成 data — 已是 system 的保持 system
+		if newParentType != "system" {
+			newParentType = "data"
+		}
+	case childFSType != "":
+		// 有文件系统签名但未挂载 — 仍是存量数据分区，不是空闲盘（Fix 1a）
+		childType = "data"
+		if newParentType != "system" {
+			newParentType = "data"
+		}
+	default:
+		childType = "unused"
+	}
+	return childType, newParentType
+}
+
 // getDiskStatus returns structured disk overview
 func getDiskStatus() []DiskStatus {
 	out, err := common.ExecOutput("lsblk", "-J", "-o", "NAME,SIZE,TYPE,MOUNTPOINT,MODEL,ROTA,FSTYPE,UUID")
@@ -244,23 +291,7 @@ func getDiskStatus() []DiskStatus {
 			if m, ok := child.Mountpoint.(string); ok {
 				childDS.Mountpoint = m
 			}
-			if childDS.Mountpoint == "/" || childDS.Mountpoint == "/boot" || childDS.Mountpoint == "/boot/efi" {
-				childDS.Type = "system"
-				ds.Type = "system"
-			} else if childDS.FSType == "swap" {
-				// swap 分区不改父盘类型 — 系统盘上的 swap 不应把 system 覆盖成 data
-				childDS.Type = "swap"
-			} else if childDS.Mountpoint != "" {
-				childDS.Type = "data"
-				// 只有非系统盘才覆盖成 data — 已是 system 的保持 system
-				if ds.Type != "system" {
-					ds.Type = "data"
-				}
-			} else if childDS.FSType != "" {
-				childDS.Type = "data"
-			} else {
-				childDS.Type = "unused"
-			}
+			childDS.Type, ds.Type = classifyChildPartition(childDS.Mountpoint, childDS.FSType, ds.Type)
 			ds.Children = append(ds.Children, childDS)
 		}
 
@@ -330,8 +361,10 @@ func isSystemDisk(device string) bool {
 	return false
 }
 
-// isDiskInUse checks if device is already an active pool member (LVM PV or RAID array member).
-// 扩容/替换盘的「新盘」必须是空闲盘；已挂进某个池/阵列的盘若被 wipefs 会造成数据丢失。
+// isDiskInUse checks if device is already an active pool member (LVM PV or RAID array member),
+// or carries any filesystem/swap signature on itself or its partitions (Fix 1b).
+// 扩容/替换盘的「新盘」必须是空闲盘；已挂进某个池/阵列的盘、或带存量数据分区签名的盘，
+// 若被 wipefs 会造成数据丢失。
 func isDiskInUse(device string) bool {
 	// 1) 已是活跃 LVM PV（在某个 VG 里）
 	pvsOut, _ := common.SudoOutput("/usr/sbin/pvs", "--noheadings", "-o", "pv_name")
@@ -345,6 +378,29 @@ func isDiskInUse(device string) bool {
 	short := strings.TrimPrefix(device, "/dev/")
 	for _, tok := range strings.Fields(mdOut) {
 		if tok == short || strings.HasPrefix(tok, short+"[") {
+			return true
+		}
+	}
+	// 3) 设备自身或其任一分区带文件系统/swap 签名（整盘 FSTYPE 为空但子分区有存量数据，
+	// 或整盘本身就有 FSTYPE，都算 in use）
+	lsblkOut, _ := common.ExecOutput("lsblk", "-n", "-r", "-o", "NAME,FSTYPE", device)
+	if hasFstypeSignature(lsblkOut) {
+		return true
+	}
+	return false
+}
+
+// hasFstypeSignature 解析 `lsblk -n -r -o NAME,FSTYPE <device>` 的输出，判断设备自身
+// 或其任一子分区是否带非空 FSTYPE（含 swap）。纯函数，供单测（Fix 1b）。
+// lsblk -r 以空格分隔字段，每行一个设备/分区：NAME FSTYPE（FSTYPE 为空则该行只有 NAME）。
+func hasFstypeSignature(out string) bool {
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[1] != "" {
 			return true
 		}
 	}

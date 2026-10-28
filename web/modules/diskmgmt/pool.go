@@ -500,12 +500,18 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 				steps = append(steps, "删除 LV "+lvPath)
 			}
 		}
-		// 2. Remove VG
+		// 2. Get member PVs BEFORE removing the VG（Fix 5a：照抄下面 RAID 分支
+		// "Get member disks BEFORE stopping" 的顺序意识 —— vgremove 之后再用
+		// `pvs -S vg_name=<已删VG>` 查成员必然查空，因为这些 PV 已经不再属于
+		// 任何 VG 了，导致 pvremove/wipefs 被跳过，磁盘留着 LVM2_member 签名
+		// 变成"幽灵盘"：既不在任何池里，也不会被判定为空闲盘。）
+		pvsOut, _ := common.SudoOutput("/usr/sbin/pvs", "--noheadings", "-o", "pv_name", "-S", "vg_name="+vgName)
+		memberPVs := strings.Fields(pvsOut)
+		// 3. Remove VG
 		common.SudoExec("/usr/sbin/vgremove", "-f", vgName)
 		steps = append(steps, "删除 VG "+vgName)
-		// 3. Remove PVs — only for this VG, not all PVs on the system
-		pvsOut, _ := common.SudoOutput("/usr/sbin/pvs", "--noheadings", "-o", "pv_name", "-S", "vg_name="+vgName)
-		for _, pvName := range strings.Fields(pvsOut) {
+		// 4. Remove PVs — 用 vgremove 之前存下的成员列表，不再重新查询
+		for _, pvName := range memberPVs {
 			if strings.HasPrefix(pvName, "/dev/") {
 				common.SudoExec("/usr/sbin/pvremove", "-f", pvName)
 				common.SudoExec("/usr/sbin/wipefs", "-a", pvName)
@@ -552,24 +558,20 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Clean fstab entries for /data/nas*
+	// Clean fstab entries for the deleted pool only（Fix 5b：旧逻辑按前缀 /data/nas
+	// 删所有行，separate 模式多池机器删一个池会把其他保留池的开机挂载一起抹掉）。
+	// lvmVgName 只在 LVM 分支非空，用于按 /dev/mapper/<vg>- 或 /dev/<vg>/ 前缀
+	// 识别该池的 LVM 设备行；RAID/single 分支只靠挂载点精确匹配。
+	lvmVgName := ""
+	if poolType == "lvm" {
+		lvmVgName = extractVGName(poolDevice)
+		if lvmVgName == "" {
+			lvmVgName = "vg_nas"
+		}
+	}
 	fstabData, _ := common.SudoOutput("cat", "/etc/fstab")
 	if fstabData != "" {
-		lines := strings.Split(fstabData, "\n")
-		var newLines []string
-		for _, line := range lines {
-			trimmed := strings.TrimSpace(line)
-			if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-				newLines = append(newLines, line)
-				continue
-			}
-			fields := strings.Fields(trimmed)
-			if len(fields) >= 2 && strings.HasPrefix(fields[1], "/data/nas") {
-				continue
-			}
-			newLines = append(newLines, line)
-		}
-		content := strings.Join(newLines, "\n")
+		content := filterFstabForDeletedPool(fstabData, deletedMountPoints, lvmVgName)
 		if content != fstabData {
 			common.SafeWriteFile("/etc/fstab", content)
 			steps = append(steps, "清理 fstab")
@@ -603,6 +605,53 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 
 // ensure json import is used
 var _ = json.Marshal
+
+// filterFstabForDeletedPool 从 fstab 内容中删除属于被删池的行，保留其余行原样不变（Fix 5b）。
+// 判据二选一命中即删：
+//
+//	(a) 挂载点（fields[1]）精确等于 deletedMounts 中某一项；
+//	(b) 仅当 lvmVgName 非空（LVM 分支）——源设备（fields[0]）以 "/dev/mapper/<vgName>-"
+//	    或 "/dev/<vgName>/" 为前缀。
+//
+// RAID/single 分支调用时 lvmVgName 传空串，只用判据 (a)，避免误删其他 separate 模式
+// 下保留池（旧逻辑按 /data/nas 前缀删所有行，会把同机器其他池的开机挂载一起抹掉）。
+// 注释行、空行原样保留；字段不足 2 列的行原样保留。
+func filterFstabForDeletedPool(fstab string, deletedMounts []string, lvmVgName string) string {
+	deletedSet := map[string]bool{}
+	for _, m := range deletedMounts {
+		deletedSet[m] = true
+	}
+	mapperPrefix, vgPathPrefix := "", ""
+	if lvmVgName != "" {
+		mapperPrefix = "/dev/mapper/" + lvmVgName + "-"
+		vgPathPrefix = "/dev/" + lvmVgName + "/"
+	}
+
+	lines := strings.Split(fstab, "\n")
+	var newLines []string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			newLines = append(newLines, line)
+			continue
+		}
+		fields := strings.Fields(trimmed)
+		if len(fields) < 2 {
+			newLines = append(newLines, line)
+			continue
+		}
+		// 判据 (a)：挂载点精确匹配
+		if deletedSet[fields[1]] {
+			continue
+		}
+		// 判据 (b)：仅 LVM 分支，源设备按 vgName 前缀匹配
+		if lvmVgName != "" && (strings.HasPrefix(fields[0], mapperPrefix) || strings.HasPrefix(fields[0], vgPathPrefix)) {
+			continue
+		}
+		newLines = append(newLines, line)
+	}
+	return strings.Join(newLines, "\n")
+}
 
 // parseMdMemberDisks extracts member disk paths from "mdadm --detail" output.
 // Example input line: "   0       8       16        0      active sync   /dev/sdb"

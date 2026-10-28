@@ -78,25 +78,43 @@ func handlePoolExtendStream(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	// 1. Wipe disk
+	// 1. Wipe disk（Fix 4：之前四步返回值全丢弃、无条件 stepDone，wipefs/pvcreate/
+	// vgextend/lvextend 任一步失败都会被吞掉，SSE 只会在后面扩文件系统那步才报错，
+	// 误导用户以为前面都成功了。现在每步接 err 并在失败时发 error 事件后中止。）
 	stepRunning("清除磁盘签名")
-	common.SudoExec("/usr/sbin/wipefs", "-a", device)
+	out, err := common.SudoExec("/usr/sbin/wipefs", "-a", device)
+	if err != nil {
+		sendPoolExtendProgress(w, PoolExtendEvent{Step: "清除磁盘签名", Status: "error", Detail: "wipefs: " + out + ": " + err.Error()})
+		return
+	}
 	stepDone("清除磁盘签名")
 
 	// 2. pvcreate
 	stepRunning("初始化物理卷 (pvcreate)")
-	common.SudoExec("/usr/sbin/pvcreate", "-f", device)
+	out, err = common.SudoExec("/usr/sbin/pvcreate", "-f", device)
+	if err != nil {
+		sendPoolExtendProgress(w, PoolExtendEvent{Step: "初始化物理卷 (pvcreate)", Status: "error", Detail: "pvcreate: " + out + ": " + err.Error()})
+		return
+	}
 	stepDone("初始化物理卷")
 
 	// 3. vgextend
 	stepRunning(fmt.Sprintf("加入卷组 %s", vgName))
-	common.SudoExec("/usr/sbin/vgextend", vgName, device)
+	out, err = common.SudoExec("/usr/sbin/vgextend", vgName, device)
+	if err != nil {
+		sendPoolExtendProgress(w, PoolExtendEvent{Step: fmt.Sprintf("加入卷组 %s", vgName), Status: "error", Detail: "vgextend: " + out + ": " + err.Error()})
+		return
+	}
 	stepDone(fmt.Sprintf("加入卷组 %s", vgName))
 
 	// 4. lvextend
 	lvPath := "/dev/" + vgName + "/" + lvName
 	stepRunning("扩展逻辑卷 (lvextend)")
-	common.SudoExec("/usr/sbin/lvextend", "-l", "+100%FREE", lvPath)
+	out, err = common.SudoExec("/usr/sbin/lvextend", "-l", "+100%FREE", lvPath)
+	if err != nil {
+		sendPoolExtendProgress(w, PoolExtendEvent{Step: "扩展逻辑卷 (lvextend)", Status: "error", Detail: "lvextend: " + out + ": " + err.Error()})
+		return
+	}
 	stepDone("扩展逻辑卷")
 
 	// 5. Resize filesystem（按实际文件系统类型选择 xfs_growfs/resize2fs，xfs 用挂载点而非设备路径）

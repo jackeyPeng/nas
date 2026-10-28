@@ -71,23 +71,17 @@ func handleWizardSetupStream(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 前端向导允许选盘：带 disks 参数（逗号分隔设备路径）时，只对选中的空闲盘操作
-	if sel := strings.TrimSpace(r.URL.Query().Get("disks")); sel != "" {
-		selected := map[string]bool{}
-		for _, dev := range strings.Split(sel, ",") {
-			if dev = strings.TrimSpace(dev); dev != "" {
-				selected[dev] = true
-			}
+	// 前端向导允许选盘：带 disks 参数（逗号分隔设备路径）时，只对选中的空闲盘操作。
+	// Fix 2：filtered 为空不得静默回退到全部空闲盘 — 那会把操作范围从"用户选中的盘"
+	// 静默扩大成"全部空闲盘"，破坏用户预期的操作边界。
+	sel := strings.TrimSpace(r.URL.Query().Get("disks"))
+	filtered, hasSel := filterSelectedDisks(unusedDevs, sel)
+	if hasSel {
+		if len(filtered) == 0 {
+			sendProgress(w, ProgressEvent{Step: "检查磁盘", Status: "error", Detail: "所选磁盘已不是空闲盘，请刷新页面重试"})
+			return
 		}
-		var filtered []string
-		for _, dev := range unusedDevs {
-			if selected[dev] {
-				filtered = append(filtered, dev)
-			}
-		}
-		if len(filtered) > 0 {
-			unusedDevs = filtered
-		}
+		unusedDevs = filtered
 	}
 
 	if len(unusedDevs) == 0 {
@@ -130,35 +124,42 @@ func handleWizardSetupStream(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Fix 3：setup*Stream 现在返回 error —— 非 nil 时内部已经把 error 事件发往 SSE
+	// （checkExecError/mountAndWriteFstab 内部做的），这里只负责中止，不重复发错误事件，
+	// 也绝不能再往下走到发 "完成" 事件（此前的 bug：无论内部成功与否都无条件报完成）。
+	var setupErr error
 	switch mode {
 	case "single":
 		// LVM single disk — for future expansion
 		dev := unusedDevs[0]
-		setupLVMSingleStream(w, dev, mountPoint, nasUser, stepRunning, stepDone, totalSteps)
+		setupErr = setupLVMSingleStream(w, dev, mountPoint, nasUser, stepRunning, stepDone, totalSteps)
 
 	case "merge":
 		// LVM merge — combine all disks
-		setupLVMMergeStream(w, unusedDevs, mountPoint, nasUser, stepRunning, stepDone, totalSteps)
+		setupErr = setupLVMMergeStream(w, unusedDevs, mountPoint, nasUser, stepRunning, stepDone, totalSteps)
 
 	case "raid0":
 		// RAID0 stripe — all disks, no redundancy
-		setupRAIDStream(w, unusedDevs, 0, mountPoint, nasUser, stepRunning, stepDone, totalSteps)
+		setupErr = setupRAIDStream(w, unusedDevs, 0, mountPoint, nasUser, stepRunning, stepDone, totalSteps)
 
 	case "raid1":
 		// RAID1 mirror — 2 disks
-		setupRAIDStream(w, unusedDevs[:2], 1, mountPoint, nasUser, stepRunning, stepDone, totalSteps)
+		setupErr = setupRAIDStream(w, unusedDevs[:2], 1, mountPoint, nasUser, stepRunning, stepDone, totalSteps)
 
 	case "raid5":
 		// RAID5 — 3+ disks
-		setupRAIDStream(w, unusedDevs, 5, mountPoint, nasUser, stepRunning, stepDone, totalSteps)
+		setupErr = setupRAIDStream(w, unusedDevs, 5, mountPoint, nasUser, stepRunning, stepDone, totalSteps)
 
 	case "raid6":
 		// RAID6 — 4+ disks
-		setupRAIDStream(w, unusedDevs, 6, mountPoint, nasUser, stepRunning, stepDone, totalSteps)
+		setupErr = setupRAIDStream(w, unusedDevs, 6, mountPoint, nasUser, stepRunning, stepDone, totalSteps)
 
 	case "separate":
 		// Each disk independent
-		setupSeparateStream(w, unusedDevs, nasUser, stepRunning, stepDone, totalSteps)
+		setupErr = setupSeparateStream(w, unusedDevs, nasUser, stepRunning, stepDone, totalSteps)
+	}
+	if setupErr != nil {
+		return
 	}
 
 	// 完成文案按模式报告实际用盘数（raid1 只取前 2 块、single 只取 1 块，
@@ -183,6 +184,29 @@ func handleWizardSetupStream(w http.ResponseWriter, r *http.Request) {
 		Total:  totalSteps,
 		Detail: detail,
 	})
+}
+
+// filterSelectedDisks 计算 unused 与用户选盘参数 sel（逗号分隔设备路径）的交集（Fix 2）。
+// sel 为空串（未传该参数）时 hasSel=false，调用方应保留全部 unused，行为不变。
+// sel 非空但交集为空时返回 filtered=nil, hasSel=true —— 调用方必须据此报错并中止，
+// 不能回退到全部 unused（那会把操作范围从"用户选中的盘"静默扩大）。
+func filterSelectedDisks(unused []string, sel string) (filtered []string, hasSel bool) {
+	sel = strings.TrimSpace(sel)
+	if sel == "" {
+		return nil, false
+	}
+	selected := map[string]bool{}
+	for _, dev := range strings.Split(sel, ",") {
+		if dev = strings.TrimSpace(dev); dev != "" {
+			selected[dev] = true
+		}
+	}
+	for _, dev := range unused {
+		if selected[dev] {
+			filtered = append(filtered, dev)
+		}
+	}
+	return filtered, true
 }
 
 // validateMode checks if the mode is valid for the given disk count
@@ -257,21 +281,26 @@ func mountAndWriteFstab(w http.ResponseWriter, stepName, devPath, mountPoint str
 	return false
 }
 
-// setupLVMSingleStream: LVM on single disk for future expansion
+// setupLVMSingleStream: LVM on single disk for future expansion.
+// Fix 3：返回 error 让外层 handleWizardSetupStream 知道向导是否真正跑完 —— 之前
+// 签名是 void，内部出错只发 SSE error 事件后 return，外层无条件在 switch 之后发
+// "完成"，导致失败的向导仍对用户报成功。每个 abort 分支改为 return 非 nil error
+// （错误信息已由 checkExecError/mountAndWriteFstab 发往 SSE，这里只是让外层知道
+// 不该再发 complete，不重复发错误事件）。
 func setupLVMSingleStream(w http.ResponseWriter, dev, mountPoint, nasUser string,
-	stepRunning, stepDone func(string), totalSteps int) {
+	stepRunning, stepDone func(string), totalSteps int) error {
 
 	stepRunning("清除磁盘签名")
 	out, err := common.SudoExec("/usr/sbin/wipefs", "-a", dev)
 	if checkExecError(w, "清除磁盘签名", out, err) {
-		return
+		return fmt.Errorf("清除磁盘签名: %s: %w", out, err)
 	}
 	stepDone("清除磁盘签名")
 
 	stepRunning("创建物理卷 (pvcreate)")
 	out, err = common.SudoExec("/usr/sbin/pvcreate", "-f", dev)
 	if checkExecError(w, "创建物理卷", out, err) {
-		return
+		return fmt.Errorf("创建物理卷: %s: %w", out, err)
 	}
 	stepDone("创建物理卷")
 
@@ -279,14 +308,14 @@ func setupLVMSingleStream(w http.ResponseWriter, dev, mountPoint, nasUser string
 	vgName := "vg_nas"
 	out, err = common.SudoExec("/usr/sbin/vgcreate", "-f", vgName, dev)
 	if checkExecError(w, "创建卷组", out, err) {
-		return
+		return fmt.Errorf("创建卷组: %s: %w", out, err)
 	}
 	stepDone("创建卷组 vg_nas")
 
 	stepRunning("创建逻辑卷 (lvcreate)")
 	out, err = common.SudoExec("/usr/sbin/lvcreate", "-y", "-l", "100%FREE", "-n", "data", vgName)
 	if checkExecError(w, "创建逻辑卷", out, err) {
-		return
+		return fmt.Errorf("创建逻辑卷: %s: %w", out, err)
 	}
 	lvPath := "/dev/" + vgName + "/data"
 	stepDone("创建逻辑卷 data")
@@ -294,7 +323,7 @@ func setupLVMSingleStream(w http.ResponseWriter, dev, mountPoint, nasUser string
 	stepRunning("格式化 (xfs)")
 	out, err = common.SudoExec("mkfs.xfs", "-f", lvPath)
 	if checkExecError(w, "格式化", out, err) {
-		return
+		return fmt.Errorf("格式化: %s: %w", out, err)
 	}
 	stepDone("格式化 xfs")
 
@@ -303,30 +332,32 @@ func setupLVMSingleStream(w http.ResponseWriter, dev, mountPoint, nasUser string
 	// prjquota：与 writeFstab 的 defaults,prjquota 一致，建池后配额立即可用
 	out, err = common.SudoExec("mount", "-o", "prjquota", lvPath, mountPoint)
 	if checkExecError(w, "挂载", out, err) {
-		return
+		return fmt.Errorf("挂载: %s: %w", out, err)
 	}
 	if mountAndWriteFstab(w, "挂载并配置", lvPath, mountPoint) {
-		return
+		return fmt.Errorf("挂载并配置: 写入 fstab 失败")
 	}
 	common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountPoint)
 	EnsurePoolStructure(mountPoint, nasUser)
 	stepDone("挂载并配置 Samba 共享")
+	return nil
 }
 
-// setupLVMMergeStream: LVM merge multiple disks
+// setupLVMMergeStream: LVM merge multiple disks（Fix 3：签名改为返回 error，见
+// setupLVMSingleStream 顶部注释说明动机）。
 func setupLVMMergeStream(w http.ResponseWriter, devs []string, mountPoint, nasUser string,
-	stepRunning, stepDone func(string), totalSteps int) {
+	stepRunning, stepDone func(string), totalSteps int) error {
 
 	// Per-disk: wipe + pvcreate
 	for i, dev := range devs {
 		stepRunning(fmt.Sprintf("清除并初始化磁盘 %d/%d", i+1, len(devs)))
 		out, err := common.SudoExec("/usr/sbin/wipefs", "-a", dev)
 		if checkExecError(w, fmt.Sprintf("清除磁盘 %d", i+1), out, err) {
-			return
+			return fmt.Errorf("清除磁盘 %d: %s: %w", i+1, out, err)
 		}
 		out, err = common.SudoExec("/usr/sbin/pvcreate", "-f", dev)
 		if checkExecError(w, fmt.Sprintf("初始化磁盘 %d", i+1), out, err) {
-			return
+			return fmt.Errorf("初始化磁盘 %d: %s: %w", i+1, out, err)
 		}
 		stepDone(fmt.Sprintf("初始化磁盘 %d/%d", i+1, len(devs)))
 	}
@@ -336,14 +367,14 @@ func setupLVMMergeStream(w http.ResponseWriter, devs []string, mountPoint, nasUs
 	vgArgs := append([]string{"-f", vgName}, devs...)
 	out, err := common.SudoExec("/usr/sbin/vgcreate", vgArgs...)
 	if checkExecError(w, "创建卷组", out, err) {
-		return
+		return fmt.Errorf("创建卷组: %s: %w", out, err)
 	}
 	stepDone("创建卷组 vg_nas")
 
 	stepRunning("创建逻辑卷 (lvcreate)")
 	out, err = common.SudoExec("/usr/sbin/lvcreate", "-y", "-l", "100%FREE", "-n", "data", vgName)
 	if checkExecError(w, "创建逻辑卷", out, err) {
-		return
+		return fmt.Errorf("创建逻辑卷: %s: %w", out, err)
 	}
 	lvPath := "/dev/" + vgName + "/data"
 	stepDone("创建逻辑卷 data")
@@ -351,7 +382,7 @@ func setupLVMMergeStream(w http.ResponseWriter, devs []string, mountPoint, nasUs
 	stepRunning("格式化 (xfs)")
 	out, err = common.SudoExec("mkfs.xfs", "-f", lvPath)
 	if checkExecError(w, "格式化", out, err) {
-		return
+		return fmt.Errorf("格式化: %s: %w", out, err)
 	}
 	stepDone("格式化 xfs")
 
@@ -360,26 +391,28 @@ func setupLVMMergeStream(w http.ResponseWriter, devs []string, mountPoint, nasUs
 	// prjquota：与 writeFstab 的 defaults,prjquota 一致，建池后配额立即可用
 	out, err = common.SudoExec("mount", "-o", "prjquota", lvPath, mountPoint)
 	if checkExecError(w, "挂载", out, err) {
-		return
+		return fmt.Errorf("挂载: %s: %w", out, err)
 	}
 	if mountAndWriteFstab(w, "挂载并配置", lvPath, mountPoint) {
-		return
+		return fmt.Errorf("挂载并配置: 写入 fstab 失败")
 	}
 	common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountPoint)
 	EnsurePoolStructure(mountPoint, nasUser)
 	stepDone("挂载并配置 Samba 共享")
+	return nil
 }
 
-// setupRAIDStream: RAID0/1/5/6
+// setupRAIDStream: RAID0/1/5/6（Fix 3：签名改为返回 error，见 setupLVMSingleStream
+// 顶部注释说明动机）。
 func setupRAIDStream(w http.ResponseWriter, devs []string, level int, mountPoint, nasUser string,
-	stepRunning, stepDone func(string), totalSteps int) {
+	stepRunning, stepDone func(string), totalSteps int) error {
 
 	// 1. Wipe all disks
 	stepRunning(fmt.Sprintf("清除 %d 块磁盘签名", len(devs)))
 	for _, dev := range devs {
 		out, err := common.SudoExec("/usr/sbin/wipefs", "-a", dev)
 		if checkExecError(w, "清除磁盘签名", out, err) {
-			return
+			return fmt.Errorf("清除磁盘签名: %s: %w", out, err)
 		}
 	}
 	stepDone("清除磁盘签名")
@@ -391,7 +424,7 @@ func setupRAIDStream(w http.ResponseWriter, devs []string, level int, mountPoint
 	args = append(args, devs...)
 	out, err := common.SudoExec("/usr/sbin/mdadm", args...)
 	if checkExecError(w, "创建RAID", out, err) {
-		return
+		return fmt.Errorf("创建RAID: %s: %w", out, err)
 	}
 	stepDone(fmt.Sprintf("创建 RAID%d 阵列 (%s)", level, mdDev))
 
@@ -404,7 +437,7 @@ func setupRAIDStream(w http.ResponseWriter, devs []string, level int, mountPoint
 	stepRunning("格式化 (xfs)")
 	out, err = common.SudoExec("mkfs.xfs", "-f", mdDev)
 	if checkExecError(w, "格式化", out, err) {
-		return
+		return fmt.Errorf("格式化: %s: %w", out, err)
 	}
 	stepDone("格式化 xfs")
 
@@ -413,10 +446,10 @@ func setupRAIDStream(w http.ResponseWriter, devs []string, level int, mountPoint
 	common.SudoExec("mkdir", "-p", mountPoint)
 	out, err = common.SudoExec("mount", "-o", "prjquota", mdDev, mountPoint)
 	if checkExecError(w, "挂载", out, err) {
-		return
+		return fmt.Errorf("挂载: %s: %w", out, err)
 	}
 	if mountAndWriteFstab(w, "挂载并配置", mdDev, mountPoint) {
-		return
+		return fmt.Errorf("挂载并配置: 写入 fstab 失败")
 	}
 	common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountPoint)
 	stepDone("挂载并写入 fstab")
@@ -436,6 +469,7 @@ func setupRAIDStream(w http.ResponseWriter, devs []string, level int, mountPoint
 	stepRunning("配置 Samba 共享")
 	EnsurePoolStructure(mountPoint, nasUser)
 	stepDone("配置 Samba 共享")
+	return nil
 }
 
 // raidLevelName returns a friendly name for RAID level
@@ -461,9 +495,10 @@ func getNextMDDevice() string {
 	return "/dev/md127"
 }
 
-// setupSeparateStream: each disk independent
+// setupSeparateStream: each disk independent（Fix 3：签名改为返回 error，见
+// setupLVMSingleStream 顶部注释说明动机）。
 func setupSeparateStream(w http.ResponseWriter, devs []string, nasUser string,
-	stepRunning, stepDone func(string), totalSteps int) {
+	stepRunning, stepDone func(string), totalSteps int) error {
 
 	for i, dev := range devs {
 		mountPoint := fmt.Sprintf("/data/nas%d", i+1)
@@ -471,14 +506,14 @@ func setupSeparateStream(w http.ResponseWriter, devs []string, nasUser string,
 		stepRunning(fmt.Sprintf("磁盘 %d: 清除签名", i+1))
 		out, err := common.SudoExec("/usr/sbin/wipefs", "-a", dev)
 		if checkExecError(w, fmt.Sprintf("磁盘%d清除", i+1), out, err) {
-			return
+			return fmt.Errorf("磁盘%d清除: %s: %w", i+1, out, err)
 		}
 		stepDone(fmt.Sprintf("磁盘 %d: 清除签名", i+1))
 
 		stepRunning(fmt.Sprintf("磁盘 %d: 创建分区", i+1))
 		out, err = common.SudoExec("/usr/sbin/parted", "-s", dev, "mklabel", "gpt", "mkpart", "primary", "xfs", "0%", "100%")
 		if checkExecError(w, fmt.Sprintf("磁盘%d分区", i+1), out, err) {
-			return
+			return fmt.Errorf("磁盘%d分区: %s: %w", i+1, out, err)
 		}
 		time.Sleep(500 * time.Millisecond)
 		partDev := partitionDevice(dev, 1)
@@ -487,7 +522,7 @@ func setupSeparateStream(w http.ResponseWriter, devs []string, nasUser string,
 		stepRunning(fmt.Sprintf("磁盘 %d: 格式化", i+1))
 		out, err = common.SudoExec("mkfs.xfs", "-f", partDev)
 		if checkExecError(w, fmt.Sprintf("磁盘%d格式化", i+1), out, err) {
-			return
+			return fmt.Errorf("磁盘%d格式化: %s: %w", i+1, out, err)
 		}
 		stepDone(fmt.Sprintf("磁盘 %d: 格式化", i+1))
 
@@ -495,10 +530,10 @@ func setupSeparateStream(w http.ResponseWriter, devs []string, nasUser string,
 		common.SudoExec("mkdir", "-p", mountPoint)
 		out, err = common.SudoExec("mount", "-o", "prjquota", partDev, mountPoint)
 		if checkExecError(w, fmt.Sprintf("磁盘%d挂载", i+1), out, err) {
-			return
+			return fmt.Errorf("磁盘%d挂载: %s: %w", i+1, out, err)
 		}
 		if mountAndWriteFstab(w, fmt.Sprintf("磁盘%d挂载", i+1), partDev, mountPoint) {
-			return
+			return fmt.Errorf("磁盘%d挂载: 写入 fstab 失败", i+1)
 		}
 		common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountPoint)
 		stepDone(fmt.Sprintf("磁盘 %d: 挂载到存储空间%d", i+1, i+1))
@@ -507,6 +542,7 @@ func setupSeparateStream(w http.ResponseWriter, devs []string, nasUser string,
 		EnsurePoolStructure(mountPoint, nasUser)
 		stepDone(fmt.Sprintf("磁盘 %d: public + home", i+1))
 	}
+	return nil
 }
 
 // handleWizardResetStream does storage reset with real-time progress
