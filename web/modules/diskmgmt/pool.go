@@ -604,8 +604,22 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 	case "raid1", "raid0", "raid5", "raid6":
 		// 1. Get member disks BEFORE any destructive action
 		// （consensus P0-A1：系统盘闸门必须在 umount/mdadm --stop/--zero-superblock 之前判定）
-		detailOut, _ := common.SudoOutput("/usr/sbin/mdadm", "--detail", poolDevice)
+		// consensus R1 Fix 1：detail 失败不能静默当"无成员"处理——memberDisks 为空会让
+		// 系统盘闸门空转通过，umount/--stop 照常执行，而成员盘的 zero-superblock/wipefs
+		// 全被跳过，留下带 RAID 超级块的幽灵成员盘（可能被开机自动重组）。对齐 lvm 分支
+		// 对 pvs 失败的安全拒绝模式：detail 失败或解析结果为空都中止，不执行任何破坏动作。
+		detailOut, detailErr := common.SudoOutput("/usr/sbin/mdadm", "--detail", poolDevice)
+		if detailErr != nil {
+			common.LogAuditRequest(r, "STORAGE", "删除存储池", fmt.Sprintf("type=%s device=%s name=%s rejected=mdadm --detail执行失败", poolType, poolDevice, poolName), "rejected")
+			jsonError(w, fmt.Sprintf("无法确认阵列 %s 的成员（mdadm --detail 执行失败），为安全起见拒绝删除: %s", poolDevice, detailErr.Error()), http.StatusInternalServerError)
+			return
+		}
 		memberDisks := parseMdMemberDisks(detailOut)
+		if len(memberDisks) == 0 {
+			common.LogAuditRequest(r, "STORAGE", "删除存储池", fmt.Sprintf("type=%s device=%s name=%s rejected=未能解析出阵列成员", poolType, poolDevice, poolName), "rejected")
+			jsonError(w, fmt.Sprintf("无法确认阵列 %s 的成员（未能解析出阵列成员），为安全起见拒绝删除", poolDevice), http.StatusInternalServerError)
+			return
+		}
 		if dev, hit := anySystemDisk(memberDisks, isSystemDisk); hit {
 			common.LogAuditRequest(r, "STORAGE", "删除存储池", fmt.Sprintf("type=%s device=%s name=%s rejected=成员盘%s是系统盘", poolType, poolDevice, poolName, dev), "rejected")
 			jsonError(w, fmt.Sprintf("拒绝删除：阵列成员 %s 是系统盘", dev), http.StatusConflict)

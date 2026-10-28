@@ -246,6 +246,49 @@ func TestAnySystemDisk(t *testing.T) {
 	})
 }
 
+// TestParseMdMemberDisks 覆盖正常/空/畸形 mdadm --detail 输出（consensus R1
+// Fix 1：handlePoolDelete 的 raid 分支在 parseMdMemberDisks 结果为空时必须安全
+// 拒绝删除，这里先确认解析函数本身在空输出/畸形输出下确实返回空切片，
+// 不会意外解析出假成员掩盖该安全拒绝路径）。
+func TestParseMdMemberDisks(t *testing.T) {
+	t.Run("正常输出", func(t *testing.T) {
+		output := "    Number   Major   Minor   RaidDevice State\n" +
+			"       0       8       16        0      active sync   /dev/sdb\n" +
+			"       1       8       32        1      active sync   /dev/sdc\n"
+		got := parseMdMemberDisks(output)
+		want := []string{"/dev/sdb", "/dev/sdc"}
+		if len(got) != len(want) {
+			t.Fatalf("got %v, want %v", got, want)
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Errorf("got[%d]=%q, want %q", i, got[i], want[i])
+			}
+		}
+	})
+
+	t.Run("空输出", func(t *testing.T) {
+		if got := parseMdMemberDisks(""); len(got) != 0 {
+			t.Errorf("got %v, want empty", got)
+		}
+	})
+
+	t.Run("畸形输出_无active或spare关键词", func(t *testing.T) {
+		// 真实 mdadm --detail 失败/异常时常见："mdadm: cannot open /dev/mdX: No such file or directory"
+		output := "mdadm: cannot open /dev/md0: No such file or directory\n"
+		if got := parseMdMemberDisks(output); len(got) != 0 {
+			t.Errorf("got %v, want empty（无 active/spare 关键词不应解析出成员）", got)
+		}
+	})
+
+	t.Run("畸形输出_无dev路径", func(t *testing.T) {
+		output := "       0       8       16        0      active sync   (no device)\n"
+		if got := parseMdMemberDisks(output); len(got) != 0 {
+			t.Errorf("got %v, want empty（没有 /dev/ 路径不应解析出成员）", got)
+		}
+	})
+}
+
 // TestHandlePoolDeleteRejectsUnmatchedLivePool 验证 consensus P0-A1 的服务端
 // 重解析闸门：测试环境没有真实 mdadm/lvm，buildStorageOverview() 的实时池列表
 // 必然为空，任何表单提交的 (pool_type, pool_device) 都无法匹配到实时池，

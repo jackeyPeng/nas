@@ -538,8 +538,17 @@ func handleWizardResetStream(w http.ResponseWriter, r *http.Request) {
 	// consensus P0-A2：在任何拆除动作之前（LVM/PV/RAID 都还活着）收集纳管擦盘
 	// 目标集合——pvs/mdstat 一旦等 LVM/PV 被拆了再查就是空的，必须在最前面采集。
 	mounts := getExistingDataMounts()
-	pvsOutPre, _ := common.SudoOutput("/usr/sbin/pvs", "--noheadings", "-o", "pv_name,vg_name")
-	mdstatPre, _ := common.SudoOutput("cat", "/proc/mdstat")
+	pvsOutPre, pvsErrPre := common.SudoOutput("/usr/sbin/pvs", "--noheadings", "-o", "pv_name,vg_name")
+	mdstatPre, mdstatErrPre := common.SudoOutput("cat", "/proc/mdstat")
+	// consensus R1 Fix 4：采集失败不中止重置（无 LVM 的机器上 pvs 缺失是合法
+	// 状态），但不能静默吞错——发一条 running 状态的 SSE 事件把警告带给前端/
+	// 审计，不新增 step、不改 totalSteps。
+	if pvsErrPre != nil || mdstatErrPre != nil {
+		sendProgress(w, ProgressEvent{
+			Step: "采集纳管盘", Status: "running", Index: step + 1, Total: totalSteps,
+			Detail: fmt.Sprintf("无法枚举纳管盘（pvs/mdstat 失败）: pvs=%v mdstat=%v，擦除集合可能不完整", pvsErrPre, mdstatErrPre),
+		})
+	}
 	managedTargets := collectManagedWipeTargets(pvsOutPre, mdstatPre, mounts)
 
 	// 1. Unmount
@@ -611,15 +620,18 @@ func handleWizardResetStream(w http.ResponseWriter, r *http.Request) {
 	// 5. Wipe disks — consensus P0-A2：擦盘集合收敛为面板纳管盘，不再对
 	// getDataDisks()（全部非系统整盘）无差别 zero-superblock + wipefs，只对
 	// 最前面采集到的 managedTargets 执行擦除；外来 USB 备份盘等从未纳管的盘
-	// 完全不碰。每个目标落命令前再过 isSystemDisk（命中跳过记日志，不中止
-	// 整个 reset）。
+	// 完全不碰。
+	// consensus R1 Fix 3：改为复用 reset.go 同款 wipeManagedTargets（原来这里
+	// 内联复制了一份擦盘循环，与 wipeManagedTargets 平行实现，且跳过系统盘时
+	// 没有日志）。wipeManagedTargets 返回的 steps（含「跳过系统盘 X」条目）
+	// 通过 sendProgress 的 Detail 呈现，SSE 事件结构与 step 计数不变。
 	stepRunning("清除磁盘签名")
-	for _, dev := range managedTargets {
-		if isSystemDisk(dev) {
-			continue
-		}
-		common.SudoExec("/usr/sbin/mdadm", "--zero-superblock", dev)
-		common.SudoExec("/usr/sbin/wipefs", "-a", dev)
+	wipeSteps := wipeManagedTargets(managedTargets)
+	if len(wipeSteps) > 0 {
+		sendProgress(w, ProgressEvent{
+			Step: "清除磁盘签名", Status: "running", Index: step + 1, Total: totalSteps,
+			Detail: strings.Join(wipeSteps, "; "),
+		})
 	}
 	dataDisks := getDataDisks()
 	if unmanaged := skipUnmanagedDisks(dataDisks, managedTargets); len(unmanaged) > 0 {

@@ -34,8 +34,14 @@ func handleWizardReset(w http.ResponseWriter, r *http.Request) {
 	// consensus P0-A2：在任何拆除动作之前（LVM/PV/RAID 都还活着）收集纳管擦盘
 	// 目标集合——pvs/mdstat 一旦等 LVM/PV 被拆了再查就是空的，必须在最前面采集。
 	mounts := getExistingDataMounts()
-	pvsOutPre, _ := common.SudoOutput("/usr/sbin/pvs", "--noheadings", "-o", "pv_name,vg_name")
-	mdstatPre, _ := common.SudoOutput("cat", "/proc/mdstat")
+	pvsOutPre, pvsErrPre := common.SudoOutput("/usr/sbin/pvs", "--noheadings", "-o", "pv_name,vg_name")
+	mdstatPre, mdstatErrPre := common.SudoOutput("cat", "/proc/mdstat")
+	// consensus R1 Fix 4：采集失败不中止重置（无 LVM 的机器上 pvs 缺失是合法
+	// 状态），但不能静默吞错——pvs 失败时 managedTargets 近乎为空，重置照常
+	// "成功"但纳管盘不被擦除（幽灵盘），必须留痕让用户/审计看出"擦除不完整"。
+	if pvsErrPre != nil || mdstatErrPre != nil {
+		steps = append(steps, fmt.Sprintf("无法枚举纳管盘（pvs/mdstat 失败）: pvs=%v mdstat=%v，擦除集合可能不完整", pvsErrPre, mdstatErrPre))
+	}
 	managedTargets := collectManagedWipeTargets(pvsOutPre, mdstatPre, mounts)
 
 	// 1. Unmount all /data/nas* and /data (if it's LVM/RAID)
