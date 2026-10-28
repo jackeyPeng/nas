@@ -128,6 +128,17 @@ type RAIDStatus struct {
 	// 新增字段，前端未引用 spare_disks 原值做展示逻辑，向后兼容追加不改语义。
 	FailedDisks int    `json:"failed_disks"`
 	SyncPercent string `json:"sync_percent,omitempty"`
+	// Health/Activity 新增字段（consensus R2 阶段1：健康与活动状态分离）。
+	// 既有字段名/语义全部保留，向后兼容追加，前端未引用这两个新字段时不受影响。
+	//
+	// Health："normal"/"degraded"/"failed"——degraded>0 或 FailedDisks>0 时
+	// "degraded"；array_state=="inactive" 或 degraded==raid_disks 时 "failed"；
+	// 否则 "normal"。判定只看 degraded 计数，不信 array_state（真机实测：
+	// 降级阵列 array_state 仍是 "clean"）。
+	// Activity：sysfs sync_action 原值（idle/resync/recover/reshape/check/
+	// repair）；mdstat 回退路径按进度行 Kind 映射到同名语义（recovery→recover）。
+	Health   string `json:"health"`
+	Activity string `json:"activity"`
 }
 
 // ═══════════════════════════════════════════════════
@@ -202,11 +213,12 @@ func buildStorageOverview() StorageOverview {
 
 		healthy := true
 		if poolType == "raid1" || poolType == "raid0" || poolType == "raid5" || poolType == "raid6" {
+			// consensus R2：健康判定改用 Health/Activity 分离字段——
+			// sysfs 回退到 mdstat 路径同样填充这两个字段，语义一致，
+			// 调用点不需要区分数据来源。活动中（非 idle）也不算健康
+			// （与此前 SyncPercent != "" 置 false 的语义等价）。
 			if ra, ok := raidMap[poolDev]; ok {
-				healthy = ra.State == "active" || ra.State == "clean"
-				if ra.SyncPercent != "" {
-					healthy = false
-				}
+				healthy = ra.Health == "normal" && ra.Activity == "idle"
 			}
 		}
 
@@ -717,8 +729,9 @@ func detectPoolTypeEx(device, mount string) (string, string) {
 // consensus P1-B（C1）：cachedPVMappings/cachedRAIDMembers 是包级变量，此前
 // buildStorageOverview 入口置 nil、getter 懒填充，跨请求并发调用会对同一组
 // 变量产生 data race（go test -race 能直接打出来）。两种修法二选一：
-//   a) 包级 sync.Mutex 保护全部读写点，getter 在锁内执行外部命令并填充；
-//   b) 重构为请求级传参（不用包级变量）。
+//
+//	a) 包级 sync.Mutex 保护全部读写点，getter 在锁内执行外部命令并填充；
+//	b) 重构为请求级传参（不用包级变量）。
 //
 // 选 (a)：findDiskPoolDevice→getCachedPVMappings/getCachedRAIDMembers 只有
 // buildStorageOverview 这一条调用路径，改造成请求级传参需要连带改
@@ -839,30 +852,58 @@ func calcPercent(totalGB, usedGB float64) string {
 	return fmt.Sprintf("%.0f", (usedGB/totalGB)*100)
 }
 
-// getRAIDStatus reads mdadm RAID arrays
-// consensus P0-D：改走 parseMdstatBlocks 统一块解析，不再临时拿字符串下标猜。
-// (F) 失败成员计入 FailedDisks（此前被错误并入 SpareDisks）；(S) 真 spare 计入
-// SpareDisks；其余带 [n] 槛位 token 计入 ActiveDisks。FailedDisks>0 时 State
-// 置 "degraded"。SyncPercent/resyncing 只依据属于本阵列块的进度行，不会被其他
-// 阵列的进度行污染（parseMdstatBlocks 按块隔离）。
+// getRAIDStatus reads RAID array status。
+// consensus R2 阶段1：sysfs 优先采集 —— /sys/block/<md>/md/ 下是内核暴露的
+// 结构化标量文件，字段稳定、health/activity 语义清晰分离，不需要像 mdstat
+// 一样拿字符串下标/正则抠进度条。只有 sysfs 枚举不到任何 md 设备（目录缺失，
+// 如容器环境/权限问题）且 mdstat 里确实有阵列时，才回退 mdstat 文本解析
+// （buildRAIDStatusFromMdstat，完整保留不删）。
 //
-// 枚举来源注记：此前先 `ls /dev/md*` 拿设备节点列表再逐个查 mdstat 块——
-// common.ExecOutput 是 exec.Command 直调，没有 shell，"/dev/md*" 字面量不会
-// 被展开，ls 必定报错(rc=2)，导致本函数恒返回空切片，下游 RAID 健康监控全盲
-// （真机实锤：md0 resync 57% 时面板仍报 healthy=true）。
-// 现改为直接遍历 parseMdstatBlocks 的块：mdstat 有块即有状态可报，不再依赖
-// /dev 下设备节点是否存在——这会多纳入 inactive/未挂载的阵列，但更正确
-// （阵列在 mdstat 出现即应可观测）；下游 raidMap 按 Device 字符串匹配挂载
-// 来源，多出的条目不会被匹配到，不影响现有行为。
+// 枚举来源注记（历史坑）：此前先 `ls /dev/md*` 拿设备节点列表再逐个查 mdstat
+// 块——common.ExecOutput 是 exec.Command 直调，没有 shell，"/dev/md*" 字面量
+// 不会被展开，ls 必定报错(rc=2)，导致本函数恒返回空切片，下游 RAID 健康监控
+// 全盲（真机实锤：md0 resync 57% 时面板仍报 healthy=true）。后改为遍历
+// parseMdstatBlocks 的块；现在 sysfs 路径进一步改为直接 glob
+// /sys/block/md*/md 枚举，同样不依赖 /dev 下设备节点是否存在。
 func getRAIDStatus() []RAIDStatus {
+	mdNames := enumerateSysfsMDNames()
+	if len(mdNames) > 0 {
+		var arrays []RAIDStatus
+		for _, name := range mdNames {
+			vals, members, ok := readRAIDSysfsValues(name)
+			if !ok {
+				continue
+			}
+			arrays = append(arrays, buildRAIDStatusFromSysfs(name, vals, members))
+		}
+		if len(arrays) > 0 {
+			return arrays
+		}
+	}
+	// sysfs 不可用/为空：回退 mdstat 文本解析。
 	mdstatBytes, _ := os.ReadFile("/proc/mdstat")
 	return buildRAIDStatusFromMdstat(string(mdstatBytes))
+}
+
+// mdstatProgressKindToActivity 把 mdstat 进度行的 Kind（resync/recovery/
+// reshape/check/repair）映射到与 sysfs sync_action 一致的 Activity 值。
+// 语义陷阱：sysfs 的值是 "recover"，mdstat 文本却是 "recovery"——两边拼写
+// 不同，映射时不能直接照抄字符串。
+func mdstatProgressKindToActivity(kind string) string {
+	if kind == "recovery" {
+		return "recover"
+	}
+	return kind
 }
 
 // buildRAIDStatusFromMdstat 纯函数：把 /proc/mdstat 全文解析为 []RAIDStatus。
 // 从 getRAIDStatus 抽出，供表驱动单测直接注入 fixture，不发起任何系统调用。
 // 字段填充语义与此前基于 ls 枚举时逐字节一致，只是枚举来源换成了
 // parseMdstatBlocks 产出的块本身（MdName 匹配 ^md\d+$ 的块各出一条）。
+// consensus R2：新增 Health/Activity 字段填充，与 sysfs 路径语义对齐——
+// Activity 默认 "idle"，有进度行时取该行 Kind 映射值；Health 按
+// raidHealthFromCounts 同一套规则推导（mdstat 没有 array_state，这里用
+// HeaderFields[2]（如 "active"）顶替，FailedDisks==raid_disks 时判 failed）。
 func buildRAIDStatusFromMdstat(content string) []RAIDStatus {
 	var arrays []RAIDStatus
 	blocks := parseMdstatBlocks(content)
@@ -870,9 +911,11 @@ func buildRAIDStatusFromMdstat(content string) []RAIDStatus {
 		if !mdNameRe.MatchString(block.MdName) {
 			continue
 		}
-		ra := RAIDStatus{Device: "/dev/" + block.MdName}
+		ra := RAIDStatus{Device: "/dev/" + block.MdName, Activity: "idle"}
+		headerState := ""
 		if len(block.HeaderFields) >= 3 {
-			ra.State = block.HeaderFields[2]
+			headerState = block.HeaderFields[2]
+			ra.State = headerState
 			ra.Level = extractRAIDLevel(strings.Join(block.HeaderFields, " "))
 		}
 		for _, tok := range block.MemberTokens {
@@ -896,7 +939,13 @@ func buildRAIDStatusFromMdstat(content string) []RAIDStatus {
 					ra.State = "resyncing"
 				}
 			}
+			ra.Activity = mdstatProgressKindToActivity(p.Kind)
 		}
+		// mdstat 没有独立的 "degraded 计数" 字段，FailedDisks 本身就是降级
+		// 判据；raid_disks 用 Disks（本阵列解析出的总成员数）顶替——mdstat
+		// 的成员 token 在阵列失活前不会消失（与 sysfs rd* 目录消失不同），
+		// Disks 即可代表阵列设计成员数。
+		ra.Health = raidHealthFromCounts(headerState, ra.FailedDisks, ra.Disks, ra.FailedDisks)
 		arrays = append(arrays, ra)
 	}
 	return arrays

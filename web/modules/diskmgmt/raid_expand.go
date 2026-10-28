@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -228,13 +229,24 @@ func handleRAIDExpandFS(w http.ResponseWriter, r *http.Request) {
 	defer common.UnlockDiskOp()
 
 	// Check if reshape is still running
-	// consensus P0-D：改走 parseMdstatBlocks——此前只在 MD 头行本身找
-	// reshape/resync 关键词，头行从不携带这些词，闸门形同虚设。现在检查该
-	// 阵列块内是否存在任一进度行（resync/recovery/reshape/check/repair）。
-	mdstatBytes, _ := os.ReadFile("/proc/mdstat")
+	// consensus R2：闸门优先看 sysfs —— sync_action != idle 或
+	// reshape_position != none/0 即拒绝；sysfs 不可用（目录缺失）时回退
+	// mdstat parser 路径（此前 consensus P0-D 已把头行本身找关键词的死闸门
+	// 改为检查块内任一进度行，这里完整保留不删）。
 	mdName := strings.TrimPrefix(mdDev, "/dev/")
-	blocks := parseMdstatBlocks(string(mdstatBytes))
-	if block, found := findBlockByMdName(blocks, mdName); found && blockHasProgress(block) {
+	reshaping := false
+	if vals, _, ok := readRAIDSysfsValues(mdName); ok {
+		syncAction := vals["sync_action"]
+		reshapePos := strings.TrimSpace(vals["reshape_position"])
+		reshaping = !sysfsResyncDone(syncAction) || (reshapePos != "" && reshapePos != "none" && reshapePos != "0")
+	} else {
+		mdstatBytes, _ := os.ReadFile("/proc/mdstat")
+		blocks := parseMdstatBlocks(string(mdstatBytes))
+		if block, found := findBlockByMdName(blocks, mdName); found && blockHasProgress(block) {
+			reshaping = true
+		}
+	}
+	if reshaping {
 		common.JSONResponse(w, map[string]interface{}{
 			"error": "阵列仍在重构中，请等待完成后再扩展文件系统",
 		})
@@ -256,6 +268,12 @@ func handleRAIDExpandFS(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleRAIDReshapeStatus returns current reshape/resync progress
+//
+// consensus R2：sysfs 优先——reshaping = sync_action != idle；progress 从
+// sync_completed 算百分比；speed = sync_speed + "K/sec"；eta 由
+// (total-done)/speed 估算（分钟，一位小数；speed 为 0/none 时置空）。
+// mdstat 的 finish= 不再是唯一来源，这里是独立的估算路径。sysfs 不可用
+// （目录缺失）时完整回退下方 mdstat 路径，不删除。
 func handleRAIDReshapeStatus(w http.ResponseWriter, r *http.Request) {
 	mdDev := r.URL.Query().Get("md_device")
 	if mdDev == "" {
@@ -264,7 +282,6 @@ func handleRAIDReshapeStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	mdName := strings.TrimPrefix(mdDev, "/dev/")
-	mdstatBytes, _ := os.ReadFile("/proc/mdstat")
 
 	status := map[string]interface{}{
 		"device":    mdDev,
@@ -274,9 +291,30 @@ func handleRAIDReshapeStatus(w http.ResponseWriter, r *http.Request) {
 		"eta":       "",
 	}
 
+	if vals, _, ok := readRAIDSysfsValues(mdName); ok {
+		syncAction := vals["sync_action"]
+		status["state"] = vals["array_state"]
+		if !sysfsResyncDone(syncAction) {
+			status["reshaping"] = true
+			status["progress"] = syncCompletedPercent(vals["sync_completed"])
+			if speed, speedOK := parseSyncSpeed(vals["sync_speed"]); speedOK {
+				status["speed"] = strconv.FormatFloat(speed, 'f', 0, 64) + "K/sec"
+				if done, total, syncOK := parseSyncCompleted(vals["sync_completed"]); syncOK {
+					if eta, etaOK := reshapeETAMinutes(done, total, speed); etaOK {
+						status["eta"] = eta
+					}
+				}
+			}
+		}
+		common.JSONResponse(w, status)
+		return
+	}
+
+	// sysfs 不可用：回退 mdstat 文本解析。
 	// consensus P0-D：改走 parseMdstatBlocks——此前只看头行的下一行
 	// (lines[i+1])，真实 mdstat 的进度行通常在 blocks 行之后（i+2 及以后），
 	// 会漏检；现在进度行在阵列块内任意缩进行位置都能命中。
+	mdstatBytes, _ := os.ReadFile("/proc/mdstat")
 	blocks := parseMdstatBlocks(string(mdstatBytes))
 	if block, found := findBlockByMdName(blocks, mdName); found {
 		if p, ok := firstProgress(block); ok && (p.Kind == "reshape" || p.Kind == "resync") {
@@ -293,41 +331,64 @@ func handleRAIDReshapeStatus(w http.ResponseWriter, r *http.Request) {
 	common.JSONResponse(w, status)
 }
 
-// waitForResync polls /proc/mdstat until resync completes (for RAID1)。
+// waitForResync polls RAID sync status until resync completes (for RAID1)。
 // 返回 error：正常在限时内完成返回 nil；600 轮（10 分钟）超时仍未完成返回非 nil —
 // 调用方必须据此中止，不能再继续 stepDone/growFilesystem（A1：阵列还在重构时
 // 扩文件系统会损坏数据）。
 //
-// Finding 3（首轮竞态）：mdadm --add/--grow 后内核把 resync 行写进 /proc/mdstat
-// 有延迟，若循环一开始就立即读取，很可能在内核还没来得及写 resync 行时就读到
-// "干净"的 mdstat，直接误判完成返回 nil，growFilesystem 会在阵列实际还在重构
-// 时跑。修法两处：① 循环前先 sleep 2s，给内核一点时间把 resync 行写出来；
-// ② 不再是"读到一次干净就算完成"，而是要求连续 cleanStreak 达到 3 轮（约 6s，
-// 含循环内已有的 2s 间隔）都没有 resync/recovery 行才判定完成——期间只要观察
-// 到过 resync/recovery 行，streak 清零重新累计。600 轮总预算（10 分钟）不变。
+// consensus R2：优先轮询 sysfs sync_action（/sys/block/<md>/md/sync_action），
+// 完成判据改为"连续 cleanStreak 轮 idle"（sysfsCleanStreakResult 抽出的纯函数
+// 判定逻辑一致）；sysfs 不可用（目录缺失）时回退下方 mdstat parser 路径，
+// 完整保留，不删除。进度事件文案沿用现有格式，百分比优先从 sync_completed
+// 算（syncCompletedPercent），sysfs 不可用时取 mdstat 进度行的 Percent。
+//
+// Finding 3（首轮竞态）：mdadm --add/--grow 后内核把 resync 状态写出有延迟，
+// 若循环一开始就立即读取，很可能在内核还没来得及写出之前就读到"干净"状态，
+// 直接误判完成返回 nil，growFilesystem 会在阵列实际还在重构时跑。修法两处：
+// ① 循环前先 sleep 2s，给内核一点时间把状态写出来；② 不再是"读到一次干净就
+// 算完成"，而是要求连续 cleanStreak 达到 3 轮（约 6s，含循环内已有的 2s 间隔）
+// 都是 idle/无进度行才判定完成——期间只要观察到过进行中状态，streak 清零
+// 重新累计。600 轮总预算（10 分钟）不变。
 func waitForResync(w http.ResponseWriter, mdDev string, currentStep, totalSteps int) error {
 	mdName := strings.TrimPrefix(mdDev, "/dev/")
 	time.Sleep(2 * time.Second)
 	const requiredCleanStreak = 3
 	cleanStreak := 0
 	for i := 0; i < 600; i++ { // max 10 minutes
-		mdstatBytes, _ := os.ReadFile("/proc/mdstat")
 		resyncDone := true
-		// consensus P0-D：改走 parseMdstatBlocks——此前只看头行的下一行
-		// (lines[j+1])，真实进度行通常在 blocks 行之后（j+2 及以后），会漏检，
-		// 导致阵列明明还在重构却被误判"完成"，growFilesystem 在重构中跑会
-		// 损坏数据。现在进度行在阵列块内任意缩进行位置都能命中。
-		blocks := parseMdstatBlocks(string(mdstatBytes))
-		if block, found := findBlockByMdName(blocks, mdName); found {
-			if p, ok := firstProgress(block); ok && (p.Kind == "resync" || p.Kind == "recovery") {
+		var percent string
+
+		if vals, _, ok := readRAIDSysfsValues(mdName); ok {
+			syncAction := vals["sync_action"]
+			if !sysfsResyncDone(syncAction) {
 				resyncDone = false
-				sendRAIDExpandProgress(w, RAIDExpandEvent{
-					Step: "等待数据同步", Status: "running",
-					Index: currentStep + 1, Total: totalSteps,
-					Detail: "同步进度: " + p.Percent,
-				})
+				percent = syncCompletedPercent(vals["sync_completed"])
+			}
+		} else {
+			// sysfs 不可用：回退 mdstat parser 路径。
+			// consensus P0-D：改走 parseMdstatBlocks——此前只看头行的下一行
+			// (lines[j+1])，真实进度行通常在 blocks 行之后（j+2 及以后），会
+			// 漏检，导致阵列明明还在重构却被误判"完成"，growFilesystem 在
+			// 重构中跑会损坏数据。现在进度行在阵列块内任意缩进行位置都能
+			// 命中。
+			mdstatBytes, _ := os.ReadFile("/proc/mdstat")
+			blocks := parseMdstatBlocks(string(mdstatBytes))
+			if block, found := findBlockByMdName(blocks, mdName); found {
+				if p, ok := firstProgress(block); ok && (p.Kind == "resync" || p.Kind == "recovery") {
+					resyncDone = false
+					percent = p.Percent
+				}
 			}
 		}
+
+		if !resyncDone {
+			sendRAIDExpandProgress(w, RAIDExpandEvent{
+				Step: "等待数据同步", Status: "running",
+				Index: currentStep + 1, Total: totalSteps,
+				Detail: "同步进度: " + percent,
+			})
+		}
+
 		if resyncDone {
 			cleanStreak++
 			if cleanStreak >= requiredCleanStreak {

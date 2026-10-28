@@ -124,7 +124,7 @@ md0 : active raid1 sdb[1] sda[0]
 unused devices: <none>
 `,
 			want: []RAIDStatus{
-				{Device: "/dev/md0", Level: "1", State: "active", Disks: 2, ActiveDisks: 2},
+				{Device: "/dev/md0", Level: "1", State: "active", Disks: 2, ActiveDisks: 2, Health: "normal", Activity: "idle"},
 			},
 		},
 		{
@@ -135,7 +135,7 @@ unused devices: <none>
 unused devices: <none>
 `,
 			want: []RAIDStatus{
-				{Device: "/dev/md0", Level: "1", State: "degraded", Disks: 2, ActiveDisks: 1, FailedDisks: 1},
+				{Device: "/dev/md0", Level: "1", State: "degraded", Disks: 2, ActiveDisks: 1, FailedDisks: 1, Health: "degraded", Activity: "idle"},
 			},
 		},
 		{
@@ -146,7 +146,7 @@ unused devices: <none>
 unused devices: <none>
 `,
 			want: []RAIDStatus{
-				{Device: "/dev/md0", Level: "1", State: "active", Disks: 3, ActiveDisks: 2, SpareDisks: 1},
+				{Device: "/dev/md0", Level: "1", State: "active", Disks: 3, ActiveDisks: 2, SpareDisks: 1, Health: "normal", Activity: "idle"},
 			},
 		},
 		{
@@ -158,7 +158,7 @@ unused devices: <none>
 unused devices: <none>
 `,
 			want: []RAIDStatus{
-				{Device: "/dev/md0", Level: "1", State: "resyncing", Disks: 2, ActiveDisks: 2, SyncPercent: "15.2%"},
+				{Device: "/dev/md0", Level: "1", State: "resyncing", Disks: 2, ActiveDisks: 2, SyncPercent: "15.2%", Health: "normal", Activity: "resync"},
 			},
 		},
 		{
@@ -173,8 +173,8 @@ md0 : active raid1 sdb[1] sda[0]
 unused devices: <none>
 `,
 			want: []RAIDStatus{
-				{Device: "/dev/md1", Level: "1", State: "resyncing", Disks: 2, ActiveDisks: 2, SyncPercent: "42.0%"},
-				{Device: "/dev/md0", Level: "1", State: "active", Disks: 2, ActiveDisks: 2},
+				{Device: "/dev/md1", Level: "1", State: "resyncing", Disks: 2, ActiveDisks: 2, SyncPercent: "42.0%", Health: "normal", Activity: "resync"},
+				{Device: "/dev/md0", Level: "1", State: "active", Disks: 2, ActiveDisks: 2, Health: "normal", Activity: "idle"},
 			},
 		},
 		{
@@ -195,7 +195,7 @@ unused devices: <none>
 unused devices: <none>
 `,
 			want: []RAIDStatus{
-				{Device: "/dev/md126", Level: "1", State: "active", Disks: 2, ActiveDisks: 2},
+				{Device: "/dev/md126", Level: "1", State: "active", Disks: 2, ActiveDisks: 2, Health: "normal", Activity: "idle"},
 			},
 		},
 	}
