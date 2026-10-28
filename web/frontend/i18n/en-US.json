@@ -484,8 +484,13 @@
     "no_free_disk": "No free disk available",
     "select_pool": "Select a pool",
     "no_raid_pool": "No RAID pool",
+    "raid0_no_expand": "RAID0 has no redundancy; expand/replace disk not supported",
+    "raid0_no_expand_short": "Unsupported",
     "select_fault_disk": "Select the failed disk",
-    "raid_expand_warn": "RAID expansion triggers a data reshape that takes a long time — do not power off or remove disks during it."
+    "raid_expand_warn": "RAID expansion triggers a data reshape that takes a long time — do not power off or remove disks during it.",
+    "unmanaged_title": "Unmanaged disks (contain existing data)",
+    "unmanaged_hint": "Data was detected on these disks, but they are not assigned to any recognized storage pool. Back up the data first, then erase and re-add them once you've confirmed they're no longer needed, to avoid accidental data loss.",
+    "unmanaged": "Unmanaged"
   },
   "users": {
     "title": "User Management",

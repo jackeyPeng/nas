@@ -18,9 +18,6 @@ func handleReplaceDisk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	common.LockDiskOp()
-	defer common.UnlockDiskOp()
-
 	mdDevice := r.FormValue("md_device")
 	oldDevice := r.FormValue("old_device")
 	newDevice := r.FormValue("new_device")
@@ -42,6 +39,15 @@ func handleReplaceDisk(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"新盘已在存储池中使用，不能用于替换"}`, http.StatusBadRequest)
 		return
 	}
+	// A2：raid0 无冗余，不支持换盘——拿锁前先只读查级别拒绝，不让无效请求排队等锁
+	// （与 handleRAIDExpandStream 同一审查动机）。
+	if level := mdArrayLevel(mdDevice); level == "raid0" {
+		http.Error(w, `{"error":"RAID0 无冗余，不支持扩容/换盘"}`, http.StatusBadRequest)
+		return
+	}
+
+	common.LockDiskOp()
+	defer common.UnlockDiskOp()
 
 	var steps []string
 

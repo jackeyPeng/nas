@@ -50,47 +50,30 @@ func handleRAIDExpandStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	common.LockDiskOp()
-	defer common.UnlockDiskOp()
-
-	// SSE 由前端 GET 触发，全局中间件不审计 GET——这里显式补记
-	common.LogAuditRequest(r, "STORAGE", "扩展RAID阵列(流式)", fmt.Sprintf("md=%s device=%s", mdDev, device), "pending")
-	if isSystemDisk(device) {
-		sendRAIDExpandProgress(w, RAIDExpandEvent{Step: "安全检查", Status: "error", Detail: "不允许使用系统盘"})
-		return
-	}
-
-	// ── 检查 md 设备存在 ──
+	// ── 检查 md 设备存在（锁外，只读）──
 	if _, err := os.Stat(mdDev); err != nil {
 		sendRAIDExpandProgress(w, RAIDExpandEvent{Step: "设备检查", Status: "error", Detail: mdDev + " 不存在"})
 		return
 	}
 
-	// ── 获取 RAID 信息 ──
+	// ── 获取 RAID 信息并校验级别（锁外，只读 mdadm --detail；A2：raid0 无冗余，
+	// 不支持扩容——在拿全局磁盘锁之前就拒绝，不让无效请求排队等锁）──
 	detailOut, err := common.SudoOutput("/usr/sbin/mdadm", "--detail", mdDev)
 	if err != nil {
 		sendRAIDExpandProgress(w, RAIDExpandEvent{Step: "RAID信息", Status: "error", Detail: "无法读取 " + mdDev + " 详情"})
 		return
 	}
 
-	raidLevel := ""
-	currentDevs := 0
-	for _, line := range strings.Split(detailOut, "\n") {
-		if strings.Contains(line, "Raid Level") {
-			parts := strings.Split(line, ":")
-			if len(parts) >= 2 {
-				raidLevel = strings.TrimSpace(parts[1])
-			}
-		}
-		if strings.Contains(line, "Raid Devices") {
-			parts := strings.Split(line, ":")
-			if len(parts) >= 2 {
-				fmt.Sscanf(strings.TrimSpace(parts[1]), "%d", &currentDevs)
-			}
-		}
-	}
+	raidLevel, currentDevs := parseMdDetailLevelAndDevices(detailOut)
 
-	// 只支持 RAID1/5/6 扩容
+	// 只支持 RAID1/5/6 扩容；raid0 无冗余，强制拒绝（A2）
+	if raidLevel == "raid0" {
+		sendRAIDExpandProgress(w, RAIDExpandEvent{
+			Step: "RAID级别检查", Status: "error",
+			Detail: "RAID0 无冗余，不支持扩容/换盘",
+		})
+		return
+	}
 	if raidLevel != "raid1" && raidLevel != "raid5" && raidLevel != "raid6" {
 		sendRAIDExpandProgress(w, RAIDExpandEvent{
 			Step: "RAID级别检查", Status: "error",
@@ -101,6 +84,16 @@ func handleRAIDExpandStream(w http.ResponseWriter, r *http.Request) {
 
 	if currentDevs == 0 {
 		sendRAIDExpandProgress(w, RAIDExpandEvent{Step: "RAID信息", Status: "error", Detail: "无法解析当前阵列设备数"})
+		return
+	}
+
+	common.LockDiskOp()
+	defer common.UnlockDiskOp()
+
+	// SSE 由前端 GET 触发，全局中间件不审计 GET——这里显式补记
+	common.LogAuditRequest(r, "STORAGE", "扩展RAID阵列(流式)", fmt.Sprintf("md=%s device=%s", mdDev, device), "pending")
+	if isSystemDisk(device) {
+		sendRAIDExpandProgress(w, RAIDExpandEvent{Step: "安全检查", Status: "error", Detail: "不允许使用系统盘"})
 		return
 	}
 
@@ -174,7 +167,14 @@ func handleRAIDExpandStream(w http.ResponseWriter, r *http.Request) {
 	if isRAID1 {
 		// RAID1: wait for resync, then grow filesystem
 		stepRunning("等待数据同步 (resync)")
-		waitForResync(w, mdDev, step, totalSteps)
+		if err := waitForResync(w, mdDev, step, totalSteps); err != nil {
+			sendRAIDExpandProgress(w, RAIDExpandEvent{
+				Step: "等待数据同步", Status: "error",
+				Detail: "阵列同步未在 10 分钟内完成，已中止，文件系统未扩展；阵列仍在后台同步属正常，" +
+					"等同步完成后可用「扩展文件系统」入口（/api/disk/raid/expand-fs）单独补跑",
+			})
+			return
+		}
 		step++
 		stepDone("数据同步完成")
 
@@ -297,8 +297,11 @@ func handleRAIDReshapeStatus(w http.ResponseWriter, r *http.Request) {
 	common.JSONResponse(w, status)
 }
 
-// waitForResync polls /proc/mdstat until resync completes (for RAID1)
-func waitForResync(w http.ResponseWriter, mdDev string, currentStep, totalSteps int) {
+// waitForResync polls /proc/mdstat until resync completes (for RAID1)。
+// 返回 error：正常在限时内完成返回 nil；600 轮（10 分钟）超时仍未完成返回非 nil —
+// 调用方必须据此中止，不能再继续 stepDone/growFilesystem（A1：阵列还在重构时
+// 扩文件系统会损坏数据）。
+func waitForResync(w http.ResponseWriter, mdDev string, currentStep, totalSteps int) error {
 	mdName := strings.TrimPrefix(mdDev, "/dev/")
 	for i := 0; i < 600; i++ { // max 10 minutes
 		mdstat, _ := os.ReadFile("/proc/mdstat")
@@ -322,10 +325,11 @@ func waitForResync(w http.ResponseWriter, mdDev string, currentStep, totalSteps 
 			}
 		}
 		if resyncDone {
-			return
+			return nil
 		}
 		time.Sleep(2 * time.Second)
 	}
+	return fmt.Errorf("阵列同步未在 10 分钟内完成")
 }
 
 // growFilesystem grows the filesystem on md device.
@@ -351,4 +355,37 @@ func checkRAIDError(w http.ResponseWriter, step, output string, err error) bool 
 		return true
 	}
 	return false
+}
+
+// parseMdDetailLevelAndDevices 从 `mdadm --detail` 输出中解析 RAID 级别（如 "raid1"）
+// 和当前设备数。纯函数，供单测；handleRAIDExpandStream 与 mdArrayLevel 共用解析逻辑。
+func parseMdDetailLevelAndDevices(detailOut string) (level string, devices int) {
+	for _, line := range strings.Split(detailOut, "\n") {
+		if strings.Contains(line, "Raid Level") {
+			parts := strings.Split(line, ":")
+			if len(parts) >= 2 {
+				level = strings.TrimSpace(parts[1])
+			}
+		}
+		if strings.Contains(line, "Raid Devices") {
+			parts := strings.Split(line, ":")
+			if len(parts) >= 2 {
+				fmt.Sscanf(strings.TrimSpace(parts[1]), "%d", &devices)
+			}
+		}
+	}
+	return level, devices
+}
+
+// mdArrayLevel 查询 md 设备当前 RAID 级别（如 "raid0"/"raid1"），查询失败或无法
+// 解析时返回空串（调用方应把空串当"未知"处理，不强行放行也不强行拒绝——handleReplaceDisk
+// 只在明确识别出 raid0 时才拒绝，避免误伤非 RAID 场景）。A2：handleReplaceDisk 换盘前
+// 用它判断目标阵列是否是 raid0。
+func mdArrayLevel(mdDev string) string {
+	detailOut, err := common.SudoOutput("/usr/sbin/mdadm", "--detail", mdDev)
+	if err != nil {
+		return ""
+	}
+	level, _ := parseMdDetailLevelAndDevices(detailOut)
+	return level
 }

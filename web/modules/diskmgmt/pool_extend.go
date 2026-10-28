@@ -89,14 +89,16 @@ func handlePoolExtendStream(w http.ResponseWriter, r *http.Request) {
 	}
 	stepDone("清除磁盘签名")
 
-	// 2. pvcreate
+	// 2. pvcreate（A3b：running/done 步骤名必须完全一致，前端按名称字符串配对
+	// running→done，此前 done 少了 "(pvcreate)" 后缀，配对失败导致该 running
+	// 条目永不置 done、还会多推一条独立的 done。）
 	stepRunning("初始化物理卷 (pvcreate)")
 	out, err = common.SudoExec("/usr/sbin/pvcreate", "-f", device)
 	if err != nil {
 		sendPoolExtendProgress(w, PoolExtendEvent{Step: "初始化物理卷 (pvcreate)", Status: "error", Detail: "pvcreate: " + out + ": " + err.Error()})
 		return
 	}
-	stepDone("初始化物理卷")
+	stepDone("初始化物理卷 (pvcreate)")
 
 	// 3. vgextend
 	stepRunning(fmt.Sprintf("加入卷组 %s", vgName))
@@ -115,7 +117,7 @@ func handlePoolExtendStream(w http.ResponseWriter, r *http.Request) {
 		sendPoolExtendProgress(w, PoolExtendEvent{Step: "扩展逻辑卷 (lvextend)", Status: "error", Detail: "lvextend: " + out + ": " + err.Error()})
 		return
 	}
-	stepDone("扩展逻辑卷")
+	stepDone("扩展逻辑卷 (lvextend)")
 
 	// 5. Resize filesystem（按实际文件系统类型选择 xfs_growfs/resize2fs，xfs 用挂载点而非设备路径）
 	stepRunning("扩展文件系统")

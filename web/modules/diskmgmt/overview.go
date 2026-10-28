@@ -26,6 +26,7 @@ type StorageOverview struct {
 	Pools           []PoolSummary  `json:"pools"`                    // 存储池
 	SystemDisks     []DiskSummary  `json:"system_disks"`             // 系统盘
 	FreeDisks       []DiskSummary  `json:"free_disks"`               // 空闲盘
+	UnmanagedDisks  []DiskSummary  `json:"unmanaged_disks"`          // 未纳管盘(有数据但找不到所属池，A5)
 	SystemFolders   []SharedFolder `json:"system_folders,omitempty"` // 系统盘共享目录
 	SystemShareSize string         `json:"system_share_size,omitempty"`
 	RAIDHealth      []RAIDStatus   `json:"raid_health,omitempty"`
@@ -144,9 +145,10 @@ func buildStorageOverview() StorageOverview {
 	cachedRAIDMembers = nil
 
 	overview := StorageOverview{
-		Pools:       []PoolSummary{},
-		SystemDisks: []DiskSummary{},
-		FreeDisks:   []DiskSummary{},
+		Pools:          []PoolSummary{},
+		SystemDisks:    []DiskSummary{},
+		FreeDisks:      []DiskSummary{},
+		UnmanagedDisks: make([]DiskSummary, 0),
 	}
 
 	// 1. 获取所有 /data 挂载点（= Volume 的来源）
@@ -369,12 +371,22 @@ func buildStorageOverview() StorageOverview {
 		} else {
 			// 数据盘 — 找到它属于哪个 Pool
 			poolDev := findDiskPoolDevice(d.Device, poolOrder)
-			ds.Pool = mountDisplay[poolDev]
-			ds.Status = "pool_member"
-			for i := range overview.Pools {
-				if overview.Pools[i].Device == poolDev {
-					overview.Pools[i].MemberDisks = append(overview.Pools[i].MemberDisks, ds)
-					break
+			if poolDev == "" {
+				// A5：找不到所属池，说明盘上有数据但未被任何已识别的池纳管
+				// （例如存量遗留分区、识别逻辑覆盖不到的组合）。此前这里会被
+				// 强行打上 Status="pool_member" 却进不了任何 Pool.MemberDisks，
+				// 前端看到的是一块"属于某池"却在哪个池卡片里都找不到的幽灵盘。
+				// 现在如实标记为 unmanaged，单独清单展示，提示用户核实。
+				ds.Status = "unmanaged"
+				overview.UnmanagedDisks = append(overview.UnmanagedDisks, ds)
+			} else {
+				ds.Pool = mountDisplay[poolDev]
+				ds.Status = "pool_member"
+				for i := range overview.Pools {
+					if overview.Pools[i].Device == poolDev {
+						overview.Pools[i].MemberDisks = append(overview.Pools[i].MemberDisks, ds)
+						break
+					}
 				}
 			}
 		}
@@ -447,7 +459,8 @@ func buildStorageOverview() StorageOverview {
 	}
 
 	// 7. 统计计数（总览卡片）+ 告警栏
-	overview.Stats.TotalDisks = len(overview.SystemDisks) + len(overview.FreeDisks)
+	// A5：unmanaged 盘也要计入物理盘总数，否则这部分盘会从统计卡片"凭空消失"
+	overview.Stats.TotalDisks = len(overview.SystemDisks) + len(overview.FreeDisks) + len(overview.UnmanagedDisks)
 	volCount := 0
 	shareCount := 0
 	poolMemberDevs := map[string]bool{}
@@ -468,6 +481,7 @@ func buildStorageOverview() StorageOverview {
 	// 告警：磁盘温度 / SMART / RAID 状态
 	allDisks := append([]DiskSummary{}, overview.SystemDisks...)
 	allDisks = append(allDisks, overview.FreeDisks...)
+	allDisks = append(allDisks, overview.UnmanagedDisks...)
 	for _, p := range overview.Pools {
 		allDisks = append(allDisks, p.MemberDisks...)
 	}
@@ -536,28 +550,15 @@ func detectPoolDevice(device string) string {
 		// 由于 getCachedPVMappings 在此函数之后才初始化，
 		// 这里用 vgs 直接查
 		vgsOut, _ := common.SudoOutput("/usr/sbin/vgs", "--noheadings", "-o", "vg_name")
-		bestVG := ""
+		var vgList []string
 		for _, line := range strings.Split(vgsOut, "\n") {
 			vg := strings.TrimSpace(line)
-			if vg == "" {
-				continue
-			}
-			// mapper 设备名里包含 vg 名（- 替换）
-			mapperName := strings.TrimPrefix(device, "/dev/mapper/")
-			// LVM mapper 规则: vg 中的 - 变成 --, / 变成 -
-			// 简单匹配: 如果 mapper 名以 vg 名(替换-为--)开头
-			vgEscaped := strings.ReplaceAll(vg, "-", "--")
-			if strings.HasPrefix(mapperName, vgEscaped+"-") || strings.HasPrefix(mapperName, vg+"-") {
-				bestVG = vg
-				break
-			}
-			// 兜底: 去掉最后一段 - 后面的部分匹配
-			if strings.Contains(mapperName, vg) {
-				bestVG = vg
-				break
+			if vg != "" {
+				vgList = append(vgList, vg)
 			}
 		}
-		if bestVG != "" {
+		mapperName := strings.TrimPrefix(device, "/dev/mapper/")
+		if bestVG := matchVGForMapper(mapperName, vgList); bestVG != "" {
 			return "/dev/" + bestVG
 		}
 		return device
@@ -568,6 +569,35 @@ func detectPoolDevice(device string) string {
 	}
 	// 单盘分区: /dev/sdb1 → 池就是它自己
 	return device
+}
+
+// matchVGForMapper 从 /dev/mapper/<mapperName> 反推所属 VG 名。
+// A4：原实现在 vgList 上逐个 vg 做前缀匹配和 Contains 兜底匹配混在同一次循环里，
+// 一旦命中 Contains 就 break——如果 vgList 顺序恰好把 "vg"（短名、被包含）排在
+// "vg_nas"（真正匹配的长名）前面，会误命中短名。现在拆成两轮：第一轮在全部 VG
+// 上做精确前缀匹配（LVM mapper 命名规则：VG 名中的 - 转义为 --，再接 "-" 分隔符），
+// 只有全部 VG 都没有前缀命中时，才进入第二轮 Contains 兜底。
+func matchVGForMapper(mapperName string, vgList []string) string {
+	// 第一轮：精确前缀匹配
+	for _, vg := range vgList {
+		if vg == "" {
+			continue
+		}
+		vgEscaped := strings.ReplaceAll(vg, "-", "--")
+		if strings.HasPrefix(mapperName, vgEscaped+"-") || strings.HasPrefix(mapperName, vg+"-") {
+			return vg
+		}
+	}
+	// 第二轮：兜底子串匹配（仅在无精确前缀命中时才用）
+	for _, vg := range vgList {
+		if vg == "" {
+			continue
+		}
+		if strings.Contains(mapperName, vg) {
+			return vg
+		}
+	}
+	return ""
 }
 
 // extractVGName 从 /dev/vg_nas 提取 vg_nas

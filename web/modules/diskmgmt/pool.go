@@ -444,6 +444,13 @@ func parseFloatSafe(s string) float64 {
 	return f
 }
 
+// firstLine 返回多行输出的首行（trim 空白），用于 findmnt 对多挂载点（bind mount）
+// LV/设备的输出可能是多行的情况——只取首行避免脏值破坏挂载点判据与
+// RemoveFolderMetaByMountPrefix（Minor finding，见 handlePoolDelete 调用处注释）。
+func firstLine(s string) string {
+	return strings.TrimSpace(strings.SplitN(s, "\n", 2)[0])
+}
+
 // handlePoolDelete destroys a storage pool and releases all its disks
 func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -475,6 +482,10 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 	var steps []string
 	// 本次删池涉及的挂载点，收集后统一清理 folders.db 元数据（见 switch 之后）。
 	var deletedMountPoints []string
+	// 本次删池涉及的设备 UUID（A3：拆除磁盘前采集，用于 fstab 判据(c)——池未挂载时
+	// findmnt 查不到挂载点，只有 UUID 行能命中残留的 fstab 条目）。采集失败（空值）
+	// 的条目在 filterFstabForDeletedPool 内部会被跳过，不阻断删除流程。
+	var deletedUUIDs []string
 
 	switch poolType {
 	case "lvm":
@@ -488,13 +499,20 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 			fields := strings.Fields(strings.TrimSpace(line))
 			if len(fields) >= 2 {
 				lvPath := fields[1]
-				// Find mountpoint
+				// Find mountpoint — findmnt 对多挂载点（bind mount）LV 会输出多行，
+				// 只取首行，避免脏值破坏判据(a)与 RemoveFolderMetaByMountPrefix（Minor finding）。
 				mntOut, _ := common.ExecOutput("findmnt", "-n", "-o", "TARGET", "--source", lvPath)
-				mountPoint := strings.TrimSpace(mntOut)
+				mountPoint := firstLine(mntOut)
 				if mountPoint != "" {
 					common.SudoExec("umount", "-l", mountPoint)
 					steps = append(steps, "卸载 "+mountPoint)
 					deletedMountPoints = append(deletedMountPoints, mountPoint)
+				}
+				// 采集 UUID（A3），必须在 lvremove 之前——LV 被删后再读超级块就晚了。
+				if uuidOut, err := common.SudoOutput("lsblk", "-no", "UUID", lvPath); err == nil {
+					if uuid := strings.TrimSpace(uuidOut); uuid != "" {
+						deletedUUIDs = append(deletedUUIDs, uuid)
+					}
 				}
 				common.SudoExec("/usr/sbin/lvremove", "-f", lvPath)
 				steps = append(steps, "删除 LV "+lvPath)
@@ -505,7 +523,15 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 		// `pvs -S vg_name=<已删VG>` 查成员必然查空，因为这些 PV 已经不再属于
 		// 任何 VG 了，导致 pvremove/wipefs 被跳过，磁盘留着 LVM2_member 签名
 		// 变成"幽灵盘"：既不在任何池里，也不会被判定为空闲盘。）
-		pvsOut, _ := common.SudoOutput("/usr/sbin/pvs", "--noheadings", "-o", "pv_name", "-S", "vg_name="+vgName)
+		//
+		// pvs 失败时不能静默当"无成员"处理——memberPVs 为空、vgremove 照常执行，
+		// 这些 PV 就永远查不出来了，磁盘留着 LVM2_member 签名复现幽灵盘（Minor finding）。
+		// 这里选择"安全拒绝删除"：pvs 报错时中止，不执行任何破坏性操作，让用户重试。
+		pvsOut, pvsErr := common.SudoOutput("/usr/sbin/pvs", "--noheadings", "-o", "pv_name", "-S", "vg_name="+vgName)
+		if pvsErr != nil {
+			http.Error(w, fmt.Sprintf(`{"error":"无法确认卷组 %s 的物理卷成员（pvs 执行失败），为安全起见拒绝删除: %s"}`, vgName, pvsErr.Error()), http.StatusInternalServerError)
+			return
+		}
 		memberPVs := strings.Fields(pvsOut)
 		// 3. Remove VG
 		common.SudoExec("/usr/sbin/vgremove", "-f", vgName)
@@ -522,7 +548,7 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 	case "raid1", "raid0", "raid5", "raid6":
 		// 1. Unmount
 		mntOut, _ := common.ExecOutput("findmnt", "-n", "-o", "TARGET", "--source", poolDevice)
-		mountPoint := strings.TrimSpace(mntOut)
+		mountPoint := firstLine(mntOut)
 		if mountPoint != "" {
 			common.SudoExec("umount", "-l", mountPoint)
 			steps = append(steps, "卸载 "+mountPoint)
@@ -531,6 +557,12 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 		// 2. Get member disks BEFORE stopping the array
 		detailOut, _ := common.SudoOutput("/usr/sbin/mdadm", "--detail", poolDevice)
 		memberDisks := parseMdMemberDisks(detailOut)
+		// 采集 UUID（A3），必须在 mdadm --stop 之前——阵列停止后设备节点就消失了。
+		if uuidOut, err := common.SudoOutput("blkid", "-s", "UUID", "-o", "value", poolDevice); err == nil {
+			if uuid := strings.TrimSpace(uuidOut); uuid != "" {
+				deletedUUIDs = append(deletedUUIDs, uuid)
+			}
+		}
 		// 3. Stop RAID
 		common.SudoExec("/usr/sbin/mdadm", "--stop", poolDevice)
 		steps = append(steps, "停止 "+poolDevice)
@@ -544,11 +576,17 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 	case "single":
 		// Independent disk: unmount + wipe
 		mntOut, _ := common.ExecOutput("findmnt", "-n", "-o", "TARGET", "--source", poolDevice)
-		mountPoint := strings.TrimSpace(mntOut)
+		mountPoint := firstLine(mntOut)
 		if mountPoint != "" {
 			common.SudoExec("umount", "-l", mountPoint)
 			steps = append(steps, "卸载 "+mountPoint)
 			deletedMountPoints = append(deletedMountPoints, mountPoint)
+		}
+		// 采集 UUID（A3），必须在 wipefs 之前——wipefs 一跑超级块就被抹了。
+		if uuidOut, err := common.SudoOutput("blkid", "-s", "UUID", "-o", "value", poolDevice); err == nil {
+			if uuid := strings.TrimSpace(uuidOut); uuid != "" {
+				deletedUUIDs = append(deletedUUIDs, uuid)
+			}
 		}
 		common.SudoExec("/usr/sbin/wipefs", "-a", poolDevice)
 		steps = append(steps, "释放 "+poolDevice)
@@ -561,7 +599,7 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 	// Clean fstab entries for the deleted pool only（Fix 5b：旧逻辑按前缀 /data/nas
 	// 删所有行，separate 模式多池机器删一个池会把其他保留池的开机挂载一起抹掉）。
 	// lvmVgName 只在 LVM 分支非空，用于按 /dev/mapper/<vg>- 或 /dev/<vg>/ 前缀
-	// 识别该池的 LVM 设备行；RAID/single 分支只靠挂载点精确匹配。
+	// 识别该池的 LVM 设备行；RAID/single 分支只靠挂载点精确匹配 + UUID 判据(c)。
 	lvmVgName := ""
 	if poolType == "lvm" {
 		lvmVgName = extractVGName(poolDevice)
@@ -571,7 +609,7 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	fstabData, _ := common.SudoOutput("cat", "/etc/fstab")
 	if fstabData != "" {
-		content := filterFstabForDeletedPool(fstabData, deletedMountPoints, lvmVgName)
+		content := filterFstabForDeletedPool(fstabData, deletedMountPoints, deletedUUIDs, lvmVgName)
 		if content != fstabData {
 			common.SafeWriteFile("/etc/fstab", content)
 			steps = append(steps, "清理 fstab")
@@ -616,10 +654,23 @@ var _ = json.Marshal
 // RAID/single 分支调用时 lvmVgName 传空串，只用判据 (a)，避免误删其他 separate 模式
 // 下保留池（旧逻辑按 /data/nas 前缀删所有行，会把同机器其他池的开机挂载一起抹掉）。
 // 注释行、空行原样保留；字段不足 2 列的行原样保留。
-func filterFstabForDeletedPool(fstab string, deletedMounts []string, lvmVgName string) string {
+// filterFstabForDeletedPool 新增判据 (c)（A3）：UUID 行精确匹配 deletedUUIDs——
+// 池处于未挂载状态时删除（findmnt 查不到挂载点，deletedMounts 为空），判据 (a)/(b)
+// 都不命中，真机常见的 "UUID=xxx /data/nasN xfs ..." 行会残留，下次开机 systemd
+// 等不到对应设备，进 emergency mode。调用方在拆除磁盘前（lvremove/mdadm --stop/
+// wipefs 之前）用 blkid 采集 UUID 传入；采集失败（空值）的条目直接跳过，不影响
+// 其他判据。
+func filterFstabForDeletedPool(fstab string, deletedMounts []string, deletedUUIDs []string, lvmVgName string) string {
 	deletedSet := map[string]bool{}
 	for _, m := range deletedMounts {
 		deletedSet[m] = true
+	}
+	deletedUUIDSet := map[string]bool{}
+	for _, u := range deletedUUIDs {
+		u = strings.TrimSpace(u)
+		if u != "" {
+			deletedUUIDSet["UUID="+u] = true
+		}
 	}
 	mapperPrefix, vgPathPrefix := "", ""
 	if lvmVgName != "" {
@@ -646,6 +697,10 @@ func filterFstabForDeletedPool(fstab string, deletedMounts []string, lvmVgName s
 		}
 		// 判据 (b)：仅 LVM 分支，源设备按 vgName 前缀匹配
 		if lvmVgName != "" && (strings.HasPrefix(fields[0], mapperPrefix) || strings.HasPrefix(fields[0], vgPathPrefix)) {
+			continue
+		}
+		// 判据 (c)：UUID 行精确匹配被删池的 UUID（A3：未挂载池删除时只剩这行能命中）
+		if deletedUUIDSet[fields[0]] {
 			continue
 		}
 		newLines = append(newLines, line)

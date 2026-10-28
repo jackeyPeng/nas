@@ -484,8 +484,13 @@
     "no_free_disk": "没有可用的空闲磁盘",
     "select_pool": "选择存储池",
     "no_raid_pool": "没有 RAID 存储池",
+    "raid0_no_expand": "RAID0 无冗余，不支持扩容/换盘",
+    "raid0_no_expand_short": "不支持",
     "select_fault_disk": "选择故障盘",
-    "raid_expand_warn": "RAID 扩容会进行 reshape 数据重建，耗时长，期间请勿断电或拔出磁盘"
+    "raid_expand_warn": "RAID 扩容会进行 reshape 数据重建，耗时长，期间请勿断电或拔出磁盘",
+    "unmanaged_title": "未纳管磁盘（含存量数据）",
+    "unmanaged_hint": "这些磁盘上检测到数据，但未归属到任何已识别的存储池。建议先备份数据，确认无用后再擦除重新纳管，避免误用导致数据丢失。",
+    "unmanaged": "未纳管"
   },
   "users": {
     "title": "用户管理",
