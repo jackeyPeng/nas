@@ -2,6 +2,7 @@ package users
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"strconv"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"nas-panel/common"
+	"nas-panel/modules/diskmgmt"
 )
 
 // NASUser 用户完整信息（列表 API 返回）
@@ -364,7 +366,19 @@ func handleUserAction(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		_ = out
-		common.JSONResponse(w, map[string]interface{}{"message": "用户 " + username + " 已删除"})
+
+		// 用户/凭据/系统账号已删除成功：remove-user.sh 不会重新生成 smb.conf/exports
+		// 的 Z1 托管段（见脚本收尾提示），留着已删用户的 [username] share 定义悬空，
+		// 还会被 diskmgmt.CheckConfigConsistency 的托管段真比对判为配置漂移。这里立即
+		// 重投影收尾；失败不应让已经成功的删除操作整体失败，只记审计并透出错误供前端提示。
+		resp := map[string]interface{}{"message": "用户 " + username + " 已删除"}
+		if serr := syncConfigsAfterUserDelete(); serr != nil {
+			log.Printf("[USERS] 用户 %s 已删除但配置同步失败，需手动配置同步: %v", username, serr)
+			common.LogAuditRequest(r, "USERS", "删除用户",
+				fmt.Sprintf("username=%s config_sync_error=%s", username, serr.Error()), "success")
+			resp["config_sync_error"] = serr.Error()
+		}
+		common.JSONResponse(w, resp)
 		return
 	}
 
@@ -485,6 +499,12 @@ func updateRcloneS3EnvFile(content, accessKey, secret string) string {
 	}
 	return strings.Join(lines, "\n")
 }
+
+// syncConfigsAfterUserDelete 重投影 SMB/NFS 托管段（可测替换点）：生产路径指向
+// diskmgmt.SyncAllConfigs，真正执行时会走 common.SudoOutput/SudoExec 读写
+// /etc/samba/smb.conf、/etc/exports 并重载服务，单测环境不能真跑；测试替换为
+// 计数器替身，只验证 DELETE 成功路径确实调用了这个替换点一次。
+var syncConfigsAfterUserDelete = diskmgmt.SyncAllConfigs
 
 func removeUser(username string, deleteData bool) (string, error) {
 	// 用户名来自 URL 路径段，此前零校验直通 remove-user.sh——脚本内部
