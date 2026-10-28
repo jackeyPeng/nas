@@ -115,13 +115,29 @@ echo -e "  内存:     ${MEM_TOTAL}"
 echo -e "  地址:     ${PRIMARY_IP:-未知}"
 
 # ── 密码 ────────────────────────────────────────────────────
+# 三级优先级：
+#   1. 显式提供 NAS_PASS 环境变量 → 用它（用户明确意图，覆盖任何现值）
+#   2. 未提供，但目标机已有 .env 且 NAS_PASS 非空 → 保留现值不动（升级场景，
+#      防止重跑 install.sh 把用户已改的密码静默打回出厂默认）
+#   3. 两者皆无（全新安装）→ 出厂默认 + 首次登录强制改密
+EXISTING_NAS_PASS=""
+if [ -f "$REPO_DIR/.env" ]; then
+    EXISTING_NAS_PASS=$(grep '^NAS_PASS=' "$REPO_DIR/.env" 2>/dev/null | head -1 | cut -d'=' -f2-)
+fi
+
+KEEP_EXISTING_PASS=false
 if [ -n "${NAS_PASS:-}" ]; then
     if [ ${#NAS_PASS} -lt $MIN_PASS_LEN ]; then
         echo -e "\n${RED}错误: NAS_PASS 至少需要 ${MIN_PASS_LEN} 位${NC}"
         exit 1
     fi
+elif [ -n "$EXISTING_NAS_PASS" ]; then
+    # 升级场景：不提供 NAS_PASS 时绝不覆盖已有密码
+    NAS_PASS="$EXISTING_NAS_PASS"
+    KEEP_EXISTING_PASS=true
+    echo -e "  ${GREEN}检测到已有配置，保留现有面板密码${NC}"
 else
-    # 未提供密码 → 用出厂默认密码，首次登录面板后强制修改
+    # 全新安装，未提供密码 → 用出厂默认密码，首次登录面板后强制修改
     NAS_PASS="Nas-Test-2026"
     echo -e "  ${YELLOW}未提供 NAS_PASS，使用出厂默认密码（首次登录后强制修改）${NC}"
 fi
@@ -153,7 +169,11 @@ step_begin "创建配置文件"
 if [ ! -f "$REPO_DIR/.env" ]; then
     cp "$REPO_DIR/.env.example" "$REPO_DIR/.env"
 fi
-sed -i "s/^NAS_PASS=.*/NAS_PASS=${NAS_PASS}/" "$REPO_DIR/.env"
+# 保留现有密码分支下 .env 的 NAS_PASS 本来就是 $NAS_PASS，sed 本应是空操作；
+# 但仍显式跳过写入，避免任何意外改写（如行尾空格、编码差异）影响已有 .env。
+if [ "$KEEP_EXISTING_PASS" != true ]; then
+    sed -i "s/^NAS_PASS=.*/NAS_PASS=${NAS_PASS}/" "$REPO_DIR/.env"
+fi
 # 确保 NAS_USER 在 .env 中（面板登录需要）
 if ! grep -q "^NAS_USER=" "$REPO_DIR/.env"; then
     echo "NAS_USER=${NAS_USER}" >> "$REPO_DIR/.env"
