@@ -242,7 +242,7 @@ func handleWizardSetup(w http.ResponseWriter, r *http.Request) {
 		steps = setupRaidN(unusedDevs, resultMount, nasUser, 6) // raid6
 
 	default:
-		http.Error(w, `{"error":"未知模式: single/merge/raid0/raid1/raid5/raid6"}`, http.StatusBadRequest)
+		jsonError(w, "未知模式: single/merge/raid0/raid1/raid5/raid6", http.StatusBadRequest)
 		return
 	}
 
