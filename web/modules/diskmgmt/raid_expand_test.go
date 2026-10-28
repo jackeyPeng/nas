@@ -42,8 +42,19 @@ func TestParseMdDetailLevelAndDevices(t *testing.T) {
 
 // TestWaitForResyncReturnsNilWhenNoResyncLine 验证 A1：当 /proc/mdstat 里找不到
 // 该 md 设备的 resync/recovery 行（本沙箱环境没有真实 RAID 设备）时，waitForResync
-// 应立即返回 nil，不触发 10 分钟轮询等待——这里主要验证函数签名变更后（void→error）
+// 最终应返回 nil，不触发 10 分钟轮询等待——这里主要验证函数签名变更后（void→error）
 // 行为仍然正确、调用方能拿到可判断的返回值。
+//
+// Finding 3（首轮竞态）修复后，waitForResync 不再是"读到一次干净就算完成"：
+// 循环前先 sleep 2s，之后要求连续 3 轮（cleanStreak）都查不到 resync/recovery
+// 行才返回 nil。本测试场景从头到尾都没有匹配设备，相当于一直是"干净"读数，
+// 会按新逻辑跑满 2s（首次等待）+ 3*2s（streak 轮询）≈ 8s 才返回，而不再是
+// 旧版本的"立即返回"——这里用真实 time.Sleep（无可注入的时钟/sleep 依赖），
+// 运行时间变长但在可接受范围（单测总耗时从毫秒级变为个位数秒级）。
+// waitForResync 没有暴露 mdstat 路径为参数，无法在不改生产签名的前提下 mock
+// /proc/mdstat 走到"观察到 resync 行后 streak 清零重新累计"的分支，这部分
+// 行为（cleanStreak 归零重计）在报告里以代码审查方式说明验证，不在本测试
+// 覆盖范围内。
 func TestWaitForResyncReturnsNilWhenNoResyncLine(t *testing.T) {
 	w := httptest.NewRecorder()
 	err := waitForResync(w, "/dev/md_test_nonexistent", 0, 5)

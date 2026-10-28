@@ -68,6 +68,7 @@ func handleRAIDExpandStream(w http.ResponseWriter, r *http.Request) {
 
 	// 只支持 RAID1/5/6 扩容；raid0 无冗余，强制拒绝（A2）
 	if raidLevel == "raid0" {
+		common.LogAuditRequest(r, "STORAGE", "扩展RAID阵列(流式)", fmt.Sprintf("md=%s device=%s rejected=RAID0无冗余不支持扩容/换盘", mdDev, device), "rejected")
 		sendRAIDExpandProgress(w, RAIDExpandEvent{
 			Step: "RAID级别检查", Status: "error",
 			Detail: "RAID0 无冗余，不支持扩容/换盘",
@@ -75,6 +76,7 @@ func handleRAIDExpandStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if raidLevel != "raid1" && raidLevel != "raid5" && raidLevel != "raid6" {
+		common.LogAuditRequest(r, "STORAGE", "扩展RAID阵列(流式)", fmt.Sprintf("md=%s device=%s rejected=不支持扩容%s仅支持RAID1/5/6", mdDev, device, raidLevel), "rejected")
 		sendRAIDExpandProgress(w, RAIDExpandEvent{
 			Step: "RAID级别检查", Status: "error",
 			Detail: "不支持扩容 " + raidLevel + "，仅支持 RAID1/5/6",
@@ -301,8 +303,19 @@ func handleRAIDReshapeStatus(w http.ResponseWriter, r *http.Request) {
 // 返回 error：正常在限时内完成返回 nil；600 轮（10 分钟）超时仍未完成返回非 nil —
 // 调用方必须据此中止，不能再继续 stepDone/growFilesystem（A1：阵列还在重构时
 // 扩文件系统会损坏数据）。
+//
+// Finding 3（首轮竞态）：mdadm --add/--grow 后内核把 resync 行写进 /proc/mdstat
+// 有延迟，若循环一开始就立即读取，很可能在内核还没来得及写 resync 行时就读到
+// "干净"的 mdstat，直接误判完成返回 nil，growFilesystem 会在阵列实际还在重构
+// 时跑。修法两处：① 循环前先 sleep 2s，给内核一点时间把 resync 行写出来；
+// ② 不再是"读到一次干净就算完成"，而是要求连续 cleanStreak 达到 3 轮（约 6s，
+// 含循环内已有的 2s 间隔）都没有 resync/recovery 行才判定完成——期间只要观察
+// 到过 resync/recovery 行，streak 清零重新累计。600 轮总预算（10 分钟）不变。
 func waitForResync(w http.ResponseWriter, mdDev string, currentStep, totalSteps int) error {
 	mdName := strings.TrimPrefix(mdDev, "/dev/")
+	time.Sleep(2 * time.Second)
+	const requiredCleanStreak = 3
+	cleanStreak := 0
 	for i := 0; i < 600; i++ { // max 10 minutes
 		mdstat, _ := os.ReadFile("/proc/mdstat")
 		resyncDone := true
@@ -325,7 +338,12 @@ func waitForResync(w http.ResponseWriter, mdDev string, currentStep, totalSteps 
 			}
 		}
 		if resyncDone {
-			return nil
+			cleanStreak++
+			if cleanStreak >= requiredCleanStreak {
+				return nil
+			}
+		} else {
+			cleanStreak = 0
 		}
 		time.Sleep(2 * time.Second)
 	}

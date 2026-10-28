@@ -1,6 +1,7 @@
 package diskmgmt
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -8,6 +9,26 @@ import (
 
 	"nas-panel/common"
 )
+
+// jsonError 统一错误响应体的 Content-Type：diskmgmt 下大量 handler 此前直调
+// http.Error 手拼 `{"error":"..."}` 字符串，但 http.Error 固定写 text/plain，
+// 导致前端 api() 的 JSON 自动 toast 守卫（按 Content-Type 判断）失效——错误体
+// 虽然长得像 JSON，实际走的是 app.js api() 的字符串兜底分支（非空字符串视为
+// truthy，调用方 if(data) 判定会误把失败当成功，典型案例：handlePoolDelete
+// 的 pvs 失败 500 时前端弹"删除成功"）。这里统一设 application/json 并用
+// json.Marshal 生成体（而非 fmt.Sprintf 拼接），err 字符串含引号/反斜杠等
+// 字符时也能产出合法 JSON，不需要调用方自己处理转义。参照 modules/ai/ai.go
+// 的同名 helper，两个包各自私有一份（不新增跨包依赖）。
+func jsonError(w http.ResponseWriter, msg string, code int) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(code)
+	body, err := json.Marshal(map[string]string{"error": msg})
+	if err != nil {
+		// json.Marshal 对 map[string]string 实际不会失败；兜底仍给出合法 JSON。
+		body = []byte(`{"error":"内部错误"}`)
+	}
+	w.Write(body)
+}
 
 // RegisterRoutes registers disk management routes
 func RegisterRoutes(mux *http.ServeMux) {
@@ -183,7 +204,7 @@ func handlePartitions(w http.ResponseWriter, r *http.Request) {
 func debugDiskGate(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if os.Getenv("NAS_DISK_DEBUG") != "1" {
-			http.Error(w, `{"error":"低级别磁盘接口已禁用（调试模式未开启）"}`, http.StatusForbidden)
+			jsonError(w, "低级别磁盘接口已禁用（调试模式未开启）", http.StatusForbidden)
 			return
 		}
 		next(w, r)

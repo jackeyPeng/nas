@@ -133,8 +133,9 @@ func getExistingDataMounts() []map[string]string {
 	return mounts
 }
 
-// handleWizardSetup: one-click storage setup by mode
-// Modes: single, merge, separate, raid1
+// handleWizardSetup: one-click storage setup by mode (deprecated non-stream path)
+// Modes: single, merge, raid0, raid1, raid5, raid6 — separate 已下线（B2/Finding 5），
+// 入口直接拒绝，不进入 switch。
 func handleWizardSetup(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
@@ -154,6 +155,16 @@ func handleWizardSetup(w http.ResponseWriter, r *http.Request) {
 
 	if confirm != "yes" {
 		http.Error(w, `{"error":"请确认操作"}`, http.StatusBadRequest)
+		return
+	}
+
+	// B2：separate（独立多池创建）模式已下线——产品定位收敛为专用整机、一机一主池。
+	// stream.go 的流式版本（handleWizardSetupStream）已经拦了这条路径，但非流式
+	// 的这个旧接口（handleWizardSetup）还留着完整的 separate 分支，直接 API 调用
+	// 能绕过下线决策创建 separate 多池（Finding 5）。拦在入口，不进入下面任何
+	// 步数计算/建池分支。
+	if mode == "separate" {
+		jsonError(w, "separate 多池模式已下线，单池模型请使用 merge/RAID", http.StatusBadRequest)
 		return
 	}
 
@@ -198,10 +209,6 @@ func handleWizardSetup(w http.ResponseWriter, r *http.Request) {
 		resultMount = "/data/nas1"
 		steps = setupMergeDisks(unusedDevs, resultMount, nasUser)
 
-	case "separate":
-		resultMount = "/data"
-		steps = setupSeparateDisks(unusedDevs, nasUser)
-
 	case "raid1":
 		if len(unusedDevs) < 2 {
 			http.Error(w, `{"error":"RAID1 至少需要 2 块磁盘"}`, http.StatusBadRequest)
@@ -235,18 +242,12 @@ func handleWizardSetup(w http.ResponseWriter, r *http.Request) {
 		steps = setupRaidN(unusedDevs, resultMount, nasUser, 6) // raid6
 
 	default:
-		http.Error(w, `{"error":"未知模式: single/merge/separate/raid0/raid1/raid5/raid6"}`, http.StatusBadRequest)
+		http.Error(w, `{"error":"未知模式: single/merge/raid0/raid1/raid5/raid6"}`, http.StatusBadRequest)
 		return
 	}
 
 	// 创建 public + 用户 home 并生成托管共享（SMB public + home、NFS 仅 public）
-	if mode == "separate" {
-		for i := range unusedDevs {
-			EnsurePoolStructure(fmt.Sprintf("/data/nas%d", i+1), nasUser)
-		}
-	} else {
-		EnsurePoolStructure(resultMount, nasUser)
-	}
+	EnsurePoolStructure(resultMount, nasUser)
 	steps = append(steps, "创建 public + 用户 home 并生成托管共享")
 
 	common.JSONResponse(w, map[string]interface{}{
@@ -341,17 +342,6 @@ func setupMergeDisks(devs []string, mountPoint, nasUser string) []string {
 	common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountPoint)
 	steps = append(steps, "设置权限")
 	return steps
-}
-
-// setupSeparateDisks: each disk → /data/nas1, /data/nas2...
-func setupSeparateDisks(devs []string, nasUser string) []string {
-	var allSteps []string
-	for i, dev := range devs {
-		mountPoint := fmt.Sprintf("/data/nas%d", i+1)
-		steps := setupSingleDisk(dev, mountPoint, nasUser)
-		allSteps = append(allSteps, "磁盘 "+fmt.Sprintf("%d", i+1)+": "+strings.Join(steps, " → "))
-	}
-	return allSteps
 }
 
 // setupRaid1: mdadm RAID1 mirror → single mount

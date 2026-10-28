@@ -14,7 +14,7 @@ import (
 // Steps: 1) mark failed, 2) remove from array, 3) add new disk, 4) wait for rebuild
 func handleReplaceDisk(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -24,25 +24,26 @@ func handleReplaceDisk(w http.ResponseWriter, r *http.Request) {
 	confirm := r.FormValue("confirm")
 
 	if mdDevice == "" || oldDevice == "" || newDevice == "" {
-		http.Error(w, `{"error":"md_device, old_device, new_device required"}`, http.StatusBadRequest)
+		jsonError(w, "md_device, old_device, new_device required", http.StatusBadRequest)
 		return
 	}
 	if confirm != "yes" {
-		http.Error(w, `{"error":"请加 confirm=yes 确认操作"}`, http.StatusBadRequest)
+		jsonError(w, "请加 confirm=yes 确认操作", http.StatusBadRequest)
 		return
 	}
 	if isSystemDisk(newDevice) {
-		http.Error(w, `{"error":"不允许使用系统盘"}`, http.StatusBadRequest)
+		jsonError(w, "不允许使用系统盘", http.StatusBadRequest)
 		return
 	}
 	if isDiskInUse(newDevice) {
-		http.Error(w, `{"error":"新盘已在存储池中使用，不能用于替换"}`, http.StatusBadRequest)
+		jsonError(w, "新盘已在存储池中使用，不能用于替换", http.StatusBadRequest)
 		return
 	}
 	// A2：raid0 无冗余，不支持换盘——拿锁前先只读查级别拒绝，不让无效请求排队等锁
 	// （与 handleRAIDExpandStream 同一审查动机）。
 	if level := mdArrayLevel(mdDevice); level == "raid0" {
-		http.Error(w, `{"error":"RAID0 无冗余，不支持扩容/换盘"}`, http.StatusBadRequest)
+		common.LogAuditRequest(r, "STORAGE", "更换RAID磁盘", fmt.Sprintf("md=%s old=%s new=%s rejected=RAID0无冗余不支持扩容/换盘", mdDevice, oldDevice, newDevice), "rejected")
+		jsonError(w, "RAID0 无冗余，不支持扩容/换盘", http.StatusBadRequest)
 		return
 	}
 
@@ -54,7 +55,7 @@ func handleReplaceDisk(w http.ResponseWriter, r *http.Request) {
 	// 1. Mark failed disk
 	out, err := common.SudoExec("/usr/sbin/mdadm", "--manage", mdDevice, "--fail", oldDevice)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":"标记故障盘失败: %s"}`, out+": "+err.Error()), http.StatusInternalServerError)
+		jsonError(w, fmt.Sprintf("标记故障盘失败: %s", out+": "+err.Error()), http.StatusInternalServerError)
 		return
 	}
 	steps = append(steps, "标记 "+oldDevice+" 为故障")
@@ -62,7 +63,7 @@ func handleReplaceDisk(w http.ResponseWriter, r *http.Request) {
 	// 2. Remove failed disk
 	out, err = common.SudoExec("/usr/sbin/mdadm", "--manage", mdDevice, "--remove", oldDevice)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":"移除故障盘失败: %s"}`, out+": "+err.Error()), http.StatusInternalServerError)
+		jsonError(w, fmt.Sprintf("移除故障盘失败: %s", out+": "+err.Error()), http.StatusInternalServerError)
 		return
 	}
 	steps = append(steps, "移除 "+oldDevice)
@@ -74,7 +75,7 @@ func handleReplaceDisk(w http.ResponseWriter, r *http.Request) {
 	// 4. Add new disk
 	out, err = common.SudoExec("/usr/sbin/mdadm", "--manage", mdDevice, "--add", newDevice)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":"添加新盘失败: %s"}`, out+": "+err.Error()), http.StatusInternalServerError)
+		jsonError(w, fmt.Sprintf("添加新盘失败: %s", out+": "+err.Error()), http.StatusInternalServerError)
 		return
 	}
 

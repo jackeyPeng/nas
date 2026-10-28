@@ -471,11 +471,11 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 		map[string]interface{}{"type": poolType, "device": poolDevice}, "")
 
 	if confirm != "yes" {
-		http.Error(w, `{"error":"请加 confirm=yes 确认"}`, http.StatusBadRequest)
+		jsonError(w, "请加 confirm=yes 确认", http.StatusBadRequest)
 		return
 	}
 	if poolName == "" || confirmName == "" || confirmName != poolName {
-		http.Error(w, `{"error":"确认名不匹配，请输入存储池名称"}`, http.StatusBadRequest)
+		jsonError(w, "确认名不匹配，请输入存储池名称", http.StatusBadRequest)
 		return
 	}
 
@@ -529,7 +529,7 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 		// 这里选择"安全拒绝删除"：pvs 报错时中止，不执行任何破坏性操作，让用户重试。
 		pvsOut, pvsErr := common.SudoOutput("/usr/sbin/pvs", "--noheadings", "-o", "pv_name", "-S", "vg_name="+vgName)
 		if pvsErr != nil {
-			http.Error(w, fmt.Sprintf(`{"error":"无法确认卷组 %s 的物理卷成员（pvs 执行失败），为安全起见拒绝删除: %s"}`, vgName, pvsErr.Error()), http.StatusInternalServerError)
+			jsonError(w, fmt.Sprintf("无法确认卷组 %s 的物理卷成员（pvs 执行失败），为安全起见拒绝删除: %s", vgName, pvsErr.Error()), http.StatusInternalServerError)
 			return
 		}
 		memberPVs := strings.Fields(pvsOut)
@@ -592,7 +592,7 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 		steps = append(steps, "释放 "+poolDevice)
 
 	default:
-		http.Error(w, fmt.Sprintf(`{"error":"未知池类型: %s"}`, poolType), http.StatusBadRequest)
+		jsonError(w, fmt.Sprintf("未知池类型: %s", poolType), http.StatusBadRequest)
 		return
 	}
 

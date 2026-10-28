@@ -6,7 +6,7 @@ import (
 
 // RaidOption represents a RAID/storage configuration option
 type RaidOption struct {
-	ID          string `json:"id"`           // single, merge, raid0, raid1, raid5, raid6, separate
+	ID          string `json:"id"`           // single, merge, raid0, raid1, raid5, raid6
 	Name        string `json:"name"`         // LVM单盘, 容量合并, RAID0, RAID1, RAID5, RAID6, 独立模式
 	Icon        string `json:"icon"`         // 💾 📦 ⚡ 🛡️ 🔒 🔒🔒 📁
 	Goal        string `json:"goal"`         // ★ safety, capacity, performance, balance
