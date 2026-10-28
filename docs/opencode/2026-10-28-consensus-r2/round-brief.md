@@ -17,7 +17,7 @@
 handleRAIDExpandFS / handleRAIDReshapeStatus / waitForResync 全部依赖 /proc/mdstat 文本解析。
 共识报告阶段 1 要求：优先读内核结构化 sysfs，mdstat 仅作兼容回退；健康与活动状态分离。
 
-### 真机 fixture（10.216.10.57，md0 raid1 2×50G，Debian 13 内核，2026-10-28 实采）
+### 真机 fixture（测试机57，md0 raid1 2×50G，Debian 13 内核，2026-10-28 实采）
 
 sysfs 目录 /sys/block/md0/md/ 含：level array_state degraded raid_disks sync_action sync_completed
 sync_speed reshape_position last_sync_action metadata_version uuid mismatch_cnt chunk_size

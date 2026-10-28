@@ -8,6 +8,7 @@ _（暂无）_
 
 | 版本 | 日期 | 主要变化 |
 |------|------|---------|
+| v1.4.0-beta.34 | 2026-10-28 | 存储控制面安全大版本 — diskmgmt 五轮加固（外部审查五项高危：假成功/吞错/选盘退化全盘/删池顺序错/fstab 误删 + P0 残项 + 回炉）+ 三模型共识审查落地：删池服务端重解析与系统盘闸门、出厂重置擦盘收敛为纳管盘（外来数据盘不再误擦）、包级缓存竞态修复、配置漂移真比对、mdstat 统一块解析；RAID 健康监控全盲根修（无 shell glob 恒失败）+ 状态链 sysfs 优先重写（健康/活动分离、降级计数、重建 ETA）；删用户即时重投影 SMB/NFS 托管段；升级路径保留已改密码；专用整机定位收敛（separate 下线、低级别 API 调试开关）。真机验收：两台测试机用户级全流程（LVM merge + RAID1）注册表 41/41 + 套件 38/38 + AI/F2 E2E 全 PASS + RAID 降级/重建/恢复全生命周期实测 + Chrome UI 实测 |
 | v1.4.0-beta.33 | 2026-10-27 | S1 最小权限 — 面板从 7×24 常驻 root 降为以家庭管理员账号（如 `fm`）运行，面板 RCE 不再等同整机 root；安装/清理脚本改「用户身份直跑 + 特权步骤逐条 sudo」（`curl|bash` 去 sudo 前缀，六载体同步）；sudoers 白名单 root-equivalence 复审（115→145 条：按实际调用面收窄/补齐裸奔调用/铲除死条目，灭裸 chpasswd/gpasswd/`sed -i *` 提权后门）。附 S1 强化验收修复轮（48/57 真机 journal 实证）：chpasswd 路径错配、隐性 root 依赖（blkid/fstab/journalctl）、重装 ETXTBSY 原子替换、用户 home ACL、share 级回收站 fm 失效等七轮根修 + cleanup.sh 非交互 `--yes` 与 RAID wipefs 顺序修复。真机验收：48(LVM merge)+57(RAID1) 双机用户级全流程，acceptance-suite 38/38 + AI E2E 31 项 + F2 E2E 全 PASS + 本机 Chrome UI 实测 |
 | v1.4.0-beta.32 | 2026-10-23 | 家庭管家底座 F2（主动管家）— 面板从「被动等命令」升级为「主动发现、提出建议、经确认后干活」：notifications 轻量收件箱（eventbus 订阅式）+ triggers 建议卡引擎（健康异常/备份失败/同步失败/磁盘水位≥85% 触发，同事项 24h 冷却+最多 5 条待处理反骚扰）+ 建议接受链（点「执行」→ 确认卡 → 任务引擎，零新确认语义）+ 家庭周报（周日 9 点自动生成，存储/任务/健康三块，零 LLM 依赖）+ 前端通知中心（铃铛/未读徽标/建议卡/周报卡/人话文案插值，关 AI 即整体隐藏）+ cronMatch 抽取 common 共享。附验收修复：周报通知去重、PoolUsage 补 RAID/直挂池回退（此前 raid 直挂机水位检查永远哑火）、cleanup.sh 重置补删仓库实体（防旧数据库穿越复活）。真机验收：F2 E2E 15/15 + UI 全流程 Chrome 实测 + AI E2E 31 项 + 套件 38/38 + 真实 DeepSeek 回归 |
 | v1.4.0-beta.31 | 2026-10-23 | 家庭管家底座 F1（任务引擎垂直切片）— AI 助手从「会聊天」升级为「能干活」：任务引擎（jobs 六态状态机/单 worker 串行/checkpoint 断点续跑/暂停恢复取消/REST+SSE 进度流/崩溃重启落 paused 保守恢复）+ photo_dedupe 重复照片清理全链（两级哈希扫描/最短路径保留/删除只进回收站）+ AI 任务工具 7 枚（规划只读、启动/取消/恢复走确认门，执行体服务端固化模型不可改写）+ 前端任务 tab（六态徽章/进度轮询/完成报告）+ 架构边界测试（import 图机器锁分层：tasks 不依赖 ai、核心模块不依赖 ai/tasks）+ filemgmt 回收站内核抽取复用。真机验收：任务 E2E 18/18（含 kill -9 续跑与计数器持久化修复）、验收套件 38/38、本机 Chrome UI 实测、真实 DeepSeek 回归 |
@@ -31,6 +32,52 @@ _（暂无）_
 | v1.4.0-beta.13 | 2026-09-19 | NFS 导出对所有网段开放（跨网段客户端可挂载） |
 | v1.4.0-beta.12 | 2026-09-18 | 创建向导按已选磁盘实时预估容量（选目标后预览面板 + 各方案可用容量/注意事项）+ 登录页品牌 slogan |
 | v1.4.0-beta.11 | 2026-09-18 | 当前连接展示（监控页，SMB 会话 + 各协议端口归类）+ 回收站改 per-share `.recycle/`（删除=rename 零拷贝，恢复保留目录树，旧 `#recycle` 兼容）+ 存储页 tab 切换跳动修复 |
+
+---
+
+## [2026-10-28] - v1.4.0-beta.34 — 存储控制面安全加固（共识审查落地 + RAID 监控根修）
+
+diskmgmt 五轮加固 + 三模型共识审查（Qwen3.8-Max/DeepSeek-V4-Pro/GLM-5.3 独立报告 + Kimi 复核，见 docs/opencode/consensus-report.md）两轮落地 + 部署验收抓到的两个真缺陷根修。全程 opencode 编码、独立子代理审查（两轮均 request_changes/approve_with_minor 后回炉闭环）、真机双机验收。测试覆盖率 11.1% → 23.6%。
+
+### 存储安全五轮加固（8609240/c89fa1c/17024dd/2d58fbc/602f1f8/fe21146）
+
+- 外部审查五项高危修复：空闲盘误判存量数据分区、选盘空集退化全盘擦除、建池向导失败仍报 complete、LVM 扩容吞错假成功、删池 PV 成员收集顺序错与 fstab 前缀误删
+- 存储安全 P0 残项：resync 未完成/超时禁扩文件系统、RAID0 拒绝扩容换盘、删池 UUID 行精确清理与 pvs 查错、VG 名前缀误命中、未纳管盘可见
+- 审查回炉：错误响应全面 JSON 化（灭前端假成功 toast）、resync 首轮竞态（前置 2s + 连续 3 轮干净判定）、拒绝路径审计补全、separate 非流式旁路封堵、恢复被误删回归测试
+- 真机验收统一修复：parted 依赖补进装机清单（非流式 single 模式新装机必挂）、RAID 扩容 isDiskInUse 双保险、http.Error 迁移、死代码死键清理
+- 专用整机定位收敛：separate 多池创建下线（单池模型）、低级别磁盘 API（format/mount/mkdir）收进调试开关、RAID1 加成员改称"增加镜像/提高冗余"（不再暗示容量增加）
+
+### 升级安全（2e5d1e2）
+
+- install.sh/setup.sh 密码三级语义：显式 NAS_PASS 环境变量 > 已有 .env 现值保留 > 出厂默认+首登强制改密；重跑安装不再把用户已改的面板密码静默重置回出厂默认（安全回退根修）
+
+### 共识审查 R1 落地（ad27508/5304c05/7f4005a/5f9be5c/72b0b3f）
+
+- **删池服务端重解析（P0-A1）**：不再信任客户端提交的 pool_type/pool_device——锁内按实时库存重解析、未匹配即 409；三分支（LVM/RAID/single）破坏性命令前系统盘闸门；raid 成员 mdadm --detail 失败安全拒绝（对齐 lvm 分支 pvs 失败模式）；single 分支 umount 后二次挂载核验
+- **出厂重置擦盘收敛（P0-A2）**：擦除集合从"全部非系统整盘"收敛为面板纳管盘（pvs + MD 成员 + 受管挂载源三路并集，拆除前采集），外来 USB 备份盘/含数据外来盘不再被误擦；跳过与采集失败均留痕
+- **并发与配置一致性（P1-B）**：包级 PV/RAID 缓存加锁（跨请求竞态修复）；配置一致性检查从"算出期望值后丢弃"改为托管段真比对（smb.conf/exports 与 folders.db 漂移可检出），期望输出与写盘生成器同源
+- **mdstat 统一块解析（P0-D）**：(F) 失败成员不再误计入 spare、(S) 正确归桶、同步百分比改从 `]` 之后提取（旧实现从未取对过）、扩文件系统闸门与 resync 检测看对行（旧实现只看头行/头行下一行，进度行在 blocks 行之后必漏）
+- 独立审查裁决 request_changes（2 important：raid 成员查询吞错、测试覆盖虚报）→ 回炉修复 + 报告诚实性更正，parent 逐项核验关闭
+
+### 删用户即时配置重投影（190695e）
+
+- DELETE /api/users/{name} 成功后立即 SyncAllConfigs 重投影 SMB/NFS 托管段——已删用户的 share 定义不再悬空残留、仪表盘不再弹"配置漂移"告警（对齐 create 路径 EnsureUserHome 既有模式）；同步失败不阻断删除、审计留痕 + 响应透出
+
+### RAID 健康监控根修 + sysfs 优先状态链（2773a3c/58fe99c/04fc279/4ff79fd/13260b6）
+
+- **全盲根修**：getRAIDStatus 的 `ls /dev/md*` 经 exec.Command 直调无 shell、glob 不展开恒失败 → 函数恒返回空 → RAID 池健康恒报"正常"、降级/重建/同步告警永不触发（真机实锤：resync 57% 面板报健康）。历史同类修复（e3c9b4b）的漏网点
+- **sysfs 优先采集（共识阶段 1）**：RAID 状态改读 /sys/block/md*/md/ 结构化数据（degraded 计数/sync_action/sync_completed/array_state/成员 rd*/state），mdstat 降为回退；健康与活动分离（新增 health/activity 字段）；实测陷阱全覆盖：降级时 array_state 仍=clean（必须信 degraded 计数）、sysfs `recover` vs mdstat `recovery` 映射统一、sync_completed 缺失/畸形容错不伪造百分比
+- 回退路径加固：mdstat 成员被 --remove 摘除后降级信息只在 StatusLine `[U_]`——下划线计数补 degraded，不再误报 normal
+- 扩容/重建链路：growfs 闸门按 sync_action≠idle 或 reshape_position≠none 拒绝；waitForResync 保留 2s 前置 + 连续 3 轮干净 + 10 分钟超时 error 语义；重建进度 speed/ETA 由 sync_completed/sync_speed 估算
+- extractVGName 支持 /dev/mapper/<vg>--<lv> 转义形态与 LV 直路径；删池 lvm 分支 vgs 存在性精确校验 + pvs 空成员安全拒绝（防错误 VG 名下闸门空转）
+- inactive MD 阵列成员纳入重置纳管集合（防残留超级块被开机自动重组为幽灵阵列）
+- sysfs 缺键 fail-safe：sync_action 读不到时分流回 mdstat 判定，不把"没读到"当"已完成"
+
+### 真机验收
+
+- 两台测试机重置后用户级全流程部署（fm 身份一键安装、出厂默认密码+首登强制改密四件套）：测试机48（LVM merge 4×50G→200G）+ 测试机57（RAID1 2×50G），注册表 41/41 全 pass、acceptance-suite 38/38、AI 模块 E2E 31 项 ALL PASS、F2 主动管家 E2E ALL PASS（含 kill -9 重启不丢不重）、本机 Chrome UI 实测（仪表盘/存储/用户页，无幽灵共享无漂移告警）
+- RAID 降级→重建→恢复全生命周期真机实测两轮：fail 成员→面板 degraded 告警、remove/add→"正在同步 N%"+speed/ETA、恢复完成→41/41 回满，面板与内核状态全程一致
+- 删用户全链验证：API 删用户后 smb.conf 托管段即时清理、配置漂移检测零告警
 
 ---
 
