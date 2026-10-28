@@ -19,20 +19,26 @@ import (
 // /data/nas* 挂载点的源设备及其解析出的底层盘），reset 流程只对这个集合执行
 // 擦除；集合外的盘完全不碰。
 
-// mdstatMemberDisks 从 /proc/mdstat 文本中解析所有活跃阵列的成员盘设备路径
-// （形如 "sdb[0]" "nvme0n1[1]"），统一补上 "/dev/" 前缀返回。纯函数，供单测。
-// 只需要成员盘集合本身，不需要区分属于哪个阵列——reset 场景是"全部纳管阵列
-// 的全部成员都要擦"，不像 pool delete 需要按单个阵列精确匹配。
+// mdstatMemberDisks 从 /proc/mdstat 文本中解析所有阵列（active 与 inactive
+// 均纳管，见下方 consensus R2 Item C 说明）的成员盘设备路径（形如 "sdb[0]"
+// "nvme0n1[1]"），统一补上 "/dev/" 前缀返回。纯函数，供单测。只需要成员盘
+// 集合本身，不需要区分属于哪个阵列——reset 场景是"全部纳管阵列的全部成员
+// 都要擦"，不像 pool delete 需要按单个阵列精确匹配。
+//
+// consensus R2 Item C 根因：此前只认含 " : active" 的行——inactive 阵列
+// （成员盘仍带 RAID 超级块，常见于掉盘/未完全组装的阵列）不会进纳管集合，
+// 重置后残留签名可能被开机自动重组（幽灵阵列）。
+//
+// 修法：改走既有 parseMdstatBlocks（mdstat_parser.go）——其块切分只按
+// "md 名匹配 ^md\d+$" 识别阵列块，不区分 active/inactive（真实 mdstat 的
+// inactive 头行形如 "md0 : inactive sdb[1](S) sda[0](S)"，MemberTokens 一样
+// 能从 fields[3:] 正确切出）。从块的 MemberTokens 提取盘名，(F)/(S) 等标志
+// 不影响归集——重置要擦的就是全部成员盘，不区分其当前角色。
 func mdstatMemberDisks(mdstatContent string) []string {
 	seen := map[string]bool{}
 	var result []string
-	for _, line := range strings.Split(mdstatContent, "\n") {
-		trimmed := strings.TrimSpace(line)
-		// mdstat 阵列行形如: "md0 : active raid1 sdb[1] sda[0]"
-		if !strings.Contains(trimmed, " : active") {
-			continue
-		}
-		for _, tok := range strings.Fields(trimmed) {
+	for _, block := range parseMdstatBlocks(mdstatContent) {
+		for _, tok := range block.MemberTokens {
 			idx := strings.Index(tok, "[")
 			if idx <= 0 {
 				continue
@@ -187,32 +193,27 @@ func pvsPVToVGMap(pvsOut string) map[string]string {
 
 // mdstatMembersByDevice 解析 /proc/mdstat 文本，返回 md设备路径 → 成员盘列表
 // 的映射（如 "/dev/md0" → ["/dev/sda","/dev/sdb"]）。纯函数。
+//
+// consensus R2 Item C 范围扩展说明（报告申报）：任务书只点名
+// mdstatMemberDisks，但本函数与它是同一个 " : active" 过滤器 bug 的另一个
+// 实例，被 collectManagedWipeTargets 路径 (c) 用于 /data/nas* 挂载点源
+// 设备是 MD 阵列时的成员解析。虽然 inactive 阵列通常不会被挂载（path (c)
+// 命中它的概率低于 path (b) 的 mdstatMemberDisks），但两个函数现在用不同
+// 逻辑解析同一份 mdstat 文本会造成行为不一致、维护陷阱，顺手一并改走
+// parseMdstatBlocks，保持与 mdstatMemberDisks 同源同逻辑。
 func mdstatMembersByDevice(mdstatContent string) map[string][]string {
 	result := make(map[string][]string)
-	for _, line := range strings.Split(mdstatContent, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if !strings.Contains(trimmed, " : active") {
-			continue
-		}
-		fields := strings.Fields(trimmed)
-		if len(fields) == 0 {
-			continue
-		}
-		mdDev := "/dev/" + fields[0]
+	for _, block := range parseMdstatBlocks(mdstatContent) {
 		var members []string
-		for _, tok := range fields {
+		for _, tok := range block.MemberTokens {
 			idx := strings.Index(tok, "[")
 			if idx <= 0 {
 				continue
 			}
-			name := tok[:idx]
-			if name == fields[0] {
-				continue
-			}
-			members = append(members, "/dev/"+name)
+			members = append(members, "/dev/"+tok[:idx])
 		}
 		if len(members) > 0 {
-			result[mdDev] = members
+			result["/dev/"+block.MdName] = members
 		}
 	}
 	return result

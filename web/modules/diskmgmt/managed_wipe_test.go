@@ -50,6 +50,51 @@ md0 : active raid5 sdb[2] sda[0] sde[1]
 	}
 }
 
+// TestMdstatMemberDisks_InactiveArray 是 consensus R2 Item C 的核心用例：
+// inactive 阵列（成员盘仍带 RAID 超级块，常见于掉盘/未完全组装）此前因只认
+// " : active" 行被完全漏掉，重置后残留签名可能被开机自动重组成幽灵阵列。
+func TestMdstatMemberDisks_InactiveArray(t *testing.T) {
+	content := `md0 : inactive sdb[1](S) sda[0](S)
+      104792064 blocks super 1.2
+
+unused devices: <none>
+`
+	got := sortedCopy(mdstatMemberDisks(content))
+	want := []string{"/dev/sda", "/dev/sdb"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v（inactive 阵列成员必须纳入擦盘集合）", got, want)
+	}
+}
+
+// TestMdstatMemberDisks_ActiveAndInactiveMixed 验证 active/inactive 两种阵列
+// 并存时，两边成员都要进纳管集合，互不遗漏。
+func TestMdstatMemberDisks_ActiveAndInactiveMixed(t *testing.T) {
+	content := `md1 : active raid1 sdd[1] sdc[0]
+      976630464 blocks super 1.2 [2/2] [UU]
+
+md0 : inactive sdb[1](S) sda[0](S)
+      104792064 blocks super 1.2
+`
+	got := sortedCopy(mdstatMemberDisks(content))
+	want := []string{"/dev/sda", "/dev/sdb", "/dev/sdc", "/dev/sdd"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+// TestMdstatMemberDisks_FailedAndSpareFlags 验证成员带 (F)/(S) 标志不影响
+// 归集——重置要擦的就是所有成员盘，不区分其当前角色。
+func TestMdstatMemberDisks_FailedAndSpareFlags(t *testing.T) {
+	content := `md0 : active raid1 sdc[2](S) sdb[1](F) sda[0]
+      1953511424 blocks super 1.2 [2/1] [U_]
+`
+	got := sortedCopy(mdstatMemberDisks(content))
+	want := []string{"/dev/sda", "/dev/sdb", "/dev/sdc"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v（(F)/(S) 标志不应影响成员归集）", got, want)
+	}
+}
+
 // TestPvsListAll 验证 PV 设备列表解析。
 func TestPvsListAll(t *testing.T) {
 	out := "  /dev/sda1\n  /dev/sdb1\n"
@@ -196,6 +241,26 @@ func TestCollectManagedWipeTargets_RAIDMembersIncluded(t *testing.T) {
 	}
 }
 
+// TestCollectManagedWipeTargets_InactiveArrayMembersIncluded 是 consensus R2
+// Item C 的端到端用例：inactive 阵列的成员盘即便该阵列未挂载/未被任何
+// /data 挂载点引用，也必须整体进入纳管集合（通过 path (b) 全部活跃+inactive
+// MD 阵列成员覆盖），防止重置后残留 RAID 超级块被开机自动重组成幽灵阵列。
+func TestCollectManagedWipeTargets_InactiveArrayMembersIncluded(t *testing.T) {
+	pvsOut := ""
+	mdstat := "md0 : inactive sdb[1](S) sda[0](S)\n      104792064 blocks super 1.2\n"
+	dataMounts := []map[string]string{} // 未挂载（inactive 阵列常见场景）
+	got := collectManagedWipeTargets(pvsOut, mdstat, dataMounts)
+	gotSet := map[string]bool{}
+	for _, d := range got {
+		gotSet[d] = true
+	}
+	for _, want := range []string{"/dev/sda", "/dev/sdb"} {
+		if !gotSet[want] {
+			t.Errorf("inactive 阵列成员盘 %s 应在纳管集合内，got %v", want, got)
+		}
+	}
+}
+
 // TestCollectManagedWipeTargets_IgnoresNonDataMounts 验证非 /data/nas* 前缀的
 // 挂载点（如 /mnt/usb-backup）不会被当作纳管挂载源解析进集合。
 func TestCollectManagedWipeTargets_IgnoresNonDataMounts(t *testing.T) {
@@ -280,5 +345,21 @@ md0 : active raid5 sdb[2] sda[0] sde[1]
 	}
 	if !reflect.DeepEqual(sortedCopy(got["/dev/md0"]), []string{"/dev/sda", "/dev/sdb", "/dev/sde"}) {
 		t.Errorf("md0 members = %v", got["/dev/md0"])
+	}
+}
+
+// TestMdstatMembersByDevice_InactiveArray 验证 mdstatMembersByDevice（path (c)
+// 用于 /data/nas* 挂载点解析）同样覆盖 inactive 阵列——与 mdstatMemberDisks
+// 同源同逻辑，consensus R2 Item C 范围扩展（报告已申报）。
+func TestMdstatMembersByDevice_InactiveArray(t *testing.T) {
+	content := `md0 : inactive sdb[1](S) sda[0](S)
+      104792064 blocks super 1.2
+`
+	got := mdstatMembersByDevice(content)
+	if got["/dev/md0"] == nil {
+		t.Fatalf("got %v, want md0 present", got)
+	}
+	if !reflect.DeepEqual(sortedCopy(got["/dev/md0"]), []string{"/dev/sda", "/dev/sdb"}) {
+		t.Errorf("md0 members = %v, want [/dev/sda /dev/sdb]", got["/dev/md0"])
 	}
 }
