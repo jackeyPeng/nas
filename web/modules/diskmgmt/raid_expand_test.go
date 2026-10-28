@@ -62,3 +62,27 @@ func TestWaitForResyncReturnsNilWhenNoResyncLine(t *testing.T) {
 		t.Fatalf("waitForResync() = %v, want nil (无匹配设备应视为同步完成)", err)
 	}
 }
+
+// TestResyncProgressDetail 验证 consensus R2 回炉 Fix3：percent 为空时不再
+// 拼出悬挂冒号的 "同步进度: "，改用 "同步中（<syncAction>）"；percent 非空
+// 时沿用既有 "同步进度: "+percent 形态。
+func TestResyncProgressDetail(t *testing.T) {
+	cases := []struct {
+		name       string
+		percent    string
+		syncAction string
+		want       string
+	}{
+		{"percent非空_沿用既有形态", "50.0%", "recover", "同步进度: 50.0%"},
+		{"percent为空_sync_completed是none或畸形", "", "resync", "同步中（resync）"},
+		{"percent为空_syncAction也为空", "", "", "同步中（）"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := resyncProgressDetail(c.percent, c.syncAction)
+			if got != c.want {
+				t.Errorf("resyncProgressDetail(%q,%q) = %q, want %q", c.percent, c.syncAction, got, c.want)
+			}
+		})
+	}
+}

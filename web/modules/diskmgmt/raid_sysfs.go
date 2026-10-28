@@ -235,8 +235,33 @@ func atoiSafe(s string) int {
 // sysfsResyncDone 判断 sync_action 是否代表"同步已完成"（idle 即完成；
 // resync/recover/reshape/check/repair 均代表仍在进行）。供 waitForResync
 // 的 sysfs 轮询分支使用，命名独立成纯函数方便单测注入 sync_action 序列。
+//
+// 本函数只负责"已经拿到 sync_action 取值后"的判定，语义/签名保持不变；
+// "sync_action 这个键本身缺失" 的分流判断由调用方通过 sysfsSyncAction
+// 完成（见下），不在本函数内处理——避免把"没读到值"和"读到值=idle"
+// 两种完全不同的情况都折叠成同一个 true。
 func sysfsResyncDone(syncAction string) bool {
 	return syncAction == "" || syncAction == "idle"
+}
+
+// sysfsSyncAction 从 readRAIDSysfsValues 的 vals 中取 sync_action，并显式
+// 返回该键是否存在。
+//
+// consensus R2 回炉 Fix2（审查实锤）：readRAIDSysfsValues 对标量文件逐个
+// os.ReadFile，单个文件读失败（如内核瞬时未暴露该文件）会被静默跳过、不
+// 写入 vals，但只要 /sys/block/<md>/md 目录本身存在就整体返回 ok=true。
+// 此前三处调用点（waitForResync/handleRAIDExpandFS/handleRAIDReshapeStatus）
+// 都直接写 `vals["sync_action"]`——键缺失时 Go map 零值是 ""，恰好等于
+// sysfsResyncDone("") 的"已完成"分支，缺键被静默当成 idle（fail-open）：
+// waitForResync 会把 cleanStreak 计入完成、handleRAIDExpandFS 的重构闸门
+// 会放行、handleRAIDReshapeStatus 会报 reshaping=false——全部在阵列实际
+// 仍在同步时给出"已完成"的错误判定。
+//
+// 修法：调用点改用本函数的第二个返回值做分流，缺键时不当作 idle，走
+// mdstat 回退路径（该轮 sysfs 判定为不可用）。
+func sysfsSyncAction(vals map[string]string) (syncAction string, hasKey bool) {
+	syncAction, hasKey = vals["sync_action"]
+	return syncAction, hasKey
 }
 
 // sysfsCleanStreakResult 纯函数：给定一段 sync_action 观测序列，模拟

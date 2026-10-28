@@ -235,11 +235,17 @@ func handleRAIDExpandFS(w http.ResponseWriter, r *http.Request) {
 	// 改为检查块内任一进度行，这里完整保留不删）。
 	mdName := strings.TrimPrefix(mdDev, "/dev/")
 	reshaping := false
+	// consensus R2 回炉 Fix2：sync_action 缺键时不当作 idle（fail-open 会
+	// 让仍在重构的阵列放行扩文件系统），走 mdstat 回退判据。
+	sysfsUsable := false
 	if vals, _, ok := readRAIDSysfsValues(mdName); ok {
-		syncAction := vals["sync_action"]
-		reshapePos := strings.TrimSpace(vals["reshape_position"])
-		reshaping = !sysfsResyncDone(syncAction) || (reshapePos != "" && reshapePos != "none" && reshapePos != "0")
-	} else {
+		if syncAction, hasKey := sysfsSyncAction(vals); hasKey {
+			sysfsUsable = true
+			reshapePos := strings.TrimSpace(vals["reshape_position"])
+			reshaping = !sysfsResyncDone(syncAction) || (reshapePos != "" && reshapePos != "none" && reshapePos != "0")
+		}
+	}
+	if !sysfsUsable {
 		mdstatBytes, _ := os.ReadFile("/proc/mdstat")
 		blocks := parseMdstatBlocks(string(mdstatBytes))
 		if block, found := findBlockByMdName(blocks, mdName); found && blockHasProgress(block) {
@@ -291,26 +297,29 @@ func handleRAIDReshapeStatus(w http.ResponseWriter, r *http.Request) {
 		"eta":       "",
 	}
 
+	// consensus R2 回炉 Fix2：sync_action 缺键时不当作 idle（fail-open 会
+	// 让仍在重构的阵列报 reshaping=false），走 mdstat 回退判据。
 	if vals, _, ok := readRAIDSysfsValues(mdName); ok {
-		syncAction := vals["sync_action"]
-		status["state"] = vals["array_state"]
-		if !sysfsResyncDone(syncAction) {
-			status["reshaping"] = true
-			status["progress"] = syncCompletedPercent(vals["sync_completed"])
-			if speed, speedOK := parseSyncSpeed(vals["sync_speed"]); speedOK {
-				status["speed"] = strconv.FormatFloat(speed, 'f', 0, 64) + "K/sec"
-				if done, total, syncOK := parseSyncCompleted(vals["sync_completed"]); syncOK {
-					if eta, etaOK := reshapeETAMinutes(done, total, speed); etaOK {
-						status["eta"] = eta
+		if syncAction, hasKey := sysfsSyncAction(vals); hasKey {
+			status["state"] = vals["array_state"]
+			if !sysfsResyncDone(syncAction) {
+				status["reshaping"] = true
+				status["progress"] = syncCompletedPercent(vals["sync_completed"])
+				if speed, speedOK := parseSyncSpeed(vals["sync_speed"]); speedOK {
+					status["speed"] = strconv.FormatFloat(speed, 'f', 0, 64) + "K/sec"
+					if done, total, syncOK := parseSyncCompleted(vals["sync_completed"]); syncOK {
+						if eta, etaOK := reshapeETAMinutes(done, total, speed); etaOK {
+							status["eta"] = eta
+						}
 					}
 				}
 			}
+			common.JSONResponse(w, status)
+			return
 		}
-		common.JSONResponse(w, status)
-		return
 	}
 
-	// sysfs 不可用：回退 mdstat 文本解析。
+	// sysfs 不可用（目录缺失或 sync_action 缺键）：回退 mdstat 文本解析。
 	// consensus P0-D：改走 parseMdstatBlocks——此前只看头行的下一行
 	// (lines[i+1])，真实 mdstat 的进度行通常在 blocks 行之后（i+2 及以后），
 	// 会漏检；现在进度行在阵列块内任意缩进行位置都能命中。
@@ -356,16 +365,27 @@ func waitForResync(w http.ResponseWriter, mdDev string, currentStep, totalSteps 
 	cleanStreak := 0
 	for i := 0; i < 600; i++ { // max 10 minutes
 		resyncDone := true
-		var percent string
+		var detail string
 
+		// consensus R2 回炉 Fix2：sync_action 缺键时不当作 idle（fail-open
+		// 会让 cleanStreak 误计入完成，growFilesystem 在阵列实际仍在重构
+		// 时跑会损坏数据），走 mdstat 回退判据。
+		sysfsUsable := false
 		if vals, _, ok := readRAIDSysfsValues(mdName); ok {
-			syncAction := vals["sync_action"]
-			if !sysfsResyncDone(syncAction) {
-				resyncDone = false
-				percent = syncCompletedPercent(vals["sync_completed"])
+			if syncAction, hasKey := sysfsSyncAction(vals); hasKey {
+				sysfsUsable = true
+				if !sysfsResyncDone(syncAction) {
+					resyncDone = false
+					// consensus R2 回炉 Fix3：sync_completed 为 none/畸形
+					// 时 syncCompletedPercent 返回空串，不能再拼
+					// "同步进度: " 留下悬挂冒号——改用 resyncProgressDetail
+					// 统一生成文案，空百分比时退化为"同步中（<syncAction>）"。
+					detail = resyncProgressDetail(syncCompletedPercent(vals["sync_completed"]), syncAction)
+				}
 			}
-		} else {
-			// sysfs 不可用：回退 mdstat parser 路径。
+		}
+		if !sysfsUsable {
+			// sysfs 不可用（目录缺失或 sync_action 缺键）：回退 mdstat parser 路径。
 			// consensus P0-D：改走 parseMdstatBlocks——此前只看头行的下一行
 			// (lines[j+1])，真实进度行通常在 blocks 行之后（j+2 及以后），会
 			// 漏检，导致阵列明明还在重构却被误判"完成"，growFilesystem 在
@@ -376,7 +396,8 @@ func waitForResync(w http.ResponseWriter, mdDev string, currentStep, totalSteps 
 			if block, found := findBlockByMdName(blocks, mdName); found {
 				if p, ok := firstProgress(block); ok && (p.Kind == "resync" || p.Kind == "recovery") {
 					resyncDone = false
-					percent = p.Percent
+					// mdstat 分支不动：沿用既有 "同步进度: " + percent 形态。
+					detail = "同步进度: " + p.Percent
 				}
 			}
 		}
@@ -385,7 +406,7 @@ func waitForResync(w http.ResponseWriter, mdDev string, currentStep, totalSteps 
 			sendRAIDExpandProgress(w, RAIDExpandEvent{
 				Step: "等待数据同步", Status: "running",
 				Index: currentStep + 1, Total: totalSteps,
-				Detail: "同步进度: " + percent,
+				Detail: detail,
 			})
 		}
 
@@ -400,6 +421,20 @@ func waitForResync(w http.ResponseWriter, mdDev string, currentStep, totalSteps 
 		time.Sleep(2 * time.Second)
 	}
 	return fmt.Errorf("阵列同步未在 10 分钟内完成")
+}
+
+// resyncProgressDetail 构造 waitForResync sysfs 分支的进度文案。
+//
+// consensus R2 回炉 Fix3（审查实锤）：sync_completed 为 "none" 或畸形值时
+// syncCompletedPercent 返回空串，此前直接拼 "同步进度: "+percent 会留下
+// 悬挂冒号（"同步进度: "）。percent 非空时沿用既有 "同步进度: "+percent
+// 形态；percent 为空时改用 "同步中（"+syncAction+"）"，至少把 sync_action
+// 本身（如 "resync"/"recover"）展示出来，不留下空文案。
+func resyncProgressDetail(percent, syncAction string) string {
+	if percent != "" {
+		return "同步进度: " + percent
+	}
+	return "同步中（" + syncAction + "）"
 }
 
 // growFilesystem grows the filesystem on md device.

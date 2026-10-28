@@ -245,6 +245,46 @@ unused devices: <none>
 				{Device: "/dev/md126", Level: "1", State: "active", Disks: 2, ActiveDisks: 2, Health: "normal", Activity: "idle"},
 			},
 		},
+		// consensus R2 回炉 Fix1：失败成员已被 mdadm --remove 摘除——头行
+		// 只剩存活盘 token（无 (F) 标记），降级信息只在 StatusLine 下划线
+		// 里。FailedDisks/Disks 均无法反映降级，必须靠 StatusLine 兜底。
+		{
+			name: "降级阵列_F成员已被remove摘除_头行只剩存活token",
+			content: `md0 : active raid1 sda[1]
+      1953511424 blocks super 1.2 [2/1] [U_]
+
+unused devices: <none>
+`,
+			want: []RAIDStatus{
+				{Device: "/dev/md0", Level: "1", State: "degraded", Disks: 1, ActiveDisks: 1, Health: "degraded", Activity: "idle"},
+			},
+		},
+		// 干净阵列 [2/2] [UU]，StatusLine 无下划线，Health 仍应判 normal，
+		// 确认兜底逻辑不会对健康阵列误报降级。
+		{
+			name: "干净阵列_StatusLine无下划线_确认不误报降级",
+			content: `md0 : active raid1 sdb[1] sda[0]
+      1953511424 blocks super 1.2 [2/2] [UU]
+
+unused devices: <none>
+`,
+			want: []RAIDStatus{
+				{Device: "/dev/md0", Level: "1", State: "active", Disks: 2, ActiveDisks: 2, Health: "normal", Activity: "idle"},
+			},
+		},
+		// 含 (F) token 且 StatusLine 同时反映降级（[U_]）——两来源一致，
+		// 取 max 不应重复计数（FailedDisks=1、statusDegraded=1，max=1）。
+		{
+			name: "含F token且StatusLine同步反映降级_两来源取max不重复计数",
+			content: `md0 : active raid1 sdb[1](F) sda[0]
+      1953511424 blocks super 1.2 [2/1] [U_]
+
+unused devices: <none>
+`,
+			want: []RAIDStatus{
+				{Device: "/dev/md0", Level: "1", State: "degraded", Disks: 2, ActiveDisks: 1, FailedDisks: 1, Health: "degraded", Activity: "idle"},
+			},
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

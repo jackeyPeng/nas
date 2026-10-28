@@ -641,7 +641,10 @@ func extractVGName(device string) string {
 	}
 	base := filepath.Base(device)
 	if base == device {
-		// 没有任何 "/" 分隔，device 本身就是末段（如 "/dev/vg_nas"）。
+		// 没有任何 "/" 分隔的裸名（如 "vg_nas"，不带任何路径前缀）才会走到
+		// 这里——`/dev/vg_nas` 本身带 "/"，base!=device，会落入下面的 LV
+		// 分支，经 parentBase=="dev" 排除后兜底落到 return base（结果同样
+		// 是 "vg_nas"，但路径不同）。
 		return base
 	}
 	// LV 直路径 /dev/vg_nas/data：VG 是父目录名，即 filepath.Dir 的 base。
@@ -996,11 +999,35 @@ func buildRAIDStatusFromMdstat(content string) []RAIDStatus {
 			}
 			ra.Activity = mdstatProgressKindToActivity(p.Kind)
 		}
-		// mdstat 没有独立的 "degraded 计数" 字段，FailedDisks 本身就是降级
-		// 判据；raid_disks 用 Disks（本阵列解析出的总成员数）顶替——mdstat
-		// 的成员 token 在阵列失活前不会消失（与 sysfs rd* 目录消失不同），
-		// Disks 即可代表阵列设计成员数。
-		ra.Health = raidHealthFromCounts(headerState, ra.FailedDisks, ra.Disks, ra.FailedDisks)
+		// consensus R2 回炉 Fix1（审查实锤）：mdstat 没有独立的 "degraded
+		// 计数" 字段，此前直接用 FailedDisks 顶替——但 (F) token 只在失败
+		// 成员还挂在阵列里时才存在，一旦被 `mdadm --remove` 摘除，头行成员
+		// token 直接消失（不会留下 (F) 标记），降级信息只剩 StatusLine
+		// （如 "[2/1] [U_]"）里的下划线。此时 FailedDisks=0，若只信
+		// FailedDisks 会把已降级的阵列误报成 normal。
+		// 修法：从 StatusLine 里补算 statusDegraded（下划线数）和
+		// designDisks（槛位总数，即设计成员数），与 FailedDisks/Disks 取
+		// max 后再传入 raidHealthFromCounts——两个来源谁先观察到降级就信谁，
+		// 不会重复计数（同一降级状态下两者通常相等）。StatusLine 为空（如
+		// 无状态行的纯文本）时 statusDegraded/designDisks 均为 0，max 退化
+		// 为原值，不影响既有行为。
+		statusDegraded := strings.Count(block.StatusLine, "_")
+		designDisks := 0
+		if block.StatusLine != "" {
+			designDisks = len(block.StatusLine) - 2 // 去掉首尾的 "[" "]"
+		}
+		degraded := ra.FailedDisks
+		if statusDegraded > degraded {
+			degraded = statusDegraded
+		}
+		raidDisks := ra.Disks
+		if designDisks > raidDisks {
+			raidDisks = designDisks
+		}
+		if degraded > 0 && ra.State != "resyncing" {
+			ra.State = "degraded"
+		}
+		ra.Health = raidHealthFromCounts(headerState, degraded, raidDisks, ra.FailedDisks)
 		arrays = append(arrays, ra)
 	}
 	return arrays

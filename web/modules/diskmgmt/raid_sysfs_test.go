@@ -273,6 +273,34 @@ func TestSysfsCleanStreakResult(t *testing.T) {
 	}
 }
 
+// TestSysfsSyncAction 验证 consensus R2 回炉 Fix2 的分流纯函数：vals 缺
+// sync_action 键时 hasKey=false，调用方应据此判定该轮 sysfs 不可用走
+// mdstat 回退，不能把缺键当成空串/idle。
+func TestSysfsSyncAction(t *testing.T) {
+	cases := []struct {
+		name       string
+		vals       map[string]string
+		wantAction string
+		wantHasKey bool
+	}{
+		{"正常idle", map[string]string{"sync_action": "idle"}, "idle", true},
+		{"正常recover", map[string]string{"sync_action": "recover"}, "recover", true},
+		{"缺键_单个文件读失败被静默跳过", map[string]string{"array_state": "clean"}, "", false},
+		{"空map", map[string]string{}, "", false},
+		{"nil map", nil, "", false},
+		{"键存在但值为空字符串_与缺键不同", map[string]string{"sync_action": ""}, "", true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			action, hasKey := sysfsSyncAction(c.vals)
+			if action != c.wantAction || hasKey != c.wantHasKey {
+				t.Errorf("sysfsSyncAction(%v) = (%q,%v), want (%q,%v)",
+					c.vals, action, hasKey, c.wantAction, c.wantHasKey)
+			}
+		})
+	}
+}
+
 // TestReshapeETAMinutes 覆盖正常估算与 speed=0/total<=done 的置空分支。
 func TestReshapeETAMinutes(t *testing.T) {
 	cases := []struct {
