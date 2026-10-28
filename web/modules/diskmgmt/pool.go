@@ -451,6 +451,46 @@ func firstLine(s string) string {
 	return strings.TrimSpace(strings.SplitN(s, "\n", 2)[0])
 }
 
+// findLivePoolByTypeDevice 在实时 overview.Pools 中查找与 (poolType, poolDevice)
+// 精确匹配的池（consensus P0-A1）。handlePoolDelete 必须用这个结果而不是直接信任
+// 表单值——客户端提交的 pool_type/pool_device 可能已经过期（池已被删/改）或被
+// 篡改成任意系统命令会直接执行的设备路径。纯函数，供单测；overview 由调用方
+// 传入（通常是 buildStorageOverview() 的实时结果）。
+func findLivePoolByTypeDevice(pools []PoolSummary, poolType, poolDevice string) (PoolSummary, bool) {
+	for _, p := range pools {
+		if p.Type == poolType && p.Device == poolDevice {
+			return p, true
+		}
+	}
+	return PoolSummary{}, false
+}
+
+// expandPartitions 展开整盘设备自身及其分区设备名（sda → sda, sda1..sda9；
+// nvme0n1 → nvme0n1, nvme0n1p1..p9）。用于 single 分支系统盘闸门——
+// isSystemDisk 内部已经做了同样的分区展开判断，这里是在破坏性命令之前
+// 显式枚举待检查设备列表，方便表驱动测试覆盖「分区是系统盘但整盘设备名不是」
+// 的情况（legacy MBR /dev/sda1 作为 /boot 场景）。纯函数。
+func expandPartitions(device string) []string {
+	devs := []string{device}
+	for i := 1; i <= 9; i++ {
+		devs = append(devs, fmt.Sprintf("%s%d", device, i))
+		devs = append(devs, fmt.Sprintf("%sp%d", device, i))
+	}
+	return devs
+}
+
+// anySystemDisk 对一组设备路径逐个调用 isSystemDisk，命中任意一个即返回 true
+// 及命中的设备（供 jsonError 文案使用）。纯粹的组合器，便于单测注入
+// isSystemDisk 的替身（见 pool_test.go 对应用例改走可注入版本）。
+func anySystemDisk(devices []string, checker func(string) bool) (string, bool) {
+	for _, d := range devices {
+		if checker(d) {
+			return d, true
+		}
+	}
+	return "", false
+}
+
 // handlePoolDelete destroys a storage pool and releases all its disks
 func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -479,6 +519,18 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// consensus P0-A1：服务端重解析 —— 不信任表单直接携带的 pool_type/pool_device，
+	// 必须在实时 overview 中精确匹配到同一个池，否则可能对已变化/不存在的池、
+	// 或被篡改的任意设备路径执行 wipefs/vgremove/mdadm --stop 等破坏性操作。
+	overview := buildStorageOverview()
+	livePool, found := findLivePoolByTypeDevice(overview.Pools, poolType, poolDevice)
+	if !found {
+		common.LogAuditRequest(r, "STORAGE", "删除存储池", fmt.Sprintf("type=%s device=%s name=%s rejected=池不存在或已变化", poolType, poolDevice, poolName), "rejected")
+		jsonError(w, "存储池不存在或状态已变化，请刷新后重试", http.StatusConflict)
+		return
+	}
+	_ = livePool
+
 	var steps []string
 	// 本次删池涉及的挂载点，收集后统一清理 folders.db 元数据（见 switch 之后）。
 	var deletedMountPoints []string
@@ -489,11 +541,30 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 
 	switch poolType {
 	case "lvm":
-		// 1. Find and unmount all LVs in this VG
+		// 1. Find VG name + member PVs BEFORE any destructive action
+		// （consensus P0-A1：系统盘闸门必须在 lvremove/vgremove/wipefs 之前判定）
 		vgName := extractVGName(poolDevice)
 		if vgName == "" {
 			vgName = "vg_nas"
 		}
+		// pvs 失败时不能静默当"无成员"处理——memberPVs 为空、后续破坏照常执行，
+		// 这些 PV 就永远查不出来了，磁盘留着 LVM2_member 签名复现幽灵盘（Minor finding）。
+		// 这里选择"安全拒绝删除"：pvs 报错时中止，不执行任何破坏性操作，让用户重试。
+		pvsOut, pvsErr := common.SudoOutput("/usr/sbin/pvs", "--noheadings", "-o", "pv_name", "-S", "vg_name="+vgName)
+		if pvsErr != nil {
+			jsonError(w, fmt.Sprintf("无法确认卷组 %s 的物理卷成员（pvs 执行失败），为安全起见拒绝删除: %s", vgName, pvsErr.Error()), http.StatusInternalServerError)
+			return
+		}
+		memberPVs := strings.Fields(pvsOut)
+		// consensus P0-A1：系统盘闸门 —— 对每个即将被 wipefs/pvremove 的成员 PV
+		// 做系统盘检查。任一命中立即放弃整个删除，不执行任何破坏动作。
+		if dev, hit := anySystemDisk(memberPVs, isSystemDisk); hit {
+			common.LogAuditRequest(r, "STORAGE", "删除存储池", fmt.Sprintf("type=%s device=%s name=%s rejected=成员盘%s是系统盘", poolType, poolDevice, poolName, dev), "rejected")
+			jsonError(w, fmt.Sprintf("拒绝删除：卷组成员 %s 是系统盘", dev), http.StatusConflict)
+			return
+		}
+
+		// 2. Find and unmount all LVs in this VG，然后 lvremove
 		lvsOut, _ := common.SudoOutput("/usr/sbin/lvs", "--noheadings", "-o", "lv_name,lv_path", vgName)
 		for _, line := range strings.Split(lvsOut, "\n") {
 			fields := strings.Fields(strings.TrimSpace(line))
@@ -518,25 +589,10 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 				steps = append(steps, "删除 LV "+lvPath)
 			}
 		}
-		// 2. Get member PVs BEFORE removing the VG（Fix 5a：照抄下面 RAID 分支
-		// "Get member disks BEFORE stopping" 的顺序意识 —— vgremove 之后再用
-		// `pvs -S vg_name=<已删VG>` 查成员必然查空，因为这些 PV 已经不再属于
-		// 任何 VG 了，导致 pvremove/wipefs 被跳过，磁盘留着 LVM2_member 签名
-		// 变成"幽灵盘"：既不在任何池里，也不会被判定为空闲盘。）
-		//
-		// pvs 失败时不能静默当"无成员"处理——memberPVs 为空、vgremove 照常执行，
-		// 这些 PV 就永远查不出来了，磁盘留着 LVM2_member 签名复现幽灵盘（Minor finding）。
-		// 这里选择"安全拒绝删除"：pvs 报错时中止，不执行任何破坏性操作，让用户重试。
-		pvsOut, pvsErr := common.SudoOutput("/usr/sbin/pvs", "--noheadings", "-o", "pv_name", "-S", "vg_name="+vgName)
-		if pvsErr != nil {
-			jsonError(w, fmt.Sprintf("无法确认卷组 %s 的物理卷成员（pvs 执行失败），为安全起见拒绝删除: %s", vgName, pvsErr.Error()), http.StatusInternalServerError)
-			return
-		}
-		memberPVs := strings.Fields(pvsOut)
-		// 3. Remove VG
+		// 3. Remove VG（成员列表已在闸门前存下，不再重新查询）
 		common.SudoExec("/usr/sbin/vgremove", "-f", vgName)
 		steps = append(steps, "删除 VG "+vgName)
-		// 4. Remove PVs — 用 vgremove 之前存下的成员列表，不再重新查询
+		// 4. Remove PVs — 用闸门前存下的成员列表
 		for _, pvName := range memberPVs {
 			if strings.HasPrefix(pvName, "/dev/") {
 				common.SudoExec("/usr/sbin/pvremove", "-f", pvName)
@@ -546,7 +602,17 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 		}
 
 	case "raid1", "raid0", "raid5", "raid6":
-		// 1. Unmount
+		// 1. Get member disks BEFORE any destructive action
+		// （consensus P0-A1：系统盘闸门必须在 umount/mdadm --stop/--zero-superblock 之前判定）
+		detailOut, _ := common.SudoOutput("/usr/sbin/mdadm", "--detail", poolDevice)
+		memberDisks := parseMdMemberDisks(detailOut)
+		if dev, hit := anySystemDisk(memberDisks, isSystemDisk); hit {
+			common.LogAuditRequest(r, "STORAGE", "删除存储池", fmt.Sprintf("type=%s device=%s name=%s rejected=成员盘%s是系统盘", poolType, poolDevice, poolName, dev), "rejected")
+			jsonError(w, fmt.Sprintf("拒绝删除：阵列成员 %s 是系统盘", dev), http.StatusConflict)
+			return
+		}
+
+		// 2. Unmount
 		mntOut, _ := common.ExecOutput("findmnt", "-n", "-o", "TARGET", "--source", poolDevice)
 		mountPoint := firstLine(mntOut)
 		if mountPoint != "" {
@@ -554,9 +620,6 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 			steps = append(steps, "卸载 "+mountPoint)
 			deletedMountPoints = append(deletedMountPoints, mountPoint)
 		}
-		// 2. Get member disks BEFORE stopping the array
-		detailOut, _ := common.SudoOutput("/usr/sbin/mdadm", "--detail", poolDevice)
-		memberDisks := parseMdMemberDisks(detailOut)
 		// 采集 UUID（A3），必须在 mdadm --stop 之前——阵列停止后设备节点就消失了。
 		if uuidOut, err := common.SudoOutput("blkid", "-s", "UUID", "-o", "value", poolDevice); err == nil {
 			if uuid := strings.TrimSpace(uuidOut); uuid != "" {
@@ -574,6 +637,13 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 		}
 
 	case "single":
+		// consensus P0-A1：系统盘闸门 —— single 分支检查 poolDevice 本身及其
+		// 展开出的分区，在 umount/wipefs 之前放弃整个删除。
+		if dev, hit := anySystemDisk(expandPartitions(poolDevice), isSystemDisk); hit {
+			common.LogAuditRequest(r, "STORAGE", "删除存储池", fmt.Sprintf("type=%s device=%s name=%s rejected=%s是系统盘", poolType, poolDevice, poolName, dev), "rejected")
+			jsonError(w, fmt.Sprintf("拒绝删除：%s 是系统盘", dev), http.StatusConflict)
+			return
+		}
 		// Independent disk: unmount + wipe
 		mntOut, _ := common.ExecOutput("findmnt", "-n", "-o", "TARGET", "--source", poolDevice)
 		mountPoint := firstLine(mntOut)
@@ -581,6 +651,16 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 			common.SudoExec("umount", "-l", mountPoint)
 			steps = append(steps, "卸载 "+mountPoint)
 			deletedMountPoints = append(deletedMountPoints, mountPoint)
+		}
+		// consensus P0-A1：umount 之后、wipefs 之前，确认该设备已无任何挂载
+		// （findmnt 输出为空）——umount -l 是 lazy umount，设备可能仍被某些
+		// 挂载命名空间/bind mount 引用，此时 wipefs 会破坏仍在使用的文件系统。
+		if remaining := strings.TrimSpace(func() string {
+			out, _ := common.ExecOutput("findmnt", "-n", "-o", "TARGET", "--source", poolDevice)
+			return out
+		}()); remaining != "" {
+			jsonError(w, fmt.Sprintf("拒绝删除：%s 仍有挂载点 %s 未卸载", poolDevice, remaining), http.StatusConflict)
+			return
 		}
 		// 采集 UUID（A3），必须在 wipefs 之前——wipefs 一跑超级块就被抹了。
 		if uuidOut, err := common.SudoOutput("blkid", "-s", "UUID", "-o", "value", poolDevice); err == nil {

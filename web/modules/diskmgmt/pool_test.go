@@ -1,6 +1,12 @@
 package diskmgmt
 
-import "testing"
+import (
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
+	"testing"
+)
 
 // Fix 5b：删 LVM/RAID/single 池时，fstab 清理只删属于被删池的行，separate 模式
 // 多池机器删一个池不应抹掉其他保留池的开机挂载。
@@ -124,5 +130,169 @@ func TestFirstLine(t *testing.T) {
 		if got := firstLine(c.in); got != c.want {
 			t.Errorf("firstLine(%q) = %q, want %q", c.in, got, c.want)
 		}
+	}
+}
+
+// TestFindLivePoolByTypeDevice 验证 consensus P0-A1 的服务端重解析匹配逻辑：
+// 必须 (Type, Device) 同时精确匹配实时 overview 中的某个池，单独匹配 Type 或
+// Device 都不算命中——防止客户端提交过期/篡改的 pool_device 冒充其他池。
+func TestFindLivePoolByTypeDevice(t *testing.T) {
+	pools := []PoolSummary{
+		{Type: "lvm", Device: "/dev/vg_nas", Name: "vg_nas"},
+		{Type: "raid1", Device: "/dev/md0", Name: "md0"},
+	}
+
+	t.Run("精确匹配命中", func(t *testing.T) {
+		got, ok := findLivePoolByTypeDevice(pools, "lvm", "/dev/vg_nas")
+		if !ok || got.Device != "/dev/vg_nas" {
+			t.Errorf("got %+v, ok=%v, want vg_nas pool matched", got, ok)
+		}
+	})
+
+	t.Run("设备存在但type不符_不命中", func(t *testing.T) {
+		_, ok := findLivePoolByTypeDevice(pools, "raid5", "/dev/vg_nas")
+		if ok {
+			t.Error("type 不符不应命中")
+		}
+	})
+
+	t.Run("type存在但device不符_不命中", func(t *testing.T) {
+		_, ok := findLivePoolByTypeDevice(pools, "lvm", "/dev/vg_other")
+		if ok {
+			t.Error("device 不符不应命中（池已变化/被篡改）")
+		}
+	})
+
+	t.Run("池列表为空_不命中", func(t *testing.T) {
+		_, ok := findLivePoolByTypeDevice(nil, "lvm", "/dev/vg_nas")
+		if ok {
+			t.Error("空池列表不应命中任何请求")
+		}
+	})
+
+	t.Run("设备已不存在_池已被删除", func(t *testing.T) {
+		_, ok := findLivePoolByTypeDevice(pools, "raid1", "/dev/md1")
+		if ok {
+			t.Error("已删除/不存在的池不应命中")
+		}
+	})
+}
+
+// TestExpandPartitions 验证 single 分支系统盘闸门展开整盘+分区设备名的覆盖面：
+// 标准命名（sda→sda1..9）与 NVMe 命名（nvme0n1→nvme0n1p1..9）都要能枚举到。
+func TestExpandPartitions(t *testing.T) {
+	got := expandPartitions("/dev/sda")
+	wantContains := []string{"/dev/sda", "/dev/sda1", "/dev/sda9"}
+	for _, w := range wantContains {
+		found := false
+		for _, g := range got {
+			if g == w {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expandPartitions(/dev/sda) missing %q, got %v", w, got)
+		}
+	}
+
+	got2 := expandPartitions("/dev/nvme0n1")
+	wantContains2 := []string{"/dev/nvme0n1", "/dev/nvme0n1p1", "/dev/nvme0n1p9"}
+	for _, w := range wantContains2 {
+		found := false
+		for _, g := range got2 {
+			if g == w {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expandPartitions(/dev/nvme0n1) missing %q, got %v", w, got2)
+		}
+	}
+}
+
+// TestAnySystemDisk 验证组合器正确短路并返回命中的设备名，供 handlePoolDelete
+// 的闸门分支单测复用（注入假的 isSystemDisk，不触碰真实系统命令）。
+func TestAnySystemDisk(t *testing.T) {
+	isSys := func(d string) bool { return d == "/dev/sda" || d == "/dev/sda1" }
+
+	t.Run("命中整盘", func(t *testing.T) {
+		dev, hit := anySystemDisk([]string{"/dev/sdb", "/dev/sda"}, isSys)
+		if !hit || dev != "/dev/sda" {
+			t.Errorf("got dev=%q hit=%v, want /dev/sda,true", dev, hit)
+		}
+	})
+
+	t.Run("命中分区", func(t *testing.T) {
+		dev, hit := anySystemDisk([]string{"/dev/sda1"}, isSys)
+		if !hit || dev != "/dev/sda1" {
+			t.Errorf("got dev=%q hit=%v, want /dev/sda1,true", dev, hit)
+		}
+	})
+
+	t.Run("无命中", func(t *testing.T) {
+		_, hit := anySystemDisk([]string{"/dev/sdb", "/dev/sdc"}, isSys)
+		if hit {
+			t.Error("不应命中任何系统盘")
+		}
+	})
+
+	t.Run("空列表", func(t *testing.T) {
+		_, hit := anySystemDisk(nil, isSys)
+		if hit {
+			t.Error("空列表不应命中")
+		}
+	})
+}
+
+// TestHandlePoolDeleteRejectsUnmatchedLivePool 验证 consensus P0-A1 的服务端
+// 重解析闸门：测试环境没有真实 mdadm/lvm，buildStorageOverview() 的实时池列表
+// 必然为空，任何表单提交的 (pool_type, pool_device) 都无法匹配到实时池，
+// handlePoolDelete 必须在任何破坏性命令之前以 409 拒绝，不能走到 switch 分支。
+func TestHandlePoolDeleteRejectsUnmatchedLivePool(t *testing.T) {
+	form := url.Values{
+		"pool_type":    {"lvm"},
+		"pool_device":  {"/dev/vg_nas"},
+		"pool_name":    {"vg_nas"},
+		"confirm_name": {"vg_nas"},
+		"confirm":      {"yes"},
+	}
+	r := httptest.NewRequest(http.MethodPost, "/api/disk/pool/delete", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+
+	handlePoolDelete(w, r)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d (409)", w.Code, http.StatusConflict)
+	}
+	ct := w.Header().Get("Content-Type")
+	if ct != "application/json; charset=utf-8" {
+		t.Errorf("Content-Type = %q, want application/json; charset=utf-8", ct)
+	}
+	if !strings.Contains(w.Body.String(), "存储池不存在或状态已变化") {
+		t.Errorf("body = %q, want to contain 池不存在/状态已变化 文案", w.Body.String())
+	}
+}
+
+// TestHandlePoolDeleteRejectsConfirmNameMismatch 回归验证：确认名检查仍先于
+// 重解析闸门执行（表单层校验失败不应触发任何 overview 构建开销）。
+func TestHandlePoolDeleteRejectsConfirmNameMismatch(t *testing.T) {
+	form := url.Values{
+		"pool_type":    {"lvm"},
+		"pool_device":  {"/dev/vg_nas"},
+		"pool_name":    {"vg_nas"},
+		"confirm_name": {"wrong"},
+		"confirm":      {"yes"},
+	}
+	r := httptest.NewRequest(http.MethodPost, "/api/disk/pool/delete", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+
+	handlePoolDelete(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d (400)", w.Code, http.StatusBadRequest)
 	}
 }
