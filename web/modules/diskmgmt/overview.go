@@ -123,6 +123,10 @@ type RAIDStatus struct {
 	Disks       int    `json:"disks"`
 	ActiveDisks int    `json:"active_disks"`
 	SpareDisks  int    `json:"spare_disks"`
+	// FailedDisks 统计 (F) 失败成员数量（consensus P0-D：此前被错误计入
+	// SpareDisks，导致前端看到的降级阵列"spare 盘数"虚高、失败盘数无处体现）。
+	// 新增字段，前端未引用 spare_disks 原值做展示逻辑，向后兼容追加不改语义。
+	FailedDisks int    `json:"failed_disks"`
 	SyncPercent string `json:"sync_percent,omitempty"`
 }
 
@@ -836,42 +840,49 @@ func calcPercent(totalGB, usedGB float64) string {
 }
 
 // getRAIDStatus reads mdadm RAID arrays
+// consensus P0-D：改走 parseMdstatBlocks 统一块解析，不再临时拿字符串下标猜。
+// (F) 失败成员计入 FailedDisks（此前被错误并入 SpareDisks）；(S) 真 spare 计入
+// SpareDisks；其余带 [n] 槛位 token 计入 ActiveDisks。FailedDisks>0 时 State
+// 置 "degraded"。SyncPercent/resyncing 只依据属于本阵列块的进度行，不会被其他
+// 阵列的进度行污染（parseMdstatBlocks 按块隔离）。
 func getRAIDStatus() []RAIDStatus {
 	var arrays []RAIDStatus
 	out, err := common.ExecOutput("ls", "/dev/md*")
 	if err != nil {
 		return arrays
 	}
-	mdstat, _ := os.ReadFile("/proc/mdstat")
+	mdstatBytes, _ := os.ReadFile("/proc/mdstat")
+	blocks := parseMdstatBlocks(string(mdstatBytes))
 	for _, dev := range strings.Fields(out) {
 		if !regexp_match(`^/dev/md\d+$`, dev) {
 			continue
 		}
 		ra := RAIDStatus{Device: dev}
 		mdName := strings.TrimPrefix(dev, "/dev/")
-		for _, line := range strings.Split(string(mdstat), "\n") {
-			if strings.HasPrefix(line, mdName) {
-				fields := strings.Fields(line)
-				if len(fields) >= 4 {
-					ra.State = fields[2]
-					ra.Level = extractRAIDLevel(line)
-				}
-				for _, f := range fields[3:] {
-					if strings.Contains(f, "[") {
-						ra.Disks++
-						if strings.Contains(f, "(F)") {
-							ra.SpareDisks++
-						} else if !strings.Contains(f, "(S)") {
-							ra.ActiveDisks++
-						}
-					}
+		block, found := findBlockByMdName(blocks, mdName)
+		if found {
+			if len(block.HeaderFields) >= 3 {
+				ra.State = block.HeaderFields[2]
+				ra.Level = extractRAIDLevel(strings.Join(block.HeaderFields, " "))
+			}
+			for _, tok := range block.MemberTokens {
+				ra.Disks++
+				switch memberFlag(tok) {
+				case "F":
+					ra.FailedDisks++
+				case "S":
+					ra.SpareDisks++
+				default:
+					ra.ActiveDisks++
 				}
 			}
-			if strings.Contains(line, "recovery") || strings.Contains(line, "resync") {
-				if idx := strings.Index(line, "]"); idx > 0 {
-					pct := extractPercent(line[:idx])
-					if pct != "" {
-						ra.SyncPercent = pct
+			if ra.FailedDisks > 0 {
+				ra.State = "degraded"
+			}
+			for _, p := range block.Progress {
+				if p.Kind == "recovery" || p.Kind == "resync" {
+					if p.Percent != "" {
+						ra.SyncPercent = p.Percent
 						ra.State = "resyncing"
 					}
 				}
@@ -897,17 +908,6 @@ func extractRAIDLevel(line string) string {
 		return "6"
 	}
 	return "unknown"
-}
-
-var percentRe = regexp.MustCompile(`(\d+\.?\d*)%`)
-
-// extractPercent gets percentage from [====....] 12.5%
-func extractPercent(s string) string {
-	matches := percentRe.FindStringSubmatch(s)
-	if len(matches) >= 2 {
-		return matches[1] + "%"
-	}
-	return ""
 }
 
 // regexp_match helper
