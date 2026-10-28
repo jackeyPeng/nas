@@ -104,3 +104,112 @@ func TestBuildStorageOverviewConcurrentNoRace(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+// TestBuildRAIDStatusFromMdstat 验证 getRAIDStatus 枚举源从 `ls /dev/md*`
+// 改为直接遍历 parseMdstatBlocks 的块之后，字段填充语义逐字节不变（真机实锤：
+// ls 走 exec.Command 直调无 shell，glob 字面量恒报错，此前 getRAIDStatus 恒
+// 返回空切片，导致下游 raidMap 恒空、RAID 池 healthy 恒 true）。
+func TestBuildRAIDStatusFromMdstat(t *testing.T) {
+	cases := []struct {
+		name    string
+		content string
+		want    []RAIDStatus
+	}{
+		{
+			name: "干净raid1_无进度行",
+			content: `Personalities : [raid1]
+md0 : active raid1 sdb[1] sda[0]
+      1953511424 blocks super 1.2 [2/2] [UU]
+
+unused devices: <none>
+`,
+			want: []RAIDStatus{
+				{Device: "/dev/md0", Level: "1", State: "active", Disks: 2, ActiveDisks: 2},
+			},
+		},
+		{
+			name: "降级阵列_含F失败成员",
+			content: `md0 : active raid1 sdb[1](F) sda[0]
+      1953511424 blocks super 1.2 [2/1] [U_]
+
+unused devices: <none>
+`,
+			want: []RAIDStatus{
+				{Device: "/dev/md0", Level: "1", State: "degraded", Disks: 2, ActiveDisks: 1, FailedDisks: 1},
+			},
+		},
+		{
+			name: "含S真spare成员",
+			content: `md0 : active raid1 sdc[2](S) sdb[1] sda[0]
+      1953511424 blocks super 1.2 [2/2] [UU]
+
+unused devices: <none>
+`,
+			want: []RAIDStatus{
+				{Device: "/dev/md0", Level: "1", State: "active", Disks: 3, ActiveDisks: 2, SpareDisks: 1},
+			},
+		},
+		{
+			name: "resync中_进度行在blocks行之后",
+			content: `md0 : active raid1 sdb[1] sda[0]
+      1953511424 blocks super 1.2 [2/2] [UU]
+      [=>...................]  resync = 15.2% (298560640/1953382464) finish=17.0min speed=162144K/sec
+
+unused devices: <none>
+`,
+			want: []RAIDStatus{
+				{Device: "/dev/md0", Level: "1", State: "resyncing", Disks: 2, ActiveDisks: 2, SyncPercent: "15.2%"},
+			},
+		},
+		{
+			name: "多数组并存_各自独立互不污染",
+			content: `md1 : active raid1 sdd[1] sdc[0]
+      976630464 blocks super 1.2 [2/2] [UU]
+      [=>...................]  resync = 42.0% (410000000/976630464) finish=5.0min speed=90000K/sec
+
+md0 : active raid1 sdb[1] sda[0]
+      1953511424 blocks super 1.2 [2/2] [UU]
+
+unused devices: <none>
+`,
+			want: []RAIDStatus{
+				{Device: "/dev/md1", Level: "1", State: "resyncing", Disks: 2, ActiveDisks: 2, SyncPercent: "42.0%"},
+				{Device: "/dev/md0", Level: "1", State: "active", Disks: 2, ActiveDisks: 2},
+			},
+		},
+		{
+			name:    "空输入返回空切片不panic",
+			content: "",
+			want:    nil,
+		},
+		{
+			name:    "只有Personalities和unused devices尾行_返回空切片不panic",
+			content: "Personalities : [raid1]\nunused devices: <none>\n",
+			want:    nil,
+		},
+		{
+			name: "md126多位数命名_正常识别",
+			content: `md126 : active raid1 sdb[1] sda[0]
+      1953511424 blocks super 1.2 [2/2] [UU]
+
+unused devices: <none>
+`,
+			want: []RAIDStatus{
+				{Device: "/dev/md126", Level: "1", State: "active", Disks: 2, ActiveDisks: 2},
+			},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := buildRAIDStatusFromMdstat(c.content)
+			if len(got) != len(c.want) {
+				t.Fatalf("got %d entries, want %d: %+v", len(got), len(c.want), got)
+			}
+			for i := range got {
+				if got[i] != c.want[i] {
+					t.Errorf("entry %d = %+v, want %+v", i, got[i], c.want[i])
+				}
+			}
+		})
+	}
+}

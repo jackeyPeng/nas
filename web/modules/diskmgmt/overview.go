@@ -845,46 +845,55 @@ func calcPercent(totalGB, usedGB float64) string {
 // SpareDisks；其余带 [n] 槛位 token 计入 ActiveDisks。FailedDisks>0 时 State
 // 置 "degraded"。SyncPercent/resyncing 只依据属于本阵列块的进度行，不会被其他
 // 阵列的进度行污染（parseMdstatBlocks 按块隔离）。
+//
+// 枚举来源注记：此前先 `ls /dev/md*` 拿设备节点列表再逐个查 mdstat 块——
+// common.ExecOutput 是 exec.Command 直调，没有 shell，"/dev/md*" 字面量不会
+// 被展开，ls 必定报错(rc=2)，导致本函数恒返回空切片，下游 RAID 健康监控全盲
+// （真机实锤：md0 resync 57% 时面板仍报 healthy=true）。
+// 现改为直接遍历 parseMdstatBlocks 的块：mdstat 有块即有状态可报，不再依赖
+// /dev 下设备节点是否存在——这会多纳入 inactive/未挂载的阵列，但更正确
+// （阵列在 mdstat 出现即应可观测）；下游 raidMap 按 Device 字符串匹配挂载
+// 来源，多出的条目不会被匹配到，不影响现有行为。
 func getRAIDStatus() []RAIDStatus {
-	var arrays []RAIDStatus
-	out, err := common.ExecOutput("ls", "/dev/md*")
-	if err != nil {
-		return arrays
-	}
 	mdstatBytes, _ := os.ReadFile("/proc/mdstat")
-	blocks := parseMdstatBlocks(string(mdstatBytes))
-	for _, dev := range strings.Fields(out) {
-		if !regexp_match(`^/dev/md\d+$`, dev) {
+	return buildRAIDStatusFromMdstat(string(mdstatBytes))
+}
+
+// buildRAIDStatusFromMdstat 纯函数：把 /proc/mdstat 全文解析为 []RAIDStatus。
+// 从 getRAIDStatus 抽出，供表驱动单测直接注入 fixture，不发起任何系统调用。
+// 字段填充语义与此前基于 ls 枚举时逐字节一致，只是枚举来源换成了
+// parseMdstatBlocks 产出的块本身（MdName 匹配 ^md\d+$ 的块各出一条）。
+func buildRAIDStatusFromMdstat(content string) []RAIDStatus {
+	var arrays []RAIDStatus
+	blocks := parseMdstatBlocks(content)
+	for _, block := range blocks {
+		if !mdNameRe.MatchString(block.MdName) {
 			continue
 		}
-		ra := RAIDStatus{Device: dev}
-		mdName := strings.TrimPrefix(dev, "/dev/")
-		block, found := findBlockByMdName(blocks, mdName)
-		if found {
-			if len(block.HeaderFields) >= 3 {
-				ra.State = block.HeaderFields[2]
-				ra.Level = extractRAIDLevel(strings.Join(block.HeaderFields, " "))
+		ra := RAIDStatus{Device: "/dev/" + block.MdName}
+		if len(block.HeaderFields) >= 3 {
+			ra.State = block.HeaderFields[2]
+			ra.Level = extractRAIDLevel(strings.Join(block.HeaderFields, " "))
+		}
+		for _, tok := range block.MemberTokens {
+			ra.Disks++
+			switch memberFlag(tok) {
+			case "F":
+				ra.FailedDisks++
+			case "S":
+				ra.SpareDisks++
+			default:
+				ra.ActiveDisks++
 			}
-			for _, tok := range block.MemberTokens {
-				ra.Disks++
-				switch memberFlag(tok) {
-				case "F":
-					ra.FailedDisks++
-				case "S":
-					ra.SpareDisks++
-				default:
-					ra.ActiveDisks++
-				}
-			}
-			if ra.FailedDisks > 0 {
-				ra.State = "degraded"
-			}
-			for _, p := range block.Progress {
-				if p.Kind == "recovery" || p.Kind == "resync" {
-					if p.Percent != "" {
-						ra.SyncPercent = p.Percent
-						ra.State = "resyncing"
-					}
+		}
+		if ra.FailedDisks > 0 {
+			ra.State = "degraded"
+		}
+		for _, p := range block.Progress {
+			if p.Kind == "recovery" || p.Kind == "resync" {
+				if p.Percent != "" {
+					ra.SyncPercent = p.Percent
+					ra.State = "resyncing"
 				}
 			}
 		}
