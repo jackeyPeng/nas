@@ -551,3 +551,257 @@ func TestResetRAIDConfig_WriteFailed(t *testing.T) {
 // 不实际调用——会触发真实 sudo，违反约束，这里只测 resetRAIDConfig/
 // persistRAIDConfig 接受 nil 不崩溃的分支由上面各用例间接覆盖：均显式传
 // 非 nil 的 stub runner，nil 分支留给生产路径，不在单测里触发真实命令。
+
+// ═══════════════════════════════════════════════════
+// E8：删池清理 mdadm.conf 被删阵列 ARRAY 行
+// ═══════════════════════════════════════════════════
+
+const testUUID2 = "aaaa0000:bbbb1111:cccc2222:dddd3333"
+
+func TestRemoveArrayLineByUUID(t *testing.T) {
+	cases := []struct {
+		name       string
+		conf       string
+		targetUUID string
+		want       string
+	}{
+		{
+			name: "多ARRAY删中间保留其余",
+			conf: "HOMEHOST <system>\n" +
+				"ARRAY /dev/md0 metadata=1.2 name=nas:0 UUID=" + testUUID + "\n" +
+				"ARRAY /dev/md1 metadata=1.2 name=nas:1 UUID=" + testUUID2 + "\n" +
+				"MAILADDR root\n",
+			targetUUID: testUUID,
+			want: "HOMEHOST <system>\n" +
+				"ARRAY /dev/md1 metadata=1.2 name=nas:1 UUID=" + testUUID2 + "\n" +
+				"MAILADDR root\n",
+		},
+		{
+			name:       "删唯一ARRAY行",
+			conf:       "ARRAY /dev/md0 metadata=1.2 UUID=" + testUUID + "\n",
+			targetUUID: testUUID,
+			want:       "",
+		},
+		{
+			name: "无命中原样返回",
+			conf: "HOMEHOST <system>\n" +
+				"ARRAY /dev/md0 metadata=1.2 UUID=" + testUUID2 + "\n",
+			targetUUID: testUUID,
+			want: "HOMEHOST <system>\n" +
+				"ARRAY /dev/md0 metadata=1.2 UUID=" + testUUID2 + "\n",
+		},
+		{
+			name:       "空conf原样返回",
+			conf:       "",
+			targetUUID: testUUID,
+			want:       "",
+		},
+		{
+			name:       "targetUUID为空原样返回(CRLF归一化)",
+			conf:       "HOMEHOST <system>\r\nARRAY /dev/md0 metadata=1.2 UUID=" + testUUID + "\r\n",
+			targetUUID: "",
+			want:       "HOMEHOST <system>\nARRAY /dev/md0 metadata=1.2 UUID=" + testUUID + "\n",
+		},
+		{
+			name: "CRLF容错删命中行",
+			conf: "HOMEHOST <system>\r\n" +
+				"ARRAY /dev/md0 metadata=1.2 UUID=" + testUUID + "\r\n" +
+				"MAILADDR root\r\n",
+			targetUUID: testUUID,
+			want:       "HOMEHOST <system>\nMAILADDR root\n",
+		},
+		{
+			name: "大小写不敏感UUID匹配",
+			conf: "ARRAY /dev/md0 metadata=1.2 UUID=" + strings.ToUpper(testUUID) + "\n" +
+				"MAILADDR root\n",
+			targetUUID: testUUID,
+			want:       "MAILADDR root\n",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := removeArrayLineByUUID(c.conf, c.targetUUID)
+			if got != c.want {
+				t.Errorf("removeArrayLineByUUID(%q, %q) = %q, want %q", c.conf, c.targetUUID, got, c.want)
+			}
+		})
+	}
+}
+
+func TestRaidArrayUUID(t *testing.T) {
+	t.Run("scan成功取到UUID", func(t *testing.T) {
+		r := &stubRunner{
+			scan: func(args ...string) (string, error) { return testScanLine, nil },
+		}
+		uuid, err := raidArrayUUID(r.run, "/dev/md0")
+		if err != nil {
+			t.Fatalf("raidArrayUUID() error = %v, want nil", err)
+		}
+		if uuid != testUUID {
+			t.Errorf("uuid = %q, want %q", uuid, testUUID)
+		}
+	})
+
+	t.Run("scan失败返回error", func(t *testing.T) {
+		r := &stubRunner{
+			scan: func(args ...string) (string, error) { return "", errors.New("mdadm: no such device") },
+		}
+		_, err := raidArrayUUID(r.run, "/dev/md0")
+		if err == nil {
+			t.Fatal("raidArrayUUID() error = nil, want non-nil（scan 失败必须报错）")
+		}
+	})
+
+	t.Run("scan输出无UUID行返回error", func(t *testing.T) {
+		r := &stubRunner{
+			scan: func(args ...string) (string, error) { return "", nil },
+		}
+		_, err := raidArrayUUID(r.run, "/dev/md0")
+		if err == nil {
+			t.Fatal("raidArrayUUID() error = nil, want non-nil（输出为空必须报错）")
+		}
+	})
+}
+
+func TestRemoveRAIDConfigByUUID(t *testing.T) {
+	t.Run("scan失败路径对应的cat失败跳过", func(t *testing.T) {
+		orig := raidConfWriter
+		wrote := false
+		raidConfWriter = func(path, content string) error {
+			wrote = true
+			return nil
+		}
+		t.Cleanup(func() { raidConfWriter = orig })
+
+		r := &stubRunner{
+			cat: func(args ...string) (string, error) { return "", errors.New("no such file") },
+		}
+		warning, err := removeRAIDConfigByUUID(r.run, testUUID)
+		if err != nil {
+			t.Fatalf("removeRAIDConfigByUUID() error = %v, want nil（文件不存在不是失败）", err)
+		}
+		if warning != "" {
+			t.Errorf("warning = %q, want empty", warning)
+		}
+		if wrote {
+			t.Error("cat 失败时不应尝试落盘")
+		}
+	})
+
+	t.Run("无命中跳过落盘", func(t *testing.T) {
+		orig := raidConfWriter
+		wrote := false
+		raidConfWriter = func(path, content string) error {
+			wrote = true
+			return nil
+		}
+		t.Cleanup(func() { raidConfWriter = orig })
+
+		r := &stubRunner{
+			cat: func(args ...string) (string, error) {
+				return "HOMEHOST <system>\nARRAY /dev/md0 metadata=1.2 UUID=" + testUUID2 + "\n", nil
+			},
+		}
+		warning, err := removeRAIDConfigByUUID(r.run, testUUID)
+		if err != nil {
+			t.Fatalf("removeRAIDConfigByUUID() error = %v, want nil", err)
+		}
+		if warning != "" {
+			t.Errorf("warning = %q, want empty", warning)
+		}
+		if wrote {
+			t.Error("无命中（目标 UUID 不在 conf 中）时不应落盘")
+		}
+	})
+
+	t.Run("删除成功写后验证", func(t *testing.T) {
+		orig := raidConfWriter
+		var written string
+		raidConfWriter = func(path, content string) error {
+			written = content
+			return nil
+		}
+		t.Cleanup(func() { raidConfWriter = orig })
+
+		catCallCount := 0
+		r := &stubRunner{
+			cat: func(args ...string) (string, error) {
+				catCallCount++
+				if catCallCount == 1 {
+					return "HOMEHOST <system>\n" +
+						"ARRAY /dev/md0 metadata=1.2 UUID=" + testUUID + "\n" +
+						"ARRAY /dev/md1 metadata=1.2 UUID=" + testUUID2 + "\n" +
+						"MAILADDR root\n", nil
+				}
+				return written, nil
+			},
+			initram: func(args ...string) (string, error) { return "", nil },
+		}
+		warning, err := removeRAIDConfigByUUID(r.run, testUUID)
+		if err != nil {
+			t.Fatalf("removeRAIDConfigByUUID() error = %v, want nil", err)
+		}
+		if warning != "" {
+			t.Errorf("warning = %q, want empty", warning)
+		}
+		if strings.Contains(written, testUUID) {
+			t.Errorf("落盘内容仍含已删 UUID=%s 的 ARRAY 行: %q", testUUID, written)
+		}
+		if !strings.Contains(written, testUUID2) {
+			t.Errorf("落盘内容应保留其他阵列 UUID=%s 的 ARRAY 行: %q", testUUID2, written)
+		}
+		if !strings.Contains(written, "HOMEHOST") || !strings.Contains(written, "MAILADDR") {
+			t.Errorf("落盘内容应保留 HOMEHOST/MAILADDR: %q", written)
+		}
+	})
+
+	t.Run("initramfs失败返回warning", func(t *testing.T) {
+		orig := raidConfWriter
+		var written string
+		raidConfWriter = func(path, content string) error {
+			written = content
+			return nil
+		}
+		t.Cleanup(func() { raidConfWriter = orig })
+
+		catCallCount := 0
+		r := &stubRunner{
+			cat: func(args ...string) (string, error) {
+				catCallCount++
+				if catCallCount == 1 {
+					return "ARRAY /dev/md0 metadata=1.2 UUID=" + testUUID + "\n", nil
+				}
+				return written, nil
+			},
+			initram: func(args ...string) (string, error) {
+				return "", errors.New("exit status 1")
+			},
+		}
+		warning, err := removeRAIDConfigByUUID(r.run, testUUID)
+		if err != nil {
+			t.Fatalf("removeRAIDConfigByUUID() error = %v, want nil（initramfs 失败不应 fatal）", err)
+		}
+		if warning == "" {
+			t.Error("warning 为空，want 非空（initramfs 失败必须带出 warning）")
+		}
+	})
+
+	t.Run("落盘失败返回error", func(t *testing.T) {
+		orig := raidConfWriter
+		raidConfWriter = func(path, content string) error { return errors.New("disk full") }
+		t.Cleanup(func() { raidConfWriter = orig })
+
+		r := &stubRunner{
+			cat: func(args ...string) (string, error) {
+				return "ARRAY /dev/md0 metadata=1.2 UUID=" + testUUID + "\n", nil
+			},
+		}
+		warning, err := removeRAIDConfigByUUID(r.run, testUUID)
+		if err == nil {
+			t.Fatal("removeRAIDConfigByUUID() error = nil, want non-nil（落盘失败必须报错）")
+		}
+		if warning != "" {
+			t.Errorf("warning = %q, want empty", warning)
+		}
+	})
+}

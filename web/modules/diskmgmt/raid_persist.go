@@ -307,3 +307,112 @@ func resetRAIDConfig(runner cmdRunner) (warning string, err error) {
 	}
 	return "", nil
 }
+
+// ═══════════════════════════════════════════════════
+// E8：删池清理 mdadm.conf 被删阵列的 ARRAY 行
+// ═══════════════════════════════════════════════════
+//
+// 真机实锤（2026-10-29）：RAID1 删池成功后 mdadm.conf 仍留被删阵列的
+// ARRAY 行；重建新池后 conf 里两条同指 /dev/md0 的 ARRAY 行（旧 UUID+新
+// UUID）共存，initramfs 同带——重启装配命名冲突风险 + 违反配置与内核对账
+// 原则。根因：handlePoolDelete 的 raid 分支从不清理 mdadm.conf（E7 只接
+// 了建池与出厂重置两条路径，删池这条漏接了）。
+//
+// removeArrayLineByUUID 只删目标 UUID 那一条 ARRAY 行（不像 resetRAIDConfig
+// 那样删全部 ARRAY 行——删池时系统上可能还有其他阵列，不能一并清掉）。
+
+// removeArrayLineByUUID 从 mdadm.conf 内容中删除 UUID 与 targetUUID 匹配
+// 的那一条 ARRAY 行，其余行（包括其他阵列的 ARRAY 行、HOMEHOST/MAILADDR/
+// 注释/空行）保序保留。大小写不敏感、CRLF 容错。targetUUID 为空或在 conf
+// 中无命中 → 原样返回（但仍做 CRLF 归一化，与 stripArrayLines/upsertArrayLine
+// 行为一致）。
+//
+// 纯函数，供表驱动单测覆盖：多 ARRAY 删中间/删唯一/无命中/空 conf/CRLF。
+func removeArrayLineByUUID(conf, targetUUID string) string {
+	targetUUID = strings.ToLower(strings.TrimSpace(targetUUID))
+	if targetUUID == "" {
+		return joinConfLines(splitConfLines(conf))
+	}
+	lines := splitConfLines(conf)
+	if lines == nil {
+		return conf
+	}
+	kept := make([]string, 0, len(lines))
+	for _, l := range lines {
+		if uuid, ok := extractArrayUUID(l); ok && uuid == targetUUID {
+			continue
+		}
+		kept = append(kept, l)
+	}
+	return joinConfLines(kept)
+}
+
+// raidArrayUUID 取 mdDev（如 "/dev/md0"）当前阵列的 UUID，通过
+// `mdadm --detail --scan <mdDev>` 复用 findArrayUUIDForScan 解析。
+//
+// 调用方必须在 mdadm --stop 之前调用——阵列停止后设备节点消失，
+// --detail --scan 再也扫不到该设备，拿不到 UUID。
+func raidArrayUUID(runner cmdRunner, mdDev string) (uuid string, err error) {
+	if runner == nil {
+		runner = sudoRunner
+	}
+	scanOut, scanErr := runner("/usr/sbin/mdadm", "--detail", "--scan", mdDev)
+	if scanErr != nil {
+		return "", fmt.Errorf("mdadm --detail --scan %s 失败: %w", mdDev, scanErr)
+	}
+	u, ok := findArrayUUIDForScan(scanOut)
+	if !ok {
+		return "", fmt.Errorf("mdadm --detail --scan %s 输出中未找到 ARRAY/UUID 行: %q", mdDev, strings.TrimSpace(scanOut))
+	}
+	return u, nil
+}
+
+// removeRAIDConfigByUUID 从 /etc/mdadm/mdadm.conf 中删除 targetUUID 对应
+// 的那一条 ARRAY 行（删池场景：只清被删阵列自己的那一行，保留系统上其他
+// 阵列的 ARRAY 行）。
+//
+// 失败语义（与 resetRAIDConfig 同一套语义）：
+//   - cat 失败（文件不存在/权限）→ 跳过，不是失败，返回 ("", nil)；
+//     同样按 Fix A 模式留日志痕迹；
+//   - removeArrayLineByUUID 后内容无变化（本来就没有该 UUID 的行）→
+//     跳过写入，返回 ("", nil)；
+//   - 落盘失败 → 返回 error；
+//   - 落盘后写后验证：目标 UUID 行确认已不在文件内容里，验证失败 → 返回
+//     error（与 persistRAIDConfig 的写后验证对称，但验证方向相反——这里
+//     验证"确实删掉了"而不是"确实写进去了"）；
+//   - update-initramfs 失败 → 不 fatal，返回值带 warning。
+func removeRAIDConfigByUUID(runner cmdRunner, targetUUID string) (warning string, err error) {
+	if runner == nil {
+		runner = sudoRunner
+	}
+
+	existingConf, catErr := runner("cat", mdadmConfPath)
+	if catErr != nil {
+		// 文件不存在/读取失败：没有可清理的内容，跳过写入，不是失败，
+		// 但按 Fix A 模式留痕，方便事后排查"为什么没清掉"。
+		log.Printf("[RAID_PERSIST] 读取 %s 失败，跳过清理 UUID=%s 的 ARRAY 行: %v", mdadmConfPath, targetUUID, catErr)
+		return "", nil
+	}
+
+	newConf := removeArrayLineByUUID(existingConf, targetUUID)
+	if newConf == existingConf {
+		return "", nil
+	}
+
+	if writeErr := raidConfWriter(mdadmConfPath, newConf); writeErr != nil {
+		return "", fmt.Errorf("写入 %s 失败: %w", mdadmConfPath, writeErr)
+	}
+
+	verifyConf, verifyErr := runner("cat", mdadmConfPath)
+	if verifyErr != nil {
+		return "", fmt.Errorf("写后验证失败（读取 %s 出错）: %w", mdadmConfPath, verifyErr)
+	}
+	if _, stillThere := findArrayLineByUUID(verifyConf, targetUUID); stillThere {
+		return "", fmt.Errorf("写后验证失败：%s 中 UUID=%s 对应的 ARRAY 行仍未删除", mdadmConfPath, targetUUID)
+	}
+
+	if out, initErr := runner("update-initramfs", "-u"); initErr != nil {
+		return fmt.Sprintf("mdadm.conf 已清理，但 update-initramfs -u 失败（旧 initramfs 可能残留已删阵列的 ARRAY 行）: %s: %v", out, initErr), nil
+	}
+	return "", nil
+}

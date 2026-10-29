@@ -664,6 +664,14 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 				deletedUUIDs = append(deletedUUIDs, uuid)
 			}
 		}
+		// E8（真机实锤）：采集该阵列在 mdadm.conf 里对应的 ARRAY 行 UUID，
+		// 同样必须在 --stop 之前——stop 后 --detail --scan 再也扫不到该设备。
+		// 失败不阻断删除（尽力而为），但必须留痕，否则 mdadm.conf 残留问题
+		// 会在事后排查时无从下手。
+		mdadmConfUUID, mdadmConfUUIDErr := raidArrayUUID(nil, poolDevice)
+		if mdadmConfUUIDErr != nil {
+			steps = append(steps, "警告: 未能读取阵列 UUID，mdadm.conf 可能残留 ARRAY 行: "+mdadmConfUUIDErr.Error())
+		}
 		// 3. Stop RAID
 		common.SudoExec("/usr/sbin/mdadm", "--stop", poolDevice)
 		steps = append(steps, "停止 "+poolDevice)
@@ -672,6 +680,20 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 			common.SudoExec("/usr/sbin/mdadm", "--zero-superblock", disk)
 			common.SudoExec("/usr/sbin/wipefs", "-a", disk)
 			steps = append(steps, "释放 "+disk)
+		}
+		// 5. 清理 mdadm.conf 里该阵列的 ARRAY 行（E8：此前这条分支从不清理，
+		// 删池成功后 conf 仍留被删阵列的行；重建新池后旧 UUID+新 UUID 两条
+		// 同指一个设备名的 ARRAY 行共存，initramfs 同带，重启装配命名冲突
+		// 风险）。mdadmConfUUID 为空（上面采集失败）时 removeRAIDConfigByUUID
+		// 原样跳过，不会误删其他阵列的行。
+		if mdadmConfUUID != "" {
+			if cleanupWarning, cleanupErr := removeRAIDConfigByUUID(nil, mdadmConfUUID); cleanupErr != nil {
+				steps = append(steps, "清理 mdadm.conf ARRAY 行失败: "+cleanupErr.Error())
+			} else if cleanupWarning != "" {
+				steps = append(steps, cleanupWarning)
+			} else {
+				steps = append(steps, "清理 mdadm.conf ARRAY 行")
+			}
 		}
 
 	case "single":
