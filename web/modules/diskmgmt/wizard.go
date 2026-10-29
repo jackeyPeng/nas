@@ -379,6 +379,20 @@ func setupRaid1(devs []string, mountPoint, nasUser string) []string {
 		return steps
 	}
 	steps = append(steps, "写入 fstab 持久化")
+	// E7 补遗：setupRaid1 此前完全不持久化 mdadm.conf（比 setupRaidN 的
+	// 吞错更严重——非流式 API /api/disk/wizard/setup 的 raid1 分支建出的
+	// 阵列没有任何 ARRAY 行，重启必漂移）。与 setupRaidN 同款接
+	// persistRAIDConfig：失败如实报错并返回，initramfs 失败留警告。
+	warning, persistErr := persistRAIDConfig(nil, mdDev)
+	if persistErr != nil {
+		steps = append(steps, "失败: 保存 RAID 配置 - "+persistErr.Error())
+		return steps
+	}
+	if warning != "" {
+		steps = append(steps, "保存 RAID 配置（警告: "+warning+"）")
+	} else {
+		steps = append(steps, "保存 RAID 配置")
+	}
 	// chown
 	common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountPoint)
 	steps = append(steps, "设置权限")
@@ -432,18 +446,21 @@ func setupRaidN(devs []string, mountPoint, nasUser string, level int) []string {
 		return steps
 	}
 	steps = append(steps, "写入 fstab 持久化")
-	// Save mdadm config (read output, then write to file — exec.Command doesn't use shell).
-	// 曾用 `/bin/sh -c "echo ... >> mdadm.conf"` 做字符串拼接追加，等价于把 mdadmConf
-	// 内容直接喂进 shell -c，任何特殊字符都是潜在的 shell 注入面，且 sudoers 若要放行
-	// 这个形状必须整条放行 /bin/sh -c（root-equivalent 通配）。改用既有的
-	// SafeAppendFile（cat 读旧内容 + SafeWriteFile 的 cp 落地，无 shell 解释）与
-	// stream.go setupRAIDStream 的同款逻辑一致。
-	mdadmConf, err := common.SudoOutput(mdadmPath, "--detail", "--scan")
-	if err == nil && mdadmConf != "" {
-		common.SafeAppendFile("/etc/mdadm/mdadm.conf", strings.TrimSpace(mdadmConf)+"\n")
+	// Save mdadm config —— E7：改调 persistRAIDConfig（与 stream.go
+	// setupRAIDStream 同款逻辑）。此前 err==nil && mdadmConf != "" 才写，
+	// scan 失败时静默跳过、steps 仍 append"保存 RAID 配置"成功；
+	// update-initramfs 结果被完全忽略；都没有写后验证。现在失败时追加
+	// 失败文案并直接 return（与本函数其余失败分支形态一致），不假成功。
+	warning, persistErr := persistRAIDConfig(nil, mdDev)
+	if persistErr != nil {
+		steps = append(steps, "失败: 保存 RAID 配置 - "+persistErr.Error())
+		return steps
 	}
-	common.SudoExec("update-initramfs", "-u")
-	steps = append(steps, "保存 RAID 配置")
+	if warning != "" {
+		steps = append(steps, "保存 RAID 配置（警告: "+warning+"）")
+	} else {
+		steps = append(steps, "保存 RAID 配置")
+	}
 	// chown
 	common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountPoint)
 	steps = append(steps, "设置权限")

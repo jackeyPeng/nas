@@ -121,8 +121,16 @@ func handleWizardReset(w http.ResponseWriter, r *http.Request) {
 	// （命中则跳过该盘记日志，不中止整个 reset —— 与 handlePoolDelete 的
 	// "拒绝整个操作"语义不同，这里是尽力拆除）。
 	steps = append(steps, wipeManagedTargets(managedTargets)...)
-	common.SafeWriteFile("/etc/mdadm/mdadm.conf", "")
-	steps = append(steps, "清除 RAID 配置")
+	// E7：改调 resetRAIDConfig —— 只删 ARRAY 行，保留 Debian 默认的
+	// HOMEHOST/MAILADDR 等其余内容（此前整文件清空会连它们一起抹掉），
+	// 并在有变化时跟进 update-initramfs -u（失败只留警告，不阻断重置）。
+	if warning, err := resetRAIDConfig(nil); err != nil {
+		steps = append(steps, "清除 RAID 配置失败: "+err.Error())
+	} else if warning != "" {
+		steps = append(steps, "清除 RAID 配置（警告: "+warning+"）")
+	} else {
+		steps = append(steps, "清除 RAID 配置")
+	}
 
 	dataDisks := getDataDisks()
 	for _, dev := range skipUnmanagedDisks(dataDisks, managedTargets) {

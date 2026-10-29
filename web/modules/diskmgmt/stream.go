@@ -458,14 +458,19 @@ func setupRAIDStream(w http.ResponseWriter, devs []string, level int, mountPoint
 	common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountPoint)
 	stepDone("挂载并写入 fstab")
 
-	// 6. Save RAID config
+	// 6. Save RAID config —— E7：改调 persistRAIDConfig，灭掉此前 scan/cat
+	// 双吞错的假成功（scan 失败时 mdadmConf 为空仍 SafeWriteFile+stepDone
+	// "成功"），并补上 UUID 去重替换、写后验证、update-initramfs（真机
+	// 实锤：没有这一步，重启后阵列按旧 initramfs 装配成 md127 而不是
+	// conf 里写的设备名）。
 	stepRunning("保存 RAID 配置")
-	mdadmConf, _ := common.SudoOutput("/usr/sbin/mdadm", "--detail", "--scan")
-	existingConf, _ := common.SudoOutput("cat", "/etc/mdadm/mdadm.conf")
-	if existingConf == "" {
-		common.SafeWriteFile("/etc/mdadm/mdadm.conf", mdadmConf)
-	} else {
-		common.SafeWriteFile("/etc/mdadm/mdadm.conf", existingConf+"\n"+mdadmConf)
+	warning, persistErr := persistRAIDConfig(nil, mdDev)
+	if persistErr != nil {
+		stepError(w, "保存 RAID 配置", persistErr.Error())
+		return fmt.Errorf("保存 RAID 配置: %w", persistErr)
+	}
+	if warning != "" {
+		sendProgress(w, ProgressEvent{Step: "保存 RAID 配置", Status: "running", Total: totalSteps, Detail: warning})
 	}
 	stepDone("保存 RAID 配置")
 
@@ -614,7 +619,20 @@ func handleWizardResetStream(w http.ResponseWriter, r *http.Request) {
 	// 4. Stop RAID — only /dev/mdN devices, not --scan
 	stepRunning("停止 RAID")
 	stopRAIDArrays()
-	common.SafeWriteFile("/etc/mdadm/mdadm.conf", "")
+	// E7：改调 resetRAIDConfig —— 只删 ARRAY 行，保留 Debian 默认的
+	// HOMEHOST/MAILADDR 等其余内容，并在有变化时跟进 update-initramfs -u
+	// （失败只留警告、随 Detail 带给前端，不阻断重置流程）。
+	if warning, err := resetRAIDConfig(nil); err != nil {
+		sendProgress(w, ProgressEvent{
+			Step: "停止 RAID", Status: "running", Index: step + 1, Total: totalSteps,
+			Detail: "清除 RAID 配置失败: " + err.Error(),
+		})
+	} else if warning != "" {
+		sendProgress(w, ProgressEvent{
+			Step: "停止 RAID", Status: "running", Index: step + 1, Total: totalSteps,
+			Detail: warning,
+		})
+	}
 	stepDone("停止 RAID")
 
 	// 5. Wipe disks — consensus P0-A2：擦盘集合收敛为面板纳管盘，不再对
