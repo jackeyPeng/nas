@@ -387,7 +387,7 @@ echo -e "  └──────────────────────
 echo ""
 echo -e "  ${BOLD}其他访问方式${NC}"
 echo -e "  WebDAV:       ${CYAN}http://${PRIMARY_IP}:8080${NC}"
-echo -e "  Samba:        ${CYAN}\\\\${PRIMARY_IP}\\public${NC}"
+echo -e "  Samba:        ${CYAN}\\\\\\\\${PRIMARY_IP}\\\\public${NC}"
 echo -e "  FTP:          ${CYAN}ftp://${PRIMARY_IP}${NC}"
 echo -e "  S3:           ${CYAN}http://${PRIMARY_IP}:9000${NC}"
 echo ""
