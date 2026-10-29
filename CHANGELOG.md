@@ -8,7 +8,8 @@ _（暂无）_
 
 | 版本 | 日期 | 主要变化 |
 |------|------|---------|
-| v1.4.0-beta.35 | 2026-10-29 | RAID 持久化与安装健壮性 — 重启后 RAID 阵列名称漂移根修（流式建池从不更新 initramfs，md0 重启变 md127）：persistRAIDConfig 全链路（带设备 scan/UUID 去重替换/写后验证/initramfs 跟进）接入三条建池路径，出厂重置只删 ARRAY 行保留系统默认；删池清理被删阵列 ARRAY 行并跟进 initramfs（灭两行同名冲突）；独立审查回炉（cat 失败留痕透出警告/测试 stub 泄漏修正/SSE 补 Index）；安装脚本 apt 瞬时失败加固（DPkg 锁等待+3 次重试，实锤 apt-daily-upgrade 撞锁中止安装）+ install.sh 失败路径保全完整日志并回显真实错误。真机验收：两台测试机重置后用户级全流程（LVM merge + RAID1）一次通过，注册表 41/41 + 套件 38/38 + AI/F2 E2E 全 PASS + Chrome UI 实测；RAID 机 resync 中途重启装配仍为 md0、续跑进度面板与内核实时一致 |
+| v1.4.0-beta.36 | 2026-10-29 | 一致性小版本 — SyncAllConfigs 全局互斥（12 个调用点并发编辑不再交错生成 smb.conf/exports 并重载服务，已知问题 §八#7 关闭）；SSE 流式操作警告可见性根修：前端 5 处解析器不再丢弃 running 事件的 Detail（建池/扩容中的非致命警告如 initramfs 失败，此前只进日志），进度列表新增琥珀色警告子行；安装完成横幅 Samba UNC 路径修复（echo -e 双解释吞掉前导反斜杠，`\\IP\public` 显示成 `\IP\public`）。真机验收：两台重置测试机用户级全流程（LVM merge + RAID1）一次通过零错误，注册表 41/41 + 套件 38/38 + AI/F2 E2E 全 PASS + Chrome UI 实测；RAID 机 resync 43% 时重启 → md0 装配、续跑跨重启、面板进度与内核实时一致 |
+| v1.4.0-beta.35 | 2026-10-29 | RAID 持久化与安装健壮性 — 重启后 RAID 阵列名称漂移根修（流式建池从不更新 initramfs，md0 重启变 md127）：persistRAIDConfig 全链路（带设备 scan/UUID 去重替换/写后验证/initramfs 跟进）接入三条建池路径，出厂重置只删 ARRAY 行保留系统默认；删池清理被删阵列 ARRAY 行并跟进 initramfs（灭两行同名冲突）；独立审查回炉（cat 失败留痕透出警告/测试 stub 泄漏修正/SSE 补 Index）；安装脚本 apt 瞬时失败加固（DPkg 锁等待+3 次重试，实锤 apt-daily-upgrade 撞锁中止安装）+ install.sh 失败路径保全完整日志并回显真实错误（此前删日志谎称"已保留"）。真机验收：两台测试机重置后用户级全流程（LVM merge + RAID1）一次通过，注册表 41/41 + 套件 38/38 + AI/F2 E2E 全 PASS + Chrome UI 实测；RAID 机 resync 中途重启装配仍为 md0、续跑进度面板与内核实时一致 |
 | v1.4.0-beta.34 | 2026-10-28 | 存储控制面安全大版本 — diskmgmt 五轮加固（外部审查五项高危：假成功/吞错/选盘退化全盘/删池顺序错/fstab 误删 + P0 残项 + 回炉）+ 三模型共识审查落地：删池服务端重解析与系统盘闸门、出厂重置擦盘收敛为纳管盘（外来数据盘不再误擦）、包级缓存竞态修复、配置漂移真比对、mdstat 统一块解析；RAID 健康监控全盲根修（无 shell glob 恒失败）+ 状态链 sysfs 优先重写（健康/活动分离、降级计数、重建 ETA）；删用户即时重投影 SMB/NFS 托管段；升级路径保留已改密码；专用整机定位收敛（separate 下线、低级别 API 调试开关）。真机验收：两台测试机用户级全流程（LVM merge + RAID1）注册表 41/41 + 套件 38/38 + AI/F2 E2E 全 PASS + RAID 降级/重建/恢复全生命周期实测 + Chrome UI 实测 |
 | v1.4.0-beta.33 | 2026-10-27 | S1 最小权限 — 面板从 7×24 常驻 root 降为以家庭管理员账号（如 `fm`）运行，面板 RCE 不再等同整机 root；安装/清理脚本改「用户身份直跑 + 特权步骤逐条 sudo」（`curl|bash` 去 sudo 前缀，六载体同步）；sudoers 白名单 root-equivalence 复审（115→145 条：按实际调用面收窄/补齐裸奔调用/铲除死条目，灭裸 chpasswd/gpasswd/`sed -i *` 提权后门）。附 S1 强化验收修复轮（48/57 真机 journal 实证）：chpasswd 路径错配、隐性 root 依赖（blkid/fstab/journalctl）、重装 ETXTBSY 原子替换、用户 home ACL、share 级回收站 fm 失效等七轮根修 + cleanup.sh 非交互 `--yes` 与 RAID wipefs 顺序修复。真机验收：48(LVM merge)+57(RAID1) 双机用户级全流程，acceptance-suite 38/38 + AI E2E 31 项 + F2 E2E 全 PASS + 本机 Chrome UI 实测 |
 | v1.4.0-beta.32 | 2026-10-23 | 家庭管家底座 F2（主动管家）— 面板从「被动等命令」升级为「主动发现、提出建议、经确认后干活」：notifications 轻量收件箱（eventbus 订阅式）+ triggers 建议卡引擎（健康异常/备份失败/同步失败/磁盘水位≥85% 触发，同事项 24h 冷却+最多 5 条待处理反骚扰）+ 建议接受链（点「执行」→ 确认卡 → 任务引擎，零新确认语义）+ 家庭周报（周日 9 点自动生成，存储/任务/健康三块，零 LLM 依赖）+ 前端通知中心（铃铛/未读徽标/建议卡/周报卡/人话文案插值，关 AI 即整体隐藏）+ cronMatch 抽取 common 共享。附验收修复：周报通知去重、PoolUsage 补 RAID/直挂池回退（此前 raid 直挂机水位检查永远哑火）、cleanup.sh 重置补删仓库实体（防旧数据库穿越复活）。真机验收：F2 E2E 15/15 + UI 全流程 Chrome 实测 + AI E2E 31 项 + 套件 38/38 + 真实 DeepSeek 回归 |
@@ -33,6 +34,33 @@ _（暂无）_
 | v1.4.0-beta.13 | 2026-09-19 | NFS 导出对所有网段开放（跨网段客户端可挂载） |
 | v1.4.0-beta.12 | 2026-09-18 | 创建向导按已选磁盘实时预估容量（选目标后预览面板 + 各方案可用容量/注意事项）+ 登录页品牌 slogan |
 | v1.4.0-beta.11 | 2026-09-18 | 当前连接展示（监控页，SMB 会话 + 各协议端口归类）+ 回收站改 per-share `.recycle/`（删除=rename 零拷贝，恢复保留目录树，旧 `#recycle` 兼容）+ 存储页 tab 切换跳动修复 |
+
+---
+
+## [2026-10-29] - v1.4.0-beta.36 — 一致性小版本（配置同步互斥 + SSE 警告可见性 + 横幅 UNC 修复）
+
+三个独立小修复，全部来自真机验收与讨论清单（§八#7 / SSE Detail 遗留 / 用户实报）。双机重置后用户级全流程一次通过零错误。
+
+### SyncAllConfigs 全局互斥（86aaf46）
+
+- 已知问题 §八#7 关闭：包级 `syncAllMu` 把「folders.db → smb.conf/exports 投影 → 服务重载」整链纳入临界区，12 个调用点（folders/import/pending_ops/pool/reset/stream/users）并发编辑不再交错生成配置
+- 无重入风险已核实（applyPendingOps 单向调用 SyncAllConfigs）；单管理员场景锁竞争可忽略，不引入 RWMutex/TryLock；附并发冒烟测试
+
+### SSE 流式操作警告可见性（1869f76）
+
+- 后端对流式操作（建池/扩容/RAID 扩展/重置）的非致命警告（如 E7 的 initramfs 更新失败）发 running+Detail 事件，但前端 app.js 全部 5 处 SSE 解析器都把 Detail 丢弃——警告只进服务器日志，用户眼前只有「步骤完成」
+- 统一修复：running/done 均携带独立 detail 字段，done 更新路径只改 status 不动 name/detail（修掉 raid expand 处 `last.name = ev.step` 冲掉警告的 bug）；index.html 进度模板新增琥珀色（--warn）detail 子行，缩进对齐步骤名、长文本换行
+- Chrome 实测：注入模拟 initramfs 警告，子行正确渲染（空 detail 隐藏、警告显示、换行缩进正常）
+
+### 安装横幅 Samba UNC 路径（a8198c3，用户实报）
+
+- 完成横幅 `echo -e` 双解释吞掉前导反斜杠：`\\IP\public` 显示成 `\IP\public`（Windows 无法直接使用）
+- 修复为 8+4 反斜杠形态，线上 install.sh 已同步（渲染实测 `\\IP\public`）
+
+### 真机验收（第四轮双机重置）
+
+- 测试机48（LVM merge 4×50G→200G）+ 测试机57（RAID1 2×50G），fm 用户身份一键安装均一次通过零错误：8 服务 active、首登改密四件套、注册表 41/41、acceptance-suite 38/38、AI E2E 31 项 ALL PASS、F2 E2E ALL PASS（含 kill -9 续跑）、F1 建/删用户双向零漂移、本机 Chrome 三页实测（无漂移告警、无幽灵共享、无 md127）
+- RAID 重启装配标准项：resync 43% 时重启 → 装配为 md0（E7 持久化生效，ARRAY 行落盘验证）、resync 跨重启续跑至 94%、面板「正在同步」进度与内核实时一致
 
 ---
 
