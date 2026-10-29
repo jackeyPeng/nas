@@ -56,6 +56,20 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+# apt 瞬时失败重试包裹：apt-daily-upgrade.service 等系统定时任务可能与本脚本
+# 的 apt-get 调用撞锁，直接失败退出（F-1 真机实锤：撞锁 4 分钟后单独重跑即过，
+# 纯瞬时冲突）。重试 3 次、每次间隔 10s，失败提示走 stderr（进 setup 日志）。
+apt_retry() {
+    local n=0
+    until [ $n -ge 3 ]; do
+        "$@" && return 0
+        n=$((n + 1))
+        echo "  ⚠ apt 命令失败（第 $n 次），10s 后重试: $*" >&2
+        sleep 10
+    done
+    return 1
+}
+
 echo "========================================="
 echo "家用 NAS 一键部署脚本"
 echo "========================================="
@@ -236,7 +250,7 @@ migrate_ownership_to_nas_user() {
     # setfacl 来自 acl 包，Debian 最小化安装可能没有，提前装好（独立于下面
     # [1/10] 的大包列表——那一步在 --config-only 下会被跳过，这里必须始终跑）。
     if ! command -v setfacl >/dev/null 2>&1; then
-        apt-get install -y acl >/dev/null 2>&1 || true
+        apt_retry apt-get install -y acl >/dev/null 2>&1 || true
     fi
     if [ -n "$repo_real" ] && command -v setfacl >/dev/null 2>&1; then
         for pool_dir in /data/nas*; do
@@ -279,8 +293,8 @@ if [ "$CONFIG_ONLY" = true ]; then
     echo "[1/10] 安装基础软件包...（--config-only 跳过）"
 else
     echo "[1/10] 安装基础软件包..."
-    apt-get update
-    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    apt_retry apt-get update
+    DEBIAN_FRONTEND=noninteractive apt_retry apt-get install -y -o DPkg::Lock::Timeout=60 \
         curl samba nfs-kernel-server vsftpd rclone \
         fail2ban ufw smartmontools unattended-upgrades \
         smbclient nfs-common xfsprogs parted mdadm lvm2 rsync acl
@@ -460,7 +474,7 @@ echo "  ✓ FTP 配置完成"
 echo ""
 echo "[6/10] 配置 WebDAV (rclone)..."
 # 安装 htpasswd 工具（用于 WebDAV 认证）
-apt-get install -y apache2-utils 2>/dev/null || true
+apt_retry apt-get install -y apache2-utils 2>/dev/null || true
 # 生成 htpasswd 文件（使用 bcrypt 哈希，兼容性好）
 htpasswd -cb /etc/rclone-htpasswd "$NAS_USER" "$NAS_PASS"
 chown "$NAS_USER:$NAS_USER" /etc/rclone-htpasswd

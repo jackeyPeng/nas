@@ -68,6 +68,21 @@ step_fail() {
     printf "${RED}✗ %s${NC} (%ds)\n" "$1" "$elapsed"
 }
 
+# ── apt 重试包裹 ────────────────────────────────────────────
+# apt-daily-upgrade.service 等系统定时任务可能与本脚本的 apt-get 调用撞锁，
+# 直接失败退出（F-1 真机实锤：撞锁 4 分钟后单独重跑即过，纯瞬时冲突）。
+# 重试 3 次、每次间隔 10s，失败提示走 stderr。
+apt_retry() {
+    local n=0
+    until [ $n -ge 3 ]; do
+        "$@" && return 0
+        n=$((n + 1))
+        echo "  ⚠ apt 命令失败（第 $n 次），10s 后重试: $*" >&2
+        sleep 10
+    done
+    return 1
+}
+
 # ── Banner ──────────────────────────────────────────────────
 echo ""
 echo -e "${BOLD}${BLUE}╔══════════════════════════════════════════════╗${NC}"
@@ -212,7 +227,7 @@ fi
 
 sub_step "更新软件包索引 (apt-get update) ..."
 SUB_START=$(date +%s)
-$SUDO apt-get update -qq 2>/dev/null
+apt_retry bash -c "$SUDO apt-get update -qq 2>/dev/null"
 sub_done "软件包索引已更新"
 
 sub_step "下载安装 17 个软件包 (samba/nfs/vsftpd/rclone/fail2ban/ufw 等)"
@@ -228,7 +243,7 @@ TIMER_PID=$!
 APT_RC=0
 # DEBIAN_FRONTEND 是环境变量赋值，`sudo VAR=val cmd` 不会按预期传递——
 # 用 `sudo env VAR=val cmd` 显式透传（root 直跑时 $SUDO 为空，env 直接生效）。
-$SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+apt_retry $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq -o DPkg::Lock::Timeout=60 \
     curl samba nfs-kernel-server vsftpd rclone fail2ban ufw \
     smartmontools unattended-upgrades smbclient nfs-common \
     xfsprogs parted mdadm lvm2 apache2-utils \
@@ -261,15 +276,22 @@ else
     SETUP_OK=false
 fi
 
-# 显示 setup.sh 的关键输出行
-grep -E '^\[|✓|✗|⚠|服务状态|部署完成|通过|失败|警告' "$SETUP_LOG" 2>/dev/null | while read line; do
+# 显示 setup.sh 的关键输出行（E: 前缀行是 apt/dpkg 的真实错误行，补进过滤器
+# 让用户在回显里直接看到失败原因，而不是只看到"[1/10] 安装基础软件包..."）
+grep -E '^\[|✓|✗|⚠|服务状态|部署完成|通过|失败|警告|^E:' "$SETUP_LOG" 2>/dev/null | while read line; do
     echo "  $line"
 done
 if [ "$SETUP_OK" != true ]; then
     echo ""
     echo -e "${RED}✗ setup.sh 执行失败(退出码非零),安装中止${NC}"
-    echo -e "  完整日志已保留: 重新运行可查看;常见原因: 磁盘空间/网络/依赖冲突"
-    rm -f "$SETUP_LOG"
+    # 失败路径证据保全：不删日志，移到固定路径供排查（此前直接 rm -f 销毁证据，
+    # 提示却称"完整日志已保留"——谎言。现如实落盘并在提示中给出真实路径，
+    # 并在过滤回显之后追加原始日志尾部，覆盖 E: 不匹配过滤器但确实是错误行的场景）
+    FAILED_LOG="/tmp/nas-install-setup-$(date +%s).log"
+    mv -f "$SETUP_LOG" "$FAILED_LOG" 2>/dev/null || cp -f "$SETUP_LOG" "$FAILED_LOG"
+    echo -e "  完整日志: ${YELLOW}${FAILED_LOG}${NC};常见原因: 磁盘空间/网络/依赖冲突"
+    echo "  ── setup.sh 日志尾部（未过滤）──"
+    tail -30 "$FAILED_LOG" | sed 's/^/  /'
     exit 1
 fi
 rm -f "$SETUP_LOG"
