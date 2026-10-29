@@ -2114,13 +2114,13 @@ function nasPanel() {
                             try {
                                 const ev = JSON.parse(line.slice(6));
                                 if (ev.status === 'running') {
-                                    this.progressSteps.push({ name: ev.step, status: 'running' });
+                                    this.progressSteps.push({ name: ev.step, status: 'running', detail: ev.detail || '' });
                                 } else if (ev.status === 'done') {
                                     const last = this.progressSteps[this.progressSteps.length - 1];
                                     if (last && last.status === 'running' && last.name === ev.step) {
                                         last.status = 'done';
                                     } else {
-                                        this.progressSteps.push({ name: ev.step, status: 'done' });
+                                        this.progressSteps.push({ name: ev.step, status: 'done', detail: ev.detail || '' });
                                     }
                                 } else if (ev.status === 'complete') {
                                     this.progressSteps.push({ name: ev.detail || this.t('msg.done'), status: 'complete' });
@@ -2169,13 +2169,13 @@ function nasPanel() {
                             try {
                                 const ev = JSON.parse(line.slice(6));
                                 if (ev.status === 'running') {
-                                    this.progressSteps.push({ name: ev.step, status: 'running', index: ev.index, total: ev.total });
+                                    this.progressSteps.push({ name: ev.step, status: 'running', index: ev.index, total: ev.total, detail: ev.detail || '' });
                                 } else if (ev.status === 'done') {
                                     const last = this.progressSteps[this.progressSteps.length - 1];
                                     if (last && last.status === 'running' && last.name === ev.step) {
                                         last.status = 'done';
                                     } else {
-                                        this.progressSteps.push({ name: ev.step, status: 'done', index: ev.index, total: ev.total });
+                                        this.progressSteps.push({ name: ev.step, status: 'done', index: ev.index, total: ev.total, detail: ev.detail || '' });
                                     }
                                 } else if (ev.status === 'complete') {
                                     this.progressSteps.push({ name: ev.detail || this.t('msg.done'), status: 'complete' });
@@ -2329,13 +2329,13 @@ function nasPanel() {
                             try {
                                 const ev = JSON.parse(line.slice(6));
                                 if (ev.status === 'running') {
-                                    this.progressSteps.push({ name: ev.step, status: 'running' });
+                                    this.progressSteps.push({ name: ev.step, status: 'running', detail: ev.detail || '' });
                                 } else if (ev.status === 'done') {
                                     const last = this.progressSteps[this.progressSteps.length - 1];
                                     if (last && last.status === 'running' && last.name === ev.step) {
                                         last.status = 'done';
                                     } else {
-                                        this.progressSteps.push({ name: ev.step, status: 'done' });
+                                        this.progressSteps.push({ name: ev.step, status: 'done', detail: ev.detail || '' });
                                     }
                                 } else if (ev.status === 'complete') {
                                     this.progressSteps.push({ name: ev.detail || this.t('msg.done'), status: 'complete' });
@@ -2404,14 +2404,13 @@ function nasPanel() {
                             try {
                                 const ev = JSON.parse(line.slice(6));
                                 if (ev.status === 'running') {
-                                    this.progressSteps.push({ name: ev.step + (ev.detail ? ': ' + ev.detail : ''), status: 'running' });
+                                    this.progressSteps.push({ name: ev.step, status: 'running', detail: ev.detail || '' });
                                 } else if (ev.status === 'done') {
                                     const last = this.progressSteps[this.progressSteps.length - 1];
                                     if (last && last.status === 'running') {
                                         last.status = 'done';
-                                        last.name = ev.step;
                                     } else {
-                                        this.progressSteps.push({ name: ev.step, status: 'done' });
+                                        this.progressSteps.push({ name: ev.step, status: 'done', detail: ev.detail || '' });
                                     }
                                 } else if (ev.status === 'complete') {
                                     this.progressSteps.push({ name: ev.detail || this.t('msg.done'), status: 'complete' });
@@ -2465,13 +2464,13 @@ function nasPanel() {
                             try {
                                 const ev = JSON.parse(line.slice(6));
                                 if (ev.status === 'running') {
-                                    this.progressSteps.push({ name: ev.step, status: 'running', index: ev.index, total: ev.total });
+                                    this.progressSteps.push({ name: ev.step, status: 'running', index: ev.index, total: ev.total, detail: ev.detail || '' });
                                 } else if (ev.status === 'done') {
                                     const last = this.progressSteps[this.progressSteps.length - 1];
                                     if (last && last.status === 'running' && last.name === ev.step) {
                                         last.status = 'done';
                                     } else {
-                                        this.progressSteps.push({ name: ev.step, status: 'done', index: ev.index, total: ev.total });
+                                        this.progressSteps.push({ name: ev.step, status: 'done', index: ev.index, total: ev.total, detail: ev.detail || '' });
                                     }
                                 } else if (ev.status === 'complete') {
                                     this.progressSteps.push({ name: ev.detail || this.t('msg.done'), status: 'complete' });

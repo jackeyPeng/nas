@@ -1780,9 +1780,12 @@
                             <div x-show="wizardLoading" style="background: var(--card-bg-alt);border-radius:var(--radius);padding:var(--sp-3);max-width:400px;margin:0 auto var(--sp-4);text-align:left">
                                 <div style="font-size:var(--fs-xs);color: var(--text-light);margin-bottom:6px"><span x-text="$t('storage.init_progress')"></span></div>
                                 <template x-for="step in progressSteps" :key="step.name">
-                                    <div style="display:flex;align-items:center;gap:var(--sp-2);font-size:var(--fs-xs);padding:3px 0">
-                                        <span x-text="step.status==='done'?'✅':step.status==='running'?'🔄':step.status==='error'?'❌':step.status==='complete'?'✅':'⏳'"></span>
-                                        <span :style="step.status==='error'?'color: var(--danger)':'color: var(--text-secondary)'" x-text="step.name"></span>
+                                    <div style="padding:3px 0">
+                                        <div style="display:flex;align-items:center;gap:var(--sp-2);font-size:var(--fs-xs)">
+                                            <span x-text="step.status==='done'?'✅':step.status==='running'?'🔄':step.status==='error'?'❌':step.status==='complete'?'✅':'⏳'"></span>
+                                            <span :style="step.status==='error'?'color: var(--danger)':'color: var(--text-secondary)'" x-text="step.name"></span>
+                                        </div>
+                                        <div x-show="step.detail" style="margin-left:calc(1em + var(--sp-2));font-size:var(--fs-xs);color: var(--warn);white-space:normal" x-text="step.detail"></div>
                                     </div>
                                 </template>
                             </div>
