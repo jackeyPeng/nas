@@ -59,6 +59,25 @@ func TestStripArrayLines(t *testing.T) {
 				"HOMEHOST <system>\n",
 			want: "# this is a comment\n\nHOMEHOST <system>\n",
 		},
+		{
+			// Fix D（E7审查回炉 Minor4）：不带 UUID= 的手写 ARRAY 行此前用
+			// extractArrayUUID 命中判定删除条件，命中不了会残留——改用
+			// isArrayLine（ARRAY 前缀）后必须能删掉。
+			name: "无UUID的手写ARRAY行被删",
+			in: "HOMEHOST <system>\n" +
+				"ARRAY /dev/md0 name=nas:0 devices=/dev/sda,/dev/sdb\n" +
+				"MAILADDR root\n",
+			want: "HOMEHOST <system>\nMAILADDR root\n",
+		},
+		{
+			// 前缀陷阱：以 "ARRAY" 开头但并非 ARRAY 行关键字本身（词边界后
+			// 紧跟非空白字符）不应被误删。
+			name: "ARRAYX前缀陷阱不误删",
+			in: "HOMEHOST <system>\n" +
+				"ARRAYXYZ not a real array line\n" +
+				"MAILADDR root\n",
+			want: "HOMEHOST <system>\nARRAYXYZ not a real array line\nMAILADDR root\n",
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -298,12 +317,14 @@ func TestPersistRAIDConfig_VerifyFailed(t *testing.T) {
 }
 
 func TestPersistRAIDConfig_InitramfsWarning(t *testing.T) {
+	// Fix B（E7审查回炉 Important）：orig 必须在赋值 stub 之前捕获，否则
+	// Cleanup 恢复的是 stub 自身，全局 raidConfWriter 状态会泄漏给后续测试。
+	orig := raidConfWriter
 	var written string
 	raidConfWriter = func(path, content string) error {
 		written = content
 		return nil
 	}
-	orig := raidConfWriter
 	t.Cleanup(func() { raidConfWriter = orig })
 
 	r := &stubRunner{
@@ -323,6 +344,55 @@ func TestPersistRAIDConfig_InitramfsWarning(t *testing.T) {
 	}
 	if !strings.Contains(warning, "update-initramfs") {
 		t.Errorf("warning = %q, 应提及 update-initramfs", warning)
+	}
+}
+
+func TestPersistRAIDConfig_CatFailedLeavesTraceAndWarns(t *testing.T) {
+	// Fix A（E7审查回炉 Important）：读现有 conf 的 cat 失败时此前 catErr 被
+	// 静默丢弃（existingConf = ""）——若现有 conf 实际存在，瞬时 cat 失败会
+	// 导致整文件被仅含新 ARRAY 行的内容覆盖，HOMEHOST/MAILADDR/其他阵列行
+	// 全丢，且写后验证只查目标 UUID 必过，灭不了这个静默模式。修复后必须：
+	// 1) err 仍为 nil（不 fatal，流程不中止）；2) warning 含"读取"字样；
+	// 3) 落盘内容确实只有新 ARRAY 行（验证"覆盖"这个事实本身被保留，只是
+	// 不再静默——调用方据 warning 可以感知风险）。
+	var written string
+	raidConfWriter = func(path, content string) error {
+		written = content
+		return nil
+	}
+	origWriter := raidConfWriter
+	t.Cleanup(func() { raidConfWriter = origWriter })
+
+	catCallCount := 0
+	r := &stubRunner{
+		scan: func(args ...string) (string, error) { return testScanLine, nil },
+		cat: func(args ...string) (string, error) {
+			catCallCount++
+			if catCallCount == 1 {
+				// 第一次 cat（读现有 conf）模拟瞬时失败。
+				return "", errors.New("read: resource temporarily unavailable")
+			}
+			// 第二次 cat（写后验证）读回刚落盘的内容。
+			return written, nil
+		},
+		initram: func(args ...string) (string, error) { return "", nil },
+	}
+
+	warning, err := persistRAIDConfig(r.run, "/dev/md0")
+	if err != nil {
+		t.Fatalf("persistRAIDConfig() error = %v, want nil（cat 失败不应 fatal）", err)
+	}
+	if warning == "" {
+		t.Fatal("warning 为空，want 非空（cat 失败必须透出 warning，不得静默）")
+	}
+	if !strings.Contains(warning, "读取") {
+		t.Errorf("warning = %q, 应含“读取”字样", warning)
+	}
+	if written == "" {
+		t.Fatal("mdadm.conf 未落盘")
+	}
+	if !strings.Contains(written, testUUID) {
+		t.Errorf("落盘内容缺少目标 UUID: %q", written)
 	}
 }
 
@@ -348,6 +418,8 @@ func TestPersistRAIDConfig_WriteFailed(t *testing.T) {
 // ═══════════════════════════════════════════════════
 
 func TestResetRAIDConfig_RemovesArrayLinesOnly(t *testing.T) {
+	// Fix B：orig 在赋值 stub 之前捕获（同上，避免 Cleanup 恢复成 stub 自身）。
+	orig := raidConfWriter
 	var written string
 	wrote := false
 	raidConfWriter = func(path, content string) error {
@@ -355,7 +427,6 @@ func TestResetRAIDConfig_RemovesArrayLinesOnly(t *testing.T) {
 		wrote = true
 		return nil
 	}
-	orig := raidConfWriter
 	t.Cleanup(func() { raidConfWriter = orig })
 
 	r := &stubRunner{
@@ -384,12 +455,12 @@ func TestResetRAIDConfig_RemovesArrayLinesOnly(t *testing.T) {
 }
 
 func TestResetRAIDConfig_NoChangeSkipsWrite(t *testing.T) {
+	orig := raidConfWriter
 	wrote := false
 	raidConfWriter = func(path, content string) error {
 		wrote = true
 		return nil
 	}
-	orig := raidConfWriter
 	t.Cleanup(func() { raidConfWriter = orig })
 
 	r := &stubRunner{
@@ -409,12 +480,12 @@ func TestResetRAIDConfig_NoChangeSkipsWrite(t *testing.T) {
 }
 
 func TestResetRAIDConfig_CatFailedSkipsGracefully(t *testing.T) {
+	orig := raidConfWriter
 	wrote := false
 	raidConfWriter = func(path, content string) error {
 		wrote = true
 		return nil
 	}
-	orig := raidConfWriter
 	t.Cleanup(func() { raidConfWriter = orig })
 
 	r := &stubRunner{
@@ -434,8 +505,8 @@ func TestResetRAIDConfig_CatFailedSkipsGracefully(t *testing.T) {
 }
 
 func TestResetRAIDConfig_InitramfsWarning(t *testing.T) {
-	raidConfWriter = func(path, content string) error { return nil }
 	orig := raidConfWriter
+	raidConfWriter = func(path, content string) error { return nil }
 	t.Cleanup(func() { raidConfWriter = orig })
 
 	r := &stubRunner{
@@ -457,8 +528,8 @@ func TestResetRAIDConfig_InitramfsWarning(t *testing.T) {
 }
 
 func TestResetRAIDConfig_WriteFailed(t *testing.T) {
-	raidConfWriter = func(path, content string) error { return errors.New("disk full") }
 	orig := raidConfWriter
+	raidConfWriter = func(path, content string) error { return errors.New("disk full") }
 	t.Cleanup(func() { raidConfWriter = orig })
 
 	r := &stubRunner{

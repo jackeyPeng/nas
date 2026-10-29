@@ -2,6 +2,7 @@ package diskmgmt
 
 import (
 	"fmt"
+	"log"
 	"regexp"
 	"strings"
 
@@ -59,6 +60,20 @@ const mdadmConfPath = "/etc/mdadm/mdadm.conf"
 //
 //	ARRAY /dev/md0 metadata=1.2 name=nas:0 UUID=1234abcd:5678efgh:90ab1234:cdef5678
 var arrayLineRe = regexp.MustCompile(`(?i)^ARRAY\s+\S+.*\bUUID=(\S+)`)
+
+// arrayPrefixRe 匹配任意 ARRAY 行（大小写不敏感的 "ARRAY" 前缀，词边界），
+// 不要求带 UUID 字段——出厂重置等场景需要删除手写的、仅含 name=/devices=
+// 等字段而没有 UUID= 的 ARRAY 行，这类行用 extractArrayUUID 判定命中不了。
+var arrayPrefixRe = regexp.MustCompile(`(?i)^ARRAY\b`)
+
+// isArrayLine 判断一行是否是 ARRAY 行（大小写不敏感的 "ARRAY" 前缀，词
+// 边界——"ARRAYX foo" 这类前缀陷阱不误判）。不要求带 UUID= 字段，供
+// stripArrayLines 等需要删除任意形态 ARRAY 行的场景使用；extractArrayUUID
+// 仍只认带 UUID= 的行，供 upsert/写后验证等按 UUID 匹配的逻辑使用，两者
+// 判据不混用。
+func isArrayLine(line string) bool {
+	return arrayPrefixRe.MatchString(strings.TrimSpace(line))
+}
 
 // extractArrayUUID 从单条 ARRAY 行提取 UUID（小写归一化，mdadm 大小写不敏感
 // 但统一小写方便比较）。非 ARRAY 行或没有 UUID 字段返回 ok=false。
@@ -147,7 +162,12 @@ func joinConfLines(lines []string) string {
 // ARRAY 行时原样返回（但仍做 CRLF 归一化）。供 reset.go/stream.go 出厂
 // 重置复用，不再把整个 mdadm.conf 清空。
 //
-// 纯函数，表驱动单测覆盖：多 ARRAY/无 ARRAY/空文件/CRLF。
+// Fix D（E7 审查回炉 Minor4）：删除判据从"extractArrayUUID 命中"放宽为
+// isArrayLine（ARRAY 前缀即删）——此前以 UUID= 字段命中为删除条件，不带
+// UUID= 的手写 ARRAY 行（仅 name=/devices=... ）出厂重置后会残留。
+//
+// 纯函数，表驱动单测覆盖：多 ARRAY/无 ARRAY/空文件/CRLF/无UUID的ARRAY行/
+// "ARRAYX" 前缀陷阱不误删。
 func stripArrayLines(conf string) string {
 	if strings.TrimSpace(conf) == "" {
 		return conf
@@ -155,7 +175,7 @@ func stripArrayLines(conf string) string {
 	lines := splitConfLines(conf)
 	var kept []string
 	for _, l := range lines {
-		if _, ok := extractArrayUUID(l); ok {
+		if isArrayLine(l) {
 			continue
 		}
 		kept = append(kept, l)
@@ -198,9 +218,16 @@ func persistRAIDConfig(runner cmdRunner, mdDev string) (warning string, err erro
 	}
 
 	// b. 读现有 conf —— cat 失败（文件不存在/权限）按空文件处理但留痕，
-	// 不让读取失败悄悄变成"从空白重写"的假象之外无任何线索。
+	// 不让读取失败悄悄变成"从空白重写"的假象之外无任何线索。Fix A（E7 审查
+	// 回炉 Important）：cat 失败时若文件实际存在（瞬时失败/权限问题），按
+	// 空文件重建会用仅含新 ARRAY 行的内容整文件覆盖，HOMEHOST/MAILADDR/
+	// 其他阵列行全丢——必须留日志痕迹，并把警告带给调用方（SSE/steps），
+	// 不能像此前那样静默吞错。
 	existingConf, catErr := runner("cat", mdadmConfPath)
+	catWarning := ""
 	if catErr != nil {
+		log.Printf("[RAID_PERSIST] 读取 %s 失败，按空文件重建（若文件实际存在，其原有内容将被覆盖）: %v", mdadmConfPath, catErr)
+		catWarning = fmt.Sprintf("读取 %s 失败，按空文件重建（若文件实际存在，其原有内容可能被覆盖）: %v", mdadmConfPath, catErr)
 		existingConf = ""
 	}
 
@@ -222,11 +249,16 @@ func persistRAIDConfig(runner cmdRunner, mdDev string) (warning string, err erro
 	}
 
 	// f. update-initramfs：失败不 fatal，但必须把警告带出去，不能静默。
+	// Fix A：catWarning（若有）与 initramfs 警告可共存，分号拼接，不互相覆盖。
 	if out, initErr := runner("update-initramfs", "-u"); initErr != nil {
-		return fmt.Sprintf("RAID 配置已保存，但 update-initramfs -u 失败（重启后阵列可能以其他设备名装配）: %s: %v", out, initErr), nil
+		initWarning := fmt.Sprintf("RAID 配置已保存，但 update-initramfs -u 失败（重启后阵列可能以其他设备名装配）: %s: %v", out, initErr)
+		if catWarning != "" {
+			return catWarning + "; " + initWarning, nil
+		}
+		return initWarning, nil
 	}
 
-	return "", nil
+	return catWarning, nil
 }
 
 // findArrayUUIDForScan 从 scan 输出中取第一条 ARRAY 行的 UUID（--detail

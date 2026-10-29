@@ -124,6 +124,12 @@ func handleWizardSetupStream(w http.ResponseWriter, r *http.Request) {
 		sendProgress(w, ProgressEvent{Step: name, Status: "running", Index: step + 1, Total: totalSteps})
 		time.Sleep(100 * time.Millisecond)
 	}
+	// Fix C（E7审查回炉 Minor1）：setupRAIDStream 内部补发的 SSE running 事件
+	// （第6步 initramfs 警告）之前没有 Index，序列化出 index:0，与同流其他
+	// 事件形态不齐。stepRunning/stepDone 都是闭包，捕获的 step 变量不对外
+	// 暴露——补一个同款闭包 stepIndex，让 setup*Stream 系列函数能取到"当前
+	// 正在跑的那一步"的 Index（即 step+1，与 stepRunning 用的值一致）。
+	stepIndex := func() int { return step + 1 }
 
 	// 固定单池挂载 /data/nas1（新模型：整个系统一个存储池）。
 	// 不再自动挑选下一个空闲挂载点——那会把池挂到 nas2/nas3，违背单池设计。
@@ -150,19 +156,19 @@ func handleWizardSetupStream(w http.ResponseWriter, r *http.Request) {
 
 	case "raid0":
 		// RAID0 stripe — all disks, no redundancy
-		setupErr = setupRAIDStream(w, unusedDevs, 0, mountPoint, nasUser, stepRunning, stepDone, totalSteps)
+		setupErr = setupRAIDStream(w, unusedDevs, 0, mountPoint, nasUser, stepRunning, stepDone, stepIndex, totalSteps)
 
 	case "raid1":
 		// RAID1 mirror — 2 disks
-		setupErr = setupRAIDStream(w, unusedDevs[:2], 1, mountPoint, nasUser, stepRunning, stepDone, totalSteps)
+		setupErr = setupRAIDStream(w, unusedDevs[:2], 1, mountPoint, nasUser, stepRunning, stepDone, stepIndex, totalSteps)
 
 	case "raid5":
 		// RAID5 — 3+ disks
-		setupErr = setupRAIDStream(w, unusedDevs, 5, mountPoint, nasUser, stepRunning, stepDone, totalSteps)
+		setupErr = setupRAIDStream(w, unusedDevs, 5, mountPoint, nasUser, stepRunning, stepDone, stepIndex, totalSteps)
 
 	case "raid6":
 		// RAID6 — 4+ disks
-		setupErr = setupRAIDStream(w, unusedDevs, 6, mountPoint, nasUser, stepRunning, stepDone, totalSteps)
+		setupErr = setupRAIDStream(w, unusedDevs, 6, mountPoint, nasUser, stepRunning, stepDone, stepIndex, totalSteps)
 	}
 	if setupErr != nil {
 		return
@@ -409,7 +415,7 @@ func setupLVMMergeStream(w http.ResponseWriter, devs []string, mountPoint, nasUs
 // setupRAIDStream: RAID0/1/5/6（Fix 3：签名改为返回 error，见 setupLVMSingleStream
 // 顶部注释说明动机）。
 func setupRAIDStream(w http.ResponseWriter, devs []string, level int, mountPoint, nasUser string,
-	stepRunning, stepDone func(string), totalSteps int) error {
+	stepRunning, stepDone func(string), stepIndex func() int, totalSteps int) error {
 
 	// 1. Wipe all disks
 	stepRunning(fmt.Sprintf("清除 %d 块磁盘签名", len(devs)))
@@ -470,7 +476,10 @@ func setupRAIDStream(w http.ResponseWriter, devs []string, level int, mountPoint
 		return fmt.Errorf("保存 RAID 配置: %w", persistErr)
 	}
 	if warning != "" {
-		sendProgress(w, ProgressEvent{Step: "保存 RAID 配置", Status: "running", Total: totalSteps, Detail: warning})
+		// Fix C（E7审查回炉 Minor1）：此前缺 Index，序列化出 index:0，与同流
+		// 其他事件（如 handleWizardResetStream 里 Index: step+1 的形态）不齐，
+		// 用 stepIndex() 取与 stepRunning 一致的"当前步"索引。
+		sendProgress(w, ProgressEvent{Step: "保存 RAID 配置", Status: "running", Index: stepIndex(), Total: totalSteps, Detail: warning})
 	}
 	stepDone("保存 RAID 配置")
 
