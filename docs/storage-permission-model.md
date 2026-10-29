@@ -97,6 +97,6 @@ UI tag 诚实标注：SMB 蓝（按用户）、NFS 灰（网段）、DAV/S3 黄�
 4. ~~**P2 — 矩阵回显解析 smb.conf 而非事实源**~~ ✅ 已修（2026-09-21）：buildPermissionMatrix 改为读 folders.db（GetAllFolderMeta + FolderMetaUserPermission），smb.conf 不再参与回显；总览/列表页同步改为 folders.db 权威源 + enrichSharedFolder 统一富化（未纳管目录仍走 smb.conf 兜底）。
 5. **P3 — 非 public 共享目录 mode 0700 + force user**：NFS 非 root 客户端对 rw 导出实际写不进去（写权限只在 SMB 层映射）；FTP/WebDAV 以 nasUser 身份走 force 映射不受影响。
 6. **P3 — listAllUsers 只含 Samba+FTP 用户**：仅 WebDAV(htpasswd) 用户不在物化展开范围内。
-7. **P3 — SyncAllConfigs 无全局互斥**：并发编辑可能交错生成配置（单管理员家庭场景风险低）。
+7. ~~**P3 — SyncAllConfigs 无全局互斥**~~ ✅ 已修（2026-10-29 commit 86aaf46）：包级 syncAllMu 把「folders.db → smb.conf/exports 投影 → 服务重载」整链纳入临界区，12 个调用点并发编辑不再交错生成配置（无重入：applyPendingOps 单向调用 SyncAllConfigs）。
 8. **P3 — 创建/更新即时生效、删除走 pending 队列**：行为不一致，删除提示"已加入待应用队列"但改权限立即 reload smbd。
 9. ~~**P2 — GetAllFolderMeta 静默半填充**~~ ✅ 已修（2026-10-14 commit d1f3a9d）：rows.Scan 错误此前被吞——手工种库/损坏库的 NULL 列会让行以零值半填充进入结果（Name/Path 正常而 RecycleBin 等后续字段静默丢失，删除误走池根回退、回收站页 shares 为空）。现在坏行跳过+日志、rows.Err 检查，fail-visible。
