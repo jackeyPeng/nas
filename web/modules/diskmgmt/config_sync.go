@@ -435,8 +435,20 @@ func GenerateNFSConfig() error {
 	return nil
 }
 
+// syncAllMu 串行化整条「folders.db → smb.conf/exports 投影 → 服务重载」链路：
+// SyncAllConfigs 有 12 个调用点（folders/import/pending_ops/pool/reset/stream/
+// users 等），并发编辑场景下多个 goroutine 同时生成配置+reload 服务可能交错
+// （已知问题 §八 #7，如 A 写完 smb.conf 还没 reload，B 已经读到旧 metas 覆盖写回），
+// 整体串行化后同一时刻只有一条链路在跑。已核实无重入：SyncAllConfigs 内部不
+// 调用 applyPendingOps 或任何会回调自身的函数，不存在同一 goroutine 二次
+// Lock 的死锁风险。单管理员场景锁竞争可忽略，不用 RWMutex/TryLock。
+var syncAllMu sync.Mutex
+
 // SyncAllConfigs regenerates all configs from metadata and reloads services
 func SyncAllConfigs() error {
+	syncAllMu.Lock()
+	defer syncAllMu.Unlock()
+
 	var errs []string
 	changed := false
 
