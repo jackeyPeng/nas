@@ -8,6 +8,7 @@ _（暂无）_
 
 | 版本 | 日期 | 主要变化 |
 |------|------|---------|
+| v1.4.0-beta.35 | 2026-10-29 | RAID 持久化与安装健壮性 — 重启后 RAID 阵列名称漂移根修（流式建池从不更新 initramfs，md0 重启变 md127）：persistRAIDConfig 全链路（带设备 scan/UUID 去重替换/写后验证/initramfs 跟进）接入三条建池路径，出厂重置只删 ARRAY 行保留系统默认；删池清理被删阵列 ARRAY 行并跟进 initramfs（灭两行同名冲突）；独立审查回炉（cat 失败留痕透出警告/测试 stub 泄漏修正/SSE 补 Index）；安装脚本 apt 瞬时失败加固（DPkg 锁等待+3 次重试，实锤 apt-daily-upgrade 撞锁中止安装）+ install.sh 失败路径保全完整日志并回显真实错误。真机验收：两台测试机重置后用户级全流程（LVM merge + RAID1）一次通过，注册表 41/41 + 套件 38/38 + AI/F2 E2E 全 PASS + Chrome UI 实测；RAID 机 resync 中途重启装配仍为 md0、续跑进度面板与内核实时一致 |
 | v1.4.0-beta.34 | 2026-10-28 | 存储控制面安全大版本 — diskmgmt 五轮加固（外部审查五项高危：假成功/吞错/选盘退化全盘/删池顺序错/fstab 误删 + P0 残项 + 回炉）+ 三模型共识审查落地：删池服务端重解析与系统盘闸门、出厂重置擦盘收敛为纳管盘（外来数据盘不再误擦）、包级缓存竞态修复、配置漂移真比对、mdstat 统一块解析；RAID 健康监控全盲根修（无 shell glob 恒失败）+ 状态链 sysfs 优先重写（健康/活动分离、降级计数、重建 ETA）；删用户即时重投影 SMB/NFS 托管段；升级路径保留已改密码；专用整机定位收敛（separate 下线、低级别 API 调试开关）。真机验收：两台测试机用户级全流程（LVM merge + RAID1）注册表 41/41 + 套件 38/38 + AI/F2 E2E 全 PASS + RAID 降级/重建/恢复全生命周期实测 + Chrome UI 实测 |
 | v1.4.0-beta.33 | 2026-10-27 | S1 最小权限 — 面板从 7×24 常驻 root 降为以家庭管理员账号（如 `fm`）运行，面板 RCE 不再等同整机 root；安装/清理脚本改「用户身份直跑 + 特权步骤逐条 sudo」（`curl|bash` 去 sudo 前缀，六载体同步）；sudoers 白名单 root-equivalence 复审（115→145 条：按实际调用面收窄/补齐裸奔调用/铲除死条目，灭裸 chpasswd/gpasswd/`sed -i *` 提权后门）。附 S1 强化验收修复轮（48/57 真机 journal 实证）：chpasswd 路径错配、隐性 root 依赖（blkid/fstab/journalctl）、重装 ETXTBSY 原子替换、用户 home ACL、share 级回收站 fm 失效等七轮根修 + cleanup.sh 非交互 `--yes` 与 RAID wipefs 顺序修复。真机验收：48(LVM merge)+57(RAID1) 双机用户级全流程，acceptance-suite 38/38 + AI E2E 31 项 + F2 E2E 全 PASS + 本机 Chrome UI 实测 |
 | v1.4.0-beta.32 | 2026-10-23 | 家庭管家底座 F2（主动管家）— 面板从「被动等命令」升级为「主动发现、提出建议、经确认后干活」：notifications 轻量收件箱（eventbus 订阅式）+ triggers 建议卡引擎（健康异常/备份失败/同步失败/磁盘水位≥85% 触发，同事项 24h 冷却+最多 5 条待处理反骚扰）+ 建议接受链（点「执行」→ 确认卡 → 任务引擎，零新确认语义）+ 家庭周报（周日 9 点自动生成，存储/任务/健康三块，零 LLM 依赖）+ 前端通知中心（铃铛/未读徽标/建议卡/周报卡/人话文案插值，关 AI 即整体隐藏）+ cronMatch 抽取 common 共享。附验收修复：周报通知去重、PoolUsage 补 RAID/直挂池回退（此前 raid 直挂机水位检查永远哑火）、cleanup.sh 重置补删仓库实体（防旧数据库穿越复活）。真机验收：F2 E2E 15/15 + UI 全流程 Chrome 实测 + AI E2E 31 项 + 套件 38/38 + 真实 DeepSeek 回归 |
@@ -32,6 +33,39 @@ _（暂无）_
 | v1.4.0-beta.13 | 2026-09-19 | NFS 导出对所有网段开放（跨网段客户端可挂载） |
 | v1.4.0-beta.12 | 2026-09-18 | 创建向导按已选磁盘实时预估容量（选目标后预览面板 + 各方案可用容量/注意事项）+ 登录页品牌 slogan |
 | v1.4.0-beta.11 | 2026-09-18 | 当前连接展示（监控页，SMB 会话 + 各协议端口归类）+ 回收站改 per-share `.recycle/`（删除=rename 零拷贝，恢复保留目录树，旧 `#recycle` 兼容）+ 存储页 tab 切换跳动修复 |
+
+---
+
+## [2026-10-29] - v1.4.0-beta.35 — RAID 持久化与安装健壮性（重启装配根修 + apt 撞锁加固）
+
+E7/E8 两条真机实锤缺陷根修（重启后阵列名称漂移、删池遗留 ARRAY 行）+ 安装脚本 F-1/F-2 加固。延续 opencode 编码 + 独立子代理审查（E7 裁决 request_changes 后回炉闭环）+ 双机真机验收流程；diskmgmt 覆盖率 23.6% → 25.6%。
+
+### RAID 配置持久化链路（E7，9100092 + 回炉 ecb1231）
+
+- **真机实锤**：RAID1 池重启后装配成 md127 而非建池时的 md0——流式建池写了 `/etc/mdadm/mdadm.conf` 的 ARRAY 行但从不跑 `update-initramfs`，initrd 内仍是装机时的旧配置，早期装配无视根配置。数据无损（fstab 按 UUID 挂载、面板 sysfs 链自愈跟随），但配置/initrd/内核三方不一致，多阵列下会演变成命名冲突
+- 新增 `raid_persist.go`：`persistRAIDConfig` 串起「带设备参数 `mdadm --detail --scan` → 读现有 conf → UUID 去重替换/追加 → 落盘 → 写后验证 → `update-initramfs -u`」；三条建池路径（stream/setupRaidN/setupRaid1）统一接入，其中 setupRaid1 此前**完全不写** mdadm.conf
+- 灭假成功：此前 scan/cat 双吞错，scan 失败也会报「保存 RAID 配置」成功；现在失败即 stepFailed 并中止，initramfs 失败降级为可见警告不静默
+- 出厂重置从「整文件清空」改为只删 ARRAY 行，保留 Debian 默认的 HOMEHOST/MAILADDR（判据放宽为 `^ARRAY` 前缀，手写无 UUID 行同样清除）
+- 执行器注入（`cmdRunner` + `raidConfWriter`）使全链路可表驱动测试，无需真实 sudo/磁盘
+- 独立审查 request_changes（2 important）→ 回炉修复：cat 失败改为 log 留痕 + 警告透出（此前瞬时读失败会静默用单行内容覆盖整个 conf，写后验证只查目标 UUID 必过）、6 处测试 stub 恢复顺序写反导致全局状态泄漏、SSE 警告事件补 Index
+
+### 删池清理 ARRAY 行（E8，a18ba02）
+
+- **真机实锤**：删池成功后被删阵列的 ARRAY 行留在 conf 里，重建后出现两条同指 `/dev/md0` 的行（旧 UUID + 新 UUID），initrd 同带——重启装配命名冲突
+- `handlePoolDelete` raid 分支在 `mdadm --stop` **之前**采集阵列 UUID（停止后设备节点消失、scan 不到），拆除成功后 `removeRAIDConfigByUUID` 精确删该行 + 写后验证 + initramfs 跟进；采集失败留警告不阻断拆除
+- 删池步骤 7 → 8 步（新增「清理 mdadm.conf ARRAY 行」）
+
+### 安装脚本健壮性（F-1/F-2，619ce19）
+
+- **F-1 真机实锤**：安装中止于 setup.sh `[1/10]`，`apt-get update` 与 systemd `apt-daily-upgrade.service` 撞锁失败，`set -e` 静默退出；4 分钟后单独重跑全过（纯瞬时冲突）。加固：`apt_retry` 包裹（3 次、间隔 10s）+ install 命令加 `-o DPkg::Lock::Timeout=60` 等锁
+- **F-2 真机实锤**：install.sh 失败路径 `rm -f` 掉 setup.sh 日志，提示却称「完整日志已保留: 重新运行可查看」——销毁证据且撒谎；回显过滤器（`^\[|✓|✗|⚠`）也不匹配 apt 的 `E:` 错误行，用户只看到「[1/10] 安装基础软件包...」后直接失败、零线索。修复：失败时日志移至 `/tmp/nas-install-setup-<ts>.log` 并如实给出路径 + 追加未过滤的原始日志尾部 30 行 + 过滤器补 `^E:`
+
+### 真机验收
+
+- 两台测试机重置后用户级全流程（fm 身份一键安装、出厂默认密码 + 首登强制改密四件套）：测试机48（LVM merge 4×50G→200G）+ 测试机57（RAID1 2×50G），8 服务 active、注册表 41/41、acceptance-suite 38/38、AI E2E 31 项 ALL PASS、F2 E2E ALL PASS（含 kill -9 重启不丢不重）、删用户即时重投影零漂移、本机 Chrome UI 实测（仪表盘/存储/用户页，无幽灵共享、无漂移告警、无 md127）
+- RAID 重启装配验证：resync 14.8% 时重启 → 装配为 md0（漂移消除）、resync 自动续跑至 55.4%、面板如实显示「正在同步 68.4%」+ speed/ETA 与内核一致——consensus 阶段 1 验收「重启后继续显示真实进度」实证
+- 删池/重建循环验证：删池后 ARRAY 行数 0 且默认行保留、initramfs 更新；重建后恰一条 ARRAY 行且 UUID 与 `mdadm --detail --scan` 逐字一致
+- 安装脚本修复的验证方式：测试机48 首次安装复现 F-1 中止，测试机57 用修复后脚本全新安装一次通过
 
 ---
 
