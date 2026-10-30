@@ -271,7 +271,7 @@ func handleVsftpdUsers(w http.ResponseWriter, r *http.Request) {
 		cmd := exec.Command("sudo", "tee", "-a", "/etc/vsftpd.userlist")
 		cmd.Stdin = strings.NewReader(username + "\n")
 		cmd.Run()
-		common.SudoExec("systemctl", "restart", "vsftpd")
+		common.RestartIfActive("vsftpd") // FTP 默认关闭时不复活 stopped 单元
 		common.JSONResponse(w, map[string]interface{}{"message": "用户 " + username + " 已添加到 FTP 白名单"})
 		return
 	}
@@ -290,7 +290,7 @@ func handleVsftpdUsers(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		writeFileWithSudo("/etc/vsftpd.userlist", strings.Join(result, "\n")+"\n")
-		common.SudoExec("systemctl", "restart", "vsftpd")
+		common.RestartIfActive("vsftpd") // FTP 默认关闭时不复活 stopped 单元
 		common.JSONResponse(w, map[string]interface{}{"message": "用户 " + username + " 已从 FTP 白名单移除"})
 	}
 }

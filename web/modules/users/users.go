@@ -429,7 +429,9 @@ func changePassword(username, password string) error {
 			}
 		}
 		common.SudoExec("systemctl", "daemon-reload")
-		common.SudoExec("systemctl", "restart", "rclone-s3")
+		// S3 默认关闭时 restart 会复活 stopped 单元——仅在运行时重启，
+		// unit 文件已更新，下次用户在服务页开启时生效
+		common.RestartIfActive("rclone-s3")
 
 		// Update in-memory panel password (takes effect immediately, no restart)
 		common.UpdateNasPass(password)

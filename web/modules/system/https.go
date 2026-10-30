@@ -387,7 +387,7 @@ func applyRcloneTLS(svcName, port string) []string {
 	}
 	common.SafeWriteFile(unitFile, strings.Join(newLines, "\n"))
 	common.SudoExec("systemctl", "daemon-reload")
-	common.SudoExec("systemctl", "restart", svcName)
+	common.RestartIfActive(svcName) // 服务未运行时只更新 unit，开启时自然生效
 	results = append(results, fmt.Sprintf("%s (端口 %s): HTTPS 已启用", svcName, port))
 	return results
 }
@@ -432,5 +432,5 @@ func revertServiceTLS(svcName string) {
 	}
 	common.SafeWriteFile(unitFile, strings.Join(newLines, "\n"))
 	common.SudoExec("systemctl", "daemon-reload")
-	common.SudoExec("systemctl", "restart", svcName)
+	common.RestartIfActive(svcName) // 服务未运行时只更新 unit，开启时自然生效
 }

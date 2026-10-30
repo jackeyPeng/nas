@@ -28,3 +28,22 @@ func mustExecOut(cmd string, args ...string) string {
 	out, _ := ExecOutput(cmd, args...)
 	return out
 }
+
+// IsServiceActive 报告 systemd 单元当前是否 active（alias 单元 is-active 会
+// 正确解析到目标单元，无需额外处理）。
+func IsServiceActive(name string) bool {
+	return strings.TrimSpace(mustExecOut("systemctl", "is-active", name)) == "active"
+}
+
+// RestartIfActive 仅在服务运行时 restart。systemctl restart 对 stopped 单元
+// 是「启动」语义——协议服务默认关闭后，无条件 restart 会把用户没开的服务
+// 偷偷拉起来（实锤：首登改密路径 restart rclone-s3 复活了默认关闭的 S3）。
+// 配置文件/unit 文件的更新照常先落盘，服务下次被用户开启时自然生效。
+// 返回是否实际执行了 restart。
+func RestartIfActive(name string) bool {
+	if !IsServiceActive(name) {
+		return false
+	}
+	SudoExec("systemctl", "restart", name)
+	return true
+}
