@@ -23,5 +23,11 @@ go build/vet/test 全过，i18n 1414 key 对齐，注册表 41 项锁定。详�
 ## 遗留观察（非阻塞）
 
 - svcToggle 关闭确认用原生 confirm()（阻塞式、样式不可控），后续可换面板内确认卡（低优先级）。
-- acceptance-suite 尚无「默认关闭断言 + 开关往返」段（本轮为跑套件手动全开协议）；F1 脚本已改 delete_data=true 版（scratch，需回灌 skill 资产时一并考虑）。
+- ~~acceptance-suite 尚无「默认关闭断言 + 开关往返」段~~ 已补（发版后收尾）：P 段开头 API 幂等全开四协议 + N 段 vsftpd off/on 往返 + smbd 门禁 400，全绿口径 38→45 PASS，.48 实测 45/45；同时修掉套件自身 fixture 坑（/tmp/acc-pass 被清后重跑，alice/bob 旧密码致 6 项 SMB 假回归——home 已存在时改走 PUT /api/users/{name}/password 同步）。F1 脚本已改 delete_data=true 版（scratch）。
 - 存储页对孤儿 home 目录（delete 不带 delete_data 的遗留）按「未纳管目录兜底」显示——设计行为，验收 ghost 断言需区分。
+
+## E-R5-1（发布流程失误，非产品 bug，发布后复验时实锤）
+
+改了 scripts/install.sh（横幅/验证口径/FRESH_INSTALL 传递）但**忘跑 upload-r2.sh** → get.z1.sale 上还是 beta.36 旧 install.sh。发布后复验首跑：旧 install.sh（不传 FRESH_INSTALL、旧验证口径）+ 新 setup.sh（回退本地 .env 判定=升级态）组合出混合态——nfs/vsftpd 被 apt preset 开、rclone 关、旧验证循环误报 ✗ 失败。处置：upload-r2.sh 同步（线上 md5 2087154e… 与仓库一致）、重置 .48 重跑一条命令安装 → 全绿（锚点 beta.37/14e60a6、默认态正确、四件套+S3 回归过、建池 41/41、发布物套件 38/38）。教训已写入 nas-release skill 第 8 步：**复验起跑前固定先核线上 install.sh md5**；附带坑：detached 安装从被 cleanup 删掉的 cwd 启动会 getcwd 失败 → git clone 报「无法克隆仓库」（日志仅 shell-init 警告可辨），必须从有效目录发起。
+
+附带收获：复验清理时误 rm 了套件保留的 rbtest 托管共享目录，实测了漂移自动清理链路（check 检出「元数据在目录丢」→ 自动清元数据 → 再 sync 收口 smb.conf 段 → drift=False），产品行为正确。
