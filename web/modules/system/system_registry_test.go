@@ -82,6 +82,39 @@ func TestAllRegistryItemsNoFileBrowser(t *testing.T) {
 	}
 }
 
+// TestClassifyOptionalProtocolService 锁定四个默认关闭协议服务
+// (ID 3/4/5/7: nfs-kernel-server/vsftpd/rclone-webdav/rclone-s3) 的三态判定：
+// disabled+inactive 是产品默认态 → pass（不是失败）；enabled 或 active 时
+// 沿用原有 active+enabled 判活语义；enabled 但未 active（或反之）→ warn/fail。
+func TestClassifyOptionalProtocolService(t *testing.T) {
+	cases := []struct {
+		name       string
+		enabled    bool
+		active     bool
+		wantStatus string
+	}{
+		{"新装默认关闭-disabled且inactive-pass", false, false, "pass"},
+		{"用户开启且健康-enabled且active-pass", true, true, "pass"},
+		{"用户开了但服务挂了-enabled但inactive-fail", true, false, "fail"},
+		{"active但未enabled(手动start)-warn", false, true, "warn"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			status, detail := classifyOptionalProtocolService(c.enabled, c.active)
+			if status != c.wantStatus {
+				t.Errorf("classifyOptionalProtocolService(enabled=%v, active=%v) = (%q, %q), want status %q",
+					c.enabled, c.active, status, detail, c.wantStatus)
+			}
+		})
+	}
+	// disabled+inactive 的 detail 必须清楚说明"默认关闭，可在服务管理页开启"，
+	// 不能让新装机看起来像是服务检查失败。
+	_, detail := classifyOptionalProtocolService(false, false)
+	if !strings.Contains(detail, "默认关闭") {
+		t.Errorf("disabled+inactive detail = %q, 应说明默认关闭", detail)
+	}
+}
+
 // TestDetectPoolMode covers mount-source device → pool mode classification.
 func TestDetectPoolMode(t *testing.T) {
 	cases := []struct {

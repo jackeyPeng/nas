@@ -17,17 +17,32 @@ type ServiceDef struct {
 	DisplayName string `json:"display_name"`
 	Port        string `json:"port"`
 	Description string `json:"description"`
+	// Optional 标记该服务是否为"协议服务"：新装机默认关闭，用户可在服务页
+	// 一键开启/关闭（on/off 动作）。核心服务（Samba/面板/fail2ban）为 false，
+	// 误关会影响面板自身可用性或基础文件共享，不提供一键关闭入口。
+	Optional bool `json:"optional"`
 }
 
 // NasServices is the list of known NAS services
 var NasServices = []ServiceDef{
-	{Name: "smbd", DisplayName: "Samba SMB", Port: "139, 445", Description: "Windows/Mac/Linux 文件共享"},
-	{Name: "nmbd", DisplayName: "Samba NetBIOS", Port: "137-138", Description: "NetBIOS 名称服务"},
-	{Name: "nfs-kernel-server", DisplayName: "NFS", Port: "2049", Description: "Linux 文件共享"},
-	{Name: "vsftpd", DisplayName: "FTP", Port: "21", Description: "文件传输协议"},
-	{Name: "rclone-webdav", DisplayName: "WebDAV", Port: "8080", Description: "WebDAV 文件服务"},
-	{Name: "rclone-s3", DisplayName: "S3 对象存储", Port: "9000", Description: "S3 兼容对象存储 (rclone serve s3)"},
-	{Name: "fail2ban", DisplayName: "Fail2ban", Port: "-", Description: "入侵防护"},
+	{Name: "smbd", DisplayName: "Samba SMB", Port: "139, 445", Description: "Windows/Mac/Linux 文件共享", Optional: false},
+	{Name: "nmbd", DisplayName: "Samba NetBIOS", Port: "137-138", Description: "NetBIOS 名称服务", Optional: false},
+	{Name: "nfs-kernel-server", DisplayName: "NFS", Port: "2049", Description: "Linux 文件共享", Optional: true},
+	{Name: "vsftpd", DisplayName: "FTP", Port: "21", Description: "文件传输协议", Optional: true},
+	{Name: "rclone-webdav", DisplayName: "WebDAV", Port: "8080", Description: "WebDAV 文件服务", Optional: true},
+	{Name: "rclone-s3", DisplayName: "S3 对象存储", Port: "9000", Description: "S3 兼容对象存储 (rclone serve s3)", Optional: true},
+	{Name: "fail2ban", DisplayName: "Fail2ban", Port: "-", Description: "入侵防护", Optional: false},
+}
+
+// IsOptionalService reports whether name refers to a registered optional
+// (protocol) service — the gate used by the on/off actions.
+func IsOptionalService(name string) bool {
+	for _, svc := range NasServices {
+		if svc.Name == name {
+			return svc.Optional
+		}
+	}
+	return false
 }
 
 // SystemInfo holds system overview data
@@ -142,9 +157,41 @@ func GetServices() []map[string]interface{} {
 			"description":  svc.Description,
 			"active":       active,
 			"enabled":      enabled,
+			"optional":     svc.Optional,
 		})
 	}
 	return result
+}
+
+// ServiceState is the minimal per-service state servicesSummary needs to
+// compute the dashboard's "N 个服务 · M 个异常" count. Kept separate from
+// the full GetServices() map so the counting rule is a pure, testable
+// function of (optional, enabled, active) rather than JSON wrangling.
+type ServiceState struct {
+	Optional bool
+	Enabled  bool
+	Active   bool // true only for the "active" systemd state
+}
+
+// servicesSummary computes (total, bad) for the dashboard service-health
+// card using the "核心服务 + 已启用的可选服务" rule:
+//   - core service (Optional=false): always counted; bad if not active.
+//   - optional service, disabled: not counted at all (not a denominator
+//     member, never "bad") — a fresh install with all 4 protocols off must
+//     not show "4 个异常".
+//   - optional service, enabled but not active (stopped/failed): counted
+//     and bad — the user turned it on, so it's expected to be healthy.
+func servicesSummary(list []ServiceState) (total, bad int) {
+	for _, s := range list {
+		if s.Optional && !s.Enabled {
+			continue
+		}
+		total++
+		if !s.Active {
+			bad++
+		}
+	}
+	return total, bad
 }
 
 // handleDashboard returns system overview
@@ -152,12 +199,19 @@ func handleDashboard(w http.ResponseWriter, r *http.Request) {
 	info := GetSystemInfo()
 	services := GetServices()
 
-	activeCount := 0
+	states := make([]ServiceState, 0, len(services))
 	for _, svc := range services {
-		if svc["active"] == "active" {
-			activeCount++
-		}
+		optional, _ := svc["optional"].(bool)
+		enabled, _ := svc["enabled"].(bool)
+		active, _ := svc["active"].(string)
+		states = append(states, ServiceState{
+			Optional: optional,
+			Enabled:  enabled,
+			Active:   active == "active",
+		})
 	}
+	totalServices, badServices := servicesSummary(states)
+	activeCount := totalServices - badServices
 
 	response := map[string]interface{}{
 		"hostname":       info.Hostname,
@@ -177,7 +231,8 @@ func handleDashboard(w http.ResponseWriter, r *http.Request) {
 		"ip_addr":        info.IPAddr,
 		"services":       services,
 		"active_count":   activeCount,
-		"total_services": len(services),
+		"total_services": totalServices,
+		"bad_services":   badServices,
 		// 前端据此在刷新/恢复会话后也弹出强制改密（不依赖登录响应）
 		"must_change_password": common.IsDefaultPass(),
 		"username":             common.GetNASUser(),

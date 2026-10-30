@@ -271,6 +271,27 @@ type storageState struct {
 	detail string
 }
 
+// classifyOptionalProtocolService 是四个默认关闭协议服务（NFS/vsftpd/
+// rclone-webdav/rclone-s3，注册表 ID 3/4/5/7）的注册表判定，三态：
+//   - disabled 且 inactive → pass，「默认关闭，可在服务管理页开启」
+//     （新装机四协议全关，不应把产品默认态报成失败，建池后仍要能到 41/41）；
+//   - enabled 或 active → 沿用原有 checkService 语义：active 且 enabled 才 pass；
+//   - enabled 但 inactive（或 active 但未 enabled）→ warn/fail，与旧版一致。
+//
+// 抽成纯函数（两个布尔入参）方便单测覆盖三态，不依赖真实 systemctl 调用。
+func classifyOptionalProtocolService(enabled, active bool) (status, detail string) {
+	if !enabled && !active {
+		return "pass", "默认关闭，可在服务管理页开启"
+	}
+	if active && enabled {
+		return "pass", "active + enabled"
+	}
+	if active {
+		return "warn", "active but not enabled"
+	}
+	return "fail", fmt.Sprintf("状态: inactive, 自启: %s", map[bool]string{true: "enabled", false: "disabled"}[enabled])
+}
+
 // storageItemStates computes the pool-mode-aware verdicts for registry
 // items 34-39 (LVM VG/LV/PV, RAID arrays, disk signature, pool mount).
 func storageItemStates(mode string, hasVG, hasLV, hasPV bool, mdCount int, arrays []MdArray, hasSig bool, mountCount int) map[int]storageState {
@@ -512,6 +533,17 @@ func RefreshRegistry() RegistryReport {
 		}
 	}
 
+	// checkOptionalProtocolService 是四个默认关闭协议服务(ID 3/4/5/7)专用，
+	// 走 classifyOptionalProtocolService 的三态判定(disabled+inactive = pass)。
+	checkOptionalProtocolService := func(id int, svcName string) {
+		out, _ := common.ExecOutput("systemctl", "is-active", svcName)
+		active := strings.TrimSpace(out) == "active"
+		enabledOut, _ := common.ExecOutput("systemctl", "is-enabled", svcName)
+		enabled := strings.TrimSpace(enabledOut) == "enabled" || strings.TrimSpace(enabledOut) == "alias"
+		status, detail := classifyOptionalProtocolService(enabled, active)
+		updateItem(id, status, detail)
+	}
+
 	checkFileState := func(id int, path string, shouldExist bool, okMsg, failMsg string) {
 		_, err := os.Stat(path)
 		if err == nil && shouldExist {
@@ -546,10 +578,10 @@ func RefreshRegistry() RegistryReport {
 	// 一、系统服务 (8项)
 	checkService(1, "smbd")
 	checkService(2, "nmbd")
-	checkService(3, "nfs-kernel-server")
-	checkService(4, "vsftpd")
-	checkService(5, "rclone-webdav")
-	checkService(7, "rclone-s3")
+	checkOptionalProtocolService(3, "nfs-kernel-server")
+	checkOptionalProtocolService(4, "vsftpd")
+	checkOptionalProtocolService(5, "rclone-webdav")
+	checkOptionalProtocolService(7, "rclone-s3")
 	checkService(8, "fail2ban")
 	checkService(9, "nas-panel")
 

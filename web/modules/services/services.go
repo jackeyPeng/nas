@@ -60,7 +60,7 @@ func handleServiceList(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleServiceAction handles start/stop/restart/logs
+// handleServiceAction handles start/stop/restart/logs/on/off
 func handleServiceAction(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/api/services/")
 	parts := strings.Split(path, "/")
@@ -84,6 +84,9 @@ func handleServiceAction(w http.ResponseWriter, r *http.Request) {
 			"output":  output,
 		})
 
+	case "on", "off":
+		handleServiceToggle(w, r, svcName, action)
+
 	case "logs":
 		logs := getServiceLogs(svcName)
 		w.Header().Set("Content-Type", "text/plain")
@@ -92,6 +95,58 @@ func handleServiceAction(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, `{"error": "unknown action"}`, http.StatusBadRequest)
 	}
+}
+
+// serviceToggleAction maps the "on"/"off" HTTP action to the systemctl verb
+// used against the service. Pure function so the mapping is testable without
+// needing to inject SudoExec.
+func serviceToggleAction(action string) (systemctlVerb string, ok bool) {
+	switch action {
+	case "on":
+		return "enable", true
+	case "off":
+		return "disable", true
+	default:
+		return "", false
+	}
+}
+
+// handleServiceToggle 实现协议服务的一键开/关：
+//   - 仅限 Optional=true 的服务（防止误关 smbd/面板等核心服务，非 optional 400）
+//   - on  → systemctl enable --now <name>，随后 is-active 复核
+//   - off → systemctl disable --now <name>
+//
+// 协议开关是安全相关操作（打开新的网络入口），成功路径走富 detail 审计。
+func handleServiceToggle(w http.ResponseWriter, r *http.Request, svcName, action string) {
+	verb, ok := serviceToggleAction(action)
+	if !ok {
+		http.Error(w, `{"error": "unknown action"}`, http.StatusBadRequest)
+		return
+	}
+	if !dashboard.IsOptionalService(svcName) {
+		http.Error(w, fmt.Sprintf(`{"error": "%s 不是可选协议服务，不支持一键开关"}`, svcName), http.StatusBadRequest)
+		return
+	}
+
+	output, err := common.SudoExec("systemctl", verb, "--now", svcName)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error": %q}`, output+": "+err.Error()), http.StatusInternalServerError)
+		return
+	}
+
+	activeOut, _ := common.ExecOutput("systemctl", "is-active", svcName)
+	active := strings.TrimSpace(activeOut) == "active"
+
+	verbCN := "开启"
+	if action == "off" {
+		verbCN = "关闭"
+	}
+	common.LogAuditRequest(r, "SERVICES", verbCN+"协议服务", fmt.Sprintf("%s (%s)，当前状态: active=%v", svcName, verb, active), "成功")
+
+	common.JSONResponse(w, map[string]interface{}{
+		"message": fmt.Sprintf("%s 已%s", svcName, verbCN),
+		"active":  active,
+	})
 }
 
 // RegisterRoutes registers services routes
