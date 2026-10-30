@@ -136,7 +136,9 @@ echo -e "  地址:     ${PRIMARY_IP:-未知}"
 #      防止重跑 install.sh 把用户已改的密码静默打回出厂默认）
 #   3. 两者皆无（全新安装）→ 出厂默认 + 首次登录强制改密
 EXISTING_NAS_PASS=""
+REPO_ENV_EXISTED=false
 if [ -f "$REPO_DIR/.env" ]; then
+    REPO_ENV_EXISTED=true
     EXISTING_NAS_PASS=$(grep '^NAS_PASS=' "$REPO_DIR/.env" 2>/dev/null | head -1 | cut -d'=' -f2-)
 fi
 
@@ -270,7 +272,16 @@ echo -e "${BOLD}${BLUE}═══ 开始配置 NAS 服务 ═══${NC}"
 # 兜底链能正确识别；root 直跑时 $SUDO 为空、$NAS_USER 显式透传（root 下 SUDO_USER 为空，
 # 此处显式传入避免 setup.sh 兜底到 $USER=root 被拒）。
 SETUP_LOG=$(mktemp)
-if $SUDO env NAS_USER="$NAS_USER" bash "$INSTALL_DIR/scripts/setup.sh" > "$SETUP_LOG" 2>&1; then
+# FRESH_INSTALL 必须由 install.sh 判定后显式传入：一键路径下 install.sh 会在
+# 调用 setup.sh 之前先创建 .env（"创建配置文件"步骤），setup.sh 本地按 .env
+# 存在性判定会恒得 false（升级语义），新装机将错误地全量启用可选协议。
+# 真信号 = 本脚本开始时仓库 .env 是否已存在（REPO_ENV_EXISTED，与密码保留同源）。
+if [ "$REPO_ENV_EXISTED" = true ]; then
+    SETUP_FRESH=false
+else
+    SETUP_FRESH=true
+fi
+if $SUDO env NAS_USER="$NAS_USER" FRESH_INSTALL="$SETUP_FRESH" bash "$INSTALL_DIR/scripts/setup.sh" > "$SETUP_LOG" 2>&1; then
     SETUP_OK=true
 else
     SETUP_OK=false

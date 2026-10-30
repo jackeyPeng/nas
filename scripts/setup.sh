@@ -153,12 +153,13 @@ fi
 ENV_FILE="$SCRIPT_DIR/.env"
 
 # ==================== 新装/升级判定（FRESH_INSTALL） ====================
-# 信号: 本脚本开始执行时 .env 是否已存在。install.sh 的一键路径会在调用
-# setup.sh 之前先创建 .env（见 install.sh "创建配置文件"步骤），所以升级机
-# （此前已跑过 install.sh/setup.sh）这里必为 true；真正的全新机器此刻还没有
-# .env。本脚本自身不创建 .env，判定必须发生在任何可能触碰 .env 的逻辑之前
-# （下面的存在性检查、chmod 等），否则判定会被自己的副作用污染。
-if [ -f "$ENV_FILE" ]; then
+# 优先采用调用方显式传入的 FRESH_INSTALL 环境变量：一键路径（install.sh）会在
+# 调用本脚本之前先创建 .env，本地按 .env 存在性判定在该路径下恒为 false——
+# install.sh 已按其开始时 .env 是否存在（与"保留已改密码"同一信号）判定并传入。
+# 未传时（root 直跑 setup.sh 的开发/升级路径）回退本地判定：.env 已存在视为升级。
+if [ -n "${FRESH_INSTALL:-}" ]; then
+    : # 采用调用方传入值（true/false）
+elif [ -f "$ENV_FILE" ]; then
     FRESH_INSTALL=false
 else
     FRESH_INSTALL=true
