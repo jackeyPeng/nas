@@ -145,11 +145,8 @@ func GetServices() []map[string]interface{} {
 			errText = err.Error()
 		}
 		active := classifyServiceActive(out, errText)
-		enabled := false
-		if enOut, enErr := common.ExecOutput("systemctl", "is-enabled", svc.Name); enErr == nil {
-			en := strings.TrimSpace(enOut)
-			enabled = en == "enabled" || en == "enabled-runtime" || en == "alias" || en == "static"
-		}
+		// alias 单元（nfs-kernel-server）is-enabled 恒报 alias，统一走 ResolveServiceEnabled
+		enabled := common.ResolveServiceEnabled(svc.Name)
 		result = append(result, map[string]interface{}{
 			"name":         svc.Name,
 			"display_name": svc.DisplayName,

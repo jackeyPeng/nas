@@ -86,9 +86,18 @@ enable_optional_service() {
         return
     fi
     # 升级路径：enabled 或 active 才 enable+restart，否则维持用户已有的关闭状态
+    # alias 单元（nfs-kernel-server → nfs-server）is-enabled 恒报 "alias" 且退出码 0，
+    # 直接采信会把「用户关着的 NFS」误判成 enabled 而重新打开——解析规范单元再查
     local is_enabled="disabled"
     local is_active="inactive"
-    systemctl is-enabled "$svc" >/dev/null 2>&1 && is_enabled="enabled"
+    local enabled_state
+    enabled_state="$(systemctl is-enabled "$svc" 2>/dev/null || true)"
+    if [ "$enabled_state" = "alias" ]; then
+        local canon
+        canon="$(systemctl show "$svc" -p Id --value 2>/dev/null || true)"
+        enabled_state="$(systemctl is-enabled "$canon" 2>/dev/null || true)"
+    fi
+    [ "$enabled_state" = "enabled" ] && is_enabled="enabled"
     systemctl is-active "$svc" >/dev/null 2>&1 && is_active="active"
     if [ "$is_enabled" = "enabled" ] || [ "$is_active" = "active" ]; then
         systemctl enable "$svc"

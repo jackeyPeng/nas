@@ -523,7 +523,7 @@ func RefreshRegistry() RegistryReport {
 		out, _ := common.ExecOutput("systemctl", "is-active", svcName)
 		active := strings.TrimSpace(out) == "active"
 		enabledOut, _ := common.ExecOutput("systemctl", "is-enabled", svcName)
-		enabled := strings.TrimSpace(enabledOut) == "enabled" || strings.TrimSpace(enabledOut) == "alias"
+		enabled := common.ResolveServiceEnabled(svcName)
 		if active && enabled {
 			updateItem(id, "pass", "active + enabled")
 		} else if active {
@@ -538,8 +538,9 @@ func RefreshRegistry() RegistryReport {
 	checkOptionalProtocolService := func(id int, svcName string) {
 		out, _ := common.ExecOutput("systemctl", "is-active", svcName)
 		active := strings.TrimSpace(out) == "active"
-		enabledOut, _ := common.ExecOutput("systemctl", "is-enabled", svcName)
-		enabled := strings.TrimSpace(enabledOut) == "enabled" || strings.TrimSpace(enabledOut) == "alias"
+		// alias 单元（nfs-kernel-server → nfs-server）is-enabled 恒报 "alias"，
+		// 直接采信会把默认关闭的 NFS 判成 enabled+inactive=fail
+		enabled := common.ResolveServiceEnabled(svcName)
 		status, detail := classifyOptionalProtocolService(enabled, active)
 		updateItem(id, status, detail)
 	}

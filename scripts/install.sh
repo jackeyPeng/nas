@@ -357,8 +357,17 @@ done
 # 四个可选协议服务：inactive 且 disabled 是产品默认态（新装只开 SMB+面板），
 # 不算验证失败；active 或 enabled 但 failed 仍如实判定（参考 FileBrowser 退役先例）
 for svc in nfs-kernel-server vsftpd rclone-webdav rclone-s3; do
-    STATUS=$(systemctl is-active "$svc" 2>/dev/null || echo "inactive")
-    ENABLED=$(systemctl is-enabled "$svc" 2>/dev/null || echo "disabled")
+    # is-active/is-enabled 对 inactive/disabled 会输出有效值但退出码非零，
+    # `|| echo 兜底` 会拼成两行值让等值比较必假（默认关闭时代必现的潜伏 bug）；
+    # alias 单元（nfs-kernel-server → nfs-server）的 is-enabled 恒报 "alias"，
+    # 须解析规范单元名后再查真实自启状态
+    STATUS=$(systemctl is-active "$svc" 2>/dev/null || true); [ -n "$STATUS" ] || STATUS="inactive"
+    ENABLED=$(systemctl is-enabled "$svc" 2>/dev/null || true)
+    if [ "$ENABLED" = "alias" ]; then
+        CANON=$(systemctl show "$svc" -p Id --value 2>/dev/null || true)
+        ENABLED=$(systemctl is-enabled "$CANON" 2>/dev/null || true)
+    fi
+    [ -n "$ENABLED" ] || ENABLED="disabled"
     if [ "$STATUS" = "active" ]; then
         printf "  ${CHECKMARK} %-22s ${GREEN}%s${NC}\n" "$svc" "$STATUS"
     elif [ "$STATUS" = "inactive" ] && [ "$ENABLED" = "disabled" ]; then
