@@ -331,7 +331,7 @@ sleep 2
 
 # 检查所有服务
 echo -e "${BOLD}服务状态:${NC}"
-for svc in smbd nmbd nfs-kernel-server vsftpd rclone-webdav rclone-s3 fail2ban nas-panel; do
+for svc in smbd nmbd fail2ban nas-panel; do
     STATUS=$(systemctl is-active "$svc" 2>/dev/null || echo "inactive")
     case "$STATUS" in
         active)
@@ -342,6 +342,20 @@ for svc in smbd nmbd nfs-kernel-server vsftpd rclone-webdav rclone-s3 fail2ban n
             VERIFY_OK=false
             ;;
     esac
+done
+# 四个可选协议服务：inactive 且 disabled 是产品默认态（新装只开 SMB+面板），
+# 不算验证失败；active 或 enabled 但 failed 仍如实判定（参考 FileBrowser 退役先例）
+for svc in nfs-kernel-server vsftpd rclone-webdav rclone-s3; do
+    STATUS=$(systemctl is-active "$svc" 2>/dev/null || echo "inactive")
+    ENABLED=$(systemctl is-enabled "$svc" 2>/dev/null || echo "disabled")
+    if [ "$STATUS" = "active" ]; then
+        printf "  ${CHECKMARK} %-22s ${GREEN}%s${NC}\n" "$svc" "$STATUS"
+    elif [ "$STATUS" = "inactive" ] && [ "$ENABLED" = "disabled" ]; then
+        printf "  ${WARNMARK} %-22s ${YELLOW}○ 默认关闭${NC}\n" "$svc"
+    else
+        printf "  ${CROSSMARK} %-22s ${RED}%s${NC}\n" "$svc" "$STATUS"
+        VERIFY_OK=false
+    fi
 done
 
 # 系统注册表
@@ -386,10 +400,17 @@ echo -e "  │ 密码:   ${GREEN}${NAS_PASS}${NC}"
 echo -e "  └─────────────────────────────────────────┘"
 echo ""
 echo -e "  ${BOLD}其他访问方式${NC}"
-echo -e "  WebDAV:       ${CYAN}http://${PRIMARY_IP}:8080${NC}"
 echo -e "  Samba:        ${CYAN}\\\\\\\\${PRIMARY_IP}\\\\public${NC}"
-echo -e "  FTP:          ${CYAN}ftp://${PRIMARY_IP}${NC}"
-echo -e "  S3:           ${CYAN}http://${PRIMARY_IP}:9000${NC}"
+if [ "$(systemctl is-active rclone-webdav 2>/dev/null)" = "active" ]; then
+    echo -e "  WebDAV:       ${CYAN}http://${PRIMARY_IP}:8080${NC}"
+fi
+if [ "$(systemctl is-active vsftpd 2>/dev/null)" = "active" ]; then
+    echo -e "  FTP:          ${CYAN}ftp://${PRIMARY_IP}${NC}"
+fi
+if [ "$(systemctl is-active rclone-s3 2>/dev/null)" = "active" ]; then
+    echo -e "  S3:           ${CYAN}http://${PRIMARY_IP}:9000${NC}"
+fi
+echo -e "  ${YELLOW}更多协议（FTP/WebDAV/NFS/S3）默认关闭，可在面板\"服务管理\"页一键开启${NC}"
 echo ""
 
 if [ "$VERIFY_OK" = true ]; then
