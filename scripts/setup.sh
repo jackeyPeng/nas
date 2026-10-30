@@ -808,7 +808,8 @@ for svc in smbd nmbd fail2ban nas-panel; do
 done
 # 四个可选协议服务：默认关闭不是故障，用 ○ 标注而不是裸 inactive（避免看起来像异常）
 for svc in nfs-kernel-server vsftpd rclone-webdav rclone-s3; do
-    state="$(systemctl is-active $svc 2>/dev/null)"
+    # set -e 下裸赋值 $(systemctl is-active) 对 inactive 服务返回 3 会中止脚本（新装实测）
+    state="$(systemctl is-active $svc 2>/dev/null || true)"
     if [ "$state" = "active" ]; then
         printf "  %-22s %s\n" "$svc:" "$state"
     else
