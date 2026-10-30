@@ -448,6 +448,75 @@ function nasPanel() {
             return map[name] ? window.t(map[name]) : fallback;
         },
 
+        // 服务页分区：核心服务（optional=false，表格形态）vs 协议服务
+        // （optional=true，卡片形态 + 一键开关）。optional 字段来自后端
+        // dashboard.ServiceDef.Optional（GetServices() JSON）。
+        get coreServices() {
+            return (this.services || []).filter(s => !s.optional);
+        },
+        get protocolServices() {
+            return (this.services || []).filter(s => s.optional);
+        },
+
+        svcIcon(name) {
+            const map = { 'nfs-kernel-server': '🐧', 'vsftpd': '📁', 'rclone-webdav': '📲', 'rclone-s3': '🪣' };
+            return map[name] || '🔌';
+        },
+        svcPurpose(name) {
+            const map = {
+                'nfs-kernel-server': 'services.purpose_nfs',
+                'vsftpd': 'services.purpose_ftp',
+                'rclone-webdav': 'services.purpose_webdav',
+                'rclone-s3': 'services.purpose_s3',
+            };
+            return map[name] ? this.t(map[name]) : '';
+        },
+        svcRisk(name) {
+            const map = { 'vsftpd': 'services.risk_ftp', 'nfs-kernel-server': 'services.risk_nfs' };
+            return map[name] ? this.t(map[name]) : '';
+        },
+        // 开启后的访问地址提示。IP 取自仪表盘已加载的 ip_addr（登录后 init()
+        // 固定先 navigate('dashboard') 拉过一次，与 index.html 里公共目录/
+        // WebDAV 地址展示用的是同一个数据源，不必在服务页重复请求）。
+        svcAccessAddress(name) {
+            const ip = this.dashboard.ip_addr || 'IP';
+            const map = {
+                // 实际导出路径见 /etc/exports（面板托管段，仅 /data/nas1/public），
+                // 与 setup.sh/install.sh 结尾打印的挂载命令一致
+                'nfs-kernel-server': `mount -t nfs ${ip}:/data/nas1/public /mnt/nas`,
+                'vsftpd': `ftp://${ip}`,
+                'rclone-webdav': `http://${ip}:8080`,
+                'rclone-s3': `http://${ip}:9000`,
+            };
+            return map[name] || '';
+        },
+        // 凭据来源提示：WebDAV/FTP 用面板用户名密码（htpasswd/系统密码与面板同源），
+        // S3 用安装时生成的 AK/SK（setup.sh 写入 /etc/rclone/s3-env，
+        // AK = 用户名或 z1- 前缀，SK = 面板密码，与 rclone-s3.service 的
+        // --auth-key 参数一致）。
+        svcCredentialHint(name) {
+            if (name === 'rclone-s3') return this.t('services.credential_s3_akks');
+            return this.t('services.credential_panel_pass');
+        },
+
+        // 协议服务一键开关：checkbox 的新状态即目标 enabled 值。
+        // 开启 → on（systemctl enable --now），关闭前二次确认（断开依赖设备的提示）。
+        async svcToggle(svc) {
+            const turningOn = !svc.enabled;
+            const label = this.svcDisplay(svc.name, svc.display_name);
+            if (!turningOn && !confirm(this.t('services.toggle_off_confirm', [label]))) {
+                return;
+            }
+            const action = turningOn ? 'on' : 'off';
+            const data = await this.api(`/services/${svc.name}/${action}`, { method: 'POST' });
+            if (data && !data.error) {
+                this.showToast(turningOn ? this.t('services.toggle_on_done', [label]) : this.t('services.toggle_off_confirm', [label]), 'success');
+            } else {
+                this.showToast((data && data.error) || this.t('services.toggle_failed'), 'error');
+            }
+            this.loadServices();
+        },
+
         // 组件分类名翻译（后端返回中文分类，仅用于显示）
         catLabel(cat) {
             const map = {
@@ -709,9 +778,16 @@ function nasPanel() {
         },
 
         get serviceSummary() {
-            // not-installed = 可选服务未装,不是异常也不计入总数,
-            // 否则全新安装仪表盘恒显「1 个异常」假告警。
-            const svcs = (this.dashboard.services || []).filter(s => s.active !== 'not-installed');
+            // 计数口径 = 核心服务 + 已启用(enabled)的可选服务：
+            // - 可选服务(optional=true) disabled → 不进分母、不算异常
+            //   (新装机 4 协议默认关闭，否则仪表盘恒显「4 个异常」假告警)；
+            // - 可选服务 enabled 但未 active(停止/故障) → 算异常(用户开了就要跑好)；
+            // - not-installed 同样不计(未安装 ≠ 异常)。
+            const svcs = (this.dashboard.services || []).filter(s => {
+                if (s.active === 'not-installed') return false;
+                if (s.optional && !s.enabled) return false;
+                return true;
+            });
             const down = svcs.filter(s => s.active !== 'active').length;
             return { total: svcs.length, down };
         },

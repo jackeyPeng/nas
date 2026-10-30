@@ -441,12 +441,15 @@
                     <button class="btn btn-sm btn-primary" @click="installServices()" :disabled="installingServices" x-text="installingServices ? $t('services.installing') : '🔧 ' + $t('services.install_all')"></button>
                     <span x-show="installMsg" style="font-size:var(--fs-xs);color: var(--text-light)" x-text="installMsg"></span>
                 </div>
-                <table class="table">
+
+                <!-- 核心区：Samba/面板/fail2ban 等，不提供 stop/disable 入口（误关会断面板自身或基础共享） -->
+                <h3 x-text="$t('services.core_section_title')"></h3>
+                <table class="table" style="margin-bottom:var(--sp-6)">
                     <thead>
                         <tr><th x-text="$t('dashboard.service')"></th><th x-text="$t('common.port')"></th><th x-text="$t('dashboard.desc')"></th><th x-text="$t('common.status')"></th><th x-text="$t('logs.log_action')"></th></tr>
                     </thead>
                     <tbody>
-                        <template x-for="svc in services" :key="svc.name">
+                        <template x-for="svc in coreServices" :key="svc.name">
                             <tr>
                                 <td x-text="svcDisplay(svc.name, svc.display_name)"></td>
                                 <td x-text="svc.port"></td>
@@ -463,11 +466,7 @@
                                     </template>
                                     <template x-if="svc.active !== 'not-installed' && svc.active !== 'unknown'">
                                         <span>
-                                            <button class="btn btn-sm btn-success" @click="svcAction(svc.name, 'start')" x-text="$t('common.start')"></button>
-                                            <button class="btn btn-sm btn-warn" @click="svcAction(svc.name, 'stop')" x-text="$t('common.stop')"></button>
                                             <button class="btn btn-sm btn-primary" @click="svcAction(svc.name, 'restart')" x-text="$t('common.restart')"></button>
-                                            <button x-show="!svc.enabled" class="btn btn-sm" @click="svcAction(svc.name, 'enable')" x-text="$t('common.auto_start')"></button>
-                                            <button x-show="svc.enabled" class="btn btn-sm" @click="svcAction(svc.name, 'disable')" x-text="$t('system.cancel_autostart')"></button>
                                             <button class="btn btn-sm" @click="showLogs(svc.name)" x-text="$t('services.log')"></button>
                                         </span>
                                     </template>
@@ -476,6 +475,56 @@
                         </template>
                     </tbody>
                 </table>
+
+                <!-- 协议服务区：默认关闭的四协议，人话卡片 + 一键开关 -->
+                <h3 x-text="$t('services.protocol_section_title')"></h3>
+                <p style="font-size:var(--fs-xs);color: var(--text-light);margin:0 0 var(--sp-3)" x-text="$t('services.protocol_section_hint')"></p>
+                <div style="display:grid;grid-template-columns:repeat(2,minmax(280px,1fr));gap:var(--sp-4);margin-bottom:var(--sp-6)">
+                    <template x-for="svc in protocolServices" :key="svc.name">
+                        <div style="background: var(--card-bg);border:1px solid var(--border);border-radius:var(--radius-lg);padding:var(--sp-5)">
+                            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:var(--sp-3)">
+                                <div style="display:flex;align-items:flex-start;gap:var(--sp-2)">
+                                    <span style="font-size:var(--fs-lg)" x-text="svcIcon(svc.name)"></span>
+                                    <div>
+                                        <div style="font-weight:600" x-text="svcDisplay(svc.name, svc.display_name)"></div>
+                                        <div style="font-size:var(--fs-xs);color: var(--text-light);margin-top:2px" x-text="svcPurpose(svc.name)"></div>
+                                    </div>
+                                </div>
+                                <template x-if="svc.active === 'not-installed' || svc.active === 'unknown'">
+                                    <button class="btn btn-sm btn-primary" @click="installService(svc.name)" x-text="$t('services.install_service')"></button>
+                                </template>
+                                <template x-if="svc.active !== 'not-installed' && svc.active !== 'unknown'">
+                                    <label style="display:inline-flex;align-items:center;cursor:pointer" :title="svc.enabled ? $t('services.turn_off') : $t('services.turn_on')">
+                                        <input type="checkbox" :checked="svc.enabled" style="width:36px;height:20px;accent-color: var(--primary);cursor:pointer" @change="svcToggle(svc)">
+                                    </label>
+                                </template>
+                            </div>
+
+                            <div style="margin-top:var(--sp-3);display:flex;align-items:center;gap:var(--sp-2)">
+                                <span class="badge"
+                                      :class="svc.active === 'active' ? 'badge-ok' : (svc.active === 'failed' ? 'badge-err' : 'badge-info')"
+                                      x-text="svc.active === 'active' ? $t('services.running') : (svc.active === 'failed' ? $t('services.abnormal') : $t('services.stopped_badge'))"></span>
+                                <button x-show="svc.active !== 'not-installed' && svc.active !== 'unknown'" class="btn btn-sm" @click="svcAction(svc.name, 'restart')" x-text="$t('common.restart')"></button>
+                                <button x-show="svc.active !== 'not-installed' && svc.active !== 'unknown'" class="btn btn-sm" @click="showLogs(svc.name)" x-text="$t('services.log')"></button>
+                            </div>
+
+                            <!-- 开启后展开访问地址 + 凭据提示 -->
+                            <div x-show="svc.active === 'active'" style="margin-top:var(--sp-3);padding-top:var(--sp-3);border-top:1px solid var(--border);font-size:var(--fs-xs)">
+                                <div style="margin-bottom:4px">
+                                    <strong x-text="$t('services.access_address')"></strong>:
+                                    <code x-text="svcAccessAddress(svc.name)" style="user-select:all"></code>
+                                </div>
+                                <div>
+                                    <strong x-text="$t('services.credential_hint')"></strong>:
+                                    <span x-text="svcCredentialHint(svc.name)"></span>
+                                </div>
+                            </div>
+
+                            <!-- 风险提示（FTP 明文 / NFS 全网段） -->
+                            <div x-show="svcRisk(svc.name)" style="margin-top:var(--sp-2);font-size:var(--fs-xs);color: var(--warn)" x-text="'⚠ ' + svcRisk(svc.name)"></div>
+                        </div>
+                    </template>
+                </div>
 
                 <div class="logs-modal" x-show="logsModal" x-cloak>
                     <div class="logs-box">
