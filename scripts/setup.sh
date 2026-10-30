@@ -70,6 +70,36 @@ apt_retry() {
     return 1
 }
 
+# 可选协议服务（NFS/FTP/WebDAV/S3）的 enable/restart 口径：
+# - 全新安装（FRESH_INSTALL=true）：配置/单元文件照常生成，但服务默认关闭——
+#   显式 disable --now，不继续暴露这几个协议，用户可在面板"服务管理"一键开启。
+# - 升级机（FRESH_INSTALL=false）：完全不碰用户已有状态，沿用原 enable+restart
+#   逻辑；若该服务本来就是 disabled 且 inactive（用户此前手动关闭），同样只刷
+#   配置、不重新启动/启用它。
+# 用法: enable_optional_service <systemd 单元名> <日志里的服务短名>
+enable_optional_service() {
+    local svc="$1"
+    local label="$2"
+    if [ "$FRESH_INSTALL" = true ]; then
+        systemctl disable --now "$svc" 2>/dev/null || true
+        echo "  ✓ ${label} 已安装并生成配置（默认关闭，可在面板\"服务管理\"一键开启）"
+        return
+    fi
+    # 升级路径：enabled 或 active 才 enable+restart，否则维持用户已有的关闭状态
+    local is_enabled="disabled"
+    local is_active="inactive"
+    systemctl is-enabled "$svc" >/dev/null 2>&1 && is_enabled="enabled"
+    systemctl is-active "$svc" >/dev/null 2>&1 && is_active="active"
+    if [ "$is_enabled" = "enabled" ] || [ "$is_active" = "active" ]; then
+        systemctl enable "$svc"
+        systemctl reset-failed "$svc" 2>/dev/null
+        timeout 60 systemctl restart "$svc" || echo "  ⚠ ${svc} 重启失败（结尾注册表会标记，可稍后手动 restart）"
+        echo "  ✓ ${label} 配置完成"
+    else
+        echo "  ✓ ${label} 配置已刷新（此前已关闭，维持关闭状态）"
+    fi
+}
+
 echo "========================================="
 echo "家用 NAS 一键部署脚本"
 echo "========================================="
@@ -121,6 +151,19 @@ fi
 
 # 从 .env 文件读取密码
 ENV_FILE="$SCRIPT_DIR/.env"
+
+# ==================== 新装/升级判定（FRESH_INSTALL） ====================
+# 信号: 本脚本开始执行时 .env 是否已存在。install.sh 的一键路径会在调用
+# setup.sh 之前先创建 .env（见 install.sh "创建配置文件"步骤），所以升级机
+# （此前已跑过 install.sh/setup.sh）这里必为 true；真正的全新机器此刻还没有
+# .env。本脚本自身不创建 .env，判定必须发生在任何可能触碰 .env 的逻辑之前
+# （下面的存在性检查、chmod 等），否则判定会被自己的副作用污染。
+if [ -f "$ENV_FILE" ]; then
+    FRESH_INSTALL=false
+else
+    FRESH_INSTALL=true
+fi
+
 if [ ! -f "$ENV_FILE" ]; then
     echo "错误: 未找到 $ENV_FILE"
     echo ""
@@ -428,10 +471,7 @@ EXPEOF
     fi
 fi
 exportfs -a 2>/dev/null || echo "  ⚠ exportfs -a 有告警（存储池未建时属正常，建池后面板会重生成导出）"
-systemctl enable nfs-kernel-server
-systemctl reset-failed nfs-kernel-server 2>/dev/null
-timeout 60 systemctl restart nfs-kernel-server || echo "  ⚠ nfs-kernel-server 重启超时/失败（结尾注册表会标记，可稍后 systemctl restart）"
-echo "  ✓ NFS 配置完成"
+enable_optional_service nfs-kernel-server "NFS"
 
 # ==================== [5/10] 配置 FTP ====================
 echo ""
@@ -465,10 +505,7 @@ fi
 echo "$NAS_USER" > /etc/vsftpd.userlist
 touch /var/log/vsftpd.log
 chmod 640 /var/log/vsftpd.log
-systemctl enable vsftpd
-systemctl reset-failed vsftpd 2>/dev/null
-timeout 60 systemctl restart vsftpd || echo "  ⚠ vsftpd 重启失败（结尾注册表会标记，可稍后手动 restart）"
-echo "  ✓ FTP 配置完成"
+enable_optional_service vsftpd "FTP"
 
 # ==================== [6/10] 配置 WebDAV ====================
 echo ""
@@ -496,10 +533,7 @@ SuccessExitStatus=143
 WantedBy=multi-user.target
 WDEOF
 systemctl daemon-reload
-systemctl enable rclone-webdav
-systemctl reset-failed rclone-webdav 2>/dev/null
-timeout 60 systemctl restart rclone-webdav || echo "  ⚠ rclone-webdav 重启失败（结尾注册表会标记，可稍后手动 restart）"
-echo "  ✓ WebDAV 配置完成"
+enable_optional_service rclone-webdav "WebDAV"
 
 # ==================== [7/10] 清理遗留 FileBrowser（升级迁移） ====================
 echo ""
@@ -605,10 +639,7 @@ WantedBy=multi-user.target
 S3SVC
 
 systemctl daemon-reload
-systemctl enable rclone-s3
-systemctl reset-failed rclone-s3 2>/dev/null
-timeout 60 systemctl restart rclone-s3 || echo "  ⚠ rclone-s3 重启失败（结尾注册表会标记，可稍后手动 restart）"
-echo "  ✓ S3 对象存储配置完成 (rclone serve s3, 端口 9000)"
+enable_optional_service rclone-s3 "S3 对象存储"
 echo "    bucket 列表: public 目录自动成为一个 bucket"
 echo "    访问方式: s3cmd --no-ssl --host=NAS_IP:9000 ls s3://public/"
 
@@ -771,8 +802,17 @@ echo "NAS 部署完成!"
 echo "========================================="
 echo ""
 echo "服务状态:"
-for svc in smbd nmbd nfs-kernel-server vsftpd rclone-webdav rclone-s3 fail2ban nas-panel; do
+for svc in smbd nmbd fail2ban nas-panel; do
     printf "  %-22s %s\n" "$svc:" "$(systemctl is-active $svc)"
+done
+# 四个可选协议服务：默认关闭不是故障，用 ○ 标注而不是裸 inactive（避免看起来像异常）
+for svc in nfs-kernel-server vsftpd rclone-webdav rclone-s3; do
+    state="$(systemctl is-active $svc 2>/dev/null)"
+    if [ "$state" = "active" ]; then
+        printf "  %-22s %s\n" "$svc:" "$state"
+    else
+        printf "  %-22s ○ 默认关闭（面板-服务管理可一键开启）\n" "$svc:"
+    fi
 done
 
 # ==================== 系统注册表检查 ====================
@@ -813,11 +853,20 @@ echo ""
 echo "访问方式:"
 echo "  - Samba:       //NAS_IP/public (公共共享)"
 echo "  - Samba:       //NAS_IP/$NAS_USER (用户主目录)"
-echo "  - NFS:         mount -t nfs NAS_IP:/data/nas1/public /mnt/nas"
-echo "  - FTP:         ftp://NAS_IP/ (用户名: $NAS_USER)"
-echo "  - WebDAV:      http://NAS_IP:8080/ (用户名: $NAS_USER)"
-echo "  - S3 API:       http://NAS_IP:9000 (access key: $S3_ACCESS_KEY, s3cmd --no-ssl --host=NAS_IP:9000 ls s3://public/)"
+if [ "$(systemctl is-active nfs-kernel-server 2>/dev/null)" = "active" ]; then
+    echo "  - NFS:         mount -t nfs NAS_IP:/data/nas1/public /mnt/nas"
+fi
+if [ "$(systemctl is-active vsftpd 2>/dev/null)" = "active" ]; then
+    echo "  - FTP:         ftp://NAS_IP/ (用户名: $NAS_USER)"
+fi
+if [ "$(systemctl is-active rclone-webdav 2>/dev/null)" = "active" ]; then
+    echo "  - WebDAV:      http://NAS_IP:8080/ (用户名: $NAS_USER)"
+fi
+if [ "$(systemctl is-active rclone-s3 2>/dev/null)" = "active" ]; then
+    echo "  - S3 API:       http://NAS_IP:9000 (access key: $S3_ACCESS_KEY, s3cmd --no-ssl --host=NAS_IP:9000 ls s3://public/)"
+fi
 echo "  - Web 面板:    http://NAS_IP:8090 (用户名: $NAS_USER)"
+echo "  更多协议（FTP/WebDAV/NFS/S3）默认关闭，可在面板\"服务管理\"页一键开启"
 echo ""
 echo "管理脚本:"
 echo "  添加用户: sudo $NAS_DIR/scripts/add-user.sh <用户名> <密码>"
