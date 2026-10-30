@@ -8,6 +8,7 @@ _（暂无）_
 
 | 版本 | 日期 | 主要变化 |
 |------|------|---------|
+| v1.4.0-beta.37 | 2026-10-30 | 协议收敛版本 — 新装机默认只开 SMB + 面板（FTP/WebDAV/NFS/S3 配置照常生成但服务默认关闭，服务页一键开启并立即显示访问地址/凭据/风险提示；升级机现有开关状态一律不动）；服务页人话卡片化（核心区表格只剩重启+日志，防误关；协议区 2×2 卡片带用途说明、大开关、状态徽章、风险文案，双语）；仪表盘服务计数新口径（禁用协议不计异常）；注册表协议项三态化（默认关闭=pass，总数仍 41）；服务开关 on/off API 带 optional 门禁（核心服务 400）+ 富 detail 审计。附 parent 复核四个真机实锤修复：FRESH_INSTALL 一键路径判定失效（install.sh 先建 .env）、set -e 下裸 $(systemctl is-active) 中止安装、nfs-kernel-server alias 单元 is-enabled 恒报 alias（注册表误 fail + 升级误重开）、restart 对 stopped 单元的「复活」语义（首登改密偷偷拉起默认关闭的 S3，RestartIfActive 五处收口）。真机验收：两台重置测试机用户级全流程（LVM merge + RAID1）一次通过零错误，默认态/开关往返/门禁/改密不复活全链实测，注册表 41/41、套件 38/38、AI/F2 E2E 全 PASS、Chrome 卡片视觉+UI 实点开关验证；RAID 机 resync 42.6% 重启 → md0 装配、续跑、协议关闭态跨重启持久化 |
 | v1.4.0-beta.36 | 2026-10-29 | 一致性小版本 — SyncAllConfigs 全局互斥（12 个调用点并发编辑不再交错生成 smb.conf/exports 并重载服务，已知问题 §八#7 关闭）；SSE 流式操作警告可见性根修：前端 5 处解析器不再丢弃 running 事件的 Detail（建池/扩容中的非致命警告如 initramfs 失败，此前只进日志），进度列表新增琥珀色警告子行；安装完成横幅 Samba UNC 路径修复（echo -e 双解释吞掉前导反斜杠，`\\IP\public` 显示成 `\IP\public`）。真机验收：两台重置测试机用户级全流程（LVM merge + RAID1）一次通过零错误，注册表 41/41 + 套件 38/38 + AI/F2 E2E 全 PASS + Chrome UI 实测；RAID 机 resync 43% 时重启 → md0 装配、续跑跨重启、面板进度与内核实时一致 |
 | v1.4.0-beta.35 | 2026-10-29 | RAID 持久化与安装健壮性 — 重启后 RAID 阵列名称漂移根修（流式建池从不更新 initramfs，md0 重启变 md127）：persistRAIDConfig 全链路（带设备 scan/UUID 去重替换/写后验证/initramfs 跟进）接入三条建池路径，出厂重置只删 ARRAY 行保留系统默认；删池清理被删阵列 ARRAY 行并跟进 initramfs（灭两行同名冲突）；独立审查回炉（cat 失败留痕透出警告/测试 stub 泄漏修正/SSE 补 Index）；安装脚本 apt 瞬时失败加固（DPkg 锁等待+3 次重试，实锤 apt-daily-upgrade 撞锁中止安装）+ install.sh 失败路径保全完整日志并回显真实错误（此前删日志谎称"已保留"）。真机验收：两台测试机重置后用户级全流程（LVM merge + RAID1）一次通过，注册表 41/41 + 套件 38/38 + AI/F2 E2E 全 PASS + Chrome UI 实测；RAID 机 resync 中途重启装配仍为 md0、续跑进度面板与内核实时一致 |
 | v1.4.0-beta.34 | 2026-10-28 | 存储控制面安全大版本 — diskmgmt 五轮加固（外部审查五项高危：假成功/吞错/选盘退化全盘/删池顺序错/fstab 误删 + P0 残项 + 回炉）+ 三模型共识审查落地：删池服务端重解析与系统盘闸门、出厂重置擦盘收敛为纳管盘（外来数据盘不再误擦）、包级缓存竞态修复、配置漂移真比对、mdstat 统一块解析；RAID 健康监控全盲根修（无 shell glob 恒失败）+ 状态链 sysfs 优先重写（健康/活动分离、降级计数、重建 ETA）；删用户即时重投影 SMB/NFS 托管段；升级路径保留已改密码；专用整机定位收敛（separate 下线、低级别 API 调试开关）。真机验收：两台测试机用户级全流程（LVM merge + RAID1）注册表 41/41 + 套件 38/38 + AI/F2 E2E 全 PASS + RAID 降级/重建/恢复全生命周期实测 + Chrome UI 实测 |
@@ -34,6 +35,37 @@ _（暂无）_
 | v1.4.0-beta.13 | 2026-09-19 | NFS 导出对所有网段开放（跨网段客户端可挂载） |
 | v1.4.0-beta.12 | 2026-09-18 | 创建向导按已选磁盘实时预估容量（选目标后预览面板 + 各方案可用容量/注意事项）+ 登录页品牌 slogan |
 | v1.4.0-beta.11 | 2026-09-18 | 当前连接展示（监控页，SMB 会话 + 各协议端口归类）+ 回收站改 per-share `.recycle/`（删除=rename 零拷贝，恢复保留目录树，旧 `#recycle` 兼容）+ 存储页 tab 切换跳动修复 |
+
+---
+
+## [2026-10-30] - v1.4.0-beta.37 — 协议收敛（新装只开 SMB+面板）+ 服务页人话卡片化
+
+产品决策（用户拍板）：目标「让用户使用起来方便」——默认路径越少越清楚，关掉的协议必须一键能开、开启即给访问地址和凭据。方向 1（协议收敛）落地；方向 2（远程访问）不做产品功能、官网支持页新增三路线方案文档（Tailscale/Cloudflare Tunnel/DDNS+端口映射）。opencode 编码 + parent 复核抓出 4 个真机实锤 bug 直修 + 双机第五轮全流程验收零错误。
+
+### 协议默认收敛（c827db7 / a833922 / 8e29e7c）
+
+- **新装机**：SMB + 面板之外，FTP/WebDAV/NFS/S3 四协议配置与 unit 文件照常生成（开启即可用的前提），但服务 `disable --now` 默认关闭；install.sh 横幅只印 Samba + 一行「更多协议默认关闭，可在面板服务管理页一键开启」；验证循环对默认关闭显示 ○ 不置失败
+- **升级机**：现有开关状态一律不动（enabled 或 active 才刷配置+重启；用户手动关过的维持关闭）
+- **服务开关 API**：`POST /api/services/{name}/on|off`（enable --now / disable --now + is-active 复核），optional 门禁——核心服务（smbd/nmbd/fail2ban）调用返回 400 防误关；成功路径富 detail 审计（协议开关是安全相关操作）
+- **口径联动**：仪表盘服务计数 = 核心 + 已启用可选（禁用协议不进分母不算异常）；注册表协议项三态化（disabled+inactive = pass「默认关闭」，总数仍 41）——均抽纯函数带单测
+
+### 服务页人话卡片化（c0e15cf）
+
+- 核心区表格精简为重启+日志（去掉对核心服务的 stop/disable 误操作入口）
+- 协议区 2×2 卡片：图标 + 用途一句话（「监控摄像头、老式设备…」「Linux/Unix 设备与部分媒体播放器…」）+ 大开关 + 状态徽章 + 开启后显示访问地址（真实 IP）与凭据提示 + 橙色风险提示（FTP 明文/ NFS 无按用户权限）；双语 i18n 1414 key 对齐
+
+### Parent 复核四修复（全部真机实锤）
+
+- **9fa8f37**：FRESH_INSTALL 判定一键路径失效——install.sh 先建 .env 再调 setup.sh，本地信号恒为升级态（新装会全量开协议，功能失效级）；改由 install.sh 按 REPO_ENV_EXISTED（与密码保留同源信号）判定经 env 传入
+- **1d36b07**：set -e 下裸赋值 `$(systemctl is-active)` 对 inactive 退出码 3 中止安装（新装必现，靠 beta.35 保全日志定位）
+- **f9bbafb**：nfs-kernel-server 是 nfs-server 的 alias，`is-enabled` 恒报 "alias" → 注册表把默认关闭判 fail、升级会误重开用户关着的 NFS；`|| echo` 兜底对非零退出码拼双行值致 ○ 分支必假。新增 common.ResolveServiceEnabled（show -p Id 解析规范单元）四处统一
+- **cb1c0b4**：`systemctl restart` 对 stopped 单元是启动语义——首登改密无条件 restart 把默认关闭的 S3 偷偷拉起（实锤）；FTP 白名单/HTTPS 开关同款，common.RestartIfActive 五处收口
+
+### 真机验收（第五轮双机重置，错误账本零）
+
+- 测试机48（LVM merge 200G）+ 测试机57（RAID1）：一次装成零错误；默认态正确（4 核心 active + 4 协议 ○）；首登四件套 + 改密后 S3 不复活回归；建池后注册表 41/41（协议关/开两态）；开关往返（含 alias 单元、smbd 门禁 400）；全开后套件 38/38、AI E2E 31 项、F2 E2E（含 kill -9 续跑）全 PASS、F1 双向零漂移
+- Chrome：服务页卡片视觉确认（用途/开关/徽章/地址/凭据/风险齐全）+ UI 实点开关全链（点击→confirm→后端 inactive/disabled→再点恢复）；仪表盘/存储页无漂移无幽灵
+- RAID 标准项：resync 42.6% 时重启 → md0 装配、续跑至 91.9%、面板实时跟随、协议关闭态跨重启持久化
 
 ---
 
