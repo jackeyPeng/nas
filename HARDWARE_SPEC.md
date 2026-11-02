@@ -1,6 +1,8 @@
 # 硬件规格推荐书
 
 > 家用 NAS 硬件产品定义 | 版本 0.1 | 2026-07-12
+>
+> 📎 AI 版（高性能本地推理档）规格草案见 [`HARDWARE_SPEC_AI.md`](HARDWARE_SPEC_AI.md)（占坑文档，待 Phase 0 实测定档）。
 
 ---
 
