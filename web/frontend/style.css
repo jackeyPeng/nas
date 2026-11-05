@@ -487,3 +487,19 @@ select, textarea {
    切换时离开的 tab 淡出期间不再把新内容顶到下方（修存储页 tab 跳动） */
 .tab-stack { display: grid; }
 .tab-stack > div { grid-area: 1 / 1; min-width: 0; }
+
+/* 创建向导 5 步指示器：方框卡片（数字加大加粗 + 当前步高亮描边） */
+.wiz-step {
+    display: flex; align-items: center; justify-content: center; gap: var(--sp-2);
+    min-width: 118px; padding: var(--sp-2) var(--sp-4);
+    border: 2px solid var(--border); border-radius: var(--radius-md);
+    background: var(--card-bg); transition: all 0.15s;
+}
+.wiz-step__num { font-size: var(--fs-xl); font-weight: 800; line-height: 1; color: var(--text-light); }
+.wiz-step__label { font-size: var(--fs-base); font-weight: 600; color: var(--text-light); }
+.wiz-step--current { border-color: var(--primary); background: var(--primary-bg); }
+.wiz-step--current .wiz-step__num,
+.wiz-step--current .wiz-step__label { color: var(--primary); }
+.wiz-step--done { border-color: var(--success); background: var(--success-light); }
+.wiz-step--done .wiz-step__num,
+.wiz-step--done .wiz-step__label { color: var(--success); }

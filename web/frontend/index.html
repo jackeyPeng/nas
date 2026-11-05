@@ -1725,11 +1725,11 @@
                 <div x-show="diskmgmtTab==='wizard'" x-transition.opacity.duration.250ms x-init="loadWizardStatus()">
                     <div x-show="wizardStatus && wizardStatus.available_disks?.length">
                         <!-- 5 步指示器 -->
-                        <div style="display:flex;justify-content:center;gap:var(--sp-10);margin-bottom:var(--sp-6);flex-wrap:wrap">
+                        <div style="display:flex;justify-content:center;gap:var(--sp-3);margin-bottom:var(--sp-6);flex-wrap:wrap">
                             <template x-for="(label,idx) in ['选磁盘','定目标','确认方案','创建卷','完成']" :key="idx">
-                                <div style="display:flex;flex-direction:column;align-items:center;gap:var(--sp-1);width:60px">
-                                    <div style="width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:var(--fs-sm);font-weight:700" :style="idx+1 < wizStep ? 'background: var(--success);color:#fff' : idx+1 === wizStep ? 'background: var(--primary);color:#fff' : 'background-color: var(--border);color: var(--text-light)'" x-text="idx+1"></div>
-                                    <div style="font-size:var(--fs-xs);color: var(--text-light)" x-text="label"></div>
+                                <div class="wiz-step" :class="idx+1 < wizStep ? 'wiz-step--done' : (idx+1 === wizStep ? 'wiz-step--current' : '')">
+                                    <span class="wiz-step__num" x-text="idx+1 < wizStep ? '✓' : idx+1"></span>
+                                    <span class="wiz-step__label" x-text="label"></span>
                                 </div>
                             </template>
                         </div>
