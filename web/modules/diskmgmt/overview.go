@@ -529,21 +529,49 @@ func buildStorageOverview() StorageOverview {
 		}
 	}
 	for _, ra := range raidStatuses {
-		if ra.State != "active" && ra.State != "clean" {
-			lvl := "warning"
-			msg := fmt.Sprintf("RAID %s 状态异常: %s", ra.Device, ra.State)
-			if ra.SyncPercent != "" {
-				msg = fmt.Sprintf("RAID %s 正在重建/同步 %s", ra.Device, ra.SyncPercent)
-			}
-			if ra.State == "degraded" || ra.State == "FAILED" {
-				lvl = "critical"
-				msg = fmt.Sprintf("RAID %s 已降级，数据处于风险中，建议尽快处理", ra.Device)
-			}
-			overview.Alerts = append(overview.Alerts, StorageAlert{Level: lvl, Message: msg, Device: ra.Device})
+		if alert := raidAlertFromStatus(ra); alert != nil {
+			overview.Alerts = append(overview.Alerts, *alert)
 		}
 	}
 
 	return overview
+}
+
+// raidAlertFromStatus 根据单个 RAID 阵列状态生成总览告警（nil 表示无需告警）。
+// 从原 buildStorageOverview 内联判定抽出的纯函数，语义对齐
+// system_registry.go classifyMdArray：降级/故障但正在重建（SyncPercent 非空）
+// 只是正常暂态，降级为 warning「初始重建中」，而不是 critical「数据处于风险中」；
+// 只有降级/故障且没有重建进度时才是真正的 critical。
+func raidAlertFromStatus(ra RAIDStatus) *StorageAlert {
+	if ra.State == "active" || ra.State == "clean" {
+		return nil
+	}
+	if ra.State == "degraded" || ra.State == "FAILED" {
+		if ra.SyncPercent != "" {
+			return &StorageAlert{
+				Level:   "warning",
+				Message: fmt.Sprintf("RAID %s 初始重建/同步中 %s，期间冗余降低，完成后自动恢复", ra.Device, ra.SyncPercent),
+				Device:  ra.Device,
+			}
+		}
+		return &StorageAlert{
+			Level:   "critical",
+			Message: fmt.Sprintf("RAID %s 已降级，数据处于风险中，建议尽快处理", ra.Device),
+			Device:  ra.Device,
+		}
+	}
+	if ra.SyncPercent != "" {
+		return &StorageAlert{
+			Level:   "warning",
+			Message: fmt.Sprintf("RAID %s 正在重建/同步 %s", ra.Device, ra.SyncPercent),
+			Device:  ra.Device,
+		}
+	}
+	return &StorageAlert{
+		Level:   "warning",
+		Message: fmt.Sprintf("RAID %s 状态异常: %s", ra.Device, ra.State),
+		Device:  ra.Device,
+	}
 }
 
 // detectPoolDevice 从 mount device 提取 Pool 级别的设备名
