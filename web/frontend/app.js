@@ -429,6 +429,27 @@ function nasPanel() {
             return window.t(key, params);
         },
 
+        // 存储池健康徽章三态化：从 pool.health_state 取状态，旧数据/非 RAID
+        // 兜底未命中字段时退回 healthy bool 二态语义（容错）。
+        poolHealthState(pool) {
+            return pool.health_state || (pool.healthy ? 'healthy' : 'degraded');
+        },
+        // 三态健康徽章文案：healthy/degraded/failed 固定文案，rebuilding 带上
+        // 同步进度（如「重建进行中 57.3%」），避免重建期间误显示红色「健康」。
+        poolHealthLabel(pool) {
+            const state = this.poolHealthState(pool);
+            if (state === 'rebuilding') {
+                return this.t('msg.rebuilding') + (pool.sync_percent ? ' ' + pool.sync_percent : '');
+            }
+            if (state === 'degraded') {
+                return this.t('common.degraded');
+            }
+            if (state === 'failed') {
+                return this.t('dashboard.fault');
+            }
+            return this.t('common.healthy');
+        },
+
         // 服务显示名翻译（后端 DisplayName 仅 S3 是中文）
         svcDisplay(name, fallback) {
             const map = { 'rclone-s3': 'services.label_s3' };

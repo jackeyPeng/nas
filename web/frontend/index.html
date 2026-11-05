@@ -408,12 +408,12 @@
                 <div x-show="storageOverview.pools?.length > 0" style="margin-top:var(--sp-4);display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:var(--sp-3)">
                     <template x-for="pool in (storageOverview.pools||[])" :key="pool.name">
                         <div style="border:1px solid var(--border);border-radius:var(--radius);padding:var(--sp-3)"
-                            :style="pool.healthy ? 'background:linear-gradient(135deg,var(--primary-bg),var(--primary-light))' : 'background:linear-gradient(135deg,var(--danger-light),var(--card-bg))'">
+                            :style="poolHealthState(pool)==='rebuilding' ? 'background:linear-gradient(135deg,var(--warn-light),var(--card-bg))' : (poolHealthState(pool)==='healthy' ? 'background:linear-gradient(135deg,var(--primary-bg),var(--primary-light))' : 'background:linear-gradient(135deg,var(--danger-light),var(--card-bg))')">
                             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
                                 <span style="font-size:var(--fs-base);font-weight:700" x-text="poolLabel(pool.display_name)"></span>
                                 <span class="badge-xs" 
-                                    :style="pool.healthy ? 'background: var(--success-light);color: var(--success)' : 'background: var(--danger-light);color: var(--danger)'"
-                                    x-text="$t('common.normal')"></span>
+                                    :style="poolHealthState(pool)==='rebuilding' ? 'background: var(--warn-light);color: var(--warn)' : (poolHealthState(pool)==='healthy' ? 'background: var(--success-light);color: var(--success)' : 'background: var(--danger-light);color: var(--danger)')"
+                                    x-text="poolHealthLabel(pool)"></span>
                             </div>
                             <div style="font-size:var(--fs-xs);color: var(--text-light);margin-bottom:var(--sp-1)" x-text="poolTypeLabel(pool)"></div>
                             <div style="display:flex;align-items:center;gap:6px">
@@ -1402,7 +1402,7 @@
                                     <div style="width:40px;height:40px;background: var(--primary-light);border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;font-size:var(--fs-lg);flex-shrink:0">🗄️</div>
                                     <strong style="font-size:var(--fs-md)" x-text="poolLabel(pool.display_name||pool.name)"></strong>
                                     <span class="badge" style="background: var(--success-light);color: var(--success)" x-text="pool.type.toUpperCase()"></span>
-                                    <span class="badge" :style="pool.healthy?'background: var(--success-light);color: var(--success)':'background: var(--danger-light);color: var(--danger)'" x-text="$t('common.healthy')"></span>
+                                    <span class="badge" :style="poolHealthState(pool)==='rebuilding' ? 'background: var(--warn-light);color: var(--warn)' : (poolHealthState(pool)==='healthy' ? 'background: var(--success-light);color: var(--success)' : 'background: var(--danger-light);color: var(--danger)')" x-text="poolHealthLabel(pool)"></span>
                                     <span style="font-size:var(--fs-sm);color: var(--text-light);margin-left:auto" x-text="pool.size?(pool.used+' / '+pool.size):''"></span>
                                     <div x-show="pool.percent" style="width:120px;background-color: var(--border);border-radius:3px;height:6px;overflow:hidden"><div :style="'width:'+pool.percent+';background: var(--primary)'" style="height:100%;border-radius:3px"></div></div>
                                     <span style="font-size:var(--fs-sm);color: var(--text-light)" x-text="pool.percent+'%'"></span>
@@ -1696,7 +1696,7 @@
                                     <div style="display:flex;align-items:center;gap:var(--sp-2);flex-wrap:wrap;margin-bottom:var(--sp-1)">
                                         <strong style="font-size:var(--fs-base)" x-text="poolLabel(pool.display_name)"></strong>
                                         <span class="badge" style="background: var(--success-light);color: var(--success)" x-text="pool.type.toUpperCase()"></span>
-                                        <span class="badge" :style="pool.healthy?'background: var(--success-light);color: var(--success)':'background: var(--danger-light);color: var(--danger)'" x-text="$t('common.healthy')"></span>
+                                        <span class="badge" :style="poolHealthState(pool)==='rebuilding' ? 'background: var(--warn-light);color: var(--warn)' : (poolHealthState(pool)==='healthy' ? 'background: var(--success-light);color: var(--success)' : 'background: var(--danger-light);color: var(--danger)')" x-text="poolHealthLabel(pool)"></span>
                                     </div>
                                     <div style="font-size:var(--fs-xs);color: var(--text-light)" x-text="$t('dashboard.available')"></div>
                                     <div style="display:flex;align-items:center;gap:var(--sp-2);margin-top:6px">
@@ -1713,7 +1713,7 @@
                                 </div>
                             </div>
                             <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-4);border-top:1px solid var(--border);padding-top:var(--sp-3)">
-                                <div><div style="font-size:var(--fs-xs);color: var(--text-light);margin-bottom:6px"><span x-text="$t('storage.raid_info')"></span></div><div style="font-size:var(--fs-sm);line-height:1.8"><div><span x-text="$t('storage.level')"></span> <strong x-text="pool.raid_level||'—'"></strong></div><div><span x-text="$t('storage.type')"></span> <strong x-text="pool.type.toUpperCase()"></strong></div><div><span x-text="$t('storage.device_label')"></span> <strong style="font-family:monospace;font-size:var(--fs-xs)" x-text="pool.device||'—'"></strong></div><div><span x-text="$t('storage.status_label')"></span> <strong :style="pool.healthy?'color: var(--success)':'color: var(--danger)'" x-text="$t('common.healthy')"></strong></div></div></div>
+                                <div><div style="font-size:var(--fs-xs);color: var(--text-light);margin-bottom:6px"><span x-text="$t('storage.raid_info')"></span></div><div style="font-size:var(--fs-sm);line-height:1.8"><div><span x-text="$t('storage.level')"></span> <strong x-text="pool.raid_level||'—'"></strong></div><div><span x-text="$t('storage.type')"></span> <strong x-text="pool.type.toUpperCase()"></strong></div><div><span x-text="$t('storage.device_label')"></span> <strong style="font-family:monospace;font-size:var(--fs-xs)" x-text="pool.device||'—'"></strong></div><div><span x-text="$t('storage.status_label')"></span> <strong :style="poolHealthState(pool)==='rebuilding' ? 'color: var(--warn)' : (poolHealthState(pool)==='healthy' ? 'color: var(--success)' : 'color: var(--danger)')" x-text="poolHealthLabel(pool)"></strong></div></div></div>
                                 <div><div style="font-size:var(--fs-xs);color: var(--text-light);margin-bottom:6px"><span x-text="$t('storage.lvm_info')"></span></div><div style="font-size:var(--fs-sm);line-height:1.8"><div><span x-text="$t('storage.filesystem')"></span> <strong x-text="pool.volumes?.[0]?.fstype||'—'"></strong></div><div><span x-text="$t('storage.volume_count')"></span> <strong x-text="pool.volumes?.length||0"></strong></div><div><span x-text="$t('storage.folder_count')"></span> <strong x-text="pool.volumes?.flatMap(function(v){return v.folders||[]}).length||0"></strong></div><div><span x-text="$t('storage.member_disks')"></span> <strong style="font-family:monospace;font-size:var(--fs-xs)" x-text="pool.disks?.map(function(d){return d.device}).join(', ')||'—'"></strong></div></div></div>
                             </div>
                         </div>

@@ -78,6 +78,7 @@
     "normal": "Normal",
     "abnormal": "Abnormal",
     "healthy": "Healthy",
+    "degraded": "Degraded",
     "warning": "Warning",
     "error": "Error",
     "info": "Info",

@@ -78,6 +78,7 @@
     "normal": "正常",
     "abnormal": "异常",
     "healthy": "健康",
+    "degraded": "已降级",
     "warning": "警告",
     "error": "错误",
     "info": "信息",

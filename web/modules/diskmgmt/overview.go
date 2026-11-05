@@ -65,6 +65,11 @@ type PoolSummary struct {
 	Avail       string          `json:"avail"`
 	Percent     string          `json:"percent"`
 	Healthy     bool            `json:"healthy"`
+	// HealthState/SyncPercent 三态化（健康/重建中/已降级/故障），健康徽章改用
+	// 这两个字段替代 Healthy 二态渲染的恒「健康」矛盾文案。见 poolHealthState。
+	// Healthy 字段保留不动，与 health_state=="healthy" 恒一致，兼容旧前端引用。
+	HealthState string          `json:"health_state"`
+	SyncPercent string          `json:"sync_percent,omitempty"`
 	MemberDisks []DiskSummary   `json:"disks,omitempty"` // 成员物理盘
 	Volumes     []VolumeSummary `json:"volumes"`         // ★ 逻辑卷列表
 }
@@ -81,6 +86,8 @@ type VolumeSummary struct {
 	Avail              string         `json:"avail"`
 	Percent            string         `json:"percent"`
 	Healthy            bool           `json:"healthy"`
+	HealthState        string         `json:"health_state"`
+	SyncPercent        string         `json:"sync_percent,omitempty"`
 	QuotaEnabled       bool           `json:"quota_enabled,omitempty"`  // 预留：配额
 	CompressionEnabled bool           `json:"compression,omitempty"`    // 预留：压缩
 	SnapshotCount      int            `json:"snapshot_count,omitempty"` // 预留：快照数
@@ -212,15 +219,19 @@ func buildStorageOverview() StorageOverview {
 		}
 
 		healthy := true
-		if poolType == "raid1" || poolType == "raid0" || poolType == "raid5" || poolType == "raid6" {
+		isRaidPool := poolType == "raid1" || poolType == "raid0" || poolType == "raid5" || poolType == "raid6"
+		var raPtr *RAIDStatus
+		if isRaidPool {
 			// consensus R2：健康判定改用 Health/Activity 分离字段——
 			// sysfs 回退到 mdstat 路径同样填充这两个字段，语义一致，
 			// 调用点不需要区分数据来源。活动中（非 idle）也不算健康
 			// （与此前 SyncPercent != "" 置 false 的语义等价）。
 			if ra, ok := raidMap[poolDev]; ok {
 				healthy = ra.Health == "normal" && ra.Activity == "idle"
+				raPtr = &ra
 			}
 		}
+		healthState, syncPercent := poolHealthState(isRaidPool, raPtr, healthy)
 
 		poolName := extractPoolName(pMounts[0]["mount"])
 		if poolType == "lvm" {
@@ -240,6 +251,8 @@ func buildStorageOverview() StorageOverview {
 			Avail:       formatSize(totalAvail),
 			Percent:     calcPercent(totalSize, totalUsed),
 			Healthy:     healthy,
+			HealthState: healthState,
+			SyncPercent: syncPercent,
 			Volumes:     []VolumeSummary{},
 		}
 		mountDisplay[poolDev] = displayName
@@ -262,6 +275,8 @@ func buildStorageOverview() StorageOverview {
 				Avail:       m["avail"],
 				Percent:     m["percent"],
 				Healthy:     healthy, // Volume 继承 Pool 健康状态
+				HealthState: healthState,
+				SyncPercent: syncPercent,
 				Folders:     []SharedFolder{},
 			}
 			ps.Volumes = append(ps.Volumes, vol)
@@ -535,6 +550,55 @@ func buildStorageOverview() StorageOverview {
 	}
 
 	return overview
+}
+
+// poolHealthState 推导存储池三态健康徽章状态（healthy/rebuilding/degraded/
+// failed）及可选的同步进度。从原 buildStorageOverview 内联 bool 判定抽出的
+// 纯函数——此前只有 healthy bool 二态，RAID 初始重建期间 Healthy=false，
+// 前端徽章文案恒为「健康」只切红色，自相矛盾（重建是正常暂态，不该与真降级
+// 同一种红色恒「健康」展示）。
+//
+// isRaidPool 为 false 或 ra 为 nil（raidMap 未命中）时，退化为 healthy bool
+// 语义兜底：healthy → "healthy"，否则 "degraded"（与此前行为保持兼容）。
+//
+// RAID 池命中 raidMap 时按 Health/Activity 细分：
+//   - Health=="normal" && Activity=="idle" → healthy
+//   - Health=="degraded"：有 SyncPercent，或 Activity 为 recover/resync/
+//     reshape（初始重建/同步中，正常暂态）→ rebuilding + SyncPercent；
+//     否则 → degraded（真降级，需处理）
+//   - Health=="failed" → failed
+//   - Health=="normal" 但 Activity 非 idle（如 check/repair 边缘态）→
+//     rebuilding，SyncPercent 有则带上，没有则留空
+func poolHealthState(isRaidPool bool, ra *RAIDStatus, healthy bool) (state string, syncPercent string) {
+	if !isRaidPool || ra == nil {
+		if healthy {
+			return "healthy", ""
+		}
+		return "degraded", ""
+	}
+
+	switch ra.Health {
+	case "normal":
+		if ra.Activity == "idle" {
+			return "healthy", ""
+		}
+		// check/repair 等非 idle 边缘态：不是降级，但也不是纯健康的 idle，
+		// 归入 rebuilding（有进度带上，没有就是纯文案）。
+		return "rebuilding", ra.SyncPercent
+	case "degraded":
+		if ra.SyncPercent != "" || ra.Activity == "recover" || ra.Activity == "resync" || ra.Activity == "reshape" {
+			return "rebuilding", ra.SyncPercent
+		}
+		return "degraded", ""
+	case "failed":
+		return "failed", ""
+	default:
+		// 未知 Health 取值：兜底回退 bool 语义，避免徽章空白。
+		if healthy {
+			return "healthy", ""
+		}
+		return "degraded", ""
+	}
 }
 
 // raidAlertFromStatus 根据单个 RAID 阵列状态生成总览告警（nil 表示无需告警）。
