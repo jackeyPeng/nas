@@ -545,8 +545,8 @@ Web 面板内一键检查更新、下载、升级 nas-panel，无需 SSH 登录�
 - 功能模块一览表
 - 更新日志摘要
 
-**实现方案**（实际落地：后端未设独立 modules/about，接口并入现有 system 模块 `/api/system/notice`；前端新增独立页）:
-- [x] 后端: 并入现有 system 模块（非独立 modules/about），`/api/system/notice` 返回分区内容 JSON
+**实现方案**（实际落地：后端未设独立 modules/about，接口由 version 模块注册，路由 `/api/system/notice`；前端新增独立页）:
+- [x] 后端: 并入现有 version 模块（非独立 modules/about），`/api/system/notice` 返回分区内容 JSON
 - [x] 前端: 左侧导航新增"关于"项（页面 ID `notice`），展示隐私声明/许可证/源码链接等卡片
 - [ ] 内容从 CHANGELOG.md / README.md 自动提取版本和描述（未做：页面内容为静态分区文案，未动态抓取版本号/更新日志摘要）
 
