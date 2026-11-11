@@ -8,6 +8,7 @@ _（暂无）_
 
 | 版本 | 日期 | 主要变化 |
 |------|------|---------|
+| v1.4.0-beta.38 | 2026-11-11 | 授权与凭据收口（A1）— 出厂默认密码强制改密门禁（非白名单 /api/* 一律 403 must_change_password，403 响应带 username 防前端空用户名改密路径）；管理操作统一 AdminMiddleware（用户/备份/配置文件/告警配置，单用户架构下唯一登录用户即管理员）；.env 与告警配置敏感键（PASS/SECRET/TOKEN/KEY/WEBHOOK/CREDENTIAL/PRIVATE）读取一律掩码为 ********、.env 写回拒绝 NAS_PASS/JWT_SECRET；备份目标校验收口（本地 /mnt、/data/backup + rsync user@host:/path 逐项校验，拒选项注入/空白/.. 段/符号链接）；审计日志与登录限流 IP 口径统一为仅直连私网采信反代 X-Forwarded-For（公网直连不可伪造 XFF）；上传接口 10 GiB MaxBytesReader（413）；安全响应头（CSP 放行 Alpine eval）。真机验收：两台重置测试机一键安装全绿（merge + RAID1），注册表 41/41 + 套件 45/45 + AI/F2 E2E 全 PASS + Chrome UI 实测 + 首登改密四件套 + .env 掩码泄漏面核验 |
 | v1.4.0-beta.37 | 2026-10-30 | 协议收敛版本 — 新装机默认只开 SMB + 面板（FTP/WebDAV/NFS/S3 配置照常生成但服务默认关闭，服务页一键开启并立即显示访问地址/凭据/风险提示；升级机现有开关状态一律不动）；服务页人话卡片化（核心区表格只剩重启+日志，防误关；协议区 2×2 卡片带用途说明、大开关、状态徽章、风险文案，双语）；仪表盘服务计数新口径（禁用协议不计异常）；注册表协议项三态化（默认关闭=pass，总数仍 41）；服务开关 on/off API 带 optional 门禁（核心服务 400）+ 富 detail 审计。附 parent 复核四个真机实锤修复：FRESH_INSTALL 一键路径判定失效（install.sh 先建 .env）、set -e 下裸 $(systemctl is-active) 中止安装、nfs-kernel-server alias 单元 is-enabled 恒报 alias（注册表误 fail + 升级误重开）、restart 对 stopped 单元的「复活」语义（首登改密偷偷拉起默认关闭的 S3，RestartIfActive 五处收口）。真机验收：两台重置测试机用户级全流程（LVM merge + RAID1）一次通过零错误，默认态/开关往返/门禁/改密不复活全链实测，注册表 41/41、套件 38/38、AI/F2 E2E 全 PASS、Chrome 卡片视觉+UI 实点开关验证；RAID 机 resync 42.6% 重启 → md0 装配、续跑、协议关闭态跨重启持久化 |
 | v1.4.0-beta.36 | 2026-10-29 | 一致性小版本 — SyncAllConfigs 全局互斥（12 个调用点并发编辑不再交错生成 smb.conf/exports 并重载服务，已知问题 §八#7 关闭）；SSE 流式操作警告可见性根修：前端 5 处解析器不再丢弃 running 事件的 Detail（建池/扩容中的非致命警告如 initramfs 失败，此前只进日志），进度列表新增琥珀色警告子行；安装完成横幅 Samba UNC 路径修复（echo -e 双解释吞掉前导反斜杠，`\\IP\public` 显示成 `\IP\public`）。真机验收：两台重置测试机用户级全流程（LVM merge + RAID1）一次通过零错误，注册表 41/41 + 套件 38/38 + AI/F2 E2E 全 PASS + Chrome UI 实测；RAID 机 resync 43% 时重启 → md0 装配、续跑跨重启、面板进度与内核实时一致 |
 | v1.4.0-beta.35 | 2026-10-29 | RAID 持久化与安装健壮性 — 重启后 RAID 阵列名称漂移根修（流式建池从不更新 initramfs，md0 重启变 md127）：persistRAIDConfig 全链路（带设备 scan/UUID 去重替换/写后验证/initramfs 跟进）接入三条建池路径，出厂重置只删 ARRAY 行保留系统默认；删池清理被删阵列 ARRAY 行并跟进 initramfs（灭两行同名冲突）；独立审查回炉（cat 失败留痕透出警告/测试 stub 泄漏修正/SSE 补 Index）；安装脚本 apt 瞬时失败加固（DPkg 锁等待+3 次重试，实锤 apt-daily-upgrade 撞锁中止安装）+ install.sh 失败路径保全完整日志并回显真实错误（此前删日志谎称"已保留"）。真机验收：两台测试机重置后用户级全流程（LVM merge + RAID1）一次通过，注册表 41/41 + 套件 38/38 + AI/F2 E2E 全 PASS + Chrome UI 实测；RAID 机 resync 中途重启装配仍为 md0、续跑进度面板与内核实时一致 |
@@ -35,6 +36,45 @@ _（暂无）_
 | v1.4.0-beta.13 | 2026-09-19 | NFS 导出对所有网段开放（跨网段客户端可挂载） |
 | v1.4.0-beta.12 | 2026-09-18 | 创建向导按已选磁盘实时预估容量（选目标后预览面板 + 各方案可用容量/注意事项）+ 登录页品牌 slogan |
 | v1.4.0-beta.11 | 2026-09-18 | 当前连接展示（监控页，SMB 会话 + 各协议端口归类）+ 回收站改 per-share `.recycle/`（删除=rename 零拷贝，恢复保留目录树，旧 `#recycle` 兼容）+ 存储页 tab 切换跳动修复 |
+
+---
+
+## [2026-11-11] - v1.4.0-beta.38 — 授权与凭据收口（A1）：默认密码门禁 + 敏感配置脱敏 + 备份目标校验
+
+安全加固轮（63faf59），收紧面板授权与凭据面，不改变产品面行为：
+
+### 默认密码门禁（web/main.go + common/defaultPassGate）
+
+出厂默认密码生效期间，除白名单（/api/login、/api/version、/api/health、本人改密路径）外所有 /api/* 一律 403 `{"error":"must_change_password","username":"<NAS_USER>"}`；非 /api 路径（静态资源/SPA）放行。改密成功即解除。403 必须带 username —— 前端刷新恢复会话时才能拼出 /api/users/{username}/password，否则改密打到空用户名路径、用户被自己的门禁锁死。前端 api() 识别 must_change_password 直接弹改密框回登录页（pitfall 12 的 server-side 落实）。
+
+### 授权口径统一（web/common/auth.go + 各模块路由）
+
+- AdminMiddleware / IsAdmin：单用户架构下唯一登录用户（NAS_USER）即管理员；/api/users、/api/user-groups、/api/users-matrix、/api/users-login-log、/api/config/file、/api/backup/{create,restore,delete,data}、/api/monitor/alert-config 写路径、备份目标等敏感操作全部挂管理身份门禁
+- 备份 restore 失败/成功均补 LogAuditRequest 富 detail 记录
+- 客户端 IP 口径：审计日志和登录限流统一走 RequestIP —— 仅直连方落在私网（127/8、::1、10/8、172.16/12、192.168/16）才采信 X-Forwarded-For 首段，公网直连客户端伪造 XFF 无法污染审计溯源或共享限流桶
+
+### 敏感配置脱敏（web/common/secret.go + config/monitor 模块）
+
+- IsSensitiveEnvKey / MaskSensitiveEnv / MaskSensitiveEnvLine：敏感键名正则（PASS|SECRET|TOKEN|KEY|WEBHOOK|CREDENTIAL|PRIVATE）命中即值替换为 ********，仅用于 GET 读取路径
+- /api/config/env GET 掩码返回；POST 只允许 NAS_USER / ALERT_* 非敏感键，敏感键显式拒绝（防掩码回显被原样写回）
+- /api/config/file 仅管理员可读写；.env 内容 GET 掩码、POST 拒 NAS_PASS/JWT_SECRET 行；其它配置文件不变
+- /api/monitor/alert-config GET 掩码返回（ALERT_*_PASS / *_TOKEN / *_WEBHOOK），前端保存时跳过仍为掩码的字段，避免把真值覆盖成掩码
+
+### 备份目标校验（web/modules/backup/backup.go）
+
+validateBackupTarget：本地目录（/mnt 子目录或 /data/backup，Clean + Lstat 非符号链接 + 最长存在祖先 EvalSymlinks + 前缀复判 + 必须 IsDir，不存在则 MkdirAll）与 rsync 远程目标（user@host:/path，host 字符集、remote 路径不得含空白/控制字符/以 - 开头、不得含 .. 段，防选项注入与穿越）双通道；此前仅做字符串前缀黑名单，symlink 与 rsync 注入未覆盖。backup_target_test.go 216 行表驱动单测。
+
+### 其它
+
+- filemgmt 上传入口 http.MaxBytesReader 10 GiB，超限映射 413 file too large（isMaxBytesError 纯函数 + 单测）
+- diskmgmt SSE 移除 Access-Control-Allow-Origin: *（响应头已统一由中间件处理）
+- web/frontend/app.js：alert-config 保存时跳过掩码值；默认密码门禁 403 识别后弹改密框
+
+### 真机验收（两台重置测试机：.48 merge LVM+XFS 200G / .57 RAID1 md0 50G）
+
+- 一键安装（含默认密码首登）全链通过：默认密码登录 must_change=true → 非白名单 API 403 → 改密 200 → 旧密码 401 / 新密码登录 must_change=false → 受保护 API 200
+- 注册表 41/41（0 fail 0 warn），acceptance-suite 45 PASS / 0 FAIL，AI E2E 31 PASS / 0 FAIL，F2 E2E 15 PASS / 0 FAIL
+- .env 泄漏面核验：/api/config/env 三个敏感键全掩码；/api/config/file?name=env 内容掩码（3 处）、0 泄漏；配置漂移 has_issues=false
 
 ---
 
