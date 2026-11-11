@@ -134,3 +134,4 @@ tmp/
 # Local workspace backup patches (contain historical secrets)
 *.patch
 nas-local-backup.patch
+nas-local-head.txt
