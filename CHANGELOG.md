@@ -3,6 +3,7 @@
 ## [未发布]
 
 - fix(setup): 出厂默认密码装机时注册表刷新段被 A1 门禁 403 响应噎死（python KeyError + set -e 中止，安装被误报「setup.sh 执行失败」而实际部署已完成、访问信息横幅丢失）— 门禁响应改打友好跳过提示、解析加 || 兜底（31be6cb，随 master clone 即时生效，不涉及二进制）
+- fix(install): install.sh 收尾「验证安装结果」段同一门禁交互噎死（set -euo pipefail 下 items KeyError 中止，🎉 完成横幅丢失、整条 curl|bash 以 exit 1 收尾）— 门禁响应打跳过提示、解析 || true；已重传 get.z1.sale/install.sh（ed3ff52）
 
 ## 版本变更一览
 
