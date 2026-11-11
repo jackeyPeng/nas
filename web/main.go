@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -54,13 +53,11 @@ var (
 var loginLimiter = common.NewLoginLimiter(5, 15*time.Minute, nil)
 
 // loginRequestIP 提取客户端 IP 用于登录限流判定。
-// 故意不走 common.RequestIP（会信任 X-Forwarded-For，可被客户端伪造绕过限流）。
+// 复用 common.RequestIP 同一套"仅可信代理网段才采信 X-Forwarded-For"口径——
+// 经反代部署时，若限流只认 RemoteAddr（反代自身地址），所有用户会共享同一限流桶；
+// 反代地址落在可信网段时才采信其转发的 XFF，公网直连客户端仍无法伪造绕过限流。
 func loginRequestIP(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
+	return common.RequestIP(r)
 }
 
 // 出厂默认账号与初始密码（首次登录后强制修改）
@@ -215,9 +212,56 @@ func main() {
 	log.Fatal(http.ListenAndServe(listenAddr, loggingMiddleware(mux)))
 }
 
+// defaultPassAllowedPaths 默认密码仍生效时，即使未改密也必须保持可达的路径，
+// 否则用户会被自己的强制改密门禁锁死。
+// changePasswordPath 单独传入（依赖 GetNASUser()，不能是编译期常量）。
+func defaultPassAllowedPaths(changePasswordPath string) map[string]bool {
+	return map[string]bool{
+		"/api/login":       true,
+		"/api/version":     true,
+		"/api/health":      true,
+		changePasswordPath: true,
+	}
+}
+
+// defaultPassGateAllowed 判定默认密码未改时该请求是否放行。
+// 抽成纯函数（不依赖 http.Request 之外的全局状态）便于单测覆盖。
+// 规则：
+//   - 非 /api/ 路径（静态资源/前端 SPA）一律放行，否则登录页本身加载不出来；
+//   - /api/ 路径必须命中白名单（登录、版本、健康检查、本人改密）才放行。
+func defaultPassGateAllowed(path, nasUser string) bool {
+	if !strings.HasPrefix(path, "/api/") {
+		return true
+	}
+	changePasswordPath := "/api/users/" + nasUser + "/password"
+	return defaultPassAllowedPaths(changePasswordPath)[path]
+}
+
 func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("%s %s %s", r.Method, r.URL.Path, r.RemoteAddr)
+
+		// 安全响应头：对全部响应生效（包括 /api/* 和静态资源）。
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+		w.Header().Set("Content-Security-Policy",
+			"default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; "+
+				"style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'")
+
+		// 出厂默认密码强制先改密：除白名单路径外全部拒绝，替代仅前端拦截。
+		// 改密成功后 UpdateNasPass 更新内存值，IsDefaultPass() 立即变 false，
+		// 后续请求不再受此门禁限制。
+		if common.IsDefaultPass() && !defaultPassGateAllowed(r.URL.Path, common.GetNASUser()) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			// 带出 username：前端据此拼出 /api/users/{username}/password 改密路径，
+			// 否则刷新后前端拿不到该字段，会把改密请求打到 /api/users//password。
+			w.Write([]byte(fmt.Sprintf(`{"error":"must_change_password","username":%q}`,
+				common.GetNASUser())))
+			return
+		}
 
 		// 注入审计标记：handler 内 LogAuditRequest 会置位，避免与中间件双写
 		req, audited := common.WithAuditFlag(r)

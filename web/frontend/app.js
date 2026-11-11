@@ -677,6 +677,16 @@ function nasPanel() {
             if (ct && ct.includes('application/json')) {
                 const data = await res.json();
                 if (!res.ok && data.error) {
+                    // 出厂默认密码强制改密：后端门禁（默认密码未改时非白名单 API 一律 403）
+                    // 用 error 字段通知前端。前端据此弹改密框——否则刷新页面后前端拿不到
+                    // /api/dashboard 的 must_change_password 标记，会把改密请求打到空用户名路径。
+                    if (data.error === 'must_change_password') {
+                        this.mustChangePassword = true;
+                        this.pwdUser = data.username || this.pwdUser || this.loginForm.username || '';
+                        this.pwdForm = { password: '' };
+                        this.page = 'login';
+                        return null;
+                    }
                     this.showToast(data.error, 'error');
                     return null;
                 }
@@ -1834,6 +1844,9 @@ function nasPanel() {
         async saveAlertConfig() {
             const params = new URLSearchParams();
             for (const [key, value] of Object.entries(this.alertConfig)) {
+                // 后端 GET 已把敏感字段（密码/令牌/webhook）脱敏为 ********，
+                // 表单未改动时原样提交会把真实值覆盖成掩码本身，这里跳过未改动的掩码字段。
+                if (value === '********') continue;
                 params.append(key, value);
             }
             const data = await this.api('/alert-config', {

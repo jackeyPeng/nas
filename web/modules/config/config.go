@@ -24,8 +24,8 @@ func RegisterRoutes(mux *http.ServeMux) {
 	// Service enable/disable
 	mux.HandleFunc("/api/config/services", common.AuthMiddleware(handleServiceList))
 	mux.HandleFunc("/api/config/service-toggle", common.AuthMiddleware(handleServiceToggle))
-	// Config file editor
-	mux.HandleFunc("/api/config/file", common.AuthMiddleware(handleConfigFile))
+	// Config file editor — 含 .env 等敏感配置的原文编辑，仅管理员可达。
+	mux.HandleFunc("/api/config/file", common.AdminMiddleware(handleConfigFile))
 }
 
 // ═══════════════════════════════════════
@@ -40,7 +40,7 @@ func handleEnvConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.Method == http.MethodGet {
-		config := common.ReadAllEnv(envPath)
+		config := common.MaskSensitiveEnv(common.ReadAllEnv(envPath))
 		common.JSONResponse(w, map[string]interface{}{"config": config})
 		return
 	}
@@ -48,9 +48,22 @@ func handleEnvConfig(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
 		r.ParseForm()
 		values := map[string]string{}
+		allowed := map[string]bool{"NAS_USER": true}
 		for key, vals := range r.Form {
+			if key == "NAS_USER" || strings.HasPrefix(key, "ALERT_") {
+				allowed[key] = true
+			}
+			if !allowed[key] || common.IsSensitiveEnvKey(key) {
+				http.Error(w, `{"error":"key_not_allowed"}`, http.StatusBadRequest)
+				return
+			}
 			if len(vals) > 0 {
-				values[key] = strings.TrimSpace(vals[0])
+				value := strings.TrimSpace(vals[0])
+				if len(value) > 1024 || strings.ContainsAny(value, "\r\n") {
+					http.Error(w, `{"error":"invalid_value"}`, http.StatusBadRequest)
+					return
+				}
+				values[key] = value
 			}
 		}
 		if len(values) == 0 {
@@ -59,7 +72,7 @@ func handleEnvConfig(w http.ResponseWriter, r *http.Request) {
 		}
 		err := updateEnvFile(envPath, values)
 		if err != nil {
-			http.Error(w, fmt.Sprintf(`{"error": %q}`, err.Error()), http.StatusInternalServerError)
+			http.Error(w, `{"error":"configuration update failed"}`, http.StatusInternalServerError)
 			return
 		}
 		common.JSONResponse(w, map[string]interface{}{"message": "配置已保存"})
@@ -355,6 +368,9 @@ func handleConfigFile(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method == http.MethodGet {
 		content := readFileWithSudo(filePath)
+		if name == "env" {
+			content = maskSensitiveConfigContent(content)
+		}
 		common.JSONResponse(w, map[string]interface{}{"name": name, "path": filePath, "content": content})
 		return
 	}
@@ -365,6 +381,10 @@ func handleConfigFile(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `{"error": "content required"}`, http.StatusBadRequest)
 			return
 		}
+		if name == "env" && containsForbiddenEnvWrite(content) {
+			http.Error(w, `{"error":"key_not_allowed"}`, http.StatusBadRequest)
+			return
+		}
 		err := writeFileWithSudo(filePath, content)
 		if err != nil {
 			http.Error(w, fmt.Sprintf(`{"error": %q}`, err.Error()), http.StatusInternalServerError)
@@ -372,6 +392,20 @@ func handleConfigFile(w http.ResponseWriter, r *http.Request) {
 		}
 		common.JSONResponse(w, map[string]interface{}{"message": name + " 已保存"})
 	}
+}
+
+var forbiddenEnvWritePattern = regexp.MustCompile(`(?im)^\s*(NAS_PASS|JWT_SECRET)\s*=`)
+
+func containsForbiddenEnvWrite(content string) bool {
+	return forbiddenEnvWritePattern.MatchString(content)
+}
+
+func maskSensitiveConfigContent(content string) string {
+	lines := strings.Split(content, "\n")
+	for i, line := range lines {
+		lines[i] = common.MaskSensitiveEnvLine(line)
+	}
+	return strings.Join(lines, "\n")
 }
 
 // ═══════════════════════════════════════

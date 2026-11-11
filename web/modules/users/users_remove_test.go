@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"nas-panel/common"
 )
 
 // removeUser：用户名必须先过 isValidUsername 才能触达 remove-user.sh（此前零
@@ -42,7 +44,11 @@ func TestHandleUserAction_Delete_InvalidUsername_SkipsConfigSync(t *testing.T) {
 	}
 	defer func() { syncConfigsAfterUserDelete = orig }()
 
+	common.InitAuth("users-remove-test-secret")
+	token, _ := common.CreateToken(common.GetNASUser())
+
 	r := httptest.NewRequest(http.MethodDelete, "/api/users/..", nil)
+	r.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
 	handleUserAction(w, r)
 

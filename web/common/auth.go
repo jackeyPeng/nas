@@ -100,3 +100,29 @@ func ValidTokenFromRequest(r *http.Request) bool {
 	_, err := VerifyToken(tokenStr)
 	return err == nil
 }
+
+// AdminMiddleware 要求调用者登录且用户名 == NAS_USER（面板管理员）。
+// 单用户架构下，面板登录账号就是管理员；其他 Linux 系统用户不是面板账号，
+// 他们的 token（若将来有）也拿不到管理权限。
+func AdminMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !ValidTokenFromRequest(r) {
+			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+			return
+		}
+		if RequestUsername(r) != GetNASUser() {
+			http.Error(w, `{"error":"forbidden: admin required"}`, http.StatusForbidden)
+			return
+		}
+		next(w, r)
+	}
+}
+
+// IsAdmin 判定当前请求是否来自面板管理员（已登录且用户名 == NAS_USER）。
+// 供 handler 内部在同一路由里需要区分「管理员」与「本人」权限时复用。
+func IsAdmin(r *http.Request) bool {
+	if !ValidTokenFromRequest(r) {
+		return false
+	}
+	return RequestUsername(r) == GetNASUser()
+}

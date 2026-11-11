@@ -271,6 +271,14 @@ func handleUsers(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
 }
 
+// isSelfOrAdminPasswordChange 判定改密请求是否被允许：请求者是面板管理员
+// （可改任意人），或请求者就是目标用户本人（自助改密）。
+// 单用户架构下唯一登录用户就是管理员，规则当前等价于 AdminMiddleware；
+// 写成 self-or-admin 判定是为将来多用户登录场景留好结构。
+func isSelfOrAdminPasswordChange(requester, nasUser, target string) bool {
+	return requester == nasUser || requester == target
+}
+
 func handleUserAction(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/api/users/")
 	parts := strings.Split(path, "/")
@@ -280,10 +288,17 @@ func handleUserAction(w http.ResponseWriter, r *http.Request) {
 	}
 	username := parts[0]
 
-	// PUT /api/users/{name}/password
+	// PUT /api/users/{name}/password — self-or-admin：管理员可改任意人，
+	// 其他已登录用户只能改自己。
 	if len(parts) >= 2 && parts[1] == "password" {
 		if r.Method != http.MethodPut && r.Method != http.MethodPost {
 			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+			return
+		}
+		requester := common.RequestUsername(r)
+		nasUser := common.GetNASUser()
+		if !isSelfOrAdminPasswordChange(requester, nasUser, username) {
+			http.Error(w, `{"error":"forbidden: can only change own password"}`, http.StatusForbidden)
 			return
 		}
 		password := r.FormValue("password")
@@ -299,7 +314,18 @@ func handleUserAction(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
 			return
 		}
+		// 管理员改他人密码时单独写一条审计（self-change 由全局中间件按普通写请求记录即可）。
+		if requester == nasUser && requester != username {
+			common.LogAuditRequest(r, "USERS", "change_user_password",
+				fmt.Sprintf("target=%s self=false", username), "success")
+		}
 		common.JSONResponse(w, map[string]interface{}{"message": "密码修改成功"})
+		return
+	}
+
+	// 以下分支（services/quota/delete）均为管理操作，要求面板管理员身份。
+	if !common.IsAdmin(r) {
+		http.Error(w, `{"error":"forbidden: admin required"}`, http.StatusForbidden)
 		return
 	}
 
@@ -530,10 +556,10 @@ func removeUser(username string, deleteData bool) (string, error) {
 
 // RegisterRoutes 注册用户模块路由
 func RegisterRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("/api/users", common.AuthMiddleware(handleUsers))
+	mux.HandleFunc("/api/users", common.AdminMiddleware(handleUsers))
 	mux.HandleFunc("/api/users/", common.AuthMiddleware(handleUserAction))
-	mux.HandleFunc("/api/user-groups", common.AuthMiddleware(handleGroups))
-	mux.HandleFunc("/api/user-groups/", common.AuthMiddleware(handleGroupAction))
-	mux.HandleFunc("/api/users-matrix", common.AuthMiddleware(handleMatrix))
-	mux.HandleFunc("/api/users-login-log", common.AuthMiddleware(handleLoginLog))
+	mux.HandleFunc("/api/user-groups", common.AdminMiddleware(handleGroups))
+	mux.HandleFunc("/api/user-groups/", common.AdminMiddleware(handleGroupAction))
+	mux.HandleFunc("/api/users-matrix", common.AdminMiddleware(handleMatrix))
+	mux.HandleFunc("/api/users-login-log", common.AdminMiddleware(handleLoginLog))
 }

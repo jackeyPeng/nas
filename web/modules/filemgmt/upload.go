@@ -24,6 +24,11 @@ import (
 // 生产走 diskmgmt.GetAllFolderMeta;测试可替换为返回固定/空列表的 fake。
 var getFolderMetaFn = diskmgmt.GetAllFolderMeta
 
+// maxUploadBytes 限制单次上传请求体大小,防止单个请求长时间占满磁盘 IO/磁盘空间。
+// 声明为变量(非 const)仅为了让单测能注入一个小值断言 413 映射逻辑,
+// 生产路径恒为 10 GiB,不对外提供运行期配置。
+var maxUploadBytes int64 = 10 << 30
+
 // ownerShareOfVia 与 path.go 的 ownerShareOf 逻辑一致,但经 getFolderMetaFn 取数据,
 // 使上传权限对齐在单测里可注入 fake folders.db 结果。
 func ownerShareOfVia(absPath string) (diskmgmt.FolderMeta, bool) {
@@ -221,6 +226,8 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	// 限制单请求体积，防止单次上传耗尽磁盘 IO。
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
 	rel := r.URL.Query().Get("path")
 	overwrite := r.URL.Query().Get("overwrite") == "yes"
 
@@ -255,6 +262,10 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		if perr != nil {
+			if isMaxBytesError(perr) {
+				http.Error(w, `{"error":"file too large"}`, http.StatusRequestEntityTooLarge)
+				return
+			}
 			http.Error(w, "读取 multipart part 失败", http.StatusBadRequest)
 			return
 		}
@@ -317,6 +328,10 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
 				writeUploadConflictBody(w, cleaned, written, totalBytes)
 				return
 			}
+			if isMaxBytesError(werr) {
+				http.Error(w, `{"error":"file too large"}`, http.StatusRequestEntityTooLarge)
+				return
+			}
 			http.Error(w, werr.Error(), http.StatusInsufficientStorage)
 			return
 		}
@@ -372,6 +387,11 @@ func encodeJSONBody(w http.ResponseWriter, data interface{}) {
 //     EEXIST 时目标文件非本函数所建(并发方已创建),调用方(handler)不得 Remove 它。
 //   - OpenFile 成功后 CopyBuffer 失败 → 本函数内部自清半成品:f.Close() 后 os.Remove(targetAbs),
 //     再返回原始 copy 错误(此时文件确为本函数所建,清理是安全的)。
+func isMaxBytesError(err error) bool {
+	var maxErr *http.MaxBytesError
+	return errors.As(err, &maxErr)
+}
+
 func writePartToFile(targetAbs string, part io.Reader, buf []byte, overwrite bool) (int64, error) {
 	flags := os.O_WRONLY | os.O_CREATE | os.O_EXCL
 	if overwrite {

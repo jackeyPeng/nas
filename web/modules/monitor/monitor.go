@@ -26,7 +26,9 @@ func handleMonitor(w http.ResponseWriter, r *http.Request) {
 
 func handleAlertConfig(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
-		config := getAlertConfig()
+		// ALERT_SMTP_PASS / ALERT_TELEGRAM_TOKEN / ALERT_DINGTALK_WEBHOOK 等
+		// 敏感键脱敏返回，key 仍保留供前端渲染"已配置"状态。
+		config := maskAlertConfig(getAlertConfig())
 		common.JSONResponse(w, map[string]interface{}{"config": config})
 		return
 	}
@@ -417,6 +419,10 @@ func parseNetDevLines(data string) map[string][]uint64 {
 		result[name] = vals
 	}
 	return result
+}
+
+func maskAlertConfig(config map[string]string) map[string]string {
+	return common.MaskSensitiveEnv(config)
 }
 
 func getAlertConfig() map[string]string {

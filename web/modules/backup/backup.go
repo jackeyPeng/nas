@@ -7,14 +7,107 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"nas-panel/common"
 )
 
 const backupDirPrefix = "/opt/nas/backups/"
+
+var backupTargetPrefixes = []string{"/mnt", "/data/backup"}
+
+var backupRemoteTargetPattern = regexp.MustCompile(`^(?:[A-Za-z0-9._-]+@)?[A-Za-z0-9._-]+:(.*)$`)
+
+func resolveExistingBackupPath(path string) (string, error) {
+	resolved, err := filepath.EvalSymlinks(path)
+	if err == nil {
+		return resolved, nil
+	}
+	if !os.IsNotExist(err) {
+		return "", err
+	}
+	parent := filepath.Dir(path)
+	if parent == path {
+		return "", err
+	}
+	resolvedParent, parentErr := resolveExistingBackupPath(parent)
+	if parentErr != nil {
+		return "", parentErr
+	}
+	return filepath.Join(resolvedParent, filepath.Base(path)), nil
+}
+
+func validateBackupTarget(target string) (string, error) {
+	target = strings.TrimSpace(target)
+	if strings.Contains(target, ":") {
+		if strings.HasPrefix(target, "-") {
+			return "", fmt.Errorf("invalid backup target")
+		}
+		matches := backupRemoteTargetPattern.FindStringSubmatch(target)
+		if matches == nil {
+			return "", fmt.Errorf("invalid backup target")
+		}
+		remotePath := matches[1]
+		if remotePath == "" || strings.HasPrefix(remotePath, "-") {
+			return "", fmt.Errorf("invalid backup target")
+		}
+		for _, r := range remotePath {
+			if unicode.IsSpace(r) || unicode.IsControl(r) {
+				return "", fmt.Errorf("invalid backup target")
+			}
+		}
+		for _, part := range strings.Split(remotePath, "/") {
+			if part == ".." {
+				return "", fmt.Errorf("invalid backup target")
+			}
+		}
+		return target, nil
+	}
+
+	clean := filepath.Clean(target)
+	allowed := func(path string) bool {
+		for _, prefix := range backupTargetPrefixes {
+			if path == prefix || strings.HasPrefix(path, prefix+"/") {
+				if prefix == "/mnt" && path == "/mnt" {
+					continue
+				}
+				return true
+			}
+		}
+		return false
+	}
+	if !allowed(clean) {
+		return "", fmt.Errorf("invalid backup target")
+	}
+	// 目标条目本身不能是符号链接 —— 在 EvalSymlinks 展开之前检查，
+	// 否则解析后拿到的是链接指向的真实路径，Lstat 查不到链接本身。
+	if linkInfo, lerr := os.Lstat(clean); lerr == nil && linkInfo.Mode()&os.ModeSymlink != 0 {
+		return "", fmt.Errorf("invalid backup target")
+	}
+	resolved, err := resolveExistingBackupPath(clean)
+	if err != nil {
+		return "", fmt.Errorf("invalid backup target")
+	}
+	clean = resolved
+	if !allowed(clean) {
+		return "", fmt.Errorf("invalid backup target")
+	}
+	info, err := os.Lstat(clean)
+	if os.IsNotExist(err) {
+		if err := os.MkdirAll(clean, 0755); err != nil {
+			return "", fmt.Errorf("invalid backup target")
+		}
+		info, err = os.Lstat(clean)
+	}
+	if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return "", fmt.Errorf("invalid backup target")
+	}
+	return clean, nil
+}
 
 // validateBackupPath 校验备份文件路径，防止目录穿越（如 ../../ 逃出 backups 目录）
 // 或通过双斜杠等未归一化输入绕过前缀/后缀检查。返回归一化后的路径与是否合法。
@@ -37,10 +130,10 @@ func validateBackupPath(p string) (string, bool) {
 
 func RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/backup/list", common.AuthMiddleware(handleBackupList))
-	mux.HandleFunc("/api/backup/create", common.AuthMiddleware(handleBackupCreate))
-	mux.HandleFunc("/api/backup/restore", common.AuthMiddleware(handleBackupRestore))
-	mux.HandleFunc("/api/backup/delete", common.AuthMiddleware(handleBackupDelete))
-	mux.HandleFunc("/api/backup/data", common.AuthMiddleware(handleBackupData))
+	mux.HandleFunc("/api/backup/create", common.AdminMiddleware(handleBackupCreate))
+	mux.HandleFunc("/api/backup/restore", common.AdminMiddleware(handleBackupRestore))
+	mux.HandleFunc("/api/backup/delete", common.AdminMiddleware(handleBackupDelete))
+	mux.HandleFunc("/api/backup/data", common.AdminMiddleware(handleBackupData))
 }
 
 type BackupInfo struct {
@@ -144,9 +237,11 @@ func handleBackupRestore(w http.ResponseWriter, r *http.Request) {
 	cmd.Stdin = strings.NewReader("yes\n")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
+		common.LogAuditRequest(r, "BACKUP", "restore_config", "file="+backupFile, "failed")
 		http.Error(w, fmt.Sprintf(`{"error": %q}`, string(out)), http.StatusInternalServerError)
 		return
 	}
+	common.LogAuditRequest(r, "BACKUP", "restore_config", "file="+backupFile, "success")
 	common.JSONResponse(w, map[string]interface{}{
 		"message": "配置已从备份恢复，服务已重启",
 		"output":  string(out),
@@ -185,14 +280,9 @@ func handleBackupData(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	target := strings.TrimSpace(r.FormValue("target"))
-	if target == "" {
-		http.Error(w, `{"error":"请指定备份目标路径"}`, http.StatusBadRequest)
-		return
-	}
-	// 安全：拒绝根目录/面板自身路径/伪文件系统
-	if target == "/" || target == "/data" || strings.HasPrefix(target, "/opt/nas") ||
-		strings.HasPrefix(target, "/proc") || strings.HasPrefix(target, "/sys") {
-		http.Error(w, `{"error":"无效的备份目标路径"}`, http.StatusBadRequest)
+	target, err := validateBackupTarget(target)
+	if err != nil {
+		http.Error(w, `{"error":"invalid backup target"}`, http.StatusBadRequest)
 		return
 	}
 	out, err := common.SudoExec("/opt/nas/scripts/backup-data.sh", target)

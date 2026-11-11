@@ -6,15 +6,23 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"nas-panel/common"
 )
 
 // handleUserAction 的 PUT .../password 必须在触达 chpasswd/smbpasswd/.env 写入
 // 之前拒绝含控制字符的密码，否则经 chpasswd stdin（"user:pass\nroot:evil"）可
 // 注入额外改密条目。这里只验证短路行为（400），不触发真实系统调用。
+// 请求以管理员身份认证（self-or-admin 门禁要求），避免被 403 短路掩盖本测试
+// 真正要验证的 400 校验逻辑。
 func TestHandleUserAction_ChangePassword_RejectsControlCharPassword(t *testing.T) {
+	common.InitAuth("users-test-secret")
+	token, _ := common.CreateToken(common.GetNASUser())
+
 	form := url.Values{"password": {"goodpass123\nroot:evilpw123"}}
 	r := httptest.NewRequest(http.MethodPut, "/api/users/alice/password", strings.NewReader(form.Encode()))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
 
 	handleUserAction(w, r)

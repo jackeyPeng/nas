@@ -2,6 +2,7 @@ package common
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"strings"
 )
@@ -43,17 +44,74 @@ func RequestUsername(r *http.Request) string {
 	return ""
 }
 
-// RequestIP 提取客户端 IP（优先 X-Forwarded-For）
+// trustedProxyCIDRs 列出反代/本机可信网段：只有连接本身来自这些网段时，
+// 才采信该连接声明的 X-Forwarded-For（否则任意客户端可伪造 XFF 头绕过
+// 审计溯源或共享限流桶）。
+var trustedProxyCIDRs = mustParseCIDRs(
+	"127.0.0.0/8",
+	"::1/128",
+	"10.0.0.0/8",
+	"172.16.0.0/12",
+	"192.168.0.0/16",
+)
+
+func mustParseCIDRs(cidrs ...string) []*net.IPNet {
+	nets := make([]*net.IPNet, 0, len(cidrs))
+	for _, c := range cidrs {
+		_, n, err := net.ParseCIDR(c)
+		if err != nil {
+			panic(err)
+		}
+		nets = append(nets, n)
+	}
+	return nets
+}
+
+// hostFromRemoteAddr 从 http.Request.RemoteAddr（"host:port" 或裸
+// IPv6 地址如 "[::1]:1234"）中取出主机部分，解析失败时原样返回。
+func hostFromRemoteAddr(remoteAddr string) string {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		return strings.TrimSpace(remoteAddr)
+	}
+	return host
+}
+
+// IsTrustedProxyHost 判断给定主机地址是否属于可信代理/本机网段
+// （127.0.0.0/8、::1、10.0.0.0/8、172.16.0.0/12、192.168.0.0/16）。
+// 只有这些来源的连接才有资格声明 X-Forwarded-For。
+func IsTrustedProxyHost(host string) bool {
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	for _, n := range trustedProxyCIDRs {
+		if n.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// requestIPFrom 是 RequestIP 的纯函数版本，便于单测：只有 remoteAddr
+// 的主机部分命中可信代理网段时，才采信 forwarded（X-Forwarded-For）
+// 首段；否则回退到 remoteAddr 本身的主机部分。
+func requestIPFrom(remoteAddr, forwarded string) string {
+	host := hostFromRemoteAddr(remoteAddr)
+	if forwarded != "" && IsTrustedProxyHost(host) {
+		first := strings.TrimSpace(strings.Split(forwarded, ",")[0])
+		if first != "" {
+			return first
+		}
+	}
+	return host
+}
+
+// RequestIP 提取客户端 IP：仅当直连方（RemoteAddr）是可信代理/本机网段时，
+// 才采信其声明的 X-Forwarded-For 首段，否则直接使用 RemoteAddr 的主机部分。
+// 防止公网客户端直连时伪造 XFF 头污染审计日志来源 IP。
 func RequestIP(r *http.Request) string {
-	ip := r.RemoteAddr
-	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-		ip = strings.Split(fwd, ",")[0]
-	}
-	// 去掉端口（兼容 IPv6 裸地址）
-	if i := strings.LastIndex(ip, ":"); i > 0 && !strings.Contains(ip[i:], "]") {
-		ip = ip[:i]
-	}
-	return strings.TrimSpace(ip)
+	return requestIPFrom(r.RemoteAddr, r.Header.Get("X-Forwarded-For"))
 }
 
 // LogAuditRequest 在 handler 内记录审计日志：自动带真实 username/IP，
