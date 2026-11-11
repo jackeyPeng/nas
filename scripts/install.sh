@@ -382,6 +382,10 @@ done
 echo ""
 echo -e "${BOLD}系统注册表检查:${NC}"
 if curl -s --max-time 10 "http://localhost:${PANEL_PORT}/api/system/check?action=refresh" > /tmp/nas-verify.json 2>/dev/null; then
+    if grep -q "must_change_password" /tmp/nas-verify.json 2>/dev/null; then
+        # A1 默认密码门禁：出厂密码未改前非白名单 API 一律 403，注册表检查属预期跳过
+        echo -e "  ${WARNMARK} 出厂默认密码尚未修改，注册表检查跳过（首次登录改密后自动刷新）"
+    else
     VERIFY_PASS=$(python3 -c "import json;d=json.load(open('/tmp/nas-verify.json'));print(d['passed'])" 2>/dev/null || echo "?")
     VERIFY_FAIL=$(python3 -c "import json;d=json.load(open('/tmp/nas-verify.json'));print(d['failed'])" 2>/dev/null || echo "?")
     VERIFY_WARN=$(python3 -c "import json;d=json.load(open('/tmp/nas-verify.json'));print(d['warn'])" 2>/dev/null || echo "?")
@@ -397,10 +401,11 @@ if curl -s --max-time 10 "http://localhost:${PANEL_PORT}/api/system/check?action
     python3 -c "
 import json
 d=json.load(open('/tmp/nas-verify.json'))
-for i in d['items']:
+for i in d.get('items',[]):
     if i['status'] != 'pass':
         print(f\"    [{i['status']}] {i['name']}: {i['detail']}\")
-" 2>/dev/null
+" 2>/dev/null || true
+    fi
 else
     echo -e "  ${WARNMARK} 面板未响应，跳过注册表检查"
 fi
