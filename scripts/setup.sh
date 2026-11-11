@@ -834,8 +834,11 @@ echo "========================================="
 # 等待面板启动
 sleep 3
 echo "正在刷新注册表..."
-RESULT=$(curl -s "http://localhost:8090/api/system/check?action=refresh" 2>/dev/null)
-if [ -n "$RESULT" ]; then
+RESULT=$(curl -s "http://localhost:8090/api/system/check?action=refresh" 2>/dev/null) || true
+if echo "$RESULT" | grep -q "must_change_password"; then
+    # A1 默认密码门禁：出厂密码未改前所有非白名单 API 一律 403，此刷新属预期跳过
+    echo "  ⚠ 出厂默认密码尚未修改，注册表刷新跳过（首次登录改密后自动刷新）"
+elif [ -n "$RESULT" ]; then
     echo "$RESULT" | python3 -c "
 import sys,json
 d=json.load(sys.stdin)
@@ -851,7 +854,7 @@ if failed > 0 or warn > 0:
         if item['status'] != 'pass':
             icon = '❌' if item['status']=='fail' else '⚠️'
             print(f'  {icon} [{item[\"id\"]:02d}] {item[\"name\"]}: {item[\"detail\"]}')
-" 2>/dev/null
+" 2>/dev/null || echo "  ⚠ 注册表结果解析失败，可稍后在面板健康中心查看"
 else
     echo "  ⚠ 面板未就绪，跳过注册表检查"
 fi
