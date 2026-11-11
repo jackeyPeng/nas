@@ -130,3 +130,7 @@ tmp/
 # Hermes 工具临时文件（防误提交）
 .hermes-tmp*
 **/.hermes-tmp*
+
+# Local workspace backup patches (contain historical secrets)
+*.patch
+nas-local-backup.patch
