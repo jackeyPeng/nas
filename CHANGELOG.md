@@ -2,14 +2,13 @@
 
 ## [未发布]
 
-- fix(auth): 默认密码门禁对未认证访客误弹不可关闭改密框（53c48be）— A1 门禁跑在鉴权之前，未登录请求撞非白名单 /api/* 也拿 403 must_change_password；登录页上 diskmgmt/wizard/maintenance 三个无守卫 x-init 在 Alpine 初始化时无视 x-show 隐藏照常发请求（/api/disk/pending 等三发全 403），前端 api() 误判「需要强制改密」弹出无关闭按钮的改密框盖死登录页。三层修复：门禁收敛为仅对已认证请求生效（未认证交 AuthMiddleware 回 401）+ 前端 api() 空 token 收到 must_change_password 时静默登出不弹框 + 三个 x-init 加 page/tab 守卫并改为 tab 点击时加载（参照 files 页既有模式）；补门禁未认证放行单测
-- fix(setup): 出厂默认密码装机时注册表刷新段被 A1 门禁 403 响应噎死（python KeyError + set -e 中止，安装被误报「setup.sh 执行失败」而实际部署已完成、访问信息横幅丢失）— 门禁响应改打友好跳过提示、解析加 || 兜底（31be6cb，随 master clone 即时生效，不涉及二进制）
-- fix(install): install.sh 收尾「验证安装结果」段同一门禁交互噎死（set -euo pipefail 下 items KeyError 中止，🎉 完成横幅丢失、整条 curl|bash 以 exit 1 收尾）— 门禁响应打跳过提示、解析 || true；已重传 get.z1.sale/install.sh（ed3ff52）
+（暂无）
 
 ## 版本变更一览
 
 | 版本 | 日期 | 主要变化 |
 |------|------|---------|
+| v1.4.0-beta.39 | 2026-11-12 | 门禁与安装收尾修复 — A1 默认密码门禁收敛为仅对已认证会话生效（未登录访客不再被 403 must_change_password 误弹不可关闭改密框盖死登录页；登录页三个无守卫 x-init 加 page/tab 守卫）+ setup.sh/install.sh 收尾段不再被门禁 403 响应噎死（安装成功却 exit 1、横幅丢失）。真机验证：登录页零 API 抢跑无弹框、未认证 401/已认证默认密码 403 语义正确、门禁单测全绿 |
 | v1.4.0-beta.38 | 2026-11-11 | 授权与凭据收口（A1）— 出厂默认密码强制改密门禁（非白名单 /api/* 一律 403 must_change_password，403 响应带 username 防前端空用户名改密路径）；管理操作统一 AdminMiddleware（用户/备份/配置文件/告警配置，单用户架构下唯一登录用户即管理员）；.env 与告警配置敏感键（PASS/SECRET/TOKEN/KEY/WEBHOOK/CREDENTIAL/PRIVATE）读取一律掩码为 ********、.env 写回拒绝 NAS_PASS/JWT_SECRET；备份目标校验收口（本地 /mnt、/data/backup + rsync user@host:/path 逐项校验，拒选项注入/空白/.. 段/符号链接）；审计日志与登录限流 IP 口径统一为仅直连私网采信反代 X-Forwarded-For（公网直连不可伪造 XFF）；上传接口 10 GiB MaxBytesReader（413）；安全响应头（CSP 放行 Alpine eval）。真机验收：两台重置测试机一键安装全绿（merge + RAID1），注册表 41/41 + 套件 45/45 + AI/F2 E2E 全 PASS + Chrome UI 实测 + 首登改密四件套 + .env 掩码泄漏面核验 |
 | v1.4.0-beta.37 | 2026-10-30 | 协议收敛版本 — 新装机默认只开 SMB + 面板（FTP/WebDAV/NFS/S3 配置照常生成但服务默认关闭，服务页一键开启并立即显示访问地址/凭据/风险提示；升级机现有开关状态一律不动）；服务页人话卡片化（核心区表格只剩重启+日志，防误关；协议区 2×2 卡片带用途说明、大开关、状态徽章、风险文案，双语）；仪表盘服务计数新口径（禁用协议不计异常）；注册表协议项三态化（默认关闭=pass，总数仍 41）；服务开关 on/off API 带 optional 门禁（核心服务 400）+ 富 detail 审计。附 parent 复核四个真机实锤修复：FRESH_INSTALL 一键路径判定失效（install.sh 先建 .env）、set -e 下裸 $(systemctl is-active) 中止安装、nfs-kernel-server alias 单元 is-enabled 恒报 alias（注册表误 fail + 升级误重开）、restart 对 stopped 单元的「复活」语义（首登改密偷偷拉起默认关闭的 S3，RestartIfActive 五处收口）。真机验收：两台重置测试机用户级全流程（LVM merge + RAID1）一次通过零错误，默认态/开关往返/门禁/改密不复活全链实测，注册表 41/41、套件 38/38、AI/F2 E2E 全 PASS、Chrome 卡片视觉+UI 实点开关验证；RAID 机 resync 42.6% 重启 → md0 装配、续跑、协议关闭态跨重启持久化 |
 | v1.4.0-beta.36 | 2026-10-29 | 一致性小版本 — SyncAllConfigs 全局互斥（12 个调用点并发编辑不再交错生成 smb.conf/exports 并重载服务，已知问题 §八#7 关闭）；SSE 流式操作警告可见性根修：前端 5 处解析器不再丢弃 running 事件的 Detail（建池/扩容中的非致命警告如 initramfs 失败，此前只进日志），进度列表新增琥珀色警告子行；安装完成横幅 Samba UNC 路径修复（echo -e 双解释吞掉前导反斜杠，`\\IP\public` 显示成 `\IP\public`）。真机验收：两台重置测试机用户级全流程（LVM merge + RAID1）一次通过零错误，注册表 41/41 + 套件 38/38 + AI/F2 E2E 全 PASS + Chrome UI 实测；RAID 机 resync 43% 时重启 → md0 装配、续跑跨重启、面板进度与内核实时一致 |
@@ -38,6 +37,29 @@
 | v1.4.0-beta.13 | 2026-09-19 | NFS 导出对所有网段开放（跨网段客户端可挂载） |
 | v1.4.0-beta.12 | 2026-09-18 | 创建向导按已选磁盘实时预估容量（选目标后预览面板 + 各方案可用容量/注意事项）+ 登录页品牌 slogan |
 | v1.4.0-beta.11 | 2026-09-18 | 当前连接展示（监控页，SMB 会话 + 各协议端口归类）+ 回收站改 per-share `.recycle/`（删除=rename 零拷贝，恢复保留目录树，旧 `#recycle` 兼容）+ 存储页 tab 切换跳动修复 |
+
+---
+
+## [2026-11-12] - v1.4.0-beta.39 — 门禁与安装收尾修复：未登录误弹改密框根修 + 安装脚本门禁交互加固
+
+beta.38（A1 授权与凭据收口）的两个回归修复轮，共三个用户可感知修复：
+
+### 未登录访客被误弹不可关闭改密框（53c48be，涉及二进制）
+
+A1 默认密码门禁写在最外层中间件、先于鉴权执行——未登录请求（无 token/无效 token）撞非白名单 /api/* 也返回 403 must_change_password。叠加前端两个既有缺陷后在登录页炸出：diskmgmt/wizard/maintenance 三个 x-init 不带 page 守卫，Alpine 初始化时无视 x-show 隐藏照常发请求（/api/disk/pending、/api/disk/wizard/status、/api/disk/operations 三发全 403）；api() 收到 must_change_password 无条件弹无关闭按钮的强制改密框——用户全新打开面板还没登录就被改密框盖死（beta.38 前这些请求拿到 401 静默 logout，故未暴露）。
+
+三层修复（纵深防御）：
+- web/main.go：门禁条件加 common.ValidTokenFromRequest(r)，语义收敛为「已认证会话不得带默认密码使用系统」；未认证请求放给各路由 AuthMiddleware 回 401
+- web/frontend/app.js：api() 的 must_change_password 分支加 this.token 非空守卫，空 token 静默 logout 不弹框
+- web/frontend/index.html：三个 x-init 加 page/tab 守卫（参照 files 页既有模式），wizard/maintenance 改 tab 点击时加载（参照 recycle 按钮）
+- web/default_pass_gate_test.go：补未认证放行（无 token/无效 token）与有效 token 仍 403 用例
+
+真机验证（.57 部署 beta.38-fix1 构建）：登录页零 API 抢跑、无弹框（Chrome 实测）；curl 语义断言——未认证 /api/dashboard 回 401，默认密码登录后带 token 回 403 must_change_password（门禁对已认证会话不打折）；go test 全绿。
+
+### 安装脚本被门禁 403 噎死（31be6cb + ed3ff52，不涉及二进制）
+
+- setup.sh：出厂默认密码装机时注册表刷新段的 python 解析撞门禁 403 响应 KeyError，set -e 中止——安装实际已完成却误报「setup.sh 执行失败」、访问信息横幅丢失。门禁响应改打友好跳过提示（「首次登录改密后自动刷新」）、解析加 || 兜底
+- install.sh：收尾「验证安装结果」段同一交互在 set -euo pipefail 下中止，🎉 完成横幅丢失、整条 curl|bash 以 exit 1 收尾。同法修复并加 || true；已重传 get.z1.sale/install.sh
 
 ---
 
