@@ -2,6 +2,7 @@
 
 ## [未发布]
 
+- fix(auth): 默认密码门禁对未认证访客误弹不可关闭改密框（53c48be）— A1 门禁跑在鉴权之前，未登录请求撞非白名单 /api/* 也拿 403 must_change_password；登录页上 diskmgmt/wizard/maintenance 三个无守卫 x-init 在 Alpine 初始化时无视 x-show 隐藏照常发请求（/api/disk/pending 等三发全 403），前端 api() 误判「需要强制改密」弹出无关闭按钮的改密框盖死登录页。三层修复：门禁收敛为仅对已认证请求生效（未认证交 AuthMiddleware 回 401）+ 前端 api() 空 token 收到 must_change_password 时静默登出不弹框 + 三个 x-init 加 page/tab 守卫并改为 tab 点击时加载（参照 files 页既有模式）；补门禁未认证放行单测
 - fix(setup): 出厂默认密码装机时注册表刷新段被 A1 门禁 403 响应噎死（python KeyError + set -e 中止，安装被误报「setup.sh 执行失败」而实际部署已完成、访问信息横幅丢失）— 门禁响应改打友好跳过提示、解析加 || 兜底（31be6cb，随 master clone 即时生效，不涉及二进制）
 - fix(install): install.sh 收尾「验证安装结果」段同一门禁交互噎死（set -euo pipefail 下 items KeyError 中止，🎉 完成横幅丢失、整条 curl|bash 以 exit 1 收尾）— 门禁响应打跳过提示、解析 || true；已重传 get.z1.sale/install.sh（ed3ff52）
 
