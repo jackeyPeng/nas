@@ -1339,7 +1339,7 @@
 
 <!-- Config Management -->
             <!-- Disk Management -->
-            <div x-show="page === 'diskmgmt'" class="page" x-init="diskmgmtTab = diskmgmtTab || 'overview'; loadPendingOps()" x-transition.opacity.duration.300ms>
+            <div x-show="page === 'diskmgmt'" class="page" x-init="diskmgmtTab = diskmgmtTab || 'overview'; if(page==='diskmgmt') loadPendingOps()" x-transition.opacity.duration.300ms>
                 <h2 style="margin-bottom:var(--sp-4)" x-text="$t('storage.title')"></h2>
 
                 <!-- 待应用横幅 -->
@@ -1370,8 +1370,8 @@
                     <button class="tab-btn" :class="{'tab-active':diskmgmtTab==='overview'}" @click="diskmgmtTab='overview'">📊 <span x-text="$t('storage.total')"></span></button>
                     <button class="tab-btn" :class="{'tab-active':diskmgmtTab==='disks'}" @click="diskmgmtTab='disks'">💾 <span x-text="$t('storage.disks')"></span></button>
                     <button class="tab-btn" :class="{'tab-active':diskmgmtTab==='pools'}" @click="diskmgmtTab='pools'">🗄️ <span x-text="$t('storage.pools')"></span></button>
-                    <button class="tab-btn" :class="{'tab-active':diskmgmtTab==='wizard'}" @click="diskmgmtTab='wizard'">🧙 <span x-text="$t('storage.wizard')"></span></button>
-                    <button class="tab-btn" :class="{'tab-active':diskmgmtTab==='maintenance'}" @click="diskmgmtTab='maintenance'"><span x-text="$t('nav.maintenance')"></span></button>
+                    <button class="tab-btn" :class="{'tab-active':diskmgmtTab==='wizard'}" @click="diskmgmtTab='wizard';loadWizardStatus()">🧙 <span x-text="$t('storage.wizard')"></span></button>
+                    <button class="tab-btn" :class="{'tab-active':diskmgmtTab==='maintenance'}" @click="diskmgmtTab='maintenance';loadOperationsLog()"><span x-text="$t('nav.maintenance')"></span></button>
                     <button class="tab-btn" :class="{'tab-active':diskmgmtTab==='recycle'}" @click="diskmgmtTab='recycle';loadRecycleBin()">🗑️ <span x-text="$t('storage.recycle_tab')"></span></button>
                 </nav>
 
@@ -1723,7 +1723,7 @@
                 </div>
 
                 <!-- ═══════════════ Tab 4: 创建向导 ═══════════════ -->
-                <div x-show="diskmgmtTab==='wizard'" x-transition.opacity.duration.250ms x-init="loadWizardStatus()">
+                <div x-show="diskmgmtTab==='wizard'" x-transition.opacity.duration.250ms x-init="if(page==='diskmgmt'&&diskmgmtTab==='wizard') loadWizardStatus()">
                     <div x-show="wizardStatus && wizardStatus.available_disks?.length">
                         <!-- 5 步指示器 -->
                         <div style="display:flex;justify-content:center;gap:var(--sp-3);margin-bottom:var(--sp-6);flex-wrap:wrap">
@@ -1848,7 +1848,7 @@
                 </div>
 
                 <!-- ═══════════════ Tab 5: 维护 ═══════════════ -->
-                <div x-show="diskmgmtTab==='maintenance'" x-transition.opacity.duration.250ms x-init="loadOperationsLog()">
+                <div x-show="diskmgmtTab==='maintenance'" x-transition.opacity.duration.250ms x-init="if(page==='diskmgmt'&&diskmgmtTab==='maintenance') loadOperationsLog()">
                     <div style="font-size:var(--fs-base);font-weight:600;color: var(--text-secondary);margin-bottom:var(--sp-4)"><span x-text="$t('storage.maintenance_ops')"></span></div>
                     <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:var(--sp-3);margin-bottom:var(--sp-5)">
                         <div class="clickable-card" @click="openReplaceDisk(null)" style="background: var(--card-bg);border:1px solid var(--border);border-radius:var(--radius-lg);padding:var(--sp-4);display:flex;align-items:flex-start;gap:var(--sp-3);cursor:pointer;transition:all 0.15s"><span style="font-size:20px">🔄</span><div><div style="font-size:var(--fs-base);font-weight:600;margin-bottom:var(--sp-1)"><span x-text="$t('storage.replace_fault_disk')"></span></div><div style="font-size:var(--fs-xs);color: var(--text-light)"><span x-text="$t('storage.replace_fault_desc')"></span></div></div></div>

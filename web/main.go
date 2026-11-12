@@ -250,10 +250,14 @@ func loggingMiddleware(next http.Handler) http.Handler {
 			"default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; "+
 				"style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'")
 
-		// 出厂默认密码强制先改密：除白名单路径外全部拒绝，替代仅前端拦截。
+		// 出厂默认密码强制先改密：仅对已登录会话生效——语义是「已认证会话不得在
+		// 默认密码未改时使用系统」。未认证请求（无 token / 无效 token）不在此拦截，
+		// 交由各路由自身的 AuthMiddleware 回 401；否则未登录访客打开登录页时，
+		// 页面上无守卫的 x-init 请求会先撞到这里拿到 403 must_change_password，
+		// 被前端 api() 误判成「需要强制改密」弹出不可关闭的改密框，把登录页盖死。
 		// 改密成功后 UpdateNasPass 更新内存值，IsDefaultPass() 立即变 false，
 		// 后续请求不再受此门禁限制。
-		if common.IsDefaultPass() && !defaultPassGateAllowed(r.URL.Path, common.GetNASUser()) {
+		if common.IsDefaultPass() && common.ValidTokenFromRequest(r) && !defaultPassGateAllowed(r.URL.Path, common.GetNASUser()) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusForbidden)
 			// 带出 username：前端据此拼出 /api/users/{username}/password 改密路径，

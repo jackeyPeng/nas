@@ -681,6 +681,13 @@ function nasPanel() {
                     // 用 error 字段通知前端。前端据此弹改密框——否则刷新页面后前端拿不到
                     // /api/dashboard 的 must_change_password 标记，会把改密请求打到空用户名路径。
                     if (data.error === 'must_change_password') {
+                        // 纵深防御：must_change_password 语义上只该发生在已登录会话上
+                        // （后端门禁已收敛为仅对已认证请求生效）。若此时本地没有
+                        // token，说明是陈旧/异常状态，静默登出即可，不弹不可关闭的改密框。
+                        if (!this.token) {
+                            this.logout();
+                            return null;
+                        }
                         this.mustChangePassword = true;
                         this.pwdUser = data.username || this.pwdUser || this.loginForm.username || '';
                         this.pwdForm = { password: '' };
