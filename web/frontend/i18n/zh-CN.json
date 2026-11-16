@@ -952,7 +952,7 @@
     "locked": "保险箱已锁定，请稍后再试",
     "attempts_left": "口令错误，剩余 {0} 次尝试机会",
     "not_setup": "保险箱尚未初始化",
-    "passphrase_too_short": "口令至少 12 位",
+    "passphrase_too_short": "口令至少 8 位",
     "passphrase_mismatch": "两次输入的口令不一致",
     "old_passphrase": "旧口令",
     "old_passphrase_wrong": "旧口令不正确",

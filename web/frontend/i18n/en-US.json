@@ -952,7 +952,7 @@
     "locked": "Vault is locked, try again later",
     "attempts_left": "Incorrect passphrase, {0} attempts left",
     "not_setup": "Vault is not set up yet",
-    "passphrase_too_short": "Passphrase must be at least 12 characters",
+    "passphrase_too_short": "Passphrase must be at least 8 characters",
     "passphrase_mismatch": "Passphrases do not match",
     "old_passphrase": "Old Passphrase",
     "old_passphrase_wrong": "Old passphrase is incorrect",

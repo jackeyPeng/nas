@@ -3211,7 +3211,7 @@ function nasPanel() {
         },
 
         async vaultSetup() {
-            if (this.vaultSetupForm.passphrase.length < 12) { this.showToast(this.t('vault.passphrase_too_short'), 'error'); return; }
+            if (this.vaultSetupForm.passphrase.length < 8) { this.showToast(this.t('vault.passphrase_too_short'), 'error'); return; }
             if (this.vaultSetupForm.passphrase !== this.vaultSetupForm.confirm) { this.showToast(this.t('vault.passphrase_mismatch'), 'error'); return; }
             this.vaultLoading = true;
             try {
@@ -3394,7 +3394,7 @@ function nasPanel() {
         async submitChangePassphrase() {
             this.resetVaultIdleTimer();
             const f = this.changePassphraseForm;
-            if (f.newPassphrase.length < 12) { this.showToast(this.t('vault.passphrase_too_short'), 'error'); return; }
+            if (f.newPassphrase.length < 8) { this.showToast(this.t('vault.passphrase_too_short'), 'error'); return; }
             if (f.newPassphrase !== f.confirm) { this.showToast(this.t('vault.passphrase_mismatch'), 'error'); return; }
             this.changePassphraseLoading = true;
             try {
