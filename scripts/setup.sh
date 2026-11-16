@@ -182,7 +182,7 @@ if [ ! -f "$ENV_FILE" ]; then
     echo "  nano $ENV_FILE"
     echo ""
     echo "必填项："
-    echo "  NAS_PASS=你的密码（至少12位，用于所有服务）"
+    echo "  NAS_PASS=你的密码（至少8位，用于所有服务）"
     echo ""
     echo "可选项："
     echo "  GITEE_TOKEN=你的Gitee token（仅创建Release时需要）"
@@ -193,8 +193,8 @@ if [ -z "$NAS_PASS" ]; then
     echo "错误: .env 文件中未设置 NAS_PASS"
     exit 1
 fi
-if [ ${#NAS_PASS} -lt 12 ]; then
-    echo "错误: NAS_PASS 至少需要 12 位（面板密码策略）"
+if [ ${#NAS_PASS} -lt 8 ]; then
+    echo "错误: NAS_PASS 至少需要 8 位（面板密码策略）"
     exit 1
 fi
 # 加固：.env 含 NAS_PASS/JWT_SECRET，收紧权限（install.sh 一键路径已 chmod 600，

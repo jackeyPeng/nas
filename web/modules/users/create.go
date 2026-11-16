@@ -39,8 +39,8 @@ func handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 校验密码
-	if len(req.Password) < 12 {
-		http.Error(w, `{"error":"密码至少12位"}`, http.StatusBadRequest)
+	if len(req.Password) < 8 {
+		http.Error(w, `{"error":"密码至少8位"}`, http.StatusBadRequest)
 		return
 	}
 	if err := common.ValidSecret(req.Password); err != nil {

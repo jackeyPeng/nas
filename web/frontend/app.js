@@ -939,7 +939,7 @@ function nasPanel() {
                 this.showToast(this.t('msg.fill_user_pass'), 'error');
                 return;
             }
-            if (this.addUserForm.password.length < 12) {
+            if (this.addUserForm.password.length < 8) {
                 this.showToast(this.t('msg.pwd_min_12'), 'error');
                 return;
             }
@@ -962,7 +962,7 @@ function nasPanel() {
         },
 
         async changePassword() {
-            if (this.pwdForm.password.length < 12) {
+            if (this.pwdForm.password.length < 8) {
                 this.showToast(this.t('msg.pwd_min_12'), 'error');
                 return;
             }
@@ -1031,7 +1031,7 @@ function nasPanel() {
                 if (!this.userWizardForm.username) {
                     this.showToast(this.t('msg.enter_username'), 'error'); return;
                 }
-                if (this.userWizardForm.password.length < 12) {
+                if (this.userWizardForm.password.length < 8) {
                     this.showToast(this.t('msg.pwd_min_12'), 'error'); return;
                 }
                 if (this.userWizardForm.password !== this.userWizardForm.password2) {

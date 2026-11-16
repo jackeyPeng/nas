@@ -109,7 +109,7 @@ sudo ln -sfn ~/soft/nas /opt/nas
 
 # 3. Configure password
 cp /opt/nas/.env.example /opt/nas/.env
-# Edit .env (min 12 chars)
+# Edit .env (min 8 chars)
 
 # 4. Deploy
 sudo bash /opt/nas/scripts/setup.sh

@@ -302,8 +302,8 @@ func handleUserAction(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		password := r.FormValue("password")
-		if password == "" || len(password) < 12 {
-			http.Error(w, `{"error":"密码至少12位"}`, http.StatusBadRequest)
+		if password == "" || len(password) < 8 {
+			http.Error(w, `{"error":"密码至少8位"}`, http.StatusBadRequest)
 			return
 		}
 		if err := common.ValidSecret(password); err != nil {

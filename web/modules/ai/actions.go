@@ -199,14 +199,14 @@ func executeConfirmedAction(ctx context.Context, action PendingAction, clientPay
 // executeCreateUserConfirmed 是 create_user 的专用执行路径：password 只能
 // 来自 clientPayload（前端确认时生成），不接受任何其他来源；
 // common.ValidSecret 拒绝换行/控制字符（防 chpasswd stdin 协议注入），
-// 长度下限对齐 handleCreateUser 现有策略（>=12 位）。
+// 长度下限对齐 handleCreateUser 现有策略（>=8 位）。
 func executeCreateUserConfirmed(args map[string]interface{}, clientPayload *confirmClientPayload) (string, error) {
 	if clientPayload == nil || clientPayload.Password == "" {
 		return "", fmt.Errorf("create_user 必须提供 client_payload.password")
 	}
 	password := clientPayload.Password
-	if len(password) < 12 {
-		return "", fmt.Errorf("密码至少12位")
+	if len(password) < 8 {
+		return "", fmt.Errorf("密码至少8位")
 	}
 	if err := common.ValidSecret(password); err != nil {
 		return "", err

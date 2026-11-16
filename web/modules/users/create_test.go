@@ -27,6 +27,45 @@ func TestHandleCreateUser_RejectsControlCharPassword(t *testing.T) {
 	}
 }
 
+// 密码长度下限 12→8 位（家庭用户输入成本）：7 位必须仍被拒绝，错误文案更新为「至少8位」。
+func TestHandleCreateUser_RejectsShortPassword(t *testing.T) {
+	form := url.Values{
+		"username": {"shortpwtest"},
+		"password": {"abc1234"}, // 7 位
+	}
+	r := httptest.NewRequest(http.MethodPost, "/api/users", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+
+	handleCreateUser(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("7 位密码应返回 400，got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "密码至少8位") {
+		t.Errorf("7 位密码错误文案应含「密码至少8位」，got %s", w.Body.String())
+	}
+}
+
+// 8 位密码必须通过长度校验本身（新下限）。handler 后续会触发真实 useradd/
+// chpasswd 等系统调用，在无 root/系统命令的测试环境里必然在那之后失败——
+// 这里只断言「不是长度校验的 400」，不伪造对系统调用成功的断言。
+func TestHandleCreateUser_AcceptsEightCharPassword_PastLengthCheck(t *testing.T) {
+	form := url.Values{
+		"username": {"eightpwtest"},
+		"password": {"abcd1234"}, // 恰好 8 位
+	}
+	r := httptest.NewRequest(http.MethodPost, "/api/users", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+
+	handleCreateUser(w, r)
+
+	if w.Code == http.StatusBadRequest && strings.Contains(w.Body.String(), "密码至少") {
+		t.Errorf("8 位密码不应被长度校验拒绝，got %d: %s", w.Code, w.Body.String())
+	}
+}
+
 func TestListAdd(t *testing.T) {
 	cases := []struct {
 		list, user, want string

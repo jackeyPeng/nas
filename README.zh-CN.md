@@ -153,7 +153,7 @@ sudo ln -sfn ~/soft/nas /opt/nas
 
 # 3. 配置密码
 cp /opt/nas/.env.example /opt/nas/.env
-# 编辑 .env 填入实际密码（至少12位）
+# 编辑 .env 填入实际密码（至少8位）
 
 # 4. 执行部署（自动检测当前用户作为 NAS 用户）
 sudo bash /opt/nas/scripts/setup.sh

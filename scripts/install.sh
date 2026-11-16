@@ -19,7 +19,7 @@ set -euo pipefail
 REPO_URL="https://gitee.com/gitdogcat/nas.git"
 INSTALL_DIR="/opt/nas"
 REPO_DIR="$HOME/soft/nas"
-MIN_PASS_LEN=12
+MIN_PASS_LEN=8
 PANEL_BIN="/usr/local/bin/nas-panel"
 PANEL_PORT=8090
 
