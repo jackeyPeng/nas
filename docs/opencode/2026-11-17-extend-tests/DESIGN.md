@@ -126,3 +126,12 @@ func sendRAIDExpandProgress(w http.ResponseWriter, ev RAIDExpandEvent) error
 **落点改动量评估**：6 个包级变量 seam + readRAIDSysfsValues/mdstat 读点各改 1 行路径来源 + 两个 send 函数签名加 error（调用点 8 处，机械改）；`waitForResync` 外壳保留原签名，内部委托 9)+10)。不触碰 common 包与其它 handler。
 
 **风险/顺序**：先落 seam（P3/P4/R3-R5 只需 seam 即可绿）→ 再抽 stepTracker（P7/R8 断连红转绿）→ 最后抽 waitForResyncCore（R6/R7）；每步跑 `go test ./modules/diskmgmt/` 全量防回归（现有 28 个测试文件，特别注意 raid_expand_test 的真实 8s 用例在 sleepFn 落地后应改注入以缩短）。
+
+---
+
+## 附：Chrome E2E 断连基线实测（2026-11-17 18:32，修复前二进制 0cef275）
+
+- 方法：本机 Chrome 打开面板（token 存 nas_token 走 app 自身会话恢复），页面上下文发与 app.js 完全同款的 `fetch('/api/disk/raid/expand-stream?md_device=/dev/md0&device=/dev/sdd&confirm=yes')`，收到第 1 个 SSE 事件（`清除新磁盘签名 running index=1/5`）后 100ms `AbortController.abort()` 断连。
+- **缺陷现场实锤**：断连后命令链照常跑完——journal 证据：`GET /api/disk/raid/expand-stream`（18:32:44）之后 `sudo mdadm --grow /dev/md0 --raid-devices=3`（18:32:45）；8 秒后 mdstat 显示 `sdd[2]` 已入阵、recovery 8.7% 进行中。即客户端已死、服务端继续执行破坏性磁盘命令——正是 R3 要修的语义。
+- 现场恢复：`mdadm --fail/--remove sdd` → `mdadm --grow --raid-devices=2` 收缩 → `wipefs -a /dev/sdd`，回到 [2/2] clean 基线。
+- R3 落地部署后用同款脚本复测：断连后 journal 不应再出现后续 sudo 命令、sdd 保持空白。
