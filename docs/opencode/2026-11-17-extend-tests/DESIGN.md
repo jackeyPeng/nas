@@ -135,3 +135,9 @@ func sendRAIDExpandProgress(w http.ResponseWriter, ev RAIDExpandEvent) error
 - **缺陷现场实锤**：断连后命令链照常跑完——journal 证据：`GET /api/disk/raid/expand-stream`（18:32:44）之后 `sudo mdadm --grow /dev/md0 --raid-devices=3`（18:32:45）；8 秒后 mdstat 显示 `sdd[2]` 已入阵、recovery 8.7% 进行中。即客户端已死、服务端继续执行破坏性磁盘命令——正是 R3 要修的语义。
 - 现场恢复：`mdadm --fail/--remove sdd` → `mdadm --grow --raid-devices=2` 收缩 → `wipefs -a /dev/sdd`，回到 [2/2] clean 基线。
 - R3 落地部署后用同款脚本复测：断连后 journal 不应再出现后续 sudo 命令、sdd 保持空白。
+
+## 附 2：Chrome E2E 断连复测（2026-11-17 18:38，R3 修复后二进制 27fba91 部署态）
+
+- 同款脚本同款断连时点（首事件 `清除新磁盘签名 running 1/5` 后 100ms abort）。
+- **修复生效实锤**：断连 8 秒后 md0 仍为 `[2/2] [UU]`、sdd 无签名保持空白；journal 里扩容请求时间窗内**没有任何** wipefs/mdadm sudo 记录（对照基线：修复前 1 秒内即出现 `mdadm --grow /dev/md0 --raid-devices=3`）。与 P7/R8 单测结论一致：断连后命令链即时中止。
+- 两台机器（.57/.48）均已部署含 R2+R3 的二进制（md5 0bc38670…，git 27fba91-dirty 开发构建）。
