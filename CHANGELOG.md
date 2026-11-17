@@ -2,6 +2,7 @@
 
 ## [未发布]
 
+- refactor(diskmgmt): waitForResync 抽出 waitForResyncCore/resyncPollOnce 纯核 — resync 轮询期间的断连/取消即时停止（R3 声明缺口收口），resync 超时上限与 streak 判定参数化（R6/R7 用例锁定）
 - fix(diskmgmt): 流式扩容/RAID 扩容 handler 感知客户端断连与 ctx 取消 — SSE 写错误不再被丢弃、命令链即时中止（此前客户端 kill 后后台命令继续跑到底）；正常路径事件序列不变，P7/P8/R8 用例锁定语义
 - fix(registry): 磁盘状态变更（建池/删池/重置/导入/共享配置投影）后注册表自动后台重算（3s 尾随去抖，goroutine 执行不阻塞请求）——修「安装 41/41、建池后回读仍 9 条『存储池未配置』warn」的面板自相矛盾（真机实抓）；GetRegistry 快照语义不变，action=refresh 显式刷新保留
 

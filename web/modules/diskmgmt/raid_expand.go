@@ -373,6 +373,12 @@ func handleRAIDReshapeStatus(w http.ResponseWriter, r *http.Request) {
 // 调用方必须据此中止，不能再继续 stepDone/growFilesystem（A1：阵列还在重构时
 // 扩文件系统会损坏数据）。
 //
+// R4：外壳签名不变（既有测试 TestWaitForResyncReturnsNilWhenNoResyncLine 直调），
+// 内部改为构造 poll 闭包（resyncPollOnce：sysfs 优先、mdstat 回退）+ emit 回调
+// （经 sendRAIDExpandProgress）→ 委托 waitForResyncCore 做循环判定。R3 声明
+// 缺口收口：emit 返回 error（ctx 取消/SSE 写失败）时 waitForResyncCore 立即
+// 停止轮询并把该 error 向上传播，不再空转到超时或 resync 自然完成。
+//
 // consensus R2：优先轮询 sysfs sync_action（/sys/block/<md>/md/sync_action），
 // 完成判据改为"连续 cleanStreak 轮 idle"（sysfsCleanStreakResult 抽出的纯函数
 // 判定逻辑一致）；sysfs 不可用（目录缺失）时回退下方 mdstat parser 路径，
@@ -388,57 +394,54 @@ func handleRAIDReshapeStatus(w http.ResponseWriter, r *http.Request) {
 // 重新累计。600 轮总预算（10 分钟）不变。
 func waitForResync(w http.ResponseWriter, mdDev string, currentStep, totalSteps int) error {
 	mdName := strings.TrimPrefix(mdDev, "/dev/")
-	sleepFn(2 * time.Second)
+	readSysfs := func(name string) (map[string]string, bool) {
+		vals, _, ok := readRAIDSysfsValues(name)
+		return vals, ok
+	}
+	poll := func() (bool, string) {
+		mdstatBytes, _ := os.ReadFile(mdstatPath)
+		return resyncPollOnce(mdName, readSysfs, string(mdstatBytes))
+	}
+	emit := func(detail string) error {
+		return sendRAIDExpandProgress(w, RAIDExpandEvent{
+			Step: "等待数据同步", Status: "running",
+			Index: currentStep + 1, Total: totalSteps,
+			Detail: detail,
+		})
+	}
 	const requiredCleanStreak = 3
+	const maxRounds = 600 // max 10 minutes
+	return waitForResyncCore(poll, maxRounds, requiredCleanStreak, sleepFn, emit)
+}
+
+// waitForResyncCore 是 waitForResync 的纯核：判据经 poll 注入、睡眠经 sleepFn
+// 注入、轮数上限经 maxRounds 参数化，不依赖 http.ResponseWriter——进度事件
+// 的发送经 emit 回调完成。
+//
+// 语义：
+//   - 循环前先 sleepFn(2s)，给轮询判据一点时间稳定下来（Finding 3 首轮竞态：
+//     mdadm --add/--grow 后内核写出 resync 状态有延迟）。
+//   - 每轮调 poll()；done=false 时调 emit(detail) 发一次 running 进度事件——
+//     emit 返回 error（R4：ctx 取消/SSE 写失败）立即停止轮询并把该 error
+//     向上返回，不再继续 sleepFn 空转（R3 声明缺口收口：此前轮询期间的写
+//     失败被忽略，断连后仍会空转到超时）。
+//   - done=true 累计 cleanStreak；达到 requiredCleanStreak 后返回 nil；
+//     done=false 则 cleanStreak 归零重新累计。
+//   - 每轮末尾（无论 done 与否）sleepFn(2s)；满 maxRounds 仍未达成 streak
+//     返回超时 error。
+func waitForResyncCore(poll func() (done bool, detail string), maxRounds, requiredCleanStreak int, sleepFn func(time.Duration), emit func(detail string) error) error {
+	sleepFn(2 * time.Second)
 	cleanStreak := 0
-	for i := 0; i < 600; i++ { // max 10 minutes
-		resyncDone := true
-		var detail string
+	for i := 0; i < maxRounds; i++ {
+		done, detail := poll()
 
-		// consensus R2 回炉 Fix2：sync_action 缺键时不当作 idle（fail-open
-		// 会让 cleanStreak 误计入完成，growFilesystem 在阵列实际仍在重构
-		// 时跑会损坏数据），走 mdstat 回退判据。
-		sysfsUsable := false
-		if vals, _, ok := readRAIDSysfsValues(mdName); ok {
-			if syncAction, hasKey := sysfsSyncAction(vals); hasKey {
-				sysfsUsable = true
-				if !sysfsResyncDone(syncAction) {
-					resyncDone = false
-					// consensus R2 回炉 Fix3：sync_completed 为 none/畸形
-					// 时 syncCompletedPercent 返回空串，不能再拼
-					// "同步进度: " 留下悬挂冒号——改用 resyncProgressDetail
-					// 统一生成文案，空百分比时退化为"同步中（<syncAction>）"。
-					detail = resyncProgressDetail(syncCompletedPercent(vals["sync_completed"]), syncAction)
-				}
-			}
-		}
-		if !sysfsUsable {
-			// sysfs 不可用（目录缺失或 sync_action 缺键）：回退 mdstat parser 路径。
-			// consensus P0-D：改走 parseMdstatBlocks——此前只看头行的下一行
-			// (lines[j+1])，真实进度行通常在 blocks 行之后（j+2 及以后），会
-			// 漏检，导致阵列明明还在重构却被误判"完成"，growFilesystem 在
-			// 重构中跑会损坏数据。现在进度行在阵列块内任意缩进行位置都能
-			// 命中。
-			mdstatBytes, _ := os.ReadFile(mdstatPath)
-			blocks := parseMdstatBlocks(string(mdstatBytes))
-			if block, found := findBlockByMdName(blocks, mdName); found {
-				if p, ok := firstProgress(block); ok && (p.Kind == "resync" || p.Kind == "recovery") {
-					resyncDone = false
-					// mdstat 分支不动：沿用既有 "同步进度: " + percent 形态。
-					detail = "同步进度: " + p.Percent
-				}
+		if !done {
+			if err := emit(detail); err != nil {
+				return err
 			}
 		}
 
-		if !resyncDone {
-			sendRAIDExpandProgress(w, RAIDExpandEvent{
-				Step: "等待数据同步", Status: "running",
-				Index: currentStep + 1, Total: totalSteps,
-				Detail: detail,
-			})
-		}
-
-		if resyncDone {
+		if done {
 			cleanStreak++
 			if cleanStreak >= requiredCleanStreak {
 				return nil
@@ -449,6 +452,42 @@ func waitForResync(w http.ResponseWriter, mdDev string, currentStep, totalSteps 
 		sleepFn(2 * time.Second)
 	}
 	return fmt.Errorf("阵列同步未在 10 分钟内完成")
+}
+
+// resyncPollOnce 是 waitForResync 单轮判据的纯函数版：sysfs 优先（经
+// readSysfs 注入，生产传 readRAIDSysfsValues）、sync_action 缺键或目录缺失
+// 时回退 mdstatText 文本解析。与既有 sysfsCleanStreakResult（多轮 streak 判定）
+// /resyncProgressDetail（文案拼接）分工不重复：本函数只负责"这一轮是否
+// done + 本轮 detail 文案"，streak 累计逻辑留在 waitForResyncCore，sysfs
+// 分支的文案拼接委托 resyncProgressDetail。
+func resyncPollOnce(mdName string, readSysfs func(string) (map[string]string, bool), mdstatText string) (done bool, detail string) {
+	if vals, ok := readSysfs(mdName); ok {
+		if syncAction, hasKey := sysfsSyncAction(vals); hasKey {
+			if sysfsResyncDone(syncAction) {
+				return true, ""
+			}
+			// consensus R2 回炉 Fix3：sync_completed 为 none/畸形时
+			// syncCompletedPercent 返回空串，不能再拼 "同步进度: " 留下
+			// 悬挂冒号——改用 resyncProgressDetail 统一生成文案，空百分比
+			// 时退化为"同步中（<syncAction>）"。
+			return false, resyncProgressDetail(syncCompletedPercent(vals["sync_completed"]), syncAction)
+		}
+	}
+
+	// sysfs 不可用（目录缺失或 sync_action 缺键）：回退 mdstat parser 路径。
+	// consensus P0-D：改走 parseMdstatBlocks——此前只看头行的下一行
+	// (lines[j+1])，真实进度行通常在 blocks 行之后（j+2 及以后），会
+	// 漏检，导致阵列明明还在重构却被误判"完成"，growFilesystem 在
+	// 重构中跑会损坏数据。现在进度行在阵列块内任意缩进行位置都能
+	// 命中。
+	blocks := parseMdstatBlocks(mdstatText)
+	if block, found := findBlockByMdName(blocks, mdName); found {
+		if p, ok := firstProgress(block); ok && (p.Kind == "resync" || p.Kind == "recovery") {
+			// mdstat 分支不动：沿用既有 "同步进度: " + percent 形态。
+			return false, "同步进度: " + p.Percent
+		}
+	}
+	return true, ""
 }
 
 // resyncProgressDetail 构造 waitForResync sysfs 分支的进度文案。

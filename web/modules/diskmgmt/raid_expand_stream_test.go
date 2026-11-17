@@ -15,8 +15,8 @@ import (
 )
 
 // ═══════════════════════════════════════════════════
-// handleRAIDExpandStream —— R1-R5（DESIGN.md §2.2），R8（本轮 R3 新增）。
-// R6/R7（waitForResyncCore 抽取相关）明确留给 R4，本轮不做。
+// handleRAIDExpandStream —— R1-R5（DESIGN.md §2.2），R8（R3 新增）。
+// R6/R7（waitForResyncCore 抽取相关，本轮 R4 新增）见文件末尾。
 // ═══════════════════════════════════════════════════
 
 // withCancelableRAIDSSE 与 withSSE 等价，但返回的 *http.Request 携带一个可
@@ -543,4 +543,281 @@ func TestHandleRAIDExpandStream_R8_GrowFailsAndCtxCancel(t *testing.T) {
 			t.Errorf("ctx 取消后不应再调用 mdadm --add/--grow，got %d 次调用：%v", stub.countCalls("/usr/sbin/mdadm"), stub.calledNames())
 		}
 	})
+}
+
+// ═══════════════════════════════════════════════════
+// R6/R7（本轮 R4 新增）：waitForResyncCore/resyncPollOnce 抽取后的行为锁定。
+// ═══════════════════════════════════════════════════
+
+// TestWaitForResyncCore_R6_TimeoutAfterMaxRounds 直测 waitForResyncCore：poll
+// 恒 not-done、maxRounds=3、sleepFn no-op → 必须返回非 nil（超时），且 emit
+// 被调用恰好 3 次（每轮一次 running 进度事件），不会提前因为 streak 判定误判
+// 完成。
+func TestWaitForResyncCore_R6_TimeoutAfterMaxRounds(t *testing.T) {
+	poll := func() (bool, string) { return false, "同步进度: 10.0%" }
+	var sleepCalls int
+	noopSleep := func(time.Duration) { sleepCalls++ }
+	var emitCalls []string
+	emit := func(detail string) error {
+		emitCalls = append(emitCalls, detail)
+		return nil
+	}
+
+	err := waitForResyncCore(poll, 3, 3, noopSleep, emit)
+	if err == nil {
+		t.Fatal("waitForResyncCore() = nil, want 超时 error（poll 恒 not-done）")
+	}
+	if len(emitCalls) != 3 {
+		t.Errorf("emit 调用次数 = %d, want 3（每轮一次）; emitCalls=%v", len(emitCalls), emitCalls)
+	}
+	for _, d := range emitCalls {
+		if d != "同步进度: 10.0%" {
+			t.Errorf("emit detail = %q, want 原样转发 poll 的 detail", d)
+		}
+	}
+	// 循环前置 1 次 + 每轮末尾 1 次 * 3 轮 = 4 次。
+	if sleepCalls != 4 {
+		t.Errorf("sleepFn 调用次数 = %d, want 4（1 次前置 + 3 轮各 1 次）", sleepCalls)
+	}
+}
+
+// TestHandleRAIDExpandStream_R6_ResyncTimeoutStopsBeforeFS 验证 handler 层：
+// resync 超时（waitForResync 返回非 nil）后，error 事件 Detail 必须同时含
+// “已中止、文件系统未扩展”与 expand-fs 入口指引；growFS 相关命令绝不执行——
+// 文件系统绝不在 resync 未完成时被扩（A1）。用极小的 maxRounds 不现实（生产
+// 签名的 600 轮硬编码在 waitForResync 内部），这里改用「sysfs 一直报 resync
+// 进行中」且 sleepFn 记录调用次数，在跑满真实 600 轮前用 withNoopSleep 消除
+// 延迟后直接跑到超时判定——验证 handler 侧对该返回值的处理，不重复 R6 核心
+// 用例已经覆盖的 waitForResyncCore 循环次数判定。
+func TestHandleRAIDExpandStream_R6_ResyncTimeoutStopsBeforeFS(t *testing.T) {
+	withNoopSleep(t)
+	mdDev := withFakeMdDev(t)
+	// sync_action 恒为 "resync"（非 idle）：poll 每轮都判定未完成，
+	// waitForResync 跑满 600 轮后返回超时 error。
+	busyVals := map[string]string{
+		"level":            "raid1",
+		"array_state":      "clean",
+		"degraded":         "0",
+		"raid_disks":       "2",
+		"sync_action":      "resync",
+		"sync_completed":   "1000 / 100000",
+		"sync_speed":       "500",
+		"reshape_position": "none",
+	}
+	withFakeSysfsMD(t, mdDev, busyVals, cleanRAID1SysfsMembers())
+
+	stub := withStubExec(t, map[string]cmdResponse{
+		"/usr/sbin/mdadm": {Fn: func(args []string) (string, error) {
+			if len(args) > 0 && args[0] == "--detail" {
+				return raid1Detail(2), nil
+			}
+			return "", nil
+		}},
+	})
+	origGetDiskStatus := getDiskStatusFn
+	getDiskStatusFn = func() []DiskStatus {
+		return []DiskStatus{{Device: "/dev/sdz", Type: "unused"}}
+	}
+	t.Cleanup(func() { getDiskStatusFn = origGetDiskStatus })
+
+	req, rec := withSSE("GET", "/api/disk/raid/expand-stream", map[string]string{
+		"md_device": mdDev,
+		"device":    "/dev/sdz",
+		"confirm":   "yes",
+	})
+	handleRAIDExpandStream(rec, req)
+
+	events := decodeRAIDEvents(t, parseSSE(rec.Body.String()))
+	last := events[len(events)-1]
+	if last.Status != "error" || last.Step != "等待数据同步" {
+		t.Fatalf("got last=%+v, want error Step=等待数据同步", last)
+	}
+	if !strings.Contains(last.Detail, "已中止") || !strings.Contains(last.Detail, "文件系统未扩展") {
+		t.Errorf("Detail 应含“已中止、文件系统未扩展”, got %q", last.Detail)
+	}
+	if !strings.Contains(last.Detail, "/api/disk/raid/expand-fs") {
+		t.Errorf("Detail 应含 expand-fs 入口指引, got %q", last.Detail)
+	}
+	for _, ev := range events {
+		if ev.Step == "数据同步完成" {
+			t.Errorf("resync 超时后不应出现“数据同步完成”事件, got %+v", ev)
+		}
+		if ev.Step == "扩展文件系统" {
+			t.Errorf("resync 超时后不应出现“扩展文件系统”事件, got %+v", ev)
+		}
+	}
+	if stub.countCalls("/usr/sbin/xfs_growfs") != 0 || stub.countCalls("/usr/sbin/resize2fs") != 0 {
+		t.Error("文件系统绝不应在 resync 未完成时被扩")
+	}
+}
+
+// TestHandleRAIDExpandFS_R6_SysfsGate 配套 handleRAIDExpandFS 闸门用例：
+// sysfs sync_action=resync → 拒绝（JSON error）；idle+reshape_position=none
+// → 放行走到 growFS 桩（findmnt 配好挂载点与 xfs 类型）。
+func TestHandleRAIDExpandFS_R6_SysfsGate(t *testing.T) {
+	t.Run("resync进行中_拒绝", func(t *testing.T) {
+		mdDev := withFakeMdDev(t)
+		mdName := filepath.Base(mdDev)
+		withFakeSysfsMD(t, mdDev, map[string]string{
+			"sync_action":      "resync",
+			"reshape_position": "none",
+		}, nil)
+
+		req := httptest.NewRequest("POST", "/api/disk/raid/expand-fs",
+			strings.NewReader("md_device="+mdDev+"&confirm=yes"))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rec := httptest.NewRecorder()
+		handleRAIDExpandFS(rec, req)
+
+		var body map[string]interface{}
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatalf("decode response: %v; body=%s", err, rec.Body.String())
+		}
+		errMsg, _ := body["error"].(string)
+		if errMsg == "" || !strings.Contains(errMsg, "重构中") {
+			t.Fatalf("got body=%+v, want error 含“重构中”；mdName=%s", body, mdName)
+		}
+	})
+
+	t.Run("idle放行_走到growFS", func(t *testing.T) {
+		mdDev := withFakeMdDev(t)
+		withFakeSysfsMD(t, mdDev, map[string]string{
+			"sync_action":      "idle",
+			"reshape_position": "none",
+		}, nil)
+		stub := withStubExec(t, map[string]cmdResponse{
+			"findmnt": {Fn: findmntResponder(map[string]string{mdDev: "/mnt/data"}, "xfs")},
+		})
+
+		req := httptest.NewRequest("POST", "/api/disk/raid/expand-fs",
+			strings.NewReader("md_device="+mdDev+"&confirm=yes"))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rec := httptest.NewRecorder()
+		handleRAIDExpandFS(rec, req)
+
+		var body map[string]interface{}
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatalf("decode response: %v; body=%s", err, rec.Body.String())
+		}
+		if _, isErr := body["error"]; isErr {
+			t.Fatalf("idle 态应放行，got error body=%+v", body)
+		}
+		if !stub.wasCalledWith("/usr/sbin/xfs_growfs", "/mnt/data") {
+			t.Errorf("idle 态应放行走到 growFS（xfs_growfs /mnt/data），calls=%v", stub.calledNames())
+		}
+	})
+}
+
+// TestResyncPollOnce_R7_StreakRace 直测 resyncPollOnce + sysfsCleanStreakResult
+// 组合：poll 序列 [busy,busy,clean,busy,clean,clean,clean] → 仅连续 3 轮
+// clean 后才判定完成（第 7 轮，下标 6）；中途一次 clean 后再 busy，streak 必须
+// 归零重新累计（Finding 3 回归，R3 报告交接的 waitForResyncCore 抽取验证点）。
+// busy 轮 resyncPollOnce 返回的 detail 必须是“同步进度: x%”或“同步中（<action>）”
+// 形态（经 resyncProgressDetail）。
+func TestResyncPollOnce_R7_StreakRace(t *testing.T) {
+	// sync_action 序列：busy 态写 "resync"，clean 态写 "idle"。
+	actionSeq := []string{"resync", "resync", "idle", "resync", "idle", "idle", "idle"}
+	mdName := "md_r7_test"
+
+	var dones []bool
+	var details []string
+	for i, action := range actionSeq {
+		vals := map[string]string{"sync_action": action}
+		if action != "idle" {
+			vals["sync_completed"] = fmt.Sprintf("%d / 100000", (i+1)*1000)
+		}
+		readSysfs := func(string) (map[string]string, bool) { return vals, true }
+		done, detail := resyncPollOnce(mdName, readSysfs, "")
+		dones = append(dones, done)
+		details = append(details, detail)
+	}
+
+	wantDones := []bool{false, false, true, false, true, true, true}
+	for i, want := range wantDones {
+		if dones[i] != want {
+			t.Errorf("第 %d 轮 resyncPollOnce done = %v, want %v（actionSeq=%v）", i, dones[i], want, actionSeq)
+		}
+	}
+	for i, done := range dones {
+		if !done {
+			if !strings.Contains(details[i], "同步进度:") && !strings.Contains(details[i], "同步中（") {
+				t.Errorf("第 %d 轮 busy 态 detail = %q, want 含“同步进度:”或“同步中（”", i, details[i])
+			}
+		}
+	}
+
+	// sysfsCleanStreakResult 是既有的多轮 streak 判定纯函数，resyncPollOnce
+	// 只负责单轮判据，streak 累计委托给 waitForResyncCore——这里用
+	// sysfsCleanStreakResult 独立交叉验证同一份 actionSeq 的 streak 结果，
+	// 确认两者判据一致（不重复实现、分工不冲突）。
+	done, atIndex := sysfsCleanStreakResult(actionSeq, 3)
+	if !done || atIndex != 6 {
+		t.Errorf("sysfsCleanStreakResult(%v, 3) = (%v, %d), want (true, 6)（仅连续 3 轮 clean 后完成，中途 busy 使 streak 归零）", actionSeq, done, atIndex)
+	}
+}
+
+// TestWaitForResyncCore_R7_StreakRaceViaEmit 用 waitForResyncCore 本身跑一遍
+// R7 的 poll 序列（经闭包按调用次数切换返回值，模拟 TempDir sysfs 内容按轮次
+// 切换），验证端到端：仅连续 3 轮 clean 后返回 nil，busy 轮 emit 收到
+// running 进度事件，返回 nil 前 emit 被调用次数等于序列中 busy 轮次数（4 次：
+// 下标 0,1,3 外加完成前已经数完，不再轮询第 7 轮之后）。
+func TestWaitForResyncCore_R7_StreakRaceViaEmit(t *testing.T) {
+	// done 序列对应 actionSeq=[resync,resync,idle,resync,idle,idle,idle]。
+	doneSeq := []bool{false, false, true, false, true, true, true}
+	call := 0
+	poll := func() (bool, string) {
+		d := doneSeq[call]
+		call++
+		if d {
+			return true, ""
+		}
+		return false, "同步进度: 10.0%"
+	}
+	var sleepCalls int
+	noopSleep := func(time.Duration) { sleepCalls++ }
+	var emitCount int
+	emit := func(string) error {
+		emitCount++
+		return nil
+	}
+
+	err := waitForResyncCore(poll, 600, 3, noopSleep, emit)
+	if err != nil {
+		t.Fatalf("waitForResyncCore() = %v, want nil（第 7 轮应达成连续 3 轮 clean）", err)
+	}
+	if call != 7 {
+		t.Errorf("poll 被调用 %d 次, want 7（跑完整条序列才达成 streak=3）", call)
+	}
+	if emitCount != 3 {
+		t.Errorf("emit 被调用 %d 次, want 3（仅 busy 轮下标 0,1,3 各一次）", emitCount)
+	}
+}
+
+// TestWaitForResyncCore_EmitErrorStopsImmediately 回归 R3 声明缺口：emit 恒
+// 返回 error（模拟断连）→ waitForResyncCore 必须立即返回该 error，且在 emit
+// 第一次返回 error 之后 sleepFn 不再被调用（不再空转到超时或继续轮询）。
+func TestWaitForResyncCore_EmitErrorStopsImmediately(t *testing.T) {
+	pollCalls := 0
+	poll := func() (bool, string) {
+		pollCalls++
+		return false, "同步进度: 1.0%" // 恒 not-done，若未被 emit 错误截断会一直轮询
+	}
+	disconnectErr := fmt.Errorf("write: broken pipe")
+	emit := func(string) error { return disconnectErr }
+
+	var sleepCalls []time.Duration
+	sleep := func(d time.Duration) { sleepCalls = append(sleepCalls, d) }
+
+	err := waitForResyncCore(poll, 600, 3, sleep, emit)
+	if err != disconnectErr {
+		t.Fatalf("waitForResyncCore() = %v, want %v（emit 的 error 应原样向上返回）", err, disconnectErr)
+	}
+	if pollCalls != 1 {
+		t.Errorf("poll 被调用 %d 次, want 1（emit 出错后不应再轮询）", pollCalls)
+	}
+	// 循环前置 sleepFn(2s) 必然发生（在第一次 poll 之前），但 emit 出错后
+	// 本轮末尾的 sleepFn 不应再被调用——即总调用次数应恰为 1（仅前置那次）。
+	if len(sleepCalls) != 1 {
+		t.Errorf("sleepFn 调用次数 = %d, want 1（仅循环前置那次；emit 出错后不再空转）", len(sleepCalls))
+	}
 }
