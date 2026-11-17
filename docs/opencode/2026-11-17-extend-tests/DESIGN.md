@@ -141,3 +141,9 @@ func sendRAIDExpandProgress(w http.ResponseWriter, ev RAIDExpandEvent) error
 - 同款脚本同款断连时点（首事件 `清除新磁盘签名 running 1/5` 后 100ms abort）。
 - **修复生效实锤**：断连 8 秒后 md0 仍为 `[2/2] [UU]`、sdd 无签名保持空白；journal 里扩容请求时间窗内**没有任何** wipefs/mdadm sudo 记录（对照基线：修复前 1 秒内即出现 `mdadm --grow /dev/md0 --raid-devices=3`）。与 P7/R8 单测结论一致：断连后命令链即时中止。
 - 两台机器（.57/.48）均已部署含 R2+R3 的二进制（md5 0bc38670…，git 27fba91-dirty 开发构建）。
+
+## 附 3：R4 部署后 Chrome 全流程 E2E（2026-11-17 18:51，二进制 0e9c388 部署态）
+
+- 完整正常流（不断连）：Chrome 发起 RAID1 添加镜像盘 sdd，服务端全链执行——journal 18:51:15 依序 `mdadm --detail → wipefs sdd → mdadm --add → mdadm --grow --raid-devices=3`，resync 后阵列 `[3/3] [UUU]` clean（growFS xfs_growfs 步在 18:33 基线流中已实证同链路）。第二次同款请求被三层防御正确拒绝：SSE error 事件「/dev/sdd 已在阵列中」（index 0/total 0，锁外廉价拒绝，零磁盘命令——R5 用例生产实演）。
+- 断连中止语义（R3 修复）+ resync 轮询断连即时停止（R4 收口）均有单测 + 真机命令链证据。现场已恢复 [2/2] clean、sdd 空白。
+- 至此 DESIGN.md 计划的 P1-P8 / R1-R8 全 20 顶层用例 + 真机 E2E 三条证据链（基线缺陷、断连修复、全流程+拒绝）闭环。
