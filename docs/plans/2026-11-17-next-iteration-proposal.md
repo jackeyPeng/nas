@@ -45,3 +45,13 @@
 
 - 主线 A 完成时: 安康 4 组件以注册应用出现在仪表盘门户 + 掉线告警可达 + 备份产物可从面板备份页看到时光轴；nas-panel 本体零安康代码引入（License 隔离）；两台测试机注册表 41/41 不断点。
 - 快修轮完成时: .57/.48 建池后（refresh 或自动）注册表无「存储池未创建」残影; 删池/重置同验证。
+
+---
+
+## 六、执行状态（2026-11-17 当日）
+
+- ✅ 快修轮第 1 项（注册表自动刷新）：commit 0cef275 + 归档 667b770。真机双闭环验收通过——.57 删池 5s 后默认读取 34 pass+7 warn（陈旧态如实反映）+ journal `[REGISTRY] 后台刷新完成` 证据；重建 RAID1 池 5s 后默认读取 41 pass（不再需要 action=refresh）。.48 亦同步部署（md5 一致），共享夹删除→pending apply→journal 刷新链路实测通过。
+- ✅ 快修轮第 2 项（extend/expand 单测）：调研完成，方案骨架归档 docs/opencode/2026-11-17-extend-tests/DESIGN-NOTES.md（commit c024816）；实施排入 R2（新 seam：sudoExecFn/sudoOutputFn/execOutputFn/sleepFn；TDD-red 驱动 cancel 传播重构）。
+- ⏳ 主线 A（#37 外部应用注册 + 安康 M4）：设计文档未启动。
+- ⏳ 穿插 C（#12 PWA 照片备份）：未启动。
+- ⏳ AI M3 设计：未启动。
