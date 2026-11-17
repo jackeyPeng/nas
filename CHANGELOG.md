@@ -2,7 +2,15 @@
 
 ## [未发布]
 
-（暂无）
+### docs: beta.37-40 三轮文档同步（协议默认/门禁/密码口径对齐代码现状，2026-11-17）
+
+- `docs/protocol-service-configs.md` 新增 §0.1「协议默认启用状态」：新装机默认只开 SMB + 面板、服务页 on/off API、升级机现有开关不动、FRESH_INSTALL 判定链、注册表/仪表盘计数口径、systemd 四坑
+- `docs/feature-operation-checklist.md` 补 beta.37-40 全量操作口径：新增「协议一键开关 on/off」「修改密码」两行（+2），存量行补 A1 默认密码门禁、.env 敏感键掩码、管理面 AdminMiddleware、备份目标校验、上传 10 GiB 上限、密码下限 8 位、服务页卡片化；汇总统计按附录 awk 重算 232 → 234（模块数 23 不变）
+- `docs/nas-product-manual.md` 新增 §8.5「全局协议的能力边界」（对应存储权限模型已知问题 §八#2）与 §8.6「密码与登录门禁策略」；§7/§11 补协议默认开关口径
+- `docs/storage-permission-model.md` 已知问题 §八#2 标记已处置（文档强调缺失已补）
+- `TODO.md` 头部刷新（2026-11-17 复核：30/37 计数不变；商业决策待拍板项标注暂缓）
+- `docs/opencode/` 归档整理：55 个平铺在根下的任务书/报告按轮次收进 7 个日期主题目录（ai-assistant/agent-f1/agent-f2/least-privilege-s1/badge-alert-docs/gate-modal/passwd-8 + consensus），README 重写为目录索引并固化「一轮一目录」约定
+- `docs/plans/2026-11-17-next-iteration-proposal.md` 新增下一轮迭代规划提案（快修轮 + 主线 A 外部应用注册/安康迁入 + 穿插 PWA 照片备份 + AI M3 仅立项设计；商业决策冻结）
 
 ## 版本变更一览
 

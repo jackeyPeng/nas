@@ -92,7 +92,7 @@ UI tag 诚实标注：SMB 蓝（按用户）、NFS 灰（网段）、DAV/S3 黄�
 ## 八、已知问题（待修，按风险排序）
 
 1. ~~**P1 — 文件夹权限对话框会清空 write_users**~~ ✅ 已修（2026-09-15 commit 6ddb75b）：`executeUpdateFolder` 先读 DB 现有元数据，`mergeFolderUpdate` 合并保留 write_users（裁剪保持 write⊆valid），op.ValidUsers 空时继承现有值。
-2. **P1 — 全局协议旁路 SMB 权限**：任何拿到 WebDAV/S3/FTP 凭据的用户可见/可写整个 /data（含他人 home 目录、noaccess 文件夹）。UI tag 已诚实标注，但产品文档未强调"开全局协议 ≈ 放弃文件夹权限"。
+2. ~~**P1 — 全局协议旁路 SMB 权限（文档强调缺失）**~~ ✅ 已处置（2026-11-17 文档轮）：产品手册 §8.5 新增「全局协议的能力边界」专节（WebDAV/S3 根锁 public；FTP 可枚举池目录树、他人 home 0700 兜底；NFS 默认仅导出 public），协议服务配置详解 §0.1 补「新装默认只开 SMB + 面板」口径与风险提示；beta.37 起四协议默认关闭、服务页卡片按需开启。协议自身的全局凭据设计保留为产品取舍（可用性优先，不按协议实现按用户隔离）——用户知情后显式开启。
 3. ~~**P2 — NFS `no_root_squash`**~~ ✅ 已处置（2026-09-24 产品决策反转）：产品定位家用/小白用户，可用性优先——NFS 导出默认 `no_root_squash,insecure`（挂载即可写、NAT 后客户端可挂），`nfs_no_root_squash` 列保留但不再影响生成结果；rw/ro 仍由文件夹 permission 控制。原 2026-09-21 的 root_squash 安全基线方案被产品决策覆盖。测试：nfs_squash_test.go。
 4. ~~**P2 — 矩阵回显解析 smb.conf 而非事实源**~~ ✅ 已修（2026-09-21）：buildPermissionMatrix 改为读 folders.db（GetAllFolderMeta + FolderMetaUserPermission），smb.conf 不再参与回显；总览/列表页同步改为 folders.db 权威源 + enrichSharedFolder 统一富化（未纳管目录仍走 smb.conf 兜底）。
 5. **P3 — 非 public 共享目录 mode 0700 + force user**：NFS 非 root 客户端对 rw 导出实际写不进去（写权限只在 SMB 层映射）；FTP/WebDAV 以 nasUser 身份走 force 映射不受影响。

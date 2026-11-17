@@ -1,6 +1,6 @@
 # NAS 面板 功能清单 + 操作项分类（测试验证清单）
 
-> 最后更新: 2026-10-23（S1 最小权限：面板运行身份/安装方式/sudoers 白名单条目数变化，见下方运行身份说明）
+> 最后更新: 2026-11-17（补 beta.37-40 三轮：协议默认收敛与服务页卡片化、A1 默认密码门禁与 .env 敏感键掩码、备份目标校验、上传 10 GiB 上限、密码下限 8 位；S1 运行身份说明见下）
 > 代码基准: /home/jacky/soft/nas（Go 后端 web/ + Alpine.js 前端 web/frontend/）
 > 用途: 逐项测试验证。每个「操作项」标注三种分类之一，测试时按行逐个过。
 >
@@ -33,7 +33,7 @@
 | 操作项 | 分类 | 说明 |
 |---|---|---|
 | 登录表单（用户名 + 密码） | 用户操作 | `POST /api/login`，成功后返回 token，写入本地会话；成功/失败均写审计（action=login，失败记 attempted user + IP） |
-| 首登强制改密 | 用户操作 | 登录时若密码仍为出厂默认，前端强制进入改密流程 |
+| 首登强制改密（A1 硬门禁） | 用户操作 | 密码为出厂默认时后端拦截：非白名单 `/api/*` 一律 403 must_change_password（带 username），改密完成前无法操作面板；beta.39 起仅对已认证会话生效，未登录访客不弹改密框；前端引导改密流程 |
 | 2FA 状态查看 | 只显示 | `GET /api/2fa/status` |
 | 2FA 初始化（生成 TOTP 密钥 + 二维码） | 用户操作 | `POST /api/2fa/setup` |
 | 启用 2FA | 用户操作 | `POST /api/2fa/enable`，写入 2fa.json，写审计 |
@@ -197,7 +197,8 @@
 | 添加用户（4 步向导） | 用户操作 | `POST /api/users/`（基本信息→服务权限→存储配额→共享权限） |
 | 编辑 / 删除用户 | 用户操作 | `POST /api/users/`（action 区分） |
 | 用户服务开关（Samba/FTP/WebDAV 单开单关） | 用户操作 | `/api/users/{name}/services` |
-| 私有目录配额 | 用户操作 | `/api/users/{name}/quota`（/data/private/xxx XFS quota） |
+| 私有目录配额 | 用户操作 | `/api/users/{name}/quota`（用户 home `/data/nas1/<user>` 的 XFS 项目配额 home_<user>） |
+| 修改密码（含首次改密） | 用户操作 | `POST /api/users/{name}/password`；长度下限 8 位、无复杂度要求（beta.40），统一拒换行/控制字符；NAS_USER 本人改密同步回写 .env 的 NAS_PASS（普通用户不动） |
 
 ### 7.2 用户组 Tab
 
@@ -269,12 +270,13 @@
 
 ## 11. 服务管理（Services）
 
-**功能说明**: 系统服务状态与启停管理。
+**功能说明**: 系统服务状态与启停管理。beta.37 起页面卡片化：核心区表格只保留重启+日志（防误关 smbd/fail2ban），协议区 2×2 大卡片（FTP/NFS/WebDAV/S3）带用途说明、一键大开关、状态徽章与风险提示，中英双语；新装机协议默认只开 SMB+面板，升级机现有开关状态一律不动。
 
 | 操作项 | 分类 | 说明 |
 |---|---|---|
 | 服务列表 | 只显示 | `GET /api/services` |
 | 服务启停/重启/启用/禁用 | 用户操作 | `/api/services/{name}/{action}`（start/stop/restart/enable/disable） |
+| 协议一键开关（on/off） | 用户操作 | `POST /api/services/{name}/on|off`（on=enable+start，off=disable+stop 复合动作，富 detail 审计）；仅限可选协议（Optional 门禁），核心服务 400 拒绝（beta.37） |
 | 服务日志查看 | 只显示 | `/api/services/{name}/logs` |
 | 安装/初始化服务 | 用户操作 | `POST /api/services/install` |
 
@@ -300,10 +302,10 @@
 | 上传自定义证书 | 用户操作 | `POST /api/system/https/upload` |
 | 应用证书到 4 个 Web 服务 | 用户操作 | `POST /api/system/https/apply`（自动改 systemd 并重启） |
 | 移除证书（恢复 HTTP） | 用户操作 | `POST /api/system/https/remove` |
-| 环境配置读取（env） | 只显示 | `GET /api/config/env` |
+| 环境配置读取（env） | 只显示 | `GET /api/config/env`；敏感键（PASS/SECRET/TOKEN/KEY/WEBHOOK/CREDENTIAL/PRIVATE）读取一律掩码 ********（A1，beta.38）；.env 写回拒绝 NAS_PASS/JWT_SECRET |
 | Samba 原始配置读写 | 用户操作 | `GET/POST /api/config/samba`、`/api/config/samba/share` |
 | vsftpd 用户配置 | 用户操作 | `POST /api/config/vsftpd-users` |
-| 配置文件读写 | 用户操作 | `GET/POST /api/config/file` |
+| 配置文件读写 | 用户操作 | `GET/POST /api/config/file`；管理面统一 AdminMiddleware（A1，beta.38）：用户/备份/配置文件/告警配置等管理接口统一鉴权，单用户架构下唯一登录用户即管理员 |
 
 ---
 
@@ -330,7 +332,7 @@
 | 创建配置备份 | 用户操作 | `POST /api/backup/create` |
 | 恢复配置备份 | 用户操作 | `POST /api/backup/restore` |
 | 删除备份 | 用户操作 | `POST /api/backup/delete` |
-| 数据备份（rsync 到本地/远程） | 用户操作 | `POST /api/backup/data` |
+| 数据备份（rsync 到本地/远程） | 用户操作 | `POST /api/backup/data`；备份目标逐项校验（本地 /mnt、/data/backup + rsync user@host:/path 形态，拒选项注入/空白段/.. 段/符号链接，A1 beta.38） |
 | 每周定时备份 | 系统自动 | cron `0 3 * * 0 backup-config.sh`，保留最近 3~5 份 |
 | 升级前自动备份 | 系统自动 | upgrade.sh / setup.sh 升级前先跑 backup-config.sh |
 
@@ -395,7 +397,7 @@
 | 文本预览 | 只显示 | 限 1MB；JSON 传输 + 前端 x-text 转义（无效 UTF-8 → U+FFFD） |
 | 图片预览 | 只显示 | 限 10MB blob URL（closePreview 防泄漏）；SVG 一律 415（防存储型 XSS） |
 | 属性回显（stat） | 只显示 | `GET /api/files/stat?path=`，owner/group/mode（字符串八进制）/mode_text/recursive_possible；Lstat 语义（链接报自身）；池根放行 |
-| 上传（XHR 流式 + 进度条） | 用户操作 | `POST /api/files/upload?path=` multipart，MultipartReader 流式不撑内存；同名 409 + overwrite=yes 覆盖重试；磁盘满 507 清半成品；落盘按目标共享权限对齐（public 0664/其他 0600） |
+| 上传（XHR 流式 + 进度条） | 用户操作 | `POST /api/files/upload?path=` multipart，MultipartReader 流式不撑内存；单次请求体上限 10 GiB（MaxBytesReader，超限 413，beta.38）；同名 409 + overwrite=yes 覆盖重试；磁盘满 507 清半成品；落盘按目标共享权限对齐（public 0664/其他 0600） |
 | 目录上传（webkitdirectory） | 用户操作 | 前端 filename 携带 webkitRelativePath 子路径；后端自解析 Content-Disposition 取原始值，逐段过 validateFileName 消毒（拒 `..`/绝对路径/空段/控制字符/超长）；缺失父目录逐段 Mkdir 0755+显式 chmod（并发 EEXIST 重查视同已存在），既有目录一律不动；409 冲突与 written 用完整相对路径，overwrite 重试不拍平；浏览器限制：空子目录不上传 |
 | 新建目录 | 用户操作 | `POST /api/files/mkdir` {path,name}；validateFileName 白名单；双重锚定；mode 恒 0755（显式 chmod 消 umask） |
 | 重命名 | 用户操作 | `POST /api/files/rename` {path,new_name}；renameat2(RENAME_NOREPLACE) 原子防覆盖；同名 no-op 200；池根拒绝 |
@@ -517,12 +519,13 @@
 | 分类 | 操作项数 |
 |---|---|
 | 只显示 | 70 |
-| 用户操作 | 119 |
+| 用户操作 | 121 |
 | 系统自动 | 43 |
-| **合计** | **232** |
+| **合计** | **234** |
 | 功能模块数 | 23 |
 
 > 注：「系统自动」项里，第 23 节「系统自动任务汇总」是对散落在模块 3/5/6/14/15/16/17/18/19/21/22 里的无人值守任务的跨模块汇总（重复计数），测试时可直接按第 23 节这张汇总表一次过完所有无人值守链路。
+> 2026-11-17 文档轮：合计 232 → 234（+协议一键开关 on/off、+修改密码两行；另在存量行内补 beta.37-40 说明：A1 门禁、.env 掩码、备份目标校验、上传 10 GiB、密码下限 8 位、服务页卡片化）。
 
 ---
 

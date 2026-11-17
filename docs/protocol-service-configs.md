@@ -1,6 +1,6 @@
 # 协议服务配置详解 — SMB / NFS / FTP / WebDAV / S3
 
-> 更新: 2026-10-08 · 依据: configs/ 模板 + scripts/setup.sh + web/modules/diskmgmt/config_sync.go + web/modules/users/(代码逐项核对,非文档转述)
+> 更新: 2026-11-17（补 beta.37 协议默认收敛口径）· 依据: configs/ 模板 + scripts/setup.sh + web/modules/diskmgmt/config_sync.go + web/modules/users/(代码逐项核对,非文档转述)
 > 权威源: 共享文件夹元数据在 folders.db(SQLite,/opt/nas/data/folders.db),面板把 DB 投影进各服务配置的「Z1 MANAGED SHARES START/END」托管段。
 > 配套阅读: docs/storage-permission-model.md(权限模型与已知问题)、AGENTS 侧 skill nas-storage-architecture(改配置生成代码前必读)。
 
@@ -16,6 +16,14 @@
 | WebDAV | rclone serve webdav | /data/nas1/public | htpasswd(多账号) | ❌ 所有账号同一棵 public 树 | 静态 systemd unit | restart(debounce 合并) | 8080 |
 | S3 | rclone serve s3 | /data/nas1/public | access key/secret 单一全局凭据 | ❌ | systemd unit + /etc/rclone/s3-env | restart(改密联动) | 9000 |
 | 面板 | nas-panel | — | JWT(可选 TOTP) | — | — | — | 8090 |
+
+### 0.1 默认启用状态（2026-10-30 beta.37 协议收敛）
+
+- **新装机默认只开 SMB + 面板 Web**。上表 FTP/NFS/WebDAV/S3 的 unit 与配置文件照常生成（保证「打开即可用」，无需再装/再配），但服务默认 disabled。
+- 开关入口 = 服务页协议区卡片大开关：`POST /api/services/{name}/on|off`（on=`systemctl enable --now`，off=`disable --now`），仅限可选协议（Optional=true）；核心服务（smbd/nmbd/fail2ban/nas-panel）走原启停接口，on/off 返回 400 防误关。
+- **升级机现有开关状态一律不动**。新装判定由 install.sh 判定后经 `FRESH_INSTALL` 环境变量显式传入 setup.sh；直跑 setup.sh（开发/验收路径）收不到该变量时回退「本地 .env 存在性」判定 = 升级语义——一键路径 install.sh 会先创建 .env，setup.sh 不能按本地 .env 判新装。
+- 注册表口径：四协议项 disabled+inactive 记 pass（detail 注「默认关闭」）；仪表盘服务计数 = 核心服务 + 已启用的可选服务，disabled 不进分母不算异常。
+- systemd 四坑（改服务管理代码必读）：① `nfs-kernel-server` 是 alias 单元，`is-enabled` 恒报 alias，须先 `systemctl show <name> -p Id --value` 解析规范单元名再查；② `is-active`/`is-enabled` 对 inactive/disabled 输出有效值但退出码非零，set -e 下须 `|| true` 兜底；③ `systemctl restart` 对 stopped 单元是**启动**语义——配置更新路径统一走 `common.RestartIfActive`，否则会把默认关闭的协议复活；④ `reload` 对 stopped 单元无害，无需守卫。
 
 ---
 
