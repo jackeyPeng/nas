@@ -71,18 +71,18 @@ func handlePoolExtendStream(w http.ResponseWriter, r *http.Request) {
 	stepDone := func(name string) {
 		step++
 		sendPoolExtendProgress(w, PoolExtendEvent{Step: name, Status: "done", Index: step, Total: totalSteps})
-		time.Sleep(100 * time.Millisecond)
+		sleepFn(100 * time.Millisecond)
 	}
 	stepRunning := func(name string) {
 		sendPoolExtendProgress(w, PoolExtendEvent{Step: name, Status: "running", Index: step + 1, Total: totalSteps})
-		time.Sleep(100 * time.Millisecond)
+		sleepFn(100 * time.Millisecond)
 	}
 
 	// 1. Wipe disk（Fix 4：之前四步返回值全丢弃、无条件 stepDone，wipefs/pvcreate/
 	// vgextend/lvextend 任一步失败都会被吞掉，SSE 只会在后面扩文件系统那步才报错，
 	// 误导用户以为前面都成功了。现在每步接 err 并在失败时发 error 事件后中止。）
 	stepRunning("清除磁盘签名")
-	out, err := common.SudoExec("/usr/sbin/wipefs", "-a", device)
+	out, err := sudoExecFn("/usr/sbin/wipefs", "-a", device)
 	if err != nil {
 		sendPoolExtendProgress(w, PoolExtendEvent{Step: "清除磁盘签名", Status: "error", Detail: "wipefs: " + out + ": " + err.Error()})
 		return
@@ -93,7 +93,7 @@ func handlePoolExtendStream(w http.ResponseWriter, r *http.Request) {
 	// running→done，此前 done 少了 "(pvcreate)" 后缀，配对失败导致该 running
 	// 条目永不置 done、还会多推一条独立的 done。）
 	stepRunning("初始化物理卷 (pvcreate)")
-	out, err = common.SudoExec("/usr/sbin/pvcreate", "-f", device)
+	out, err = sudoExecFn("/usr/sbin/pvcreate", "-f", device)
 	if err != nil {
 		sendPoolExtendProgress(w, PoolExtendEvent{Step: "初始化物理卷 (pvcreate)", Status: "error", Detail: "pvcreate: " + out + ": " + err.Error()})
 		return
@@ -102,7 +102,7 @@ func handlePoolExtendStream(w http.ResponseWriter, r *http.Request) {
 
 	// 3. vgextend
 	stepRunning(fmt.Sprintf("加入卷组 %s", vgName))
-	out, err = common.SudoExec("/usr/sbin/vgextend", vgName, device)
+	out, err = sudoExecFn("/usr/sbin/vgextend", vgName, device)
 	if err != nil {
 		sendPoolExtendProgress(w, PoolExtendEvent{Step: fmt.Sprintf("加入卷组 %s", vgName), Status: "error", Detail: "vgextend: " + out + ": " + err.Error()})
 		return
@@ -112,7 +112,7 @@ func handlePoolExtendStream(w http.ResponseWriter, r *http.Request) {
 	// 4. lvextend
 	lvPath := "/dev/" + vgName + "/" + lvName
 	stepRunning("扩展逻辑卷 (lvextend)")
-	out, err = common.SudoExec("/usr/sbin/lvextend", "-l", "+100%FREE", lvPath)
+	out, err = sudoExecFn("/usr/sbin/lvextend", "-l", "+100%FREE", lvPath)
 	if err != nil {
 		sendPoolExtendProgress(w, PoolExtendEvent{Step: "扩展逻辑卷 (lvextend)", Status: "error", Detail: "lvextend: " + out + ": " + err.Error()})
 		return

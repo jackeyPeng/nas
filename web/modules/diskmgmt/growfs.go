@@ -3,15 +3,13 @@ package diskmgmt
 import (
 	"fmt"
 	"strings"
-
-	"nas-panel/common"
 )
 
 // growFSMountPoint 根据块设备解析其当前挂载点，用于 xfs_growfs。
 // Debian 12/13 的 xfsprogs 要求 xfs_growfs 的参数是挂载点路径，传块设备会直接报错；
 // 之前各处直接把块设备/LV 路径传给 xfs_growfs，在生产环境必定失败。
 func growFSMountPoint(dev string) (string, error) {
-	out, err := common.SudoOutput("findmnt", "-n", "-o", "TARGET", "--source", dev)
+	out, err := sudoOutputFn("findmnt", "-n", "-o", "TARGET", "--source", dev)
 	if err != nil {
 		return "", fmt.Errorf("查询 %s 挂载点失败: %v", dev, err)
 	}
@@ -30,7 +28,7 @@ func parseMountPointOutput(dev, findmntOut string) (string, error) {
 
 // growFSFsType 查询设备当前挂载的文件系统类型（用于 resize2fs fallback 判定是否确实是 ext4）。
 func growFSFsType(dev string) string {
-	out, _ := common.SudoOutput("findmnt", "-n", "-o", "FSTYPE", "--source", dev)
+	out, _ := sudoOutputFn("findmnt", "-n", "-o", "FSTYPE", "--source", dev)
 	return strings.TrimSpace(out)
 }
 
@@ -46,13 +44,13 @@ func growFilesystemByDevice(dev string) (step string, out string, err error) {
 		if mpErr != nil {
 			return "", "", mpErr
 		}
-		out, err = common.SudoExec("/usr/sbin/xfs_growfs", mp)
+		out, err = sudoExecFn("/usr/sbin/xfs_growfs", mp)
 		if err != nil {
 			return "", out, fmt.Errorf("xfs_growfs %s 失败: %s: %v", mp, out, err)
 		}
 		return "xfs_growfs " + mp, out, nil
 	case "ext4", "ext3", "ext2":
-		out, err = common.SudoExec("/usr/sbin/resize2fs", dev)
+		out, err = sudoExecFn("/usr/sbin/resize2fs", dev)
 		if err != nil {
 			return "", out, fmt.Errorf("resize2fs %s 失败: %s: %v", dev, out, err)
 		}

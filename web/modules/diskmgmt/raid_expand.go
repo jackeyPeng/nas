@@ -59,7 +59,7 @@ func handleRAIDExpandStream(w http.ResponseWriter, r *http.Request) {
 
 	// ── 获取 RAID 信息并校验级别（锁外，只读 mdadm --detail；A2：raid0 无冗余，
 	// 不支持扩容——在拿全局磁盘锁之前就拒绝，不让无效请求排队等锁）──
-	detailOut, err := common.SudoOutput("/usr/sbin/mdadm", "--detail", mdDev)
+	detailOut, err := sudoOutputFn("/usr/sbin/mdadm", "--detail", mdDev)
 	if err != nil {
 		sendRAIDExpandProgress(w, RAIDExpandEvent{Step: "RAID信息", Status: "error", Detail: "无法读取 " + mdDev + " 详情"})
 		return
@@ -107,7 +107,7 @@ func handleRAIDExpandStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// ── 检查磁盘是否空闲 ──
-	disks := getDiskStatus()
+	disks := getDiskStatusFn()
 	diskFree := false
 	for _, d := range disks {
 		if d.Device == device && d.Type == "unused" {
@@ -145,16 +145,16 @@ func handleRAIDExpandStream(w http.ResponseWriter, r *http.Request) {
 	stepDone := func(name string) {
 		step++
 		sendRAIDExpandProgress(w, RAIDExpandEvent{Step: name, Status: "done", Index: step, Total: totalSteps})
-		time.Sleep(100 * time.Millisecond)
+		sleepFn(100 * time.Millisecond)
 	}
 	stepRunning := func(name string) {
 		sendRAIDExpandProgress(w, RAIDExpandEvent{Step: name, Status: "running", Index: step + 1, Total: totalSteps})
-		time.Sleep(100 * time.Millisecond)
+		sleepFn(100 * time.Millisecond)
 	}
 
 	// ── Step 1: Wipe new disk ──
 	stepRunning("清除新磁盘签名")
-	out, err := common.SudoExec("/usr/sbin/wipefs", "-a", device)
+	out, err := sudoExecFn("/usr/sbin/wipefs", "-a", device)
 	if checkRAIDError(w, "清除磁盘签名", out, err) {
 		return
 	}
@@ -162,7 +162,7 @@ func handleRAIDExpandStream(w http.ResponseWriter, r *http.Request) {
 
 	// ── Step 2: Add disk to array ──
 	stepRunning(fmt.Sprintf("添加 %s 到 %s", device, mdDev))
-	out, err = common.SudoExec("/usr/sbin/mdadm", mdDev, "--add", device)
+	out, err = sudoExecFn("/usr/sbin/mdadm", mdDev, "--add", device)
 	if checkRAIDError(w, "添加磁盘", out, err) {
 		return
 	}
@@ -170,7 +170,7 @@ func handleRAIDExpandStream(w http.ResponseWriter, r *http.Request) {
 
 	// ── Step 3: Grow array ──
 	stepRunning(fmt.Sprintf("扩展 %s 到 %d 盘", raidName, newDevs))
-	out, err = common.SudoExec("/usr/sbin/mdadm", "--grow", mdDev, "--raid-devices="+fmt.Sprintf("%d", newDevs))
+	out, err = sudoExecFn("/usr/sbin/mdadm", "--grow", mdDev, "--raid-devices="+fmt.Sprintf("%d", newDevs))
 	if checkRAIDError(w, "扩展阵列", out, err) {
 		return
 	}
@@ -246,7 +246,7 @@ func handleRAIDExpandFS(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if !sysfsUsable {
-		mdstatBytes, _ := os.ReadFile("/proc/mdstat")
+		mdstatBytes, _ := os.ReadFile(mdstatPath)
 		blocks := parseMdstatBlocks(string(mdstatBytes))
 		if block, found := findBlockByMdName(blocks, mdName); found && blockHasProgress(block) {
 			reshaping = true
@@ -323,7 +323,7 @@ func handleRAIDReshapeStatus(w http.ResponseWriter, r *http.Request) {
 	// consensus P0-D：改走 parseMdstatBlocks——此前只看头行的下一行
 	// (lines[i+1])，真实 mdstat 的进度行通常在 blocks 行之后（i+2 及以后），
 	// 会漏检；现在进度行在阵列块内任意缩进行位置都能命中。
-	mdstatBytes, _ := os.ReadFile("/proc/mdstat")
+	mdstatBytes, _ := os.ReadFile(mdstatPath)
 	blocks := parseMdstatBlocks(string(mdstatBytes))
 	if block, found := findBlockByMdName(blocks, mdName); found {
 		if p, ok := firstProgress(block); ok && (p.Kind == "reshape" || p.Kind == "resync") {
@@ -360,7 +360,7 @@ func handleRAIDReshapeStatus(w http.ResponseWriter, r *http.Request) {
 // 重新累计。600 轮总预算（10 分钟）不变。
 func waitForResync(w http.ResponseWriter, mdDev string, currentStep, totalSteps int) error {
 	mdName := strings.TrimPrefix(mdDev, "/dev/")
-	time.Sleep(2 * time.Second)
+	sleepFn(2 * time.Second)
 	const requiredCleanStreak = 3
 	cleanStreak := 0
 	for i := 0; i < 600; i++ { // max 10 minutes
@@ -391,7 +391,7 @@ func waitForResync(w http.ResponseWriter, mdDev string, currentStep, totalSteps 
 			// 漏检，导致阵列明明还在重构却被误判"完成"，growFilesystem 在
 			// 重构中跑会损坏数据。现在进度行在阵列块内任意缩进行位置都能
 			// 命中。
-			mdstatBytes, _ := os.ReadFile("/proc/mdstat")
+			mdstatBytes, _ := os.ReadFile(mdstatPath)
 			blocks := parseMdstatBlocks(string(mdstatBytes))
 			if block, found := findBlockByMdName(blocks, mdName); found {
 				if p, ok := firstProgress(block); ok && (p.Kind == "resync" || p.Kind == "recovery") {
@@ -418,7 +418,7 @@ func waitForResync(w http.ResponseWriter, mdDev string, currentStep, totalSteps 
 		} else {
 			cleanStreak = 0
 		}
-		time.Sleep(2 * time.Second)
+		sleepFn(2 * time.Second)
 	}
 	return fmt.Errorf("阵列同步未在 10 分钟内完成")
 }

@@ -332,7 +332,7 @@ func handleFstab(w http.ResponseWriter, r *http.Request) {
 
 // isSystemDisk checks if device is a system disk
 func isSystemDisk(device string) bool {
-	out, _ := common.ExecOutput("findmnt", "-n", "-o", "TARGET", device)
+	out, _ := execOutputFn("findmnt", "-n", "-o", "TARGET", device)
 	mount := strings.TrimSpace(out)
 	if mount == "/" || mount == "/boot" || mount == "/boot/efi" {
 		return true
@@ -347,13 +347,13 @@ func isSystemDisk(device string) bool {
 	for i := 1; i <= 9; i++ {
 		// Standard: sda1, sdb2
 		partDev := fmt.Sprintf("%s%d", baseDevice, i)
-		out2, _ := common.ExecOutput("findmnt", "-n", "-o", "TARGET", partDev)
+		out2, _ := execOutputFn("findmnt", "-n", "-o", "TARGET", partDev)
 		if strings.TrimSpace(out2) == "/" || strings.TrimSpace(out2) == "/boot" || strings.TrimSpace(out2) == "/boot/efi" {
 			return true
 		}
 		// NVMe: nvme0n1p1, nvme0n1p2
 		partDevNvme := fmt.Sprintf("%sp%d", device, i)
-		out3, _ := common.ExecOutput("findmnt", "-n", "-o", "TARGET", partDevNvme)
+		out3, _ := execOutputFn("findmnt", "-n", "-o", "TARGET", partDevNvme)
 		if strings.TrimSpace(out3) == "/" || strings.TrimSpace(out3) == "/boot" || strings.TrimSpace(out3) == "/boot/efi" {
 			return true
 		}
@@ -374,7 +374,7 @@ func isDiskInUse(device string) bool {
 		}
 	}
 	// 2) 已是活跃 RAID 数组成员（/proc/mdstat 的成员列表形如 "sdb[0]"）
-	mdOut, _ := common.ExecOutput("cat", "/proc/mdstat")
+	mdOut, _ := execOutputFn("cat", mdstatPath)
 	short := strings.TrimPrefix(device, "/dev/")
 	for _, tok := range strings.Fields(mdOut) {
 		if tok == short || strings.HasPrefix(tok, short+"[") {
@@ -383,7 +383,7 @@ func isDiskInUse(device string) bool {
 	}
 	// 3) 设备自身或其任一分区带文件系统/swap 签名（整盘 FSTYPE 为空但子分区有存量数据，
 	// 或整盘本身就有 FSTYPE，都算 in use）
-	lsblkOut, _ := common.ExecOutput("lsblk", "-n", "-r", "-o", "NAME,FSTYPE", device)
+	lsblkOut, _ := execOutputFn("lsblk", "-n", "-r", "-o", "NAME,FSTYPE", device)
 	if hasFstypeSignature(lsblkOut) {
 		return true
 	}

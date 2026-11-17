@@ -46,7 +46,7 @@ var raidSysfsScalarFiles = []string{
 // （"in_sync"/"spare"/"faulty" 等）——注意 failed 成员的 rd* 目录在内核里会
 // 直接消失，不会出现 state=faulty 的情况（真机实测，降级态只剩 rd0）。
 func readRAIDSysfsValues(mdName string) (vals map[string]string, members map[string]string, ok bool) {
-	mdDir := filepath.Join("/sys/block", mdName, "md")
+	mdDir := filepath.Join(sysfsRoot, mdName, "md")
 	info, err := os.Stat(mdDir)
 	if err != nil || !info.IsDir() {
 		return nil, nil, false

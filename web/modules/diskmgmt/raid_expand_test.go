@@ -47,15 +47,16 @@ func TestParseMdDetailLevelAndDevices(t *testing.T) {
 //
 // Finding 3（首轮竞态）修复后，waitForResync 不再是"读到一次干净就算完成"：
 // 循环前先 sleep 2s，之后要求连续 3 轮（cleanStreak）都查不到 resync/recovery
-// 行才返回 nil。本测试场景从头到尾都没有匹配设备，相当于一直是"干净"读数，
-// 会按新逻辑跑满 2s（首次等待）+ 3*2s（streak 轮询）≈ 8s 才返回，而不再是
-// 旧版本的"立即返回"——这里用真实 time.Sleep（无可注入的时钟/sleep 依赖），
-// 运行时间变长但在可接受范围（单测总耗时从毫秒级变为个位数秒级）。
+// 行才返回 nil。本测试场景从头到尾都没有匹配设备，相当于一直是"干净"读数。
+// R2 阶段已把 sleepFn 落为可注入 seam（seams.go），这里改用 withNoopSleep 消除
+// 原本 2s（首次等待）+ 3*2s（streak 轮询）≈ 8s 的真实延迟，断言的返回值语义
+// （无匹配设备应视为同步完成）不变。
 // waitForResync 没有暴露 mdstat 路径为参数，无法在不改生产签名的前提下 mock
 // /proc/mdstat 走到"观察到 resync 行后 streak 清零重新累计"的分支，这部分
 // 行为（cleanStreak 归零重计）在报告里以代码审查方式说明验证，不在本测试
 // 覆盖范围内。
 func TestWaitForResyncReturnsNilWhenNoResyncLine(t *testing.T) {
+	withNoopSleep(t)
 	w := httptest.NewRecorder()
 	err := waitForResync(w, "/dev/md_test_nonexistent", 0, 5)
 	if err != nil {
