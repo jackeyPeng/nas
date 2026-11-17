@@ -1,8 +1,12 @@
 package diskmgmt
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,9 +15,25 @@ import (
 )
 
 // ═══════════════════════════════════════════════════
-// handleRAIDExpandStream —— R1-R5（DESIGN.md §2.2）
-// R6/R7/R8（ctx 中断 / waitForResyncCore 抽取相关）明确留给 R3，本轮不做。
+// handleRAIDExpandStream —— R1-R5（DESIGN.md §2.2），R8（本轮 R3 新增）。
+// R6/R7（waitForResyncCore 抽取相关）明确留给 R4，本轮不做。
 // ═══════════════════════════════════════════════════
+
+// withCancelableRAIDSSE 与 withSSE 等价，但返回的 *http.Request 携带一个可
+// 取消的 context.Context 及其 cancel 函数，供 R8 的 ctx 取消子场景使用。
+func withCancelableRAIDSSE(method, path string, query map[string]string) (*http.Request, *httptest.ResponseRecorder, context.CancelFunc) {
+	u := &url.URL{Path: path}
+	q := url.Values{}
+	for k, v := range query {
+		q.Set(k, v)
+	}
+	u.RawQuery = q.Encode()
+	req := httptest.NewRequest(method, u.String(), nil)
+	ctx, cancel := context.WithCancel(req.Context())
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+	return req, rec, cancel
+}
 
 // decodeRAIDEvents 把 parseSSE 返回的原始 JSON 行反序列化为 RAIDExpandEvent 切片。
 func decodeRAIDEvents(t *testing.T, raw []string) []RAIDExpandEvent {
@@ -422,6 +442,105 @@ func TestHandleRAIDExpandStream_R5_TargetDiskNotFree(t *testing.T) {
 		}
 		if stub.countCalls("/usr/sbin/wipefs") != 0 {
 			t.Error("isDiskInUse 命中的盘应被拒绝，wipefs 不应执行")
+		}
+	})
+}
+
+// R8: mdadm --grow 失败——error 事件含原始输出，之后不再执行任何命令（既不
+// resync 轮询也不 growFS）；另有一个 ctx 取消子场景，镜像 P7 的断言手法。
+func TestHandleRAIDExpandStream_R8_GrowFailsAndCtxCancel(t *testing.T) {
+	t.Run("mdadm_grow失败", func(t *testing.T) {
+		withNoopSleep(t)
+		mdDev := withFakeMdDev(t)
+		stub := withStubExec(t, map[string]cmdResponse{
+			"/usr/sbin/mdadm": {Fn: func(args []string) (string, error) {
+				if len(args) > 0 && args[0] == "--detail" {
+					return raid1Detail(2), nil
+				}
+				if len(args) > 0 && args[0] == "--grow" {
+					return "mdadm: Cannot set device size/shape for /dev/md0: Device or resource busy", errAny
+				}
+				return "", nil
+			}},
+		})
+		origGetDiskStatus := getDiskStatusFn
+		getDiskStatusFn = func() []DiskStatus {
+			return []DiskStatus{{Device: "/dev/sdz", Type: "unused"}}
+		}
+		t.Cleanup(func() { getDiskStatusFn = origGetDiskStatus })
+
+		req, rec := withSSE("GET", "/api/disk/raid/expand-stream", map[string]string{
+			"md_device": mdDev,
+			"device":    "/dev/sdz",
+			"confirm":   "yes",
+		})
+		handleRAIDExpandStream(rec, req)
+
+		events := decodeRAIDEvents(t, parseSSE(rec.Body.String()))
+		last := events[len(events)-1]
+		if last.Status != "error" || last.Step != "扩展阵列" {
+			t.Fatalf("got last=%+v, want error Step=扩展阵列", last)
+		}
+		if !strings.Contains(last.Detail, "Cannot set device size") {
+			t.Errorf("Detail 应含原始输出, got %q", last.Detail)
+		}
+		if !strings.Contains(last.Detail, errAny.Error()) {
+			t.Errorf("Detail 应含错误本身, got %q", last.Detail)
+		}
+		for _, ev := range events {
+			if ev.Step == "等待数据同步" {
+				t.Errorf("mdadm --grow 失败后不应进入 resync 轮询, got %+v", ev)
+			}
+			if ev.Step == "扩展文件系统" {
+				t.Errorf("mdadm --grow 失败后不应出现 growFS 相关事件, got %+v", ev)
+			}
+		}
+		if stub.countCalls("/usr/sbin/xfs_growfs") != 0 || stub.countCalls("/usr/sbin/resize2fs") != 0 {
+			t.Error("mdadm --grow 失败后不应调用任何 growFS 命令")
+		}
+	})
+
+	t.Run("ctx取消阻止后续命令", func(t *testing.T) {
+		withNoopSleep(t)
+		mdDev := withFakeMdDev(t)
+		req, rec, cancel := withCancelableRAIDSSE("GET", "/api/disk/raid/expand-stream", map[string]string{
+			"md_device": mdDev,
+			"device":    "/dev/sdz",
+			"confirm":   "yes",
+		})
+		stub := withStubExec(t, map[string]cmdResponse{
+			"/usr/sbin/mdadm": {Fn: func(args []string) (string, error) {
+				if len(args) > 0 && args[0] == "--detail" {
+					return raid1Detail(2), nil
+				}
+				return "", nil
+			}},
+			// wipefs 是命令链第一步；它返回之后立即取消 ctx，模拟客户端在
+			// 第一条命令跑完、还没来得及推下一条事件时断开连接。
+			"/usr/sbin/wipefs": {Fn: func(args []string) (string, error) {
+				cancel()
+				return "", nil
+			}},
+		})
+		origGetDiskStatus := getDiskStatusFn
+		getDiskStatusFn = func() []DiskStatus {
+			return []DiskStatus{{Device: "/dev/sdz", Type: "unused"}}
+		}
+		t.Cleanup(func() { getDiskStatusFn = origGetDiskStatus })
+
+		handleRAIDExpandStream(rec, req)
+
+		events := decodeRAIDEvents(t, parseSSE(rec.Body.String()))
+		for _, ev := range events {
+			if ev.Step == "清除新磁盘签名" && ev.Status == "done" {
+				t.Errorf("ctx 取消后不应再发送“清除新磁盘签名” done 事件, got %+v", ev)
+			}
+			if strings.Contains(ev.Step, "添加") {
+				t.Errorf("ctx 取消后不应再发送“添加磁盘”相关事件, got %+v", ev)
+			}
+		}
+		if stub.countCalls("/usr/sbin/mdadm") != 1 { // 仅 --detail 那一次
+			t.Errorf("ctx 取消后不应再调用 mdadm --add/--grow，got %d 次调用：%v", stub.countCalls("/usr/sbin/mdadm"), stub.calledNames())
 		}
 	})
 }

@@ -1,15 +1,35 @@
 package diskmgmt
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 )
 
 // ═══════════════════════════════════════════════════
-// handlePoolExtendStream —— P1-P6（DESIGN.md §2.1）
-// P7/P8（ctx 中断 / 中断后重试恢复）明确留给 R3，本轮不做。
+// handlePoolExtendStream —— P1-P6（DESIGN.md §2.1），P7/P8（本轮 R3 新增）
 // ═══════════════════════════════════════════════════
+
+// withCancelableSSE 与 withSSE 等价，但返回的 *http.Request 携带一个可取消
+// 的 context.Context 及其 cancel 函数，供 P7/R8 的 ctx 取消子场景在命令执行
+// 期间调用 cancel() 模拟客户端断连/取消请求。
+func withCancelableSSE(method, path string, query map[string]string) (*http.Request, *httptest.ResponseRecorder, context.CancelFunc) {
+	u := &url.URL{Path: path}
+	q := url.Values{}
+	for k, v := range query {
+		q.Set(k, v)
+	}
+	u.RawQuery = q.Encode()
+	req := httptest.NewRequest(method, u.String(), nil)
+	ctx, cancel := context.WithCancel(req.Context())
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+	return req, rec, cancel
+}
 
 // findmntResponder 根据 findmnt 调用的参数区分三类调用：
 //   - isSystemDisk：-n -o TARGET <device>（无 --source）
@@ -326,6 +346,87 @@ func TestHandlePoolExtendStream_P6_GrowFSFails(t *testing.T) {
 		if ev.Status == "complete" {
 			t.Error("扩展文件系统失败后不应出现 complete 事件")
 		}
+	}
+}
+
+// P7: ctx 取消——客户端在 wipefs 执行期间断连，handler 应立即中止命令链，
+// 不再执行 pvcreate 及之后的任何命令，也不再发送任何新 SSE 事件；handler
+// 正常返回（不 panic、不写 500，httptest.NewRecorder 不会 panic 但仍要求
+// handler 本身走正常 return 路径）。
+func TestHandlePoolExtendStream_P7_CtxCancelStopsCommandChain(t *testing.T) {
+	withNoopSleep(t)
+	req, rec, cancel := withCancelableSSE("GET", "/api/disk/pool/extend-stream", map[string]string{
+		"device":  "/dev/sdx",
+		"confirm": "yes",
+	})
+	stub := withStubExec(t, map[string]cmdResponse{
+		"findmnt": {Fn: findmntResponder(map[string]string{"/dev/vg_nas/data": "/mnt/data"}, "xfs")},
+		// wipefs 是第一条会执行的命令；在它返回之后立即取消 ctx，模拟客户端
+		// 在第一步命令跑完、SSE 还没来得及推下一条事件时断开连接。
+		"/usr/sbin/wipefs": {Fn: func(args []string) (string, error) {
+			cancel()
+			return "", nil
+		}},
+	})
+
+	handlePoolExtendStream(rec, req)
+
+	events := decodePoolEvents(t, parseSSE(rec.Body.String()))
+	// wipefs 的 running 事件在取消之前已经发出；取消发生在 wipefs 执行期间，
+	// 之后 tracker.Done("清除磁盘签名") 应检测到 ctx 已取消并直接返回，
+	// 不再发送该 done 事件，也不会有任何更晚的事件。
+	for _, ev := range events {
+		if ev.Step == "清除磁盘签名" && ev.Status == "done" {
+			t.Errorf("ctx 取消后不应再发送“清除磁盘签名” done 事件, got %+v", ev)
+		}
+		if ev.Step == "初始化物理卷 (pvcreate)" {
+			t.Errorf("ctx 取消后不应再发送 pvcreate 相关事件, got %+v", ev)
+		}
+	}
+	if stub.countCalls("/usr/sbin/pvcreate") != 0 {
+		t.Error("ctx 取消后不应再执行 pvcreate")
+	}
+	if stub.countCalls("/usr/sbin/vgextend") != 0 {
+		t.Error("ctx 取消后不应再执行 vgextend")
+	}
+	if stub.countCalls("/usr/sbin/lvextend") != 0 {
+		t.Error("ctx 取消后不应再执行 lvextend")
+	}
+}
+
+// P8: 磁盘已被占用（已带文件系统签名，模拟 P5/P7 中断后残留的半完成状态：
+// 设备已被用过、带有存量签名）——第二次请求应被 isDiskInUse 拒绝，wipefs
+// 不应被调用（不能对已占用的盘隐式擦除）。isDiskInUse 的 pvs 调用不在本轮
+// seam 路由范围内（P4 已有的已知限制），改用同样走 execOutputFn 的 lsblk
+// FSTYPE 签名分支触发"已占用"判定（hasFstypeSignature），与 P4 的
+// "已在存储池中使用"子场景同一套手法，这里专门验证"重试请求"场景下该拒绝
+// 依然生效、且不会误触发任何写路径命令。
+func TestHandlePoolExtendStream_P8_RetryAfterPartialRejectedByDiskInUse(t *testing.T) {
+	withNoopSleep(t)
+	stub := withStubExec(t, map[string]cmdResponse{
+		"findmnt": {Fn: findmntResponder(map[string]string{}, "xfs")},
+		"lsblk": {Fn: func(args []string) (string, error) {
+			// 模拟设备上残留着上一次中断操作留下的文件系统签名。
+			return "sdx xfs\n", nil
+		}},
+	})
+
+	req, rec := withSSE("GET", "/api/disk/pool/extend-stream", map[string]string{
+		"device":  "/dev/sdx",
+		"confirm": "yes",
+	})
+	handlePoolExtendStream(rec, req)
+
+	events := decodePoolEvents(t, parseSSE(rec.Body.String()))
+	last := events[len(events)-1]
+	if last.Status != "error" || !strings.Contains(last.Detail, "已在存储池中使用") {
+		t.Fatalf("got last=%+v, want error 含“已在存储池中使用”", last)
+	}
+	if stub.countCalls("/usr/sbin/wipefs") != 0 {
+		t.Error("带存量签名的盘重试扩容应被拒绝，wipefs 不应执行")
+	}
+	if stub.countCalls("/usr/sbin/pvcreate") != 0 {
+		t.Error("带存量签名的盘重试扩容应被拒绝，pvcreate 不应执行")
 	}
 }
 

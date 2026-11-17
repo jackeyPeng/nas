@@ -21,10 +21,16 @@ type RAIDExpandEvent struct {
 	Detail string `json:"detail,omitempty"`
 }
 
-func sendRAIDExpandProgress(w http.ResponseWriter, ev RAIDExpandEvent) {
+// sendRAIDExpandProgress writes an SSE event. 返回非 nil error 表示写失败
+// （典型原因：客户端已断连）——调用方据此中止命令链，不再尝试发送后续事件
+// （R3：此前 Fprintf 返回值被丢弃，断连后命令继续跑到底）。
+func sendRAIDExpandProgress(w http.ResponseWriter, ev RAIDExpandEvent) error {
 	data, _ := json.Marshal(ev)
-	fmt.Fprintf(w, "data: %s\n\n", data)
+	if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil {
+		return err
+	}
 	w.(http.Flusher).Flush()
+	return nil
 }
 
 // handleRAIDExpandStream expands a RAID array (RAID1/5/6) by adding a new disk
@@ -34,6 +40,12 @@ func handleRAIDExpandStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
+
+	// ctx 感知（R3）：客户端断连/取消请求后 r.Context() 被标记取消，
+	// raidStepTracker 据此中止命令链——不再执行后续 sudoExecFn，也不再发送
+	// 任何新 SSE 事件（连接已死，写了也白发），handler 正常返回（不 panic、
+	// 不写 500）。
+	ctx := r.Context()
 
 	mdDev := r.URL.Query().Get("md_device") // e.g. /dev/md0
 	device := r.URL.Query().Get("device")   // new disk, e.g. /dev/sdd
@@ -141,61 +153,77 @@ func handleRAIDExpandStream(w http.ResponseWriter, r *http.Request) {
 		totalSteps = 4 // wipe, add, grow(reshape启动), 完成提示
 	}
 
-	step := 0
-	stepDone := func(name string) {
-		step++
-		sendRAIDExpandProgress(w, RAIDExpandEvent{Step: name, Status: "done", Index: step, Total: totalSteps})
-		sleepFn(100 * time.Millisecond)
-	}
-	stepRunning := func(name string) {
-		sendRAIDExpandProgress(w, RAIDExpandEvent{Step: name, Status: "running", Index: step + 1, Total: totalSteps})
-		sleepFn(100 * time.Millisecond)
-	}
+	tracker := newRAIDStepTracker(totalSteps, func(ev RAIDExpandEvent) error {
+		return sendRAIDExpandProgress(w, ev)
+	}, sleepFn, ctx)
 
 	// ── Step 1: Wipe new disk ──
-	stepRunning("清除新磁盘签名")
-	out, err := sudoExecFn("/usr/sbin/wipefs", "-a", device)
-	if checkRAIDError(w, "清除磁盘签名", out, err) {
+	// R3：Running/Done 返回 error 既代表 ctx 取消也代表 SSE 写失败（客户端
+	// 已断连）——两种情况都意味着连接已死，不再执行任何后续 sudoExecFn，也
+	// 不再尝试发送 error 事件，直接 return。
+	if err := tracker.Running("清除新磁盘签名"); err != nil {
 		return
 	}
-	stepDone("清除新磁盘签名")
+	out, err := sudoExecFn("/usr/sbin/wipefs", "-a", device)
+	if checkRAIDError(tracker, "清除磁盘签名", out, err) {
+		return
+	}
+	if err := tracker.Done("清除新磁盘签名"); err != nil {
+		return
+	}
 
 	// ── Step 2: Add disk to array ──
-	stepRunning(fmt.Sprintf("添加 %s 到 %s", device, mdDev))
-	out, err = sudoExecFn("/usr/sbin/mdadm", mdDev, "--add", device)
-	if checkRAIDError(w, "添加磁盘", out, err) {
+	if err := tracker.Running(fmt.Sprintf("添加 %s 到 %s", device, mdDev)); err != nil {
 		return
 	}
-	stepDone(fmt.Sprintf("添加 %s 到阵列", device))
+	out, err = sudoExecFn("/usr/sbin/mdadm", mdDev, "--add", device)
+	if checkRAIDError(tracker, "添加磁盘", out, err) {
+		return
+	}
+	if err := tracker.Done(fmt.Sprintf("添加 %s 到阵列", device)); err != nil {
+		return
+	}
 
 	// ── Step 3: Grow array ──
-	stepRunning(fmt.Sprintf("扩展 %s 到 %d 盘", raidName, newDevs))
-	out, err = sudoExecFn("/usr/sbin/mdadm", "--grow", mdDev, "--raid-devices="+fmt.Sprintf("%d", newDevs))
-	if checkRAIDError(w, "扩展阵列", out, err) {
+	if err := tracker.Running(fmt.Sprintf("扩展 %s 到 %d 盘", raidName, newDevs)); err != nil {
 		return
 	}
-	stepDone(fmt.Sprintf("扩展 %s 到 %d 盘", raidName, newDevs))
+	out, err = sudoExecFn("/usr/sbin/mdadm", "--grow", mdDev, "--raid-devices="+fmt.Sprintf("%d", newDevs))
+	if checkRAIDError(tracker, "扩展阵列", out, err) {
+		return
+	}
+	if err := tracker.Done(fmt.Sprintf("扩展 %s 到 %d 盘", raidName, newDevs)); err != nil {
+		return
+	}
 
 	if isRAID1 {
 		// RAID1: wait for resync, then grow filesystem
-		stepRunning("等待数据同步 (resync)")
-		if err := waitForResync(w, mdDev, step, totalSteps); err != nil {
-			sendRAIDExpandProgress(w, RAIDExpandEvent{
-				Step: "等待数据同步", Status: "error",
-				Detail: "阵列同步未在 10 分钟内完成，已中止，文件系统未扩展；阵列仍在后台同步属正常，" +
-					"等同步完成后可用「扩展文件系统」入口（/api/disk/raid/expand-fs）单独补跑",
-			})
+		if err := tracker.Running("等待数据同步 (resync)"); err != nil {
 			return
 		}
-		step++
-		stepDone("数据同步完成")
+		if err := waitForResync(w, mdDev, tracker.CurrentStep(), totalSteps); err != nil {
+			tracker.Error("等待数据同步", "阵列同步未在 10 分钟内完成，已中止，文件系统未扩展；阵列仍在后台同步属正常，"+
+				"等同步完成后可用「扩展文件系统」入口（/api/disk/raid/expand-fs）单独补跑")
+			return
+		}
+		// SkipStep 补偏移：resync 轮询期间发的是 waitForResync 自己的
+		// running 事件（不经过 tracker.Done），原 handler 在这里手写了
+		// step++ 来补偏移，使"数据同步完成" done 事件的 Index 与原行为一致。
+		tracker.SkipStep()
+		if err := tracker.Done("数据同步完成"); err != nil {
+			return
+		}
 
 		// Grow filesystem
-		stepRunning("扩展文件系统")
-		if !growFilesystem(w, mdDev) {
+		if err := tracker.Running("扩展文件系统"); err != nil {
 			return
 		}
-		stepDone("扩展文件系统")
+		if !growFilesystem(tracker, mdDev) {
+			return
+		}
+		if err := tracker.Done("扩展文件系统"); err != nil {
+			return
+		}
 
 		sendRAIDExpandProgress(w, RAIDExpandEvent{
 			Step: "完成", Status: "complete", Index: totalSteps, Total: totalSteps,
@@ -439,24 +467,21 @@ func resyncProgressDetail(percent, syncAction string) string {
 
 // growFilesystem grows the filesystem on md device.
 // 返回 ok=false 表示扩容失败，调用方不应再标记该步骤为完成（xfs_growfs 失败不许静默吞掉）。
-func growFilesystem(w http.ResponseWriter, mdDev string) bool {
+// R3：error 事件改经 tracker.Error 发送——ctx 已取消/连接已断时不再尝试写入
+// （tracker 内部会先查 ctx.Err()，命中则直接跳过发送）。
+func growFilesystem(tracker *raidStepTracker, mdDev string) bool {
 	if _, _, err := growFilesystemByDevice(mdDev); err != nil {
-		sendRAIDExpandProgress(w, RAIDExpandEvent{
-			Step: "扩展文件系统", Status: "error",
-			Detail: err.Error(),
-		})
+		tracker.Error("扩展文件系统", err.Error())
 		return false
 	}
 	return true
 }
 
-// checkRAIDError checks error and sends SSE error event
-func checkRAIDError(w http.ResponseWriter, step, output string, err error) bool {
+// checkRAIDError checks error and sends SSE error event via tracker（R3：ctx
+// 已取消/连接已断时 tracker.Error 不发送，调用方据此中止）。
+func checkRAIDError(tracker *raidStepTracker, step, output string, err error) bool {
 	if err != nil {
-		sendRAIDExpandProgress(w, RAIDExpandEvent{
-			Step: step, Status: "error",
-			Detail: output + ": " + err.Error(),
-		})
+		tracker.Error(step, output+": "+err.Error())
 		return true
 	}
 	return false
