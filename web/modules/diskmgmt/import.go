@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"nas-panel/common"
+	"nas-panel/modules/system"
 )
 
 // ImportablePool 一个可导入的既有存储池（LVM 卷组）
@@ -151,6 +152,7 @@ func handleImportPool(w http.ResponseWriter, r *http.Request) {
 	common.LogAuditRequest(r, "STORAGE", "导入存储池", auditDetail, "success")
 	common.EmitEvent("storage", common.EventSuccess, "storage.pool_imported",
 		map[string]interface{}{"vg": vgName}, "")
+	system.ScheduleRegistryRefresh()
 	resp := map[string]interface{}{
 		"message":    "存储池已导入并挂载到 " + mountPoint,
 		"vg_name":    vgName,

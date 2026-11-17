@@ -2,6 +2,8 @@
 
 ## [未发布]
 
+- fix(registry): 磁盘状态变更（建池/删池/重置/导入/共享配置投影）后注册表自动后台重算（3s 尾随去抖，goroutine 执行不阻塞请求）——修「安装 41/41、建池后回读仍 9 条『存储池未配置』warn」的面板自相矛盾（真机实抓）；GetRegistry 快照语义不变，action=refresh 显式刷新保留
+
 ### docs: beta.37-40 三轮文档同步（协议默认/门禁/密码口径对齐代码现状，2026-11-17）
 
 - `docs/protocol-service-configs.md` 新增 §0.1「协议默认启用状态」：新装机默认只开 SMB + 面板、服务页 on/off API、升级机现有开关不动、FRESH_INSTALL 判定链、注册表/仪表盘计数口径、systemd 四坑

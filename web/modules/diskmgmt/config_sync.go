@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"nas-panel/common"
+	"nas-panel/modules/system"
 
 	_ "modernc.org/sqlite"
 )
@@ -470,6 +471,10 @@ func SyncAllConfigs() error {
 
 	if len(errs) > 0 {
 		return fmt.Errorf("配置同步失败: %s", strings.Join(errs, "; "))
+	}
+
+	if changed {
+		system.ScheduleRegistryRefresh()
 	}
 	return nil
 }

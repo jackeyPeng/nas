@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"nas-panel/common"
+	"nas-panel/modules/system"
 )
 
 // PoolStatus represents storage pool overview
@@ -279,6 +280,7 @@ func handlePoolCreate(w http.ResponseWriter, r *http.Request) {
 	common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountPoint)
 	steps = append(steps, "设置权限 "+nasUser)
 
+	system.ScheduleRegistryRefresh()
 	common.JSONResponse(w, map[string]interface{}{
 		"message":    "存储池创建完成",
 		"steps":      steps,
@@ -371,6 +373,7 @@ func handlePoolExtend(w http.ResponseWriter, r *http.Request) {
 	}
 	steps = append(steps, growStep)
 
+	system.ScheduleRegistryRefresh()
 	common.JSONResponse(w, map[string]interface{}{
 		"message": "存储池扩容完成",
 		"steps":   steps,
@@ -775,6 +778,7 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	system.ScheduleRegistryRefresh()
 	common.JSONResponse(w, map[string]interface{}{
 		"message": fmt.Sprintf("存储池已删除，释放 %d 步", len(steps)),
 		"steps":   steps,

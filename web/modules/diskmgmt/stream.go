@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"nas-panel/common"
+	"nas-panel/modules/system"
 )
 
 // ProgressEvent is sent to frontend via SSE
@@ -195,6 +196,7 @@ func handleWizardSetupStream(w http.ResponseWriter, r *http.Request) {
 		Total:  totalSteps,
 		Detail: detail,
 	})
+	system.ScheduleRegistryRefresh()
 }
 
 // filterSelectedDisks 计算 unused 与用户选盘参数 sel（逗号分隔设备路径）的交集（Fix 2）。
@@ -691,4 +693,5 @@ func handleWizardResetStream(w http.ResponseWriter, r *http.Request) {
 		Total:  totalSteps,
 		Detail: "存储已重置，磁盘已释放",
 	})
+	system.ScheduleRegistryRefresh()
 }
