@@ -35,6 +35,7 @@ var allowedModuleDeps = map[string][]string{
 	"monitor":  {"dashboard"},
 	"services": {"dashboard"},
 	"update":   {"version"},
+	"diskmgmt": {"system"}, // beta.41 注册表自动刷新（0cef275）：池/共享操作尾部调 system.ScheduleRegistryRefresh（3s 去抖后台重算），有意依赖
 	"users":    {"diskmgmt"},
 	"tasks":    {"filemgmt"},
 	"triggers": {"tasks", "ai", "diskmgmt", "notifications", "health"}, // F2 Task 2 开白名单；health 是 Task 4 周报新增依赖（GenerateWeeklyReport 读 health.Summary）
