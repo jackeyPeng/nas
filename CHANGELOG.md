@@ -2,9 +2,16 @@
 
 ## [未发布]
 
+## 2026-11-20 - v1.4.0-beta.42 安装布局与 --version 修复
+
 - fix(panel): `--version`/`-v` 早退输出版本信息 — 此前不解析参数直接启动完整面板（含全部 DB 初始化与 :8090 监听），backup-config.sh 以 root 调用时会以 root 创建全部面板数据库（fm 面板从此无法打开）甚至在面板停止时拉起 root 权限面板进程
 - fix(install): root 直跑 install.sh 时仓库落到 NAS_USER 家目录 — /root 700 使降权面板无法穿透 /opt/nas 软链，data/.env/configs 全不可达（.48/.57 真机实锤）；已有布局的升级机沿用现路径
 - fix(scripts): backup-config.sh 版本采集加 timeout 防护
+- test: 架构边界白名单补 diskmgmt→system（beta.41 注册表自动刷新 0cef275 引入的有意依赖未同步白名单，TestArchBoundaries 自 beta.41 起恒红）
+
+真机验收：两台重置测试机以 root 直跑一键安装（复现路径）→ 仓库正确落 /home/fm/soft/nas、面板数据库全 fm 属主零权限错误；--version 即时退出不建库；门禁四件套/建池（LVM merge + RAID1）/注册表默认读 41/41/acceptance-suite 45/45/Chrome UI 实测全绿
+
+---
 
 ## 2026-11-19 - v1.4.0-beta.41 快修轮：注册表自动刷新与流式操作断连中止
 
@@ -28,6 +35,7 @@
 
 | 版本 | 日期 | 主要变化 |
 |------|------|---------|
+| v1.4.0-beta.42 | 2026-11-20 | 安装与版本查询修复 — `nas-panel --version` 此前不解析参数直接启动完整面板（以 root 调用会创建 root 属主数据库毒化面板、面板停止时甚至拉起 root 权限实例），现早退输出版本；root 直跑 install.sh 时仓库正确落到 NAS_USER 家目录（此前落 /root 使降权面板无法穿透 /opt/nas，data/.env/configs 全不可达，.48/.57 双机实锤），已有布局的升级机沿用现路径；backup-config 版本采集加 timeout；架构边界白名单同步。真机验收：root 路径全新安装双机全绿（门禁四件套/建池/注册表 41/41/套件 45/45/Chrome UI） |
 | v1.4.0-beta.41 | 2026-11-19 | 快修轮 — 注册表自动后台刷新（磁盘/共享配置变更后 3s 去抖重算，面板默认读取即最新，不再需要手动 refresh）；流式扩容/RAID 扩容感知客户端断连与 ctx 取消（SSE 断开命令链即时中止，不再后台跑到底）；waitForResyncCore 抽取（resync 轮询断连即时停止，超时/streak 参数化）；beta.37-40 三轮文档同步与 opencode 归档整理。真机验收：两台重置测试机全新安装（LVM merge + RAID1）注册表 41/41 + acceptance-suite 45/45 + RAID 机重启装配 md0/跨重启健康 + Chrome UI 实测全绿 |
 | v1.4.0-beta.40 | 2026-11-16 | 密码策略放宽 — 面板登录/用户/改密/AI 建号的密码长度下限 12 → 8 位，不引入任何大小写/数字/符号复杂度要求（家庭用户高频输入成本）；凭证保险箱主口令同降 8 位（PBKDF2-600k+AES-256-GCM 强度不依赖口令长度单一因子）；`ValidSecret` 仍拒换行/控制字符（chpasswd stdio 注入防护不变）；安装脚本 MIN_PASS_LEN 与全部文档/双语 i18n 文案同步。真机验收：.48 一键安装 exit 0 + 注册表 41/41 + acceptance-suite 45/45 + 首登改密四件套（8 位新密码）+ Chrome 实测（7 位被拒/8 位通过，用户向导与保险箱建库/锁定/解锁全链） |
 | v1.4.0-beta.39 | 2026-11-12 | 门禁与安装收尾修复 — A1 默认密码门禁收敛为仅对已认证会话生效（未登录访客不再被 403 must_change_password 误弹不可关闭改密框盖死登录页；登录页三个无守卫 x-init 加 page/tab 守卫）+ setup.sh/install.sh 收尾段不再被门禁 403 响应噎死（安装成功却 exit 1、横幅丢失）。真机验证：登录页零 API 抢跑无弹框、未认证 401/已认证默认密码 403 语义正确、门禁单测全绿 |
