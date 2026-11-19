@@ -2,6 +2,8 @@
 
 ## [未发布]
 
+## 2026-11-19 - v1.4.0-beta.41 快修轮：注册表自动刷新与流式操作断连中止
+
 - refactor(diskmgmt): waitForResync 抽出 waitForResyncCore/resyncPollOnce 纯核 — resync 轮询期间的断连/取消即时停止（R3 声明缺口收口），resync 超时上限与 streak 判定参数化（R6/R7 用例锁定）
 - fix(diskmgmt): 流式扩容/RAID 扩容 handler 感知客户端断连与 ctx 取消 — SSE 写错误不再被丢弃、命令链即时中止（此前客户端 kill 后后台命令继续跑到底）；正常路径事件序列不变，P7/P8/R8 用例锁定语义
 - fix(registry): 磁盘状态变更（建池/删池/重置/导入/共享配置投影）后注册表自动后台重算（3s 尾随去抖，goroutine 执行不阻塞请求）——修「安装 41/41、建池后回读仍 9 条『存储池未配置』warn」的面板自相矛盾（真机实抓）；GetRegistry 快照语义不变，action=refresh 显式刷新保留
@@ -16,10 +18,13 @@
 - `docs/opencode/` 归档整理：55 个平铺在根下的任务书/报告按轮次收进 7 个日期主题目录（ai-assistant/agent-f1/agent-f2/least-privilege-s1/badge-alert-docs/gate-modal/passwd-8 + consensus），README 重写为目录索引并固化「一轮一目录」约定
 - `docs/plans/2026-11-17-next-iteration-proposal.md` 新增下一轮迭代规划提案（快修轮 + 主线 A 外部应用注册/安康迁入 + 穿插 PWA 照片备份 + AI M3 仅立项设计；商业决策冻结）
 
+---
+
 ## 版本变更一览
 
 | 版本 | 日期 | 主要变化 |
 |------|------|---------|
+| v1.4.0-beta.41 | 2026-11-19 | 快修轮 — 注册表自动后台刷新（磁盘/共享配置变更后 3s 去抖重算，面板默认读取即最新，不再需要手动 refresh）；流式扩容/RAID 扩容感知客户端断连与 ctx 取消（SSE 断开命令链即时中止，不再后台跑到底）；waitForResyncCore 抽取（resync 轮询断连即时停止，超时/streak 参数化）；beta.37-40 三轮文档同步与 opencode 归档整理。真机验收：两台重置测试机全新安装（LVM merge + RAID1）注册表 41/41 + acceptance-suite 45/45 + RAID 机重启装配 md0/跨重启健康 + Chrome UI 实测全绿 |
 | v1.4.0-beta.40 | 2026-11-16 | 密码策略放宽 — 面板登录/用户/改密/AI 建号的密码长度下限 12 → 8 位，不引入任何大小写/数字/符号复杂度要求（家庭用户高频输入成本）；凭证保险箱主口令同降 8 位（PBKDF2-600k+AES-256-GCM 强度不依赖口令长度单一因子）；`ValidSecret` 仍拒换行/控制字符（chpasswd stdio 注入防护不变）；安装脚本 MIN_PASS_LEN 与全部文档/双语 i18n 文案同步。真机验收：.48 一键安装 exit 0 + 注册表 41/41 + acceptance-suite 45/45 + 首登改密四件套（8 位新密码）+ Chrome 实测（7 位被拒/8 位通过，用户向导与保险箱建库/锁定/解锁全链） |
 | v1.4.0-beta.39 | 2026-11-12 | 门禁与安装收尾修复 — A1 默认密码门禁收敛为仅对已认证会话生效（未登录访客不再被 403 must_change_password 误弹不可关闭改密框盖死登录页；登录页三个无守卫 x-init 加 page/tab 守卫）+ setup.sh/install.sh 收尾段不再被门禁 403 响应噎死（安装成功却 exit 1、横幅丢失）。真机验证：登录页零 API 抢跑无弹框、未认证 401/已认证默认密码 403 语义正确、门禁单测全绿 |
 | v1.4.0-beta.38 | 2026-11-11 | 授权与凭据收口（A1）— 出厂默认密码强制改密门禁（非白名单 /api/* 一律 403 must_change_password，403 响应带 username 防前端空用户名改密路径）；管理操作统一 AdminMiddleware（用户/备份/配置文件/告警配置，单用户架构下唯一登录用户即管理员）；.env 与告警配置敏感键（PASS/SECRET/TOKEN/KEY/WEBHOOK/CREDENTIAL/PRIVATE）读取一律掩码为 ********、.env 写回拒绝 NAS_PASS/JWT_SECRET；备份目标校验收口（本地 /mnt、/data/backup + rsync user@host:/path 逐项校验，拒选项注入/空白/.. 段/符号链接）；审计日志与登录限流 IP 口径统一为仅直连私网采信反代 X-Forwarded-For（公网直连不可伪造 XFF）；上传接口 10 GiB MaxBytesReader（413）；安全响应头（CSP 放行 Alpine eval）。真机验收：两台重置测试机一键安装全绿（merge + RAID1），注册表 41/41 + 套件 45/45 + AI/F2 E2E 全 PASS + Chrome UI 实测 + 首登改密四件套 + .env 掩码泄漏面核验 |
