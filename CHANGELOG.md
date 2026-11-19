@@ -2,6 +2,10 @@
 
 ## [未发布]
 
+- fix(panel): `--version`/`-v` 早退输出版本信息 — 此前不解析参数直接启动完整面板（含全部 DB 初始化与 :8090 监听），backup-config.sh 以 root 调用时会以 root 创建全部面板数据库（fm 面板从此无法打开）甚至在面板停止时拉起 root 权限面板进程
+- fix(install): root 直跑 install.sh 时仓库落到 NAS_USER 家目录 — /root 700 使降权面板无法穿透 /opt/nas 软链，data/.env/configs 全不可达（.48/.57 真机实锤）；已有布局的升级机沿用现路径
+- fix(scripts): backup-config.sh 版本采集加 timeout 防护
+
 ## 2026-11-19 - v1.4.0-beta.41 快修轮：注册表自动刷新与流式操作断连中止
 
 - refactor(diskmgmt): waitForResync 抽出 waitForResyncCore/resyncPollOnce 纯核 — resync 轮询期间的断连/取消即时停止（R3 声明缺口收口），resync 超时上限与 streak 判定参数化（R6/R7 用例锁定）

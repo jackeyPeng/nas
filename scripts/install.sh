@@ -18,6 +18,8 @@ set -euo pipefail
 # ── 配置 ────────────────────────────────────────────────────
 REPO_URL="https://gitee.com/gitdogcat/nas.git"
 INSTALL_DIR="/opt/nas"
+# REPO_DIR 的最终值取决于 NAS_USER（见下方"检测系统环境"步骤），此处先占位，
+# 真正赋值在 NAS_USER 解析之后、REPO_DIR 首次被使用之前完成。
 REPO_DIR="$HOME/soft/nas"
 MIN_PASS_LEN=8
 PANEL_BIN="/usr/local/bin/nas-panel"
@@ -109,6 +111,23 @@ if [ -z "$NAS_USER" ] || [ "$NAS_USER" = "root" ]; then
     echo ""
     echo -e "${RED}错误: 无法检测用户名，请不要直接以 root 账号登录运行（可用 sudo 或普通用户身份）${NC}"
     exit 1
+fi
+
+# REPO_DIR 重算：root 直跑（sudo bash -c "curl|bash"）时 sudo 默认 env_reset，
+# $HOME 被置成 /root，即便 SUDO_USER 正确识别出调用者是 fm——REPO_DIR="$HOME/soft/nas"
+# 会落到 /root/soft/nas。/opt/nas 软链指向它后，以 NAS_USER（降权用户 fm）运行的面板
+# 因 /root 是 700 权限无法穿透该路径读取 data/.env/configs（.48/.57 真机实锤）。
+# 优先探测既有布局：/opt/nas 若已是指向某实体目录的软链，升级场景沿用现路径，
+# 保证已有 /root/soft/nas 的机器仍能 git pull 升级；否则按 NAS_USER 的家目录重新定位。
+if [ -L "$INSTALL_DIR" ] && [ -e "$INSTALL_DIR" ]; then
+    REPO_DIR="$(readlink -f "$INSTALL_DIR")"
+else
+    NAS_USER_HOME="$(getent passwd "$NAS_USER" | cut -d: -f6)"
+    if [ -n "$NAS_USER_HOME" ]; then
+        REPO_DIR="$NAS_USER_HOME/soft/nas"
+    else
+        REPO_DIR="$HOME/soft/nas"
+    fi
 fi
 
 # 检测 CPU 架构

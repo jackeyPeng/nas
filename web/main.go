@@ -66,7 +66,34 @@ const (
 	defaultPass = common.DefaultPass
 )
 
+// parseVersionFlag 判断命令行参数是否请求打印版本号（--version 或 -v）。
+// 独立抽出便于单测，且保证 main() 在任何初始化之前就能做出早退判断。
+func parseVersionFlag(args []string) bool {
+	if len(args) < 2 {
+		return false
+	}
+	for _, a := range args[1:] {
+		if a == "--version" || a == "-v" {
+			return true
+		}
+	}
+	return false
+}
+
+// printVersion 输出单行版本信息，不触碰任何文件/DB/网络/journal。
+func printVersion() {
+	fmt.Printf("nas-panel %s (commit %s, built %s)\n", version.DisplayVersion, version.GitCommit, version.BuildTime)
+}
+
 func main() {
+	// --version/-v 必须在任何 config/env/DB/journal 初始化之前早退，
+	// 否则 backup-config.sh 等脚本以 root 调用时会以 root 身份初始化全部
+	// 面板数据库（属主污染）甚至拉起一个监听 :8090 的 root 权限面板实例。
+	if parseVersionFlag(os.Args) {
+		printVersion()
+		os.Exit(0)
+	}
+
 	// Load config
 	nasUser = os.Getenv("NAS_USER")
 	if nasUser == "" {

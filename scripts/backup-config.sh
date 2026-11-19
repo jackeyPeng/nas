@@ -113,8 +113,10 @@ if [ -d "/opt/nas/data" ]; then
 fi
 
 # nas-panel 二进制版本信息
+# timeout 5 防回归：--version 现已在面板最顶部早退（不建 DB/不监听端口），
+# 但仍加超时兜底，避免未来某次改动意外把这里的 root 调用重新挂到完整初始化上。
 if [ -f "/usr/local/bin/nas-panel" ]; then
-    /usr/local/bin/nas-panel --version 2>/dev/null > "${BACKUP_PATH}/nas-panel-version.txt" || \
+    timeout 5 /usr/local/bin/nas-panel --version 2>/dev/null > "${BACKUP_PATH}/nas-panel-version.txt" || \
         echo "unknown" > "${BACKUP_PATH}/nas-panel-version.txt"
     echo "  ✓ nas-panel 版本信息"
 fi
