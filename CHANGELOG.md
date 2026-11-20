@@ -2,6 +2,7 @@
 
 ## [未发布]
 
+- feat(apps): M1-4 健康纳管 — healthz 60s 轮询/状态翻转才发事件/不自动重启/注册表应用健康项（APP-SPEC §6）
 - feat(apps): M1-3 统一入口 — /apps/<id>/ 反代 + 会话门禁 + X-NAS SSO header 注入（伪造剥离）
 - feat(apps): M1-2 应用注册与生命周期（两步安装/启停/升级回滚/卸载，sudo 白名单最小化增量）
 

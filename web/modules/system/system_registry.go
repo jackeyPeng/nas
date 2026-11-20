@@ -45,6 +45,41 @@ var (
 	registryDBOnce sync.Once
 )
 
+// appHealthItems 保存 apps 模块上报的「每应用健康」注册表行快照（M1-4,
+// APP-SPEC §6）。这些行是动态的（随应用安装/卸载增减），与 41 项静态
+// 目录（allRegistryItems，固定 ID）性质不同，不写入 registry 表、不经
+// syncRegistryMeta 的按 ID 剪枝逻辑——只在内存持有最新快照，GetRegistry/
+// RefreshRegistry 读时合并展示。apps 模块每次调用 SetAppHealthItems 都
+// 传入「当前已安装应用的完整健康行集合」（全量覆盖，不是增量），卸载后
+// 应用自然从下一次调用的快照里消失，不需要额外的剪除逻辑。
+var (
+	appHealthItemsMu sync.Mutex
+	appHealthItems   []RegistryItem
+)
+
+// SetAppHealthItems 替换当前的应用健康注册表行快照（apps 模块的健康轮询器
+// 在状态翻转后调用）。items 为空切片或 nil 表示当前无已安装应用。
+func SetAppHealthItems(items []RegistryItem) {
+	appHealthItemsMu.Lock()
+	defer appHealthItemsMu.Unlock()
+	appHealthItems = append([]RegistryItem(nil), items...)
+}
+
+// getAppHealthItemsSnapshot 返回当前应用健康行快照的拷贝。
+func getAppHealthItemsSnapshot() []RegistryItem {
+	appHealthItemsMu.Lock()
+	defer appHealthItemsMu.Unlock()
+	return append([]RegistryItem(nil), appHealthItems...)
+}
+
+// GetAppHealthItemsForTest 导出当前应用健康行快照，供 apps 模块测试直接
+// 断言 SetAppHealthItems 推送的内容，不经 GetRegistry()（registry.db 落在
+// /opt/nas/data，沙箱环境该目录对非 root 不可写，GetRegistry 会降级为空
+// report，无法用它验证本函数的行为）。
+func GetAppHealthItemsForTest() []RegistryItem {
+	return getAppHealthItemsSnapshot()
+}
+
 // registryDBPath returns the path to the registry database
 func registryDBPath() string {
 	dir := "/opt/nas/data"
@@ -478,6 +513,22 @@ func GetRegistry() RegistryReport {
 	for rows.Next() {
 		var item RegistryItem
 		rows.Scan(&item.ID, &item.Category, &item.Name, &item.Status, &item.Detail, &item.Description, &item.CheckedAt)
+		report.Total++
+		switch item.Status {
+		case "pass":
+			report.Passed++
+		case "fail":
+			report.Failed++
+		case "warn":
+			report.Warn++
+		case "pending":
+			report.Pending++
+		}
+		report.Items = append(report.Items, item)
+	}
+
+	// 合并应用健康行（动态，不落 registry 表，见 appHealthItems 注释）。
+	for _, item := range getAppHealthItemsSnapshot() {
 		report.Total++
 		switch item.Status {
 		case "pass":

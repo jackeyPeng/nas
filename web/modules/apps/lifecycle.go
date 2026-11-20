@@ -66,11 +66,14 @@ func InitApps(dataDir string) error {
 	return nil
 }
 
-// RegisterRoutes 注册 apps 模块全部路由（均需管理员会话）。
+// RegisterRoutes 注册 apps 模块全部路由（均需管理员会话），并启动后台
+// 健康轮询器（M1-4，与 monitor.startSampler 同一接线模式：谁注册路由谁
+// 负责启动对应的后台 goroutine）。
 func RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/apps", common.AdminMiddleware(handleAppsList))
 	mux.HandleFunc("/api/apps/install", common.AdminMiddleware(handleInstall))
 	mux.HandleFunc("/api/apps/", common.AdminMiddleware(handleAppsDispatch))
+	startHealthPoller()
 }
 
 // RegisterRoutesBare 跳过 AdminMiddleware，只挂裸 handler，供单测直接发
@@ -122,6 +125,8 @@ func handleAppsDispatch(w http.ResponseWriter, r *http.Request) {
 			handleAppAction(w, r, id, "restart")
 		case "upgrade":
 			handleUpgrade(w, r, id)
+		case "health":
+			handleAppHealth(w, r, id)
 		default:
 			httpError(w, http.StatusNotFound, "未知路由")
 		}
@@ -262,6 +267,7 @@ func handleInstall(w http.ResponseWriter, r *http.Request) {
 			Port:    port,
 			Unit:    appUnitName(id),
 			Secret:  "",
+			Healthz: pkg.Manifest.Healthz,
 			Status:  statusPending,
 		}); err != nil {
 			httpError(w, http.StatusInternalServerError, "写入台账失败: "+err.Error())
@@ -271,8 +277,8 @@ func handleInstall(w http.ResponseWriter, r *http.Request) {
 		// 已存在 pending 记录（上次 install 后未 confirm，重新上传覆盖）：
 		// 释放旧端口占位，按新分配端口更新。
 		releasePort(reg.db, existing.Port)
-		if _, err := reg.db.Exec(`UPDATE installed SET name=?, version=?, spec=?, port=?, status=?, updated_at=? WHERE id=?`,
-			pkg.Manifest.Name, pkg.Manifest.Version, pkg.Manifest.Spec, port, statusPending, time.Now().Format(time.RFC3339), id); err != nil {
+		if _, err := reg.db.Exec(`UPDATE installed SET name=?, version=?, spec=?, port=?, healthz=?, status=?, updated_at=? WHERE id=?`,
+			pkg.Manifest.Name, pkg.Manifest.Version, pkg.Manifest.Spec, port, pkg.Manifest.Healthz, statusPending, time.Now().Format(time.RFC3339), id); err != nil {
 			httpError(w, http.StatusInternalServerError, "更新台账失败: "+err.Error())
 			return
 		}
@@ -715,7 +721,7 @@ func handleUpgrade(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 
-	updateInstalledAppVersion(reg.db, id, pkg.Manifest.Name, pkg.Manifest.Version, pkg.Manifest.Spec, statusInstalled)
+	updateInstalledAppVersion(reg.db, id, pkg.Manifest.Name, pkg.Manifest.Version, pkg.Manifest.Spec, pkg.Manifest.Healthz, statusInstalled)
 	common.LogAuditRequest(r, auditCategory, "升级应用", fmt.Sprintf("%s: %s -> %s", id, a.Version, pkg.Manifest.Version), "成功")
 	common.EmitEvent("apps", common.EventSuccess, "apps.upgraded", map[string]interface{}{
 		"id": id, "from": a.Version, "to": pkg.Manifest.Version,

@@ -30,7 +30,7 @@ import (
 // 扫描方法与结果详见 OPENCODE-REPORT-F1-R1.md「边界测试基线 map」一节。
 var allowedModuleDeps = map[string][]string{
 	"ai":       {"diagnostics", "diskmgmt", "firewall", "logs", "monitor", "system", "users", "tasks"},
-	"apps":     {"version"}, // M1-2 checkCoreCompat 读 version.DisplayVersion 做兼容性校验
+	"apps":     {"version", "system"}, // M1-2 checkCoreCompat 读 version.DisplayVersion 做兼容性校验；system 是 M1-4 健康纳管新增依赖：健康轮询翻转调 system.ScheduleRegistryRefresh + system.SetAppHealthItems 推送应用健康项，有意依赖
 	"filemgmt": {"diskmgmt"},
 	"health":   {"dashboard"},
 	"monitor":  {"dashboard"},

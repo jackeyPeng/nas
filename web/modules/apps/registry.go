@@ -27,6 +27,7 @@ type installedApp struct {
 	Port        int
 	Unit        string
 	Secret      string
+	Healthz     string
 	Status      string
 	InstalledAt string
 	UpdatedAt   string
@@ -70,19 +71,22 @@ func openAppsDB(dataDir string) (*sql.DB, error) {
 		db.Close()
 		return nil, fmt.Errorf("建表失败: %w", err)
 	}
-	// secret 列是后补的（历史库可能没有）：忽略"duplicate column"错误，
-	// 兼容已存在未带 secret 列的 installed 表（防御性迁移，当前 M1-2 是
-	// 新建库场景，此分支在全新安装下不会触发，仅为未来演进留口）。
+	// secret/healthz 列是后补的（历史库可能没有）：忽略"duplicate column"
+	// 错误，兼容已存在未带该列的 installed 表（防御性迁移，当前 M1-2/M1-4
+	// 均是新建库场景，此分支在全新安装下不会触发，仅为未来演进留口）。
 	db.Exec(`ALTER TABLE installed ADD COLUMN secret TEXT NOT NULL DEFAULT ''`)
+	// healthz 是 M1-4 新增：持久化 manifest.Healthz 路径供后台健康轮询器
+	// 使用（轮询器不持有 pkg.Manifest，只能从台账读取）。
+	db.Exec(`ALTER TABLE installed ADD COLUMN healthz TEXT NOT NULL DEFAULT ''`)
 	return db, nil
 }
 
 // getInstalledApp 按 id 查台账记录；不存在返回 (nil, nil)。
 func getInstalledApp(db *sql.DB, id string) (*installedApp, error) {
-	row := db.QueryRow(`SELECT id, name, version, spec, port, unit, secret, status, installed_at, updated_at
+	row := db.QueryRow(`SELECT id, name, version, spec, port, unit, secret, healthz, status, installed_at, updated_at
 		FROM installed WHERE id = ?`, id)
 	var a installedApp
-	err := row.Scan(&a.ID, &a.Name, &a.Version, &a.Spec, &a.Port, &a.Unit, &a.Secret, &a.Status, &a.InstalledAt, &a.UpdatedAt)
+	err := row.Scan(&a.ID, &a.Name, &a.Version, &a.Spec, &a.Port, &a.Unit, &a.Secret, &a.Healthz, &a.Status, &a.InstalledAt, &a.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -94,7 +98,7 @@ func getInstalledApp(db *sql.DB, id string) (*installedApp, error) {
 
 // listInstalledApps 返回全部已安装应用（含 pending），按 id 排序。
 func listInstalledApps(db *sql.DB) ([]installedApp, error) {
-	rows, err := db.Query(`SELECT id, name, version, spec, port, unit, secret, status, installed_at, updated_at
+	rows, err := db.Query(`SELECT id, name, version, spec, port, unit, secret, healthz, status, installed_at, updated_at
 		FROM installed ORDER BY id`)
 	if err != nil {
 		return nil, err
@@ -104,7 +108,7 @@ func listInstalledApps(db *sql.DB) ([]installedApp, error) {
 	var out []installedApp
 	for rows.Next() {
 		var a installedApp
-		if err := rows.Scan(&a.ID, &a.Name, &a.Version, &a.Spec, &a.Port, &a.Unit, &a.Secret, &a.Status, &a.InstalledAt, &a.UpdatedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.Name, &a.Version, &a.Spec, &a.Port, &a.Unit, &a.Secret, &a.Healthz, &a.Status, &a.InstalledAt, &a.UpdatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, a)
@@ -117,9 +121,9 @@ func insertInstalledApp(db *sql.DB, a installedApp) error {
 	now := time.Now().Format(time.RFC3339)
 	a.InstalledAt = now
 	a.UpdatedAt = now
-	_, err := db.Exec(`INSERT INTO installed (id, name, version, spec, port, unit, secret, status, installed_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		a.ID, a.Name, a.Version, a.Spec, a.Port, a.Unit, a.Secret, a.Status, a.InstalledAt, a.UpdatedAt)
+	_, err := db.Exec(`INSERT INTO installed (id, name, version, spec, port, unit, secret, healthz, status, installed_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		a.ID, a.Name, a.Version, a.Spec, a.Port, a.Unit, a.Secret, a.Healthz, a.Status, a.InstalledAt, a.UpdatedAt)
 	return err
 }
 
@@ -131,9 +135,10 @@ func updateInstalledAppStatus(db *sql.DB, id, status string) error {
 }
 
 // updateInstalledAppVersion 升级成功后更新版本号与状态（保留原 id/port/unit/secret）。
-func updateInstalledAppVersion(db *sql.DB, id, name, version, spec, status string) error {
-	_, err := db.Exec(`UPDATE installed SET name = ?, version = ?, spec = ?, status = ?, updated_at = ? WHERE id = ?`,
-		name, version, spec, status, time.Now().Format(time.RFC3339), id)
+// healthz 一并更新：新版本 manifest 可能变更了健康检查路径，轮询器必须跟随。
+func updateInstalledAppVersion(db *sql.DB, id, name, version, spec, healthz, status string) error {
+	_, err := db.Exec(`UPDATE installed SET name = ?, version = ?, spec = ?, healthz = ?, status = ?, updated_at = ? WHERE id = ?`,
+		name, version, spec, healthz, status, time.Now().Format(time.RFC3339), id)
 	return err
 }
 
