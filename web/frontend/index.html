@@ -257,6 +257,9 @@
                 </li>
                 <template x-if="navGroup === 'toolbox'">
                     <div>
+                        <li :class="{active: page === 'apps'}" @click="navigate('apps')">
+                            <span style="margin-left:var(--sp-5)">🧩</span> <span x-text="$t('nav.apps')"></span>
+                        </li>
                         <li :class="{active: page === 'vault'}" @click="navigate('vault')">
                             <span style="margin-left:var(--sp-5)">🔐</span> <span x-text="$t('nav.vault')"></span>
                         </li>
@@ -2862,6 +2865,80 @@
                 </div>
             </div>
 
+            <!-- 应用中心（M1-5，APP-SPEC §3.3/§4） -->
+            <div x-show="page === 'apps'" class="page" x-transition.opacity.duration.300ms>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--sp-4)">
+                    <h2 style="margin:0">🧩 <span x-text="$t('apps.title')"></span></h2>
+                    <button class="btn btn-primary" @click="openInstallDialog()" x-text="$t('apps.install_app')"></button>
+                </div>
+                <div class="empty-state" x-show="!appsLoading && !appsList.length"><span class="empty-state__icon">🧩</span><span class="empty-state__title" x-text="$t('apps.no_apps')"></span><span class="empty-state__hint" x-text="$t('apps.no_apps_hint')"></span></div>
+                <div class="cards" x-show="appsList.length">
+                    <template x-for="app in appsList" :key="app.id"><div class="card">
+                        <div style="display:flex;justify-content:space-between;align-items:start">
+                            <div><div style="font-weight:600;font-size:var(--fs-base)" x-text="app.name"></div><div style="font-size:var(--fs-xs);color: var(--text-light);margin-top:2px" x-text="'v' + app.version"></div></div>
+                            <span class="badge-xs" :style="appHealthBadge(app.id).style" x-text="appHealthBadge(app.id).text"></span>
+                        </div>
+                        <div style="display:flex;gap:var(--sp-2);margin-top:var(--sp-4)">
+                            <button class="btn btn-sm btn-primary" @click="openApp(app)" x-text="$t('apps.open')"></button>
+                            <button class="btn btn-sm" @click="openAppDetail(app)" x-text="$t('apps.manage')"></button>
+                        </div>
+                    </div></template>
+                </div>
+                <!-- 应用市场（v1 只读占位，M2 接 index.json） -->
+                <div style="margin-top:var(--sp-6);background: var(--card-bg);border:1px solid var(--border);border-radius:var(--radius-lg);padding:var(--sp-5)">
+                    <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:var(--fs-base);font-weight:600" x-text="$t('apps.market_title')"></span><button class="btn btn-sm" x-text="$t('common.refresh')"></button></div>
+                    <p style="color: var(--text-light);margin:var(--sp-2) 0 0" x-text="$t('apps.market_soon')"></p>
+                </div>
+                <!-- 安装/升级共用：Step1 上传 -> Step2 权限确认（升级一步到位，无需确认） -->
+                <div class="modal" x-show="appsPkg.show" x-cloak @click.self="cancelPkgDialog()"><div class="modal-box" style="max-width:520px">
+                    <h3 x-text="$t(appsPkg.mode === 'install' ? 'apps.install_app' : 'apps.upgrade')"></h3>
+                    <template x-if="appsPkg.step === 'upload'"><div>
+                        <label x-text="$t('apps.package_file')"></label><input type="file" accept=".tar.gz,.tgz" @change="onPkgPicked($event)">
+                        <label style="margin-top:var(--sp-3);display:block" x-text="$t('apps.sig_file')"></label><input type="file" accept=".sig" @change="onSigPicked($event)">
+                        <div class="modal-actions"><button class="btn" @click="cancelPkgDialog()" x-text="$t('common.cancel')"></button><button class="btn btn-primary" @click="submitPkg()" :disabled="appsPkg.submitting" x-text="$t(appsPkg.mode === 'install' ? 'common.next' : 'apps.confirm_upgrade')"></button></div>
+                    </div></template>
+                    <template x-if="appsPkg.step === 'confirm' && appsPkg.pending"><div>
+                        <p x-text="$t('apps.confirm_perm_intro')"></p>
+                        <ul>
+                            <li x-show="appsPkg.pending.storagePaths && appsPkg.pending.storagePaths.length"><span x-text="$t('apps.perm_storage')"></span>: <template x-for="p in appsPkg.pending.storagePaths" :key="p"><div style="font-family:monospace;font-size:var(--fs-xs)" x-text="p"></div></template></li>
+                            <li x-show="appsPkg.pending.db && appsPkg.pending.db !== 'none'"><span x-text="$t('apps.perm_db')"></span>: <span x-text="appsPkg.pending.db"></span></li>
+                            <li x-show="appsPkg.pending.dataDir"><span x-text="$t('apps.perm_datadir')"></span></li>
+                        </ul>
+                        <div class="modal-actions"><button class="btn" @click="cancelPkgDialog()" x-text="$t('common.cancel')"></button><button class="btn btn-primary" @click="confirmInstall()" :disabled="appsPkg.submitting" x-text="$t('apps.confirm_install')"></button></div>
+                    </div></template>
+                </div></div>
+                <!-- 详情抽屉 -->
+                <div class="modal" x-show="appsDetail.show" x-cloak @click.self="closeAppDetail()"><div class="modal-box" style="max-width:560px">
+                    <template x-if="appsDetail.data"><div>
+                        <h3 x-text="appsDetail.data.name + ' (v' + appsDetail.data.version + ')'"></h3>
+                        <div style="font-size:var(--fs-sm);color: var(--text-light)">
+                            <div x-text="$t('apps.detail_status') + ': ' + appsDetail.data.status + ' / ' + appsDetail.data.activeState"></div>
+                            <div x-text="$t('apps.detail_installed_at') + ': ' + appsDetail.data.installedAt"></div>
+                        </div>
+                        <div style="margin-top:var(--sp-3);display:flex;align-items:center;gap:var(--sp-2)">
+                            <span class="badge-xs" :style="appHealthBadge(appsDetail.id).style" x-text="appHealthBadge(appsDetail.id).text"></span>
+                            <span style="font-size:var(--fs-xs);color: var(--text-light)" x-text="$t('apps.consecutive_fail') + ': ' + ((appsHealthMap[appsDetail.id] || {}).consecutiveFail || 0)"></span>
+                            <span style="font-size:var(--fs-xs);color: var(--text-light)" x-text="$t('apps.last_probe') + ': ' + ((appsHealthMap[appsDetail.id] || {}).lastProbeAt || '-')"></span>
+                        </div>
+                        <div style="display:flex;gap:var(--sp-2);margin-top:var(--sp-4)">
+                            <button class="btn btn-sm btn-success" @click="appAction('start')" :disabled="appsDetail.acting" x-text="$t('apps.start')"></button>
+                            <button class="btn btn-sm" @click="appAction('stop')" :disabled="appsDetail.acting" x-text="$t('apps.stop')"></button>
+                            <button class="btn btn-sm" @click="appAction('restart')" :disabled="appsDetail.acting" x-text="$t('apps.restart')"></button>
+                            <button class="btn btn-sm btn-primary" @click="openUpgradeDialog()" x-text="$t('apps.upgrade')"></button>
+                            <button class="btn btn-sm btn-danger" @click="openDeleteDialog()" x-text="$t('apps.uninstall')"></button>
+                        </div>
+                        <!-- 卸载子对话框：保留数据 + 二次确认 -->
+                        <template x-if="appsDetail.delete.show"><div style="margin-top:var(--sp-4);border-top:1px solid var(--border);padding-top:var(--sp-4)">
+                            <label style="display:flex;align-items:center;gap:var(--sp-2)"><input type="checkbox" x-model="appsDetail.delete.keepData"><span x-text="$t('apps.keep_data')"></span></label>
+                            <p style="color: var(--danger);font-size:var(--fs-sm)" x-text="$t('apps.delete_confirm_hint', [appsDetail.id])"></p>
+                            <input type="text" x-model="appsDetail.delete.confirmText" :placeholder="appsDetail.id" style="width:100%">
+                            <div class="modal-actions"><button class="btn" @click="cancelDeleteApp()" x-text="$t('common.cancel')"></button><button class="btn btn-danger" @click="confirmDeleteApp()" x-text="$t('apps.confirm_uninstall')"></button></div>
+                        </div></template>
+                    </div></template>
+                    <div class="modal-actions" x-show="appsDetail.data"><button class="btn" @click="closeAppDetail()" x-text="$t('common.close')"></button></div>
+                </div></div>
+            </div>
+
             <!-- 密码生成器（独立工具，不依赖保险箱） -->
             <div x-show="page === 'pwgen'" class="page" x-transition.opacity.duration.300ms>
                 <h2 style="margin-bottom:var(--sp-4)">🔑 <span x-text="$t('pwgen.title')"></span></h2>
@@ -3904,6 +3981,7 @@
         </div>
 </div>
 <script src="zkvault.min.js" defer></script>
+<script src="apps.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
