@@ -2,6 +2,7 @@
 
 ## [未发布]
 
+- feat(apps): M1-6 hello-app 演示应用 + mkapp.sh 打包签名工具（APP-SPEC 参考实现）
 - feat(apps): M1-5 前端 — 应用中心/应用详情/两步权限确认（独立 apps.js，单页不膨胀约束）
 - feat(apps): M1-4 健康纳管 — healthz 60s 轮询/状态翻转才发事件/不自动重启/注册表应用健康项（APP-SPEC §6）
 - feat(apps): M1-3 统一入口 — /apps/<id>/ 反代 + 会话门禁 + X-NAS SSO header 注入（伪造剥离）

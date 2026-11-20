@@ -1,0 +1,21 @@
+{
+  "id": "hello",
+  "name": "Hello 演示",
+  "icon": "icon.png",
+  "version": "1.0.0",
+  "spec": "1.0",
+  "minCoreVersion": "1.4.0",
+  "port": 18001,
+  "entry": "/apps/hello/",
+  "healthz": "/apps/hello/healthz",
+  "permissions": {
+    "storage": [],
+    "db": "none",
+    "cache": false,
+    "mqtt": { "sub": [], "pub": [] },
+    "notifications": false,
+    "requires": []
+  },
+  "dataDir": true,
+  "upgrade": { "minUpgradeFrom": "1.0.0" }
+}
