@@ -213,6 +213,7 @@ func main() {
 	filemgmt.RegisterRoutes(mux)
 	ai.RegisterRoutes(mux)
 	apps.RegisterRoutes(mux)
+	apps.RegisterProxyRoutes(mux)
 	tasks.RegisterRoutes(mux, ai.IsEnabled)
 	notifications.RegisterRoutes(mux, ai.IsEnabled)
 	triggers.RegisterRoutes(mux, ai.IsEnabled)
