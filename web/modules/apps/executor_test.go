@@ -225,3 +225,47 @@ func (f *fakeExecutor) LookupUser(username string) (int, int, error) {
 	}
 	return u.uid, u.gid, nil
 }
+
+// ProvisionAppDirs 模拟 nas-app-provision.sh provision <id> <nas_user>：
+// 记录与生产 defaultExecutor 逐字一致的调用形状（含 common.GetNASUser()
+// 的值，测试固定用 "fm"），并在 fsRoot 沙箱下真实建出程序目录+数据目录，
+// 因为 writeAppFiles 紧接着要在 programDir 下真实 WriteFile。
+func (f *fakeExecutor) ProvisionAppDirs(id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.record("nas-app-provision.sh provision %s fm", id)
+	if err := f.failNow("ProvisionAppDirs"); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(f.sandboxPath(appProgramDir(id)), 0755); err != nil {
+		return err
+	}
+	return os.MkdirAll(f.sandboxPath(appDataDir(id)), 0750)
+}
+
+// ChownApp 模拟 nas-app-provision.sh chown-app <id> <path>：只记录调用
+// 形状，不做真实 chown（沙箱内全程以当前测试进程身份跑，chown 没有意义）。
+func (f *fakeExecutor) ChownApp(id, path string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.record("nas-app-provision.sh chown-app %s %s", id, path)
+	return f.failNow("ChownApp")
+}
+
+// RemoveAppDirs 模拟 nas-app-provision.sh remove <id> <keepdata>：记录
+// 调用形状并在沙箱下真实删除程序目录，keepData 为 false 时一并删数据目录。
+func (f *fakeExecutor) RemoveAppDirs(id string, keepData bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.record("nas-app-provision.sh remove %s %t", id, keepData)
+	if err := f.failNow("RemoveAppDirs"); err != nil {
+		return err
+	}
+	if err := os.RemoveAll(f.sandboxPath(appProgramDir(id))); err != nil {
+		return err
+	}
+	if !keepData {
+		return os.RemoveAll(f.sandboxPath(appDataDir(id)))
+	}
+	return nil
+}

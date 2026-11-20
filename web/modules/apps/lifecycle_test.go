@@ -165,6 +165,8 @@ func TestInstallTwoStepFlow_PendingThenConfirmed(t *testing.T) {
 
 	wantCalls := []string{
 		"useradd -r -s /usr/sbin/nologin nasapp-photos",
+		"nas-app-provision.sh provision photos fm",
+		"nas-app-provision.sh chown-app photos /data/nas1/photos",
 		"systemctl daemon-reload",
 		"systemctl enable nas-app-photos.service",
 		"systemctl start nas-app-photos.service",
@@ -300,6 +302,70 @@ func TestDelete_RemovesUserUnitAndPortButKeepsStoragePaths(t *testing.T) {
 	rec = doRequest(mux, http.MethodPost, "/api/apps/install", body2, ct2)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("install after delete: %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestDelete_PendingApp_CleansUpWithoutProvisioningSideEffects 覆盖 M1-6b
+// 真机验收发现的死锁 bug：install 第一步（验签/暂存/分配端口）成功但
+// confirm 未执行（或执行前用户放弃）时，应用台账停在 pending，此时没有
+// 任何用户/目录/unit 被创建过。此前 DELETE 对 pending 应用走的是"已安装
+// 应用"的完整清理路径（StopUnit/RemoveAppDirs/DelAppUser...），卡在
+// 不存在的 unit/目录上导致无法通过面板删除，只能手工改数据库才能摆脱
+// pending 态——本测试断言 DELETE 能正确清理且不产生任何 provision 类调用。
+func TestDelete_PendingApp_CleansUpWithoutProvisioningSideEffects(t *testing.T) {
+	mux, fe := setupLifecycleTest(t)
+	tb, sig := buildSignedPackage(t, appEntriesWithID("photos", "1.0.0"))
+	body, ct := multipartInstallBody(t, tb, sig)
+	rec := doRequest(mux, http.MethodPost, "/api/apps/install", body, ct)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("install step1: %d body=%s", rec.Code, rec.Body.String())
+	}
+	var pending pendingInstallResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &pending); err != nil {
+		t.Fatalf("decode pending response: %v", err)
+	}
+
+	// install 第一步不应产生任何 Executor 副作用（与
+	// TestInstallTwoStepFlow_PendingThenConfirmed 的断言一致）。
+	if len(fe.calls) != 0 {
+		t.Fatalf("install step1 不应产生任何 Executor 副作用调用，got: %v", fe.calls)
+	}
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/apps/photos", strings.NewReader(`{"keepData":false}`))
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("delete pending: %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	// pending 清理不涉及任何 provision 相关的 Executor 调用（没建过东西，
+	// 也没什么可删/可停）。
+	if len(fe.calls) != 0 {
+		t.Fatalf("pending 态 DELETE 不应产生任何 Executor 调用，got: %v", fe.calls)
+	}
+
+	// 台账行应已清除。
+	rec = doRequest(mux, http.MethodGet, "/api/apps/photos", nil, "")
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("pending 删除后应台账查不到: %d", rec.Code)
+	}
+
+	// 暂存的 tarball 应已清理。
+	if _, err := os.Stat(stagedTarballPath(reg.dataDir, "photos")); !os.IsNotExist(err) {
+		t.Fatalf("pending 删除后暂存 tarball 应已清理，stat err=%v", err)
+	}
+
+	// 端口释放后可被新安装复用。
+	tb2, sig2 := buildSignedPackage(t, appEntriesWithID("gallery", "1.0.0"))
+	body2, ct2 := multipartInstallBody(t, tb2, sig2)
+	rec = doRequest(mux, http.MethodPost, "/api/apps/install", body2, ct2)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("install after pending delete: %d body=%s", rec.Code, rec.Body.String())
+	}
+	var pending2 pendingInstallResponse
+	json.Unmarshal(rec.Body.Bytes(), &pending2)
+	if pending2.Port != pending.Port {
+		t.Errorf("端口应被释放复用，原端口 %d，新分配 %d", pending.Port, pending2.Port)
 	}
 }
 

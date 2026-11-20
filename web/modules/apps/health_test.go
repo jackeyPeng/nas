@@ -69,6 +69,9 @@ func (f *toggleExecutor) WriteFile(path string, data []byte, mode os.FileMode) e
 	return nil
 }
 func (f *toggleExecutor) LookupUser(username string) (int, int, error) { return 0, 0, nil }
+func (f *toggleExecutor) ProvisionAppDirs(id string) error             { return nil }
+func (f *toggleExecutor) ChownApp(id, path string) error               { return nil }
+func (f *toggleExecutor) RemoveAppDirs(id string, keepData bool) error { return nil }
 
 // setupHealthTest 打开一个全新 apps.db，装入 toggleExecutor，并初始化
 // 事件总线（同步消费模式，配合 common.DrainEventsForTest）。不调用

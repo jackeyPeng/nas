@@ -394,35 +394,45 @@ func provisionApp(exec Executor, id string, pkg *AppPackage, port int, secret st
 			return fmt.Errorf("创建应用用户失败: %w", err)
 		}
 	}
-	uid, gid, err := exec.LookupUser(username)
-	if err != nil {
-		return fmt.Errorf("查询应用用户 uid/gid 失败: %w", err)
+	// LookupUser 仅用于确认用户确实存在（ProvisionAppDirs 内部也会校验，
+	// 这里提前查一次给出更早、更明确的错误信息）；uid/gid 本身不再需要——
+	// chown 改由 ProvisionAppDirs/ChownApp 内的收口脚本完成（M1-6b）。
+	if _, _, err := exec.LookupUser(username); err != nil {
+		return fmt.Errorf("查询应用用户失败: %w", err)
 	}
 
 	programDir := appProgramDir(id)
 	dataDir := appDataDir(id)
 
-	// 程序目录：root 属主，应用用户只读（§3.1）——不 chown 给应用用户，
-	// 用 -1/-1 表示跳过 chown，目录保持创建者（root，因为 MkdirAllChown
-	// 在生产 Executor 下由面板进程直接调用 os.MkdirAll，面板进程非 root
-	// 时这里会失败；M1 面板仍以具备写 /var/lib/nas 权限的身份运行，
-	// 与 diskmgmt 等模块对 /var/lib/nas-monitor 等路径的既有假设一致）。
-	if err := exec.MkdirAllChown(programDir, 0755, -1, -1); err != nil {
-		return fmt.Errorf("创建程序目录失败: %w", err)
+	// 程序目录 + 数据目录：M1-6b 真机实测（.48）发现面板以 fm 运行时
+	// 对 /var/lib 无写权，裸 MkdirAllChown（面板进程直接 os.MkdirAll/
+	// os.Chown）在真机上失败（"mkdir /var/lib/nas: permission denied"）。
+	// 改经 ProvisionAppDirs 走 nas-app-provision.sh 收口脚本：程序目录
+	// chown 给面板自身的 NAS_USER（默认 fm）0755（面板进程紧接着要用
+	// 自己的身份把程序文件写进这个目录，见下面 writeAppFiles，不能是
+	// root:root）+ chown nasapp-<id> 0750 建数据目录，一次调用两步都做
+	// （脚本内部固定形状，不接受分拆调用）。运行时应用用户对程序目录的
+	// 隔离由 unit 的 ProtectSystem=strict 硬化兜底，不依赖静态属主。
+	if err := exec.ProvisionAppDirs(id); err != nil {
+		return fmt.Errorf("供给应用目录失败: %w", err)
 	}
+	// writeAppFiles 内的 MkdirAllChown(..., -1, -1) 是面板进程直接
+	// os.MkdirAll（非 sudo），programDir 已在上一步 chown 给面板自身
+	// 用户，面板对其下建子目录/写文件天然有权限，无需再走收口脚本。
 	if err := writeAppFiles(exec, programDir, pkg.Files); err != nil {
 		return fmt.Errorf("写入程序文件失败: %w", err)
 	}
 
-	// 数据目录：chown 给应用用户（§3.1「应用用户可写」）。
-	if err := exec.MkdirAllChown(dataDir, 0750, uid, gid); err != nil {
-		return fmt.Errorf("创建数据目录失败: %w", err)
-	}
-
-	// manifest 声明的 storage 路径：核心创建并 chown 应用用户（§2/§3.1）。
+	// manifest 声明的 storage 路径：mkdir 走既有 /bin/mkdir -p /data/*
+	// 白名单条目（面板侧已有，storage 路径恒以 /data/ 开头，见
+	// manifest.go 校验），chown 给应用用户则经 ChownApp（M1-6b：裸
+	// chown *:* 任意路径是 root-equivalent，不进白名单）。
 	for _, p := range pkg.Manifest.Permissions.Storage {
-		if err := exec.MkdirAllChown(p, 0750, uid, gid); err != nil {
+		if _, err := common.SudoExec("mkdir", "-p", p); err != nil {
 			return fmt.Errorf("创建 storage 路径 %s 失败: %w", p, err)
+		}
+		if err := exec.ChownApp(id, p); err != nil {
+			return fmt.Errorf("设置 storage 路径 %s 属主失败: %w", p, err)
 		}
 	}
 
@@ -759,21 +769,27 @@ func upgradeApp(exec Executor, id string, old installedApp, newPkg *AppPackage) 
 	}
 
 	username := appSystemUser(id)
-	if err := exec.MkdirAllChown(programDir, 0755, -1, -1); err != nil {
+	// ProvisionAppDirs 是幂等的（mkdir -p + chown 对已存在目录重复执行无
+	// 副作用），升级时旧程序目录已被 Rename 挪到 backupDir，这里相当于
+	// 重新创建一个空的程序目录（与原 MkdirAllChown(..., -1, -1) 语义一致，
+	// 数据目录本就已存在，provision 脚本重复 mkdir+chown 不改变其内容）。
+	if err := exec.ProvisionAppDirs(id); err != nil {
 		return rollback(fmt.Errorf("创建新程序目录失败: %w", err))
 	}
 	if err := writeAppFiles(exec, programDir, newPkg.Files); err != nil {
 		return rollback(fmt.Errorf("写入新程序文件失败: %w", err))
 	}
 
-	uid, gid, err := exec.LookupUser(username)
-	if err != nil {
+	if _, _, err := exec.LookupUser(username); err != nil {
 		return rollback(fmt.Errorf("查询应用用户失败: %w", err))
 	}
 	dataDir := appDataDir(id)
 	for _, p := range newPkg.Manifest.Permissions.Storage {
-		if err := exec.MkdirAllChown(p, 0750, uid, gid); err != nil {
+		if _, err := common.SudoExec("mkdir", "-p", p); err != nil {
 			return rollback(fmt.Errorf("创建 storage 路径 %s 失败: %w", p, err))
+		}
+		if err := exec.ChownApp(id, p); err != nil {
+			return rollback(fmt.Errorf("设置 storage 路径 %s 属主失败: %w", p, err))
 		}
 	}
 
@@ -825,15 +841,35 @@ func handleAppDelete(w http.ResponseWriter, r *http.Request, id string) {
 		json.NewDecoder(r.Body).Decode(&req) // body 可省略，默认不保留数据
 	}
 
+	// pending 态（install 上传/验签通过，但 confirm 未执行或执行前失败）
+	// 尚未建用户/目录/unit，没有任何 provisionApp 副作用需要清理——只需
+	// 删台账行、放回端口、清掉暂存的 tarball。此前 DELETE 对 pending 应用
+	// 走的是下面已安装应用的完整清理路径，会卡在 StopUnit 等调用上
+	// （unit 文件压根不存在），导致 pending 装失败后无法通过面板删除，
+	// 用户只能手工改数据库——M1-6b 真机验收发现的死锁 bug。
+	if a.Status == statusPending {
+		os.Remove(stagedTarballPath(reg.dataDir, id))
+		releasePort(reg.db, a.Port)
+		deleteInstalledApp(reg.db, id)
+
+		common.LogAuditRequest(r, auditCategory, "卸载应用", fmt.Sprintf("%s（pending 态清理）", id), "成功")
+		common.EmitEvent("apps", common.EventInfo, "apps.deleted", map[string]interface{}{
+			"id": id, "keepData": req.KeepData,
+		}, "")
+
+		common.JSONResponse(w, map[string]interface{}{"id": id, "deleted": true, "keepData": req.KeepData})
+		return
+	}
+
 	exec := reg.executor
 	exec.StopUnit(a.Unit)
 	exec.DisableUnit(a.Unit)
 	exec.RemoveAll(systemdUnitPath(a.Unit))
 	exec.DaemonReload()
-	exec.RemoveAll(appProgramDir(id))
-	if !req.KeepData {
-		exec.RemoveAll(appDataDir(id))
-	}
+	// 数据目录属主是 nasapp-<id>，面板（fm）对其无 RemoveAll 权限，与
+	// 程序目录（属主即面板自身 NAS_USER，面板可直接 RemoveAll）一并经
+	// RemoveAppDirs 走 nas-app-provision.sh 收口脚本统一删除（M1-6b）。
+	exec.RemoveAppDirs(id, req.KeepData)
 	// manifest 声明的 storage 路径是用户数据区，卸载时永不删除——仅在详情页
 	// 里标记（§3.1「数据目录…卸载按用户选择」只提及 dataDir，storage 路径
 	// 属于池内用户数据，核心不得代为删除）。

@@ -66,6 +66,20 @@ type Executor interface {
 	WriteFile(path string, data []byte, mode os.FileMode) error
 	// LookupUser 返回系统用户的 uid/gid（ useradd 建号后查询，供 chown 用）。
 	LookupUser(username string) (uid, gid int, err error)
+
+	// ProvisionAppDirs 创建 /var/lib/nas/apps/<id>（chown 给面板自身的
+	// NAS_USER，默认 fm，0755——面板需直接写程序文件）与
+	// /var/lib/nas/apps-data/<id>（chown nasapp-<id> 0750），经
+	// nas-app-provision.sh（M1-6b：面板以 fm 运行对 /var/lib 无写权，
+	// 裸 mkdir/chown 不进白名单，收口脚本替代）。
+	ProvisionAppDirs(id string) error
+	// ChownApp 把 path（必须是 /var/lib/nas/apps-data/ 或 /data/ 前缀，
+	// 经 nas-app-provision.sh 内部校验）chown 给应用系统用户 nasapp-<id>，
+	// 供 manifest 声明的 storage 路径授权用。
+	ChownApp(id, path string) error
+	// RemoveAppDirs 删除 /var/lib/nas/apps/<id>；keepData 为 false 时
+	// 一并删除 /var/lib/nas/apps-data/<id>（卸载流程用）。
+	RemoveAppDirs(id string, keepData bool) error
 }
 
 // defaultExecutor 是生产环境实现：真实调用 common.SudoExec/os 包。
@@ -173,6 +187,28 @@ func (defaultExecutor) WriteFile(path string, data []byte, mode os.FileMode) err
 
 func (defaultExecutor) LookupUser(username string) (int, int, error) {
 	return lookupSystemUser(username)
+}
+
+// appProvisionScript 是 nas-app-provision.sh 收口脚本的绝对路径（§M1-6b，
+// 与 set-user-pass.sh 同一收口模式：整脚本进 sudoers 白名单，脚本内部做
+// id/path 形状校验后才执行真实 mkdir/chown）。
+const appProvisionScript = "/opt/nas/scripts/nas-app-provision.sh"
+
+func (defaultExecutor) ProvisionAppDirs(id string) error {
+	// 程序目录属主 = 面板自身的 NAS_USER（默认 fm），不是 root——面板
+	// 进程后续要以自己的身份直接写程序文件到这个目录（见 writeAppFiles）。
+	_, err := common.SudoExec(appProvisionScript, "provision", id, common.GetNASUser())
+	return err
+}
+
+func (defaultExecutor) ChownApp(id, path string) error {
+	_, err := common.SudoExec(appProvisionScript, "chown-app", id, path)
+	return err
+}
+
+func (defaultExecutor) RemoveAppDirs(id string, keepData bool) error {
+	_, err := common.SudoExec(appProvisionScript, "remove", id, strconv.FormatBool(keepData))
+	return err
 }
 
 // systemdUnitPath 返回 /etc/systemd/system/<unit> 的绝对路径。

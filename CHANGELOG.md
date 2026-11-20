@@ -2,6 +2,7 @@
 
 ## [未发布]
 
+- fix(apps): M1-6b 真机集成修复 — 应用目录供给/chown/清理走 nas-app-provision.sh 收口脚本（S1-R3b 模式，整脚本进 sudoers 白名单，裸 mkdir/chown 不进白名单），修复面板以 fm 非 root 运行时对 /var/lib/nas 无写权导致安装/升级/卸载全部失败的真机缺陷；DELETE /api/apps/<id> 对 pending 态应用（验签/暂存成功但未 confirm）走轻量清理（删台账行+暂存包+放端口），不再卡在从未创建过的用户/目录/unit 上导致无法卸载
 - feat(apps): M1-6 hello-app 演示应用 + mkapp.sh 打包签名工具（APP-SPEC 参考实现）
 - feat(apps): M1-5 前端 — 应用中心/应用详情/两步权限确认（独立 apps.js，单页不膨胀约束）
 - feat(apps): M1-4 健康纳管 — healthz 60s 轮询/状态翻转才发事件/不自动重启/注册表应用健康项（APP-SPEC §6）
