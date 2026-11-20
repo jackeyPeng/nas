@@ -15,6 +15,7 @@ import (
 
 	"nas-panel/common"
 	"nas-panel/modules/ai"
+	"nas-panel/modules/apps"
 	"nas-panel/modules/backup"
 	"nas-panel/modules/config"
 	"nas-panel/modules/dashboard"
@@ -167,6 +168,9 @@ func main() {
 		notifications.SetEnabledGuard(ai.IsEnabled)
 		notifications.StartSubscriber()
 	}
+	if err := apps.InitApps(dataDir); err != nil {
+		log.Printf("WARNING: apps registry init failed: %v", err)
+	}
 	if err := triggers.InitTriggers(dataDir); err != nil {
 		log.Printf("WARNING: triggers init failed: %v", err)
 	} else {
@@ -208,6 +212,7 @@ func main() {
 	events.RegisterRoutes(mux)
 	filemgmt.RegisterRoutes(mux)
 	ai.RegisterRoutes(mux)
+	apps.RegisterRoutes(mux)
 	tasks.RegisterRoutes(mux, ai.IsEnabled)
 	notifications.RegisterRoutes(mux, ai.IsEnabled)
 	triggers.RegisterRoutes(mux, ai.IsEnabled)
