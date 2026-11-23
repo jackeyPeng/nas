@@ -16,6 +16,7 @@ import (
 	"nas-panel/common"
 	"nas-panel/modules/ai"
 	"nas-panel/modules/apps"
+	"nas-panel/modules/base"
 	"nas-panel/modules/backup"
 	"nas-panel/modules/config"
 	"nas-panel/modules/dashboard"
@@ -218,6 +219,7 @@ func main() {
 	ai.RegisterRoutes(mux)
 	apps.RegisterRoutes(mux)
 	apps.RegisterProxyRoutes(mux)
+	base.RegisterRoutes(mux)
 	tasks.RegisterRoutes(mux, ai.IsEnabled)
 	notifications.RegisterRoutes(mux, ai.IsEnabled)
 	triggers.RegisterRoutes(mux, ai.IsEnabled)
