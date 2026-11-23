@@ -442,6 +442,10 @@ func provisionApp(exec Executor, id string, pkg *AppPackage, port int, secret st
 	if err := exec.WriteUnitFile(unit, unitContent); err != nil {
 		return fmt.Errorf("写入 unit 文件失败: %w", err)
 	}
+	// unit 指向的程序文件补执行位（写文件统一 0644，ExecStart 二进制必须可执行）
+	if err := markExecutables(programDir, unitContent); err != nil {
+		return fmt.Errorf("标记可执行文件失败: %w", err)
+	}
 
 	if _, err := exec.DaemonReload(); err != nil {
 		return fmt.Errorf("daemon-reload 失败: %w", err)
@@ -462,6 +466,9 @@ func provisionApp(exec Executor, id string, pkg *AppPackage, port int, secret st
 // writeAppFiles 把 AppPackage.Files（相对路径 -> 内容）落盘到 programDir 下。
 // unit.tpl/manifest.json/icon.png/README.md 一并落盘（供详情页展示与审计），
 // 与 app/ 下的实际程序文件同等对待——§1 规范未要求区分哪些文件该留存。
+// 普通文件统一 0644；可执行位不依赖打包方是否 chmod——由 markExecutables
+// 从渲染后的 unit 解析 ExecStart 路径补 0755（真机实测：tar 内 644 二进制
+// 导致 systemd 203/EXEC，见 2026-11-23 .48 日志）。
 func writeAppFiles(exec Executor, programDir string, files map[string][]byte) error {
 	for relPath, data := range files {
 		full := filepath.Join(programDir, relPath)
@@ -470,6 +477,40 @@ func writeAppFiles(exec Executor, programDir string, files map[string][]byte) er
 		}
 		if err := exec.WriteFile(full, data, 0644); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+// markExecutables 把渲染后 unit 里 Exec* 行指向的程序文件补上 0755 执行位。
+// 只处理位于 programDir 前缀内的路径（包外路径不动，防御性跳过）；文件由
+// 面板自身用户写入，os.Chmod 无需提权。真机背景：tar 内 644 二进制导致
+// systemd 203/EXEC（2026-11-23 .48 日志）——执行位由安装器保证，不依赖
+// 打包方是否记得 chmod。
+func markExecutables(programDir, unitContent string) error {
+	for _, raw := range strings.Split(unitContent, "\n") {
+		line := strings.TrimSpace(raw)
+		if !strings.HasPrefix(line, "Exec") || strings.HasPrefix(line, "ExecReload") {
+			continue // ExecReload 常为 systemctl reload 等系统命令，不属程序文件
+		}
+		eq := strings.Index(line, "=")
+		if eq <= 0 {
+			continue
+		}
+		fields := strings.Fields(line[eq+1:])
+		if len(fields) == 0 {
+			continue
+		}
+		p := strings.TrimPrefix(fields[0], "-") // 前导 '-'（失败容忍标记）
+		rel, err := filepath.Rel(programDir, p)
+		if err != nil || strings.HasPrefix(rel, "..") {
+			continue // 包外路径：不归安装器管
+		}
+		if err := os.Chmod(p, 0755); err != nil {
+			if os.IsNotExist(err) {
+				continue // ExecStartPre 的 helper 可能不存在，让 systemd 报错
+			}
+			return fmt.Errorf("补执行位失败 %s: %w", p, err)
 		}
 	}
 	return nil
@@ -797,6 +838,10 @@ func upgradeApp(exec Executor, id string, old installedApp, newPkg *AppPackage) 
 	unitContent := buildAppUnit(string(newPkg.Files["unit.tpl"]), old.Port, dataDir, old.Secret, username, readWritePaths)
 	if err := exec.WriteUnitFile(old.Unit, unitContent); err != nil {
 		return rollback(fmt.Errorf("写入新 unit 文件失败: %w", err))
+	}
+	// 升级路径同样补执行位（与 provisionApp 一致）
+	if err := markExecutables(programDir, unitContent); err != nil {
+		return rollback(fmt.Errorf("标记可执行文件失败: %w", err))
 	}
 	if _, err := exec.DaemonReload(); err != nil {
 		return rollback(fmt.Errorf("daemon-reload 失败: %w", err))

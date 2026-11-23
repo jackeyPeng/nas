@@ -77,6 +77,10 @@ info "交叉编译 linux/$GOARCH ..."
 )
 ok "二进制: app/$APP_ID ($(du -h "$PKG_DIR/app/$APP_ID" | cut -f1))"
 
+# 二进制执行位：打包侧就设对（0755）。解包侧的 writeAppFiles 统一 0644、
+# 由安装器 markExecutables 按 unit Exec* 补执行位——双侧都保证，防 203/EXEC。
+chmod 0755 "$PKG_DIR/app/$APP_ID"
+
 # ── manifest / unit.tpl / README ────────────────────────────────
 cp "$MANIFEST" "$PKG_DIR/manifest.json"
 

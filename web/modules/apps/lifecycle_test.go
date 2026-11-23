@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -455,5 +456,44 @@ func TestUpgrade_RejectsBelowMinUpgradeFrom(t *testing.T) {
 	rec := doRequest(mux, http.MethodPost, "/api/apps/photos/upgrade", body2, ct2)
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("低于 minUpgradeFrom 应 409, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+// markExecutables：写文件统一 0644，unit Exec* 指向的程序文件须被补 0755；
+// 包外路径、ExecReload、不存在文件均不报错（真机背景：203/EXEC）。
+func TestMarkExecutables(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "app", "hello")
+	if err := os.MkdirAll(filepath.Dir(bin), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	pre := filepath.Join(dir, "app", "pre.sh")
+	if err := os.WriteFile(pre, []byte("#!/bin/sh\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	unit := "[Service]\n" +
+		"ExecStart=" + bin + " --serve\n" +
+		"ExecStartPre=-" + pre + "\n" +
+		"ExecReload=/bin/kill -HUP $MAINPID\n" +
+		"ExecStop=/bin/true\n"
+	if err := markExecutables(dir, unit); err != nil {
+		t.Fatalf("markExecutables: %v", err)
+	}
+	for _, p := range []string{bin, pre} {
+		fi, err := os.Stat(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if fi.Mode().Perm()&0100 == 0 {
+			t.Errorf("%s 应被补执行位，实际 %v", p, fi.Mode().Perm())
+		}
+	}
+	// 包外/不存在路径：不报错不越界
+	outside := "[Service]\nExecStart=/usr/bin/sleep 1\nExecStartPre=" + filepath.Join(dir, "nope") + "\n"
+	if err := markExecutables(dir, outside); err != nil {
+		t.Fatalf("包外路径不应报错: %v", err)
 	}
 }
