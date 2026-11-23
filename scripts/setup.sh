@@ -690,6 +690,12 @@ elif [ "$CONFIG_ONLY" = true ]; then
     mkdir -p /etc/valkey /etc/mosquitto/conf.d
     printf 'bind 127.0.0.1 -::1\nport 6379\nprotected-mode yes\nsupervised systemd\ndaemonize no\n' > /etc/valkey/valkey.conf
     printf 'listener 1883 127.0.0.1\nallow_anonymous false\npassword_file /etc/mosquitto/nas-passwd\nacl_file /etc/mosquitto/nas-acl.conf\n' > /etc/mosquitto/conf.d/nas-panel.conf
+    # password_file/acl_file 引用的文件必须存在且 mosquitto 用户可读，
+    # 否则 broker 启动即 exit 13（真机实锤）。空文件 = 无应用账号（按需
+    # 由 nas-base-ops.sh 追加）；属主 mosquitto、640 防其他系统用户窥探。
+    touch /etc/mosquitto/nas-passwd /etc/mosquitto/nas-acl.conf
+    chown mosquitto:mosquitto /etc/mosquitto/nas-passwd /etc/mosquitto/nas-acl.conf
+    chmod 640 /etc/mosquitto/nas-passwd /etc/mosquitto/nas-acl.conf
     echo "  ✓ 基座服务配置已刷新（未改动安装/启停状态）"
 else
     echo "[9/11] 基座服务 (PostgreSQL/Valkey/Mosquitto)..."
@@ -720,6 +726,12 @@ else
     # nas-base-ops.sh 按需创建（应用申请 mqtt 权限时才建号），此处只落地
     # 配置片段本身，password_file/acl_file 路径须与该脚本常量逐字一致。
     printf 'listener 1883 127.0.0.1\nallow_anonymous false\npassword_file /etc/mosquitto/nas-passwd\nacl_file /etc/mosquitto/nas-acl.conf\n' > /etc/mosquitto/conf.d/nas-panel.conf
+    # password_file/acl_file 引用的文件必须存在且 mosquitto 用户可读，
+    # 否则 broker 启动即 exit 13（真机实锤）。空文件 = 无应用账号（按需
+    # 由 nas-base-ops.sh 追加）；属主 mosquitto、640 防其他系统用户窥探。
+    touch /etc/mosquitto/nas-passwd /etc/mosquitto/nas-acl.conf
+    chown mosquitto:mosquitto /etc/mosquitto/nas-passwd /etc/mosquitto/nas-acl.conf
+    chmod 640 /etc/mosquitto/nas-passwd /etc/mosquitto/nas-acl.conf
     systemctl daemon-reload
     for unit in postgresql valkey-server mosquitto; do
         if systemctl is-enabled "$unit" >/dev/null 2>&1; then
