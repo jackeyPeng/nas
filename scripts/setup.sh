@@ -693,7 +693,26 @@ elif [ "$CONFIG_ONLY" = true ]; then
     echo "  ✓ 基座服务配置已刷新（未改动安装/启停状态）"
 else
     echo "[9/11] 基座服务 (PostgreSQL/Valkey/Mosquitto)..."
-    apt_retry apt-get install -y -qq postgresql valkey-server mosquitto mosquitto-clients
+    # PG18 走 PGDG 官方源（Debian trixie 主源只有 17；PGDG 是 PostgreSQL
+    # 官方项目仓库，只提供 postgresql* 系列包，密钥由 postgresql-common
+    # 包约定路径承载）。失败不致命：退回发行版元包 postgresql（17）。
+    if [ ! -f /etc/apt/sources.list.d/pgdg.list ]; then
+        install -d -m 755 /usr/share/postgresql-common/pgdg 2>/dev/null || true
+        if curl -fsSL --max-time 30 https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc 2>/dev/null; then
+            printf 'deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] http://apt.postgresql.org/pub/repos/apt trixie-pgdg main\n' \
+                > /etc/apt/sources.list.d/pgdg.list
+            apt-get update -qq 2>/dev/null || true
+        else
+            echo "  ⚠ PGDG 源拉取失败，将退回 Debian 主源的 PostgreSQL 17"
+        fi
+    fi
+    PG_PKG=postgresql-18
+    if ! apt-cache policy "$PG_PKG" 2>/dev/null | grep -q "候选\|Candidate"; then
+        PG_PKG=postgresql
+        echo "  ⚠ PGDG 无 postgresql-18 候选，使用 Debian 主源 $PG_PKG"
+    fi
+    apt_retry apt-get install -y -qq "$PG_PKG" valkey-server mosquitto mosquitto-clients
     mkdir -p /etc/valkey /etc/mosquitto/conf.d
     # Valkey：只听本机，面板/应用经 127.0.0.1 连接，永不对外网暴露。
     printf 'bind 127.0.0.1 -::1\nport 6379\nprotected-mode yes\nsupervised systemd\ndaemonize no\n' > /etc/valkey/valkey.conf

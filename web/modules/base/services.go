@@ -27,7 +27,7 @@ const baseOpsScript = "/opt/nas/scripts/nas-base-ops.sh"
 // 方法形状直接对应 scripts/setup.sh 新增的 sudoers 白名单条目；新增/修改
 // 任一方法的参数形状都必须同步检查白名单是否仍覆盖。
 type Executor interface {
-	// AptInstall 安装组件对应的 apt 包（postgresql 元包 / valkey-server /
+	// AptInstall 安装组件对应的 apt 包（postgresql-18 / valkey-server /
 	// mosquitto+mosquitto-clients），幂等（apt-get install 对已安装包是空操作）。
 	AptInstall(component Component) (string, error)
 
@@ -91,6 +91,20 @@ func (defaultExecutor) AptInstall(component Component) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// PG：先试 PGDG 的 18，源未配/无候选时退化发行版元包（与 setup.sh
+	// [9/11] 同一降级链——PGDG 失败不致命）。
+	if component == ComponentPostgres {
+		if out, err := common.SudoExec("apt-get", "install", "-y", "-qq", pkgs[0]); err != nil {
+			out2, err2 := common.SudoExec("apt-get", "install", "-y", "-qq", "postgresql")
+			_ = out
+			if err2 != nil {
+				return out2, err2
+			}
+			return out2, nil
+		} else {
+			return out, nil
+		}
+	}
 	args := append([]string{"install", "-y", "-qq"}, pkgs...)
 	return common.SudoExec("apt-get", args...)
 }
@@ -99,9 +113,11 @@ func (defaultExecutor) AptInstall(component Component) (string, error) {
 func aptPackages(component Component) ([]string, error) {
 	switch component {
 	case ComponentPostgres:
-		// Debian trixie 官方源提供 postgresql-17（16 不在源内）；跟随发行版
-		// 大版本，不硬编码过时包名（设计文档 PG16 → 实际 PG17 同为官方源）。
-		return []string{"postgresql"}, nil
+		// PG18 走 PGDG 官方源（Debian trixie 主源只有 17）；面板安装前置
+		// 条件是 setup.sh 基座段已配好 pgdg.list（见 scripts/setup.sh [9/11]），
+		// 此处不做源配置（面板无权改 sources.list.d）。PGDG 不可用时由
+		// 调用方退化到发行版元包（与 setup.sh 同一降级链）。
+		return []string{"postgresql-18"}, nil
 	case ComponentValkey:
 		return []string{"valkey-server"}, nil
 	case ComponentMosquitto:

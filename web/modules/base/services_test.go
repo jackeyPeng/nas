@@ -8,7 +8,7 @@ import (
 
 func TestAptPackagesFixedShape(t *testing.T) {
 	cases := map[Component][]string{
-		ComponentPostgres:  {"postgresql"},
+		ComponentPostgres:  {"postgresql-18"},
 		ComponentValkey:    {"valkey-server"},
 		ComponentMosquitto: {"mosquitto", "mosquitto-clients"},
 	}
@@ -35,6 +35,8 @@ func TestAptPackagesUnknownComponent(t *testing.T) {
 }
 
 func TestUnitNameFixedShape(t *testing.T) {
+	// PG 用 postgresql-common 的伞 unit「postgresql」（enable/start 对全部
+	// 已启用集群生效，PGDG 18 与发行版 17 同一机制，不随大版本漂移）。
 	cases := map[Component]string{
 		ComponentPostgres:  "postgresql",
 		ComponentValkey:    "valkey-server",
@@ -120,7 +122,7 @@ func TestFakeExecutorAptInstallCallShape(t *testing.T) {
 
 func TestFakeExecutorSystemctlCallShapes(t *testing.T) {
 	fx := newFakeExecutor()
-	unit := "postgresql"
+	unit := "postgresql-18"
 	fx.EnableUnit(unit)
 	fx.DisableUnit(unit)
 	fx.StartUnit(unit)
