@@ -24,6 +24,8 @@ func (fakeBaseExecutor) DisableUnit(string) (string, error)        { return "", 
 func (fakeBaseExecutor) StartUnit(string) (string, error)          { return "", nil }
 func (fakeBaseExecutor) StopUnit(string) (string, error)           { return "", nil }
 func (fakeBaseExecutor) UnitActiveState(string) string             { return "active" }
+func (fakeBaseExecutor) PackageInstalled(base.Component) bool     { return false }
+func (fakeBaseExecutor) UnitEnabledState(string) string           { return "" }
 func (fakeBaseExecutor) WriteConfigFile(string, string) error      { return nil }
 func (fakeBaseExecutor) PgCreateDB(string, string) (string, error) { return "", nil }
 func (fakeBaseExecutor) PgSetPassword(string, string) (string, error) {

@@ -42,6 +42,15 @@ type Executor interface {
 	// UnitActiveState 返回 systemctl is-active <unit> 的真实状态字符串。
 	UnitActiveState(unit string) string
 
+	// PackageInstalled 无需 root 探测组件 apt 包是否已在系统上
+	// （dpkg-query）。用于运行时对帐：setup.sh 基座段装的组件不经面板
+	// API，台账不会记录——读态时合并系统实况，避免「服务在跑但面板
+	// 显示未安装」的分歧（.57 真机实锤）。
+	PackageInstalled(component Component) bool
+	// UnitEnabledState 无需 root 返回 systemctl is-enabled <unit>，
+	// 与 PackageInstalled 同属运行时对帐。
+	UnitEnabledState(unit string) string
+
 	// WriteConfigFile 把渲染好的配置文件内容落盘（Valkey/Mosquitto 的
 	// /etc/valkey/valkey.conf、/etc/mosquitto/conf.d/nas-panel.conf 等）。
 	WriteConfigFile(path, content string) error
@@ -159,6 +168,35 @@ func (defaultExecutor) StopUnit(unit string) (string, error) {
 
 func (defaultExecutor) UnitActiveState(unit string) string {
 	out, _ := common.ExecOutput("systemctl", "is-active", unit)
+	return strings.TrimSpace(out)
+}
+
+func (defaultExecutor) PackageInstalled(component Component) bool {
+	pkgs, err := aptPackages(component)
+	if err != nil {
+		return false
+	}
+	for _, p := range pkgs {
+		// PG 的 PGDG→主源降级链：两种包名都算已安装。
+		if component == ComponentPostgres {
+			for _, alt := range []string{"postgresql-18", "postgresql"} {
+				out, _ := common.ExecOutput("dpkg-query", "-W", "-f=${Status}", alt)
+				if strings.Contains(out, "install ok installed") {
+					return true
+				}
+			}
+			return false
+		}
+		out, _ := common.ExecOutput("dpkg-query", "-W", "-f=${Status}", p)
+		if !strings.Contains(out, "install ok installed") {
+			return false
+		}
+	}
+	return true
+}
+
+func (defaultExecutor) UnitEnabledState(unit string) string {
+	out, _ := common.ExecOutput("systemctl", "is-enabled", unit)
 	return strings.TrimSpace(out)
 }
 

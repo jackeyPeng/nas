@@ -101,7 +101,7 @@ func buildComponentSummary(executor Executor, st componentState) componentSummar
 		active = executor.UnitActiveState(unit)
 	}
 	health := healthStopped
-	if st.Installed {
+	if st.Installed || executor.PackageInstalled(c) {
 		if hst, ok := getComponentHealthSnapshot(c); ok {
 			health = hst.Status
 		} else {
@@ -111,8 +111,8 @@ func buildComponentSummary(executor Executor, st componentState) componentSummar
 	return componentSummary{
 		Component:   st.Name,
 		Name:        componentDisplayName(c),
-		Installed:   st.Installed,
-		Enabled:     st.Enabled,
+		Installed:   st.Installed || executor.PackageInstalled(c),
+		Enabled:     st.Enabled || strings.EqualFold(strings.TrimSpace(executor.UnitEnabledState(unit)), "enabled"),
 		UnitActive:  active,
 		Health:      health,
 		Description: componentDescription(c),
@@ -186,6 +186,16 @@ func handleComponentInstall(w http.ResponseWriter, r *http.Request, c Component)
 		common.JSONResponse(w, map[string]interface{}{"message": componentDisplayName(c) + " 已安装", "installed": true})
 		return
 	}
+	// 运行时对帐：setup.sh 基座段装的组件台账未记，但包在系统上——
+	// 直接落库补记（apt-get install 幂等，重跑也是空操作）。
+	if reg.executor.PackageInstalled(c) {
+		if err := setComponentState(reg.db, c, true, st.Enabled); err != nil {
+			httpError(w, http.StatusInternalServerError, "落库失败: "+err.Error())
+			return
+		}
+		common.JSONResponse(w, map[string]interface{}{"message": componentDisplayName(c) + " 已安装", "installed": true})
+		return
+	}
 
 	out, err := reg.executor.AptInstall(c)
 	if err != nil {
@@ -241,7 +251,15 @@ func handleComponentEnable(w http.ResponseWriter, r *http.Request, c Component) 
 		httpError(w, http.StatusInternalServerError, "查询组件状态失败: "+err.Error())
 		return
 	}
-	if !found || !st.Installed {
+	if found && st.Installed {
+		// 已有台账记录，直接走
+	} else if reg.executor.PackageInstalled(c) {
+		// 运行时对帐：包在系统上（setup.sh 装的），补记台账后继续启用。
+		if err := setComponentState(reg.db, c, true, st.Enabled); err != nil {
+			httpError(w, http.StatusInternalServerError, "落库失败: "+err.Error())
+			return
+		}
+	} else {
 		httpError(w, http.StatusBadRequest, componentDisplayName(c)+" 尚未安装，请先安装")
 		return
 	}

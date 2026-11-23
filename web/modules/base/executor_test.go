@@ -15,6 +15,8 @@ type fakeExecutor struct {
 	calls []string
 
 	unitActive map[string]string
+	unitEnabled map[string]string
+	pkgInstalled map[Component]bool
 	failers    map[string]error
 
 	// pgRoles 模拟已 CREATE ROLE 的角色集合（用于 PgCreateDB 的幂等记录）。
@@ -33,6 +35,8 @@ type fakeExecutor struct {
 func newFakeExecutor() *fakeExecutor {
 	return &fakeExecutor{
 		unitActive:  map[string]string{},
+		unitEnabled: map[string]string{},
+		pkgInstalled: map[Component]bool{},
 		failers:     map[string]error{},
 		pgRoles:     map[string]bool{},
 		pgPasswords: map[string]string{},
@@ -102,6 +106,18 @@ func (f *fakeExecutor) UnitActiveState(unit string) string {
 		return s
 	}
 	return "inactive"
+}
+
+func (f *fakeExecutor) PackageInstalled(component Component) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.pkgInstalled[component]
+}
+
+func (f *fakeExecutor) UnitEnabledState(unit string) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.unitEnabled[unit]
 }
 
 func (f *fakeExecutor) WriteConfigFile(path, content string) error {
