@@ -332,10 +332,24 @@ func Ready(c Component) bool {
 		return false
 	}
 	st, found, err := getComponentState(reg.db, c)
-	if err != nil || !found {
+	if err != nil {
 		return false
 	}
-	return st.Installed && st.Enabled
+	// 运行时对帐（与 handleComponentInstall/Enable 同口径）：setup.sh 装的
+	// 组件台账未记时按系统实况判定，不因台账滞后拒掉合法的安装请求
+	// （.57 真机实锤：服务 active 但 Ready=false）。
+	installed := found && st.Installed
+	if !installed {
+		installed = reg.executor.PackageInstalled(c)
+	}
+	enabled := found && st.Enabled
+	if !enabled {
+		unit, uerr := unitName(c)
+		if uerr == nil {
+			enabled = strings.EqualFold(strings.TrimSpace(reg.executor.UnitEnabledState(unit)), "enabled")
+		}
+	}
+	return installed && enabled
 }
 
 // ComponentStateDescription 返回组件当前状态的人话描述，供 apps 模块拼
