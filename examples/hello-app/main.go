@@ -166,7 +166,13 @@ var indexHTML = `<!DOCTYPE html>
   <pre id="result"></pre>
   <p class="note">本页仅做演示，不做任何持久化操作。</p>
   <script>
-    fetch('./api/whoami').then(function (r) { return r.json(); }).then(function (data) {
+    // 反代下 XHR 不会带面板 Authorization 头；页面 URL 若带一次性票据
+    // （nas_ticket），首次 XHR 沿用该票据——票据会被核心的一次性消费，
+    // 页面加载本身已用掉它时这里 401，属预期降级：显示 unauthorized 提示
+    // 而不是空白。真要持续调用需应用自己维持会话（SDK 主题，M2+）。
+    var tk = new URLSearchParams(location.search).get('nas_ticket');
+    var url = './api/whoami' + (tk ? ('?nas_ticket=' + encodeURIComponent(tk)) : '');
+    fetch(url).then(function (r) { return r.json(); }).then(function (data) {
       var status = document.getElementById('status');
       var result = document.getElementById('result');
       status.textContent = 'whoami 结果：';
