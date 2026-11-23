@@ -1,6 +1,6 @@
 function nasPanel() {
-    // apps 页面状态/方法在独立的 apps.js 里（window.appsPanel），这里合并进来，
-    // 避免整块逻辑堆进本文件（架构约束：单页不膨胀）。
+    // apps/base 页面状态/方法分别在独立的 apps.js/base.js 里（window.appsPanel/
+    // window.basePanel），这里合并进来，避免整块逻辑堆进本文件（架构约束：单页不膨胀）。
     return Object.assign({
         token: localStorage.getItem('nas_token') || '',
         page: 'dashboard',
@@ -774,6 +774,7 @@ function nasPanel() {
                 case 'diagnostics': this.loadDiagnostics(); break;
                 case 'health': this.loadHealth(); break;
                 case 'apps': this.loadApps(); break;
+                case 'base': this.loadBaseServices(); break;
             }
         },
 
@@ -4726,5 +4727,5 @@ function nasPanel() {
             });
             this.showToast(this.t('msg.diag_saved'), 'success');
         }
-    }, window.appsPanel ? window.appsPanel() : {});
+    }, window.appsPanel ? window.appsPanel() : {}, window.basePanel ? window.basePanel() : {});
 }

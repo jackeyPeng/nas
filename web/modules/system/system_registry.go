@@ -80,6 +80,34 @@ func GetAppHealthItemsForTest() []RegistryItem {
 	return getAppHealthItemsSnapshot()
 }
 
+// baseHealthItems 保存 base 模块（M2 基座服务）上报的三组件健康注册表行
+// 快照，与 appHealthItems 同一动态快照模式（不写 registry 表，全量覆盖）。
+var (
+	baseHealthItemsMu sync.Mutex
+	baseHealthItems   []RegistryItem
+)
+
+// SetBaseHealthItems 替换当前的基座服务健康注册表行快照（base 模块的
+// 健康轮询器在每轮探测后调用，全量覆盖 PostgreSQL/Valkey/Mosquitto 三行）。
+func SetBaseHealthItems(items []RegistryItem) {
+	baseHealthItemsMu.Lock()
+	defer baseHealthItemsMu.Unlock()
+	baseHealthItems = append([]RegistryItem(nil), items...)
+}
+
+// getBaseHealthItemsSnapshot 返回当前基座服务健康行快照的拷贝。
+func getBaseHealthItemsSnapshot() []RegistryItem {
+	baseHealthItemsMu.Lock()
+	defer baseHealthItemsMu.Unlock()
+	return append([]RegistryItem(nil), baseHealthItems...)
+}
+
+// GetBaseHealthItemsForTest 导出当前基座服务健康行快照，供 base 模块测试
+// 直接断言 SetBaseHealthItems 推送的内容，不经 GetRegistry()。
+func GetBaseHealthItemsForTest() []RegistryItem {
+	return getBaseHealthItemsSnapshot()
+}
+
 // registryDBPath returns the path to the registry database
 func registryDBPath() string {
 	dir := "/opt/nas/data"
@@ -529,6 +557,22 @@ func GetRegistry() RegistryReport {
 
 	// 合并应用健康行（动态，不落 registry 表，见 appHealthItems 注释）。
 	for _, item := range getAppHealthItemsSnapshot() {
+		report.Total++
+		switch item.Status {
+		case "pass":
+			report.Passed++
+		case "fail":
+			report.Failed++
+		case "warn":
+			report.Warn++
+		case "pending":
+			report.Pending++
+		}
+		report.Items = append(report.Items, item)
+	}
+
+	// 合并基座服务健康行（动态，不落 registry 表，见 baseHealthItems 注释）。
+	for _, item := range getBaseHealthItemsSnapshot() {
 		report.Total++
 		switch item.Status {
 		case "pass":

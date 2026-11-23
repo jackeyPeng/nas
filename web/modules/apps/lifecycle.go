@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"nas-panel/common"
+	"nas-panel/modules/base"
 	"nas-panel/modules/version"
 )
 
@@ -156,6 +157,8 @@ type pendingInstallResponse struct {
 	Entry        string   `json:"entry"`
 	StoragePaths []string `json:"storagePaths"`
 	DB           string   `json:"db"`
+	Cache        bool     `json:"cache"` // permissions.cache 是否申领 Valkey（供前端确认步骤展示基座就绪徽标）
+	Mqtt         bool     `json:"mqtt"`  // permissions.mqtt.sub/pub 非空即视为申领 Mosquitto
 	DataDir      bool     `json:"dataDir"`
 	Status       string   `json:"status"`
 }
@@ -302,6 +305,8 @@ func handleInstall(w http.ResponseWriter, r *http.Request) {
 		Entry:        pkg.Manifest.Entry,
 		StoragePaths: pkg.Manifest.Permissions.Storage,
 		DB:           pkg.Manifest.Permissions.DB,
+		Cache:        pkg.Manifest.Permissions.Cache,
+		Mqtt:         len(pkg.Manifest.Permissions.MQTT.Sub) > 0 || len(pkg.Manifest.Permissions.MQTT.Pub) > 0,
 		DataDir:      pkg.Manifest.DataDir,
 		Status:       statusPending,
 	})
@@ -382,6 +387,78 @@ func handleInstallConfirm(w http.ResponseWriter, r *http.Request, id string) {
 	common.JSONResponse(w, buildAppDetail(reg.executor, mustGetInstalledApp(id)))
 }
 
+// provisionBaseServices 按 manifest 声明的 pgsql/cache/mqtt 能力向 base 模块
+// 申领凭据，组装成 "Environment=KEY=value" 行供 buildAppUnit 注入 unit。
+// 调用前 manifest 校验层（manifest.go Permissions.validate）已经按同样的
+// base.Ready() 判定拒绝过未就绪的声明，这里再次检查是防御性的——manifest
+// 可能在 install 时就绪、confirm/upgrade 时基座服务被面板管理员临时
+// 停用，必须在真正申领凭据前再确认一次，拒绝时的报错同样指名具体组件状态
+// （§需求「检查组件就绪（不就绪拒绝安装），错误信息必须指名具体组件」）。
+// 凭据只通过返回的 env 行流向 unit 文件，不写日志、不进 HTTP 响应体
+// （§需求红线）。
+func provisionBaseServices(id string, perm Permissions) ([]string, error) {
+	var env []string
+
+	if perm.DB == "pgsql" {
+		if !base.Ready(base.ComponentPostgres) {
+			return nil, fmt.Errorf("permissions.db=pgsql 但 %s", base.ComponentStateDescription(base.ComponentPostgres))
+		}
+		creds, err := base.ProvisionPostgres(id)
+		if err != nil {
+			return nil, fmt.Errorf("申领 PostgreSQL 数据库失败: %w", err)
+		}
+		env = append(env, "Environment=POSTGRES_DSN="+creds.DSN)
+	}
+
+	if perm.Cache {
+		if !base.Ready(base.ComponentValkey) {
+			return nil, fmt.Errorf("permissions.cache=true 但 %s", base.ComponentStateDescription(base.ComponentValkey))
+		}
+		creds, err := base.ProvisionValkey(id)
+		if err != nil {
+			return nil, fmt.Errorf("申领 Valkey db 编号失败: %w", err)
+		}
+		env = append(env, "Environment=VALKEY_URL="+creds.URL)
+	}
+
+	if len(perm.MQTT.Sub) > 0 || len(perm.MQTT.Pub) > 0 {
+		if !base.Ready(base.ComponentMosquitto) {
+			return nil, fmt.Errorf("permissions.mqtt 非空但 %s", base.ComponentStateDescription(base.ComponentMosquitto))
+		}
+		creds, err := base.ProvisionMQTT(id)
+		if err != nil {
+			return nil, fmt.Errorf("申领 MQTT 账号失败: %w", err)
+		}
+		env = append(env,
+			"Environment=MQTT_USER="+creds.Username,
+			"Environment=MQTT_PASS="+creds.Password,
+			"Environment=MQTT_TOPIC_PREFIX="+creds.TopicPrefix,
+		)
+	}
+
+	return env, nil
+}
+
+// deprovisionBaseServices 卸载流程里清理 appID 申领过的全部基座服务资源
+// （drop database/role、回收 Valkey db 编号、删 Mosquitto 账号+ACL）。
+// 幂等：某能力从未申领过时 base.Deprovision* 直接返回 nil（见 provision.go
+// 注释），因此这里不需要先判断 manifest declares 了哪些能力——统一调用
+// 三个 Deprovision* 即可，未申领的那些是空操作。keepData=true 时调用方
+// （handleAppDelete）直接跳过整个调用，不进这个函数。
+func deprovisionBaseServices(id string) []error {
+	var errs []error
+	if err := base.DeprovisionPostgres(id); err != nil {
+		errs = append(errs, fmt.Errorf("清理 PostgreSQL 数据库失败: %w", err))
+	}
+	if err := base.DeprovisionValkey(id); err != nil {
+		errs = append(errs, fmt.Errorf("清理 Valkey db 编号失败: %w", err))
+	}
+	if err := base.DeprovisionMQTT(id); err != nil {
+		errs = append(errs, fmt.Errorf("清理 MQTT 账号失败: %w", err))
+	}
+	return errs
+}
+
 // provisionApp 执行 confirm 的全部落地副作用（建用户/目录/unit/daemon-reload/
 // enable/start），均通过 Executor（§3.1-3.2）。任一步失败立即返回错误，
 // 调用方（confirm/upgrade）负责决定是否需要回滚已完成的步骤。
@@ -436,8 +513,13 @@ func provisionApp(exec Executor, id string, pkg *AppPackage, port int, secret st
 		}
 	}
 
+	extraEnv, err := provisionBaseServices(id, pkg.Manifest.Permissions)
+	if err != nil {
+		return err
+	}
+
 	readWritePaths := append([]string{programDir, dataDir}, pkg.Manifest.Permissions.Storage...)
-	unitContent := buildAppUnit(string(pkg.Files["unit.tpl"]), port, dataDir, secret, username, readWritePaths)
+	unitContent := buildAppUnit(string(pkg.Files["unit.tpl"]), port, dataDir, secret, username, readWritePaths, extraEnv)
 	unit := appUnitName(id)
 	if err := exec.WriteUnitFile(unit, unitContent); err != nil {
 		return fmt.Errorf("写入 unit 文件失败: %w", err)
@@ -834,8 +916,13 @@ func upgradeApp(exec Executor, id string, old installedApp, newPkg *AppPackage) 
 		}
 	}
 
+	extraEnv, err := provisionBaseServices(id, newPkg.Manifest.Permissions)
+	if err != nil {
+		return rollback(err)
+	}
+
 	readWritePaths := append([]string{programDir, dataDir}, newPkg.Manifest.Permissions.Storage...)
-	unitContent := buildAppUnit(string(newPkg.Files["unit.tpl"]), old.Port, dataDir, old.Secret, username, readWritePaths)
+	unitContent := buildAppUnit(string(newPkg.Files["unit.tpl"]), old.Port, dataDir, old.Secret, username, readWritePaths, extraEnv)
 	if err := exec.WriteUnitFile(old.Unit, unitContent); err != nil {
 		return rollback(fmt.Errorf("写入新 unit 文件失败: %w", err))
 	}
@@ -919,6 +1006,17 @@ func handleAppDelete(w http.ResponseWriter, r *http.Request, id string) {
 	// 里标记（§3.1「数据目录…卸载按用户选择」只提及 dataDir，storage 路径
 	// 属于池内用户数据，核心不得代为删除）。
 	exec.DelAppUser(appSystemUser(id))
+
+	// 基座服务资源（PostgreSQL database/role、Valkey db 编号、MQTT 账号+ACL）
+	// 与 dataDir 同属"应用数据"范畴：keepData=true 时一并保留（应用可能
+	// 重装后复用同一套凭据），仅 keepData=false 才清理。三个 Deprovision*
+	// 对未申领过的能力是空操作，不需要先查 manifest 声明了哪些能力。
+	if !req.KeepData {
+		for _, derr := range deprovisionBaseServices(id) {
+			common.LogAuditRequest(r, auditCategory, "卸载应用", fmt.Sprintf("%s: 基座服务资源清理失败: %v", id, derr), "失败")
+		}
+	}
+
 	releasePort(reg.db, a.Port)
 	deleteInstalledApp(reg.db, id)
 

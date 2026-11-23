@@ -4,7 +4,29 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"nas-panel/modules/base"
 )
+
+// withBaseComponentStateForTest 用一个临时 base.db + fake executor 初始化
+// base 模块单例，并把指定组件置为 installed/enabled，供本文件的
+// CapabilitiesSupported 相关用例驱动 base.Ready() 返回可控结果。返回的
+// restore 必须 defer 调用，还原测试前的 base 单例，避免污染其它测试
+// （本包与 base 包各自维护独立的模块级单例，互不冲突）。
+func withBaseComponentStateForTest(t *testing.T, ready map[base.Component]bool) (restore func()) {
+	t.Helper()
+	prev, err := base.InitBaseForTest(t.TempDir(), nil)
+	if err != nil {
+		t.Fatalf("初始化 base 测试单例失败: %v", err)
+	}
+	for _, c := range base.AllComponents {
+		want := ready[c]
+		if err := base.SetComponentStateForTest(c, want, want); err != nil {
+			t.Fatalf("设置组件 %s 状态失败: %v", c, err)
+		}
+	}
+	return func() { base.RestoreBaseForTest(prev) }
+}
 
 // validManifestJSON 是通过全部校验规则的最小合法 manifest（§2 全字段）。
 const validManifestJSON = `{
@@ -238,66 +260,93 @@ func TestParseManifest_MultipleErrorsAggregated(t *testing.T) {
 
 // ── §2 「CapabilitiesSupported 开关」用例 ──────────────────────────
 
-func TestParseManifest_PgsqlRejectedInM1Mode(t *testing.T) {
-	old := CapabilitiesSupported
-	CapabilitiesSupported = false
-	defer func() { CapabilitiesSupported = old }()
+func TestParseManifest_PgsqlRejectedWhenPostgresNotReady(t *testing.T) {
+	defer withBaseComponentStateForTest(t, nil)()
 
 	data := withManifestField(t, `"db": "sqlite",`, `"db": "pgsql",`)
 	_, err := ParseManifest(data)
 	if err == nil {
-		t.Fatal("M1 模式下 db=pgsql 应被拒绝")
+		t.Fatal("PostgreSQL 未就绪时 db=pgsql 应被拒绝")
 	}
-	if !strings.Contains(err.Error(), "M2") {
-		t.Errorf("错误信息应含 M2 字样，got: %v", err)
+	if !strings.Contains(err.Error(), "未安装") {
+		t.Errorf("错误信息应指明 PostgreSQL 未安装，got: %v", err)
 	}
 }
 
-func TestParseManifest_PgsqlAllowedWhenCapabilitiesSupported(t *testing.T) {
-	old := CapabilitiesSupported
-	CapabilitiesSupported = true
-	defer func() { CapabilitiesSupported = old }()
+func TestParseManifest_PgsqlAllowedWhenPostgresReady(t *testing.T) {
+	defer withBaseComponentStateForTest(t, map[base.Component]bool{base.ComponentPostgres: true})()
 
 	data := withManifestField(t, `"db": "sqlite",`, `"db": "pgsql",`)
 	if _, err := ParseManifest(data); err != nil {
-		t.Errorf("CapabilitiesSupported=true 时 db=pgsql 应放行, got: %v", err)
+		t.Errorf("PostgreSQL 已就绪时 db=pgsql 应放行, got: %v", err)
 	}
 }
 
-func TestParseManifest_CacheRejectedInM1Mode(t *testing.T) {
-	old := CapabilitiesSupported
-	CapabilitiesSupported = false
-	defer func() { CapabilitiesSupported = old }()
+func TestParseManifest_CacheRejectedWhenValkeyNotReady(t *testing.T) {
+	defer withBaseComponentStateForTest(t, nil)()
 
 	data := withManifestField(t, `"cache": false,`, `"cache": true,`)
 	_, err := ParseManifest(data)
 	if err == nil {
-		t.Fatal("M1 模式下 cache=true 应被拒绝")
+		t.Fatal("Valkey 未就绪时 cache=true 应被拒绝")
 	}
-	if !strings.Contains(err.Error(), "M2") {
-		t.Errorf("错误信息应含 M2 字样，got: %v", err)
+	if !strings.Contains(err.Error(), "未安装") {
+		t.Errorf("错误信息应指明 Valkey 未安装，got: %v", err)
 	}
 }
 
-func TestParseManifest_MQTTRejectedInM1Mode(t *testing.T) {
-	old := CapabilitiesSupported
-	CapabilitiesSupported = false
-	defer func() { CapabilitiesSupported = old }()
+func TestParseManifest_CacheAllowedWhenValkeyReady(t *testing.T) {
+	defer withBaseComponentStateForTest(t, map[base.Component]bool{base.ComponentValkey: true})()
+
+	data := withManifestField(t, `"cache": false,`, `"cache": true,`)
+	if _, err := ParseManifest(data); err != nil {
+		t.Errorf("Valkey 已就绪时 cache=true 应放行, got: %v", err)
+	}
+}
+
+func TestParseManifest_MQTTRejectedWhenMosquittoNotReady(t *testing.T) {
+	defer withBaseComponentStateForTest(t, nil)()
 
 	data := withManifestField(t, `"mqtt": {"sub": [], "pub": []},`, `"mqtt": {"sub": ["nas/apps/photos/#"], "pub": []},`)
 	_, err := ParseManifest(data)
 	if err == nil {
-		t.Fatal("M1 模式下声明 MQTT 主题应被拒绝")
+		t.Fatal("Mosquitto 未就绪时声明 MQTT 主题应被拒绝")
 	}
-	if !strings.Contains(err.Error(), "M2") {
-		t.Errorf("错误信息应含 M2 字样，got: %v", err)
+	if !strings.Contains(err.Error(), "未安装") {
+		t.Errorf("错误信息应指明 Mosquitto 未安装，got: %v", err)
+	}
+}
+
+func TestParseManifest_MQTTAllowedWhenMosquittoReady(t *testing.T) {
+	defer withBaseComponentStateForTest(t, map[base.Component]bool{base.ComponentMosquitto: true})()
+
+	data := withManifestField(t, `"mqtt": {"sub": [], "pub": []},`, `"mqtt": {"sub": ["nas/apps/photos/#"], "pub": []},`)
+	if _, err := ParseManifest(data); err != nil {
+		t.Errorf("Mosquitto 已就绪时声明 MQTT 主题应放行, got: %v", err)
+	}
+}
+
+func TestParseManifest_PgsqlRejectedWhenInstalledButNotEnabled(t *testing.T) {
+	restore := withBaseComponentStateForTest(t, nil)
+	defer restore()
+	if err := base.SetComponentStateForTest(base.ComponentPostgres, true, false); err != nil {
+		t.Fatalf("设置组件状态失败: %v", err)
+	}
+
+	data := withManifestField(t, `"db": "sqlite",`, `"db": "pgsql",`)
+	_, err := ParseManifest(data)
+	if err == nil {
+		t.Fatal("PostgreSQL 已安装但未启用时 db=pgsql 应被拒绝")
+	}
+	if !strings.Contains(err.Error(), "未启用") {
+		t.Errorf("错误信息应指明已安装但未启用，got: %v", err)
 	}
 }
 
 func TestParseManifest_NotificationsRejectedInM1Mode(t *testing.T) {
-	old := CapabilitiesSupported
-	CapabilitiesSupported = false
-	defer func() { CapabilitiesSupported = old }()
+	old := OtherCapabilitiesSupported
+	OtherCapabilitiesSupported = false
+	defer func() { OtherCapabilitiesSupported = old }()
 
 	data := withManifestField(t, `"notifications": false,`, `"notifications": true,`)
 	_, err := ParseManifest(data)
@@ -310,9 +359,9 @@ func TestParseManifest_NotificationsRejectedInM1Mode(t *testing.T) {
 }
 
 func TestParseManifest_RequiresRejectedInM1Mode(t *testing.T) {
-	old := CapabilitiesSupported
-	CapabilitiesSupported = false
-	defer func() { CapabilitiesSupported = old }()
+	old := OtherCapabilitiesSupported
+	OtherCapabilitiesSupported = false
+	defer func() { OtherCapabilitiesSupported = old }()
 
 	data := withManifestField(t, `"requires": []`, `"requires": ["ai-runtime"]`)
 	_, err := ParseManifest(data)

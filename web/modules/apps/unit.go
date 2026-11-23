@@ -74,18 +74,27 @@ func stripWeakenedDirectives(content string) string {
 //  1. 变量替换（__PORT__/__DATA_DIR__/__NAS_SECRET__）
 //  2. 剥离模板里任何试图弱化/覆盖硬化指令的声明
 //  3. 若缺少 [Service] 段（不合规模板）则补一个空的，保证硬化指令有处落脚
-//  4. 在 [Service] 段追加核心权威硬化指令
-func buildAppUnit(tpl string, port int, dataDir, secret, username string, readWritePaths []string) string {
+//  4. 在 [Service] 段追加核心权威硬化指令 + extraEnv（基座服务凭据等）
+//
+// extraEnv 是 lifecycle.go 按 manifest.Permissions 动态拼出的
+// "Environment=KEY=value" 行（POSTGRES_DSN/VALKEY_URL/MQTT_*，§需求
+// 「凭据只进 unit 环境变量，不进日志/响应体」）；manifest 未声明对应能力
+// 时为 nil，不追加任何行。顺序固定在 extraEnv 之后才追加硬化指令，二者
+// 互不冲突（extraEnv 只含 Environment= 行，不在 weakenedDirectivePrefixes
+// 之列）。
+func buildAppUnit(tpl string, port int, dataDir, secret, username string, readWritePaths []string, extraEnv []string) string {
 	rendered := renderUnitTemplate(tpl, port, dataDir, secret)
 	rendered = stripWeakenedDirectives(rendered)
 	if !strings.Contains(rendered, "[Service]") {
 		rendered = strings.TrimRight(rendered, "\n") + "\n[Service]\n"
 	}
 
-	// 插入点：[Service] 段标题行之后，直接追加全部硬化指令。systemd 对
-	// 同一 key 的多次声明以最后一条为准，但 stripWeakenedDirectives 已经
-	// 删除了模板里的旧声明，这里插入的就是唯一声明，不存在歧义。
-	directives := hardeningDirectives(username, readWritePaths)
+	// 插入点：[Service] 段标题行之后，直接追加 extraEnv + 全部硬化指令。
+	// systemd 对同一 key 的多次声明以最后一条为准，但 stripWeakenedDirectives
+	// 已经删除了模板里的旧声明，这里插入的就是唯一声明，不存在歧义。
+	directives := make([]string, 0, len(extraEnv)+len(readWritePaths)+5)
+	directives = append(directives, extraEnv...)
+	directives = append(directives, hardeningDirectives(username, readWritePaths)...)
 	lines := strings.Split(rendered, "\n")
 	final := make([]string, 0, len(lines)+len(directives))
 	done := false

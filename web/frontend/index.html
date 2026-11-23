@@ -260,6 +260,9 @@
                         <li :class="{active: page === 'apps'}" @click="navigate('apps')">
                             <span style="margin-left:var(--sp-5)">🧩</span> <span x-text="$t('nav.apps')"></span>
                         </li>
+                        <li :class="{active: page === 'base'}" @click="navigate('base')">
+                            <span style="margin-left:var(--sp-5)">🏗️</span> <span x-text="$t('nav.base')"></span>
+                        </li>
                         <li :class="{active: page === 'vault'}" @click="navigate('vault')">
                             <span style="margin-left:var(--sp-5)">🔐</span> <span x-text="$t('nav.vault')"></span>
                         </li>
@@ -2901,7 +2904,18 @@
                         <p x-text="$t('apps.confirm_perm_intro')"></p>
                         <ul>
                             <li x-show="appsPkg.pending.storagePaths && appsPkg.pending.storagePaths.length"><span x-text="$t('apps.perm_storage')"></span>: <template x-for="p in appsPkg.pending.storagePaths" :key="p"><div style="font-family:monospace;font-size:var(--fs-xs)" x-text="p"></div></template></li>
-                            <li x-show="appsPkg.pending.db && appsPkg.pending.db !== 'none'"><span x-text="$t('apps.perm_db')"></span>: <span x-text="appsPkg.pending.db"></span></li>
+                            <li x-show="appsPkg.pending.db && appsPkg.pending.db !== 'none' && appsPkg.pending.db !== 'sqlite'">
+                                <span x-text="$t('apps.perm_db')"></span>: <span x-text="appsPkg.pending.db"></span>
+                                <template x-if="appsPkg.pending.db === 'pgsql'"><span class="badge" :class="baseReady(baseComponentByKey('pgsql')) ? 'badge-ok' : 'badge-warn'" style="margin-left:var(--sp-1)" x-text="baseReady(baseComponentByKey('pgsql')) ? $t('base.ready') : $t('base.not_ready')"></span></template>
+                            </li>
+                            <li x-show="appsPkg.pending.cache">
+                                <span x-text="$t('apps.perm_cache')"></span>
+                                <span class="badge" :class="baseReady(baseComponentByKey('cache')) ? 'badge-ok' : 'badge-warn'" style="margin-left:var(--sp-1)" x-text="baseReady(baseComponentByKey('cache')) ? $t('base.ready') : $t('base.not_ready')"></span>
+                            </li>
+                            <li x-show="appsPkg.pending.mqtt">
+                                <span x-text="$t('apps.perm_mqtt')"></span>
+                                <span class="badge" :class="baseReady(baseComponentByKey('mqtt')) ? 'badge-ok' : 'badge-warn'" style="margin-left:var(--sp-1)" x-text="baseReady(baseComponentByKey('mqtt')) ? $t('base.ready') : $t('base.not_ready')"></span>
+                            </li>
                             <li x-show="appsPkg.pending.dataDir"><span x-text="$t('apps.perm_datadir')"></span></li>
                         </ul>
                         <div class="modal-actions"><button class="btn" @click="cancelPkgDialog()" x-text="$t('common.cancel')"></button><button class="btn btn-primary" @click="confirmInstall()" :disabled="appsPkg.submitting" x-text="$t('apps.confirm_install')"></button></div>
@@ -2937,6 +2951,45 @@
                     </div></template>
                     <div class="modal-actions" x-show="appsDetail.data"><button class="btn" @click="closeAppDetail()" x-text="$t('common.close')"></button></div>
                 </div></div>
+            </div>
+
+            <!-- 基座服务（M2「基座服务（一）」：PostgreSQL/Valkey/Mosquitto 纳管） -->
+            <div x-show="page === 'base'" class="page" x-transition.opacity.duration.300ms>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--sp-4)">
+                    <h2 style="margin:0">🏗️ <span x-text="$t('base.title')"></span></h2>
+                </div>
+                <p style="font-size:var(--fs-xs);color: var(--text-light);margin:0 0 var(--sp-4)" x-text="$t('base.section_hint')"></p>
+                <div style="display:grid;grid-template-columns:repeat(3,minmax(260px,1fr));gap:var(--sp-4)">
+                    <template x-for="comp in baseComponents" :key="comp.component">
+                        <div style="background: var(--card-bg);border:1px solid var(--border);border-radius:var(--radius-lg);padding:var(--sp-5)">
+                            <div style="display:flex;justify-content:space-between;align-items:flex-start">
+                                <div>
+                                    <div style="font-weight:600" x-text="comp.name"></div>
+                                    <div style="font-size:var(--fs-xs);color: var(--text-light);margin-top:2px" x-text="comp.description"></div>
+                                </div>
+                                <span class="badge-xs" :style="baseHealthBadge(comp).style" x-text="baseHealthBadge(comp).text"></span>
+                            </div>
+                            <div style="margin-top:var(--sp-3);display:flex;align-items:center;gap:var(--sp-2)">
+                                <span class="badge" :class="baseReady(comp) ? 'badge-ok' : 'badge-info'" x-text="baseReady(comp) ? $t('base.ready') : $t('base.not_ready')"></span>
+                                <span x-show="comp.installed" style="font-size:var(--fs-xs);color: var(--text-light)" x-text="comp.unitActive"></span>
+                            </div>
+                            <div style="margin-top:var(--sp-4);display:flex;gap:var(--sp-2)">
+                                <template x-if="!comp.installed">
+                                    <button class="btn btn-sm btn-primary" @click="baseInstall(comp)" :disabled="baseActing[comp.component]" x-text="$t('base.install')"></button>
+                                </template>
+                                <template x-if="comp.installed && !comp.enabled">
+                                    <button class="btn btn-sm btn-primary" @click="baseEnable(comp)" :disabled="baseActing[comp.component]" x-text="$t('base.enable')"></button>
+                                </template>
+                                <template x-if="comp.installed && comp.enabled">
+                                    <button class="btn btn-sm" @click="baseDisable(comp)" :disabled="baseActing[comp.component]" x-text="$t('base.disable')"></button>
+                                </template>
+                                <template x-if="comp.installed">
+                                    <button class="btn btn-sm btn-danger" @click="baseUninstall(comp)" :disabled="baseActing[comp.component]" x-text="$t('base.uninstall')"></button>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+                </div>
             </div>
 
             <!-- 密码生成器（独立工具，不依赖保险箱） -->
@@ -3982,6 +4035,7 @@
 </div>
 <script src="zkvault.min.js" defer></script>
 <script src="apps.js"></script>
+<script src="base.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

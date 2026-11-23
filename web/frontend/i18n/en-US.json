@@ -27,7 +27,8 @@
     "toolbox": "Toolbox",
     "pwgen": "Password Generator",
     "ai": "AI Assistant",
-    "apps": "App Center"
+    "apps": "App Center",
+    "base": "Base Services"
   },
   "common": {
     "save": "Save",
@@ -1006,6 +1007,8 @@
     "confirm_perm_intro": "This app will request the following permissions after install, please confirm:",
     "perm_storage": "Storage paths",
     "perm_db": "Database",
+    "perm_cache": "Cache (Valkey)",
+    "perm_mqtt": "MQTT messaging",
     "perm_datadir": "Will use a dedicated data directory (can be kept on uninstall)",
     "confirm_install": "Confirm Install",
     "install_done": "Installed successfully",
@@ -1029,6 +1032,24 @@
     "confirm_uninstall": "Confirm Uninstall",
     "delete_done": "Uninstalled successfully",
     "open_failed": "Failed to open: could not obtain app access ticket"
+  },
+  "base": {
+    "title": "Base Services",
+    "section_hint": "PostgreSQL / Valkey / Mosquitto, providing database, cache, and MQTT capabilities to managed apps on demand. Disabled by default after install; enable manually.",
+    "not_installed": "Not installed",
+    "health_running": "Running",
+    "health_unhealthy": "Unhealthy",
+    "health_stopped": "Stopped",
+    "ready": "Ready",
+    "not_ready": "Not ready",
+    "install": "Install",
+    "enable": "Enable",
+    "disable": "Disable",
+    "uninstall": "Uninstall",
+    "install_done": "Installed successfully",
+    "enable_done": "Enabled",
+    "disable_done": "Disabled",
+    "uninstall_done": "Uninstalled successfully"
   },
   "msg": {
     "login_failed": "Login failed",

@@ -10,15 +10,35 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"nas-panel/modules/base"
 )
 
-// CapabilitiesSupported 控制 pgsql/cache/mqtt/notifications/requires 声明是否放行。
-// M1 无基座服务（PG/Valkey/Mosquitto），置 false：声明这些能力的 manifest 校验
-// 返回明确错误「该能力由基座服务提供（M2）」。M2 落地基座服务纳管后翻转为 true。
+// pgsqlCapabilitySupported/cacheCapabilitySupported/mqttCapabilitySupported
+// 分别对应 permissions.db=pgsql / permissions.cache / permissions.mqtt 三项
+// 能力是否放行：M2 基座服务纳管落地后，不再是一个全局静态开关，而是按组件
+// 运行时就绪状态逐一判定（装好且已启用才算就绪，§需求「按需放行，不是
+// 全有全无」）——同一 manifest 可能 db=pgsql 因 PostgreSQL 未启用被拒，
+// 但 mqtt 因 Mosquitto 已就绪而放行。
+func pgsqlCapabilitySupported() bool {
+	return base.Ready(base.ComponentPostgres)
+}
+
+func cacheCapabilitySupported() bool {
+	return base.Ready(base.ComponentValkey)
+}
+
+func mqttCapabilitySupported() bool {
+	return base.Ready(base.ComponentMosquitto)
+}
+
+// OtherCapabilitiesSupported 控制 notifications/requires 声明是否放行——
+// 这两项不对应基座服务的某个具体组件（notifications 是核心通知中心能力，
+// requires 是候补能力声明，§9「requires 仅提示不校验」），M2（一）阶段
+// 尚未落地其资源分配逻辑，继续按 M1 的「未实现一律拒绝」口径处理。
 //
-// TODO(M2): 基座服务（PG/Valkey/Mosquitto）纳管落地后，把此值改为 true，
-// 并补齐 db=pgsql/cache=true/mqtt/notifications 的实际资源分配逻辑（registry/lifecycle）。
-var CapabilitiesSupported = false
+// TODO(M2 后续阶段): notifications/requires 对应的核心能力落地后翻转为 true。
+var OtherCapabilitiesSupported = false
 
 // MQTTPermission 对应 §2 permissions.mqtt：{"sub":[],"pub":[]} 形式的主题过滤器授权。
 type MQTTPermission struct {
@@ -191,12 +211,12 @@ func (p *Permissions) validate() ValidationErrors {
 
 	if !validDBKinds[p.DB] {
 		errs = append(errs, &ValidationError{Field: "permissions.db", Reason: "必须是 none|sqlite|pgsql 之一"})
-	} else if p.DB == "pgsql" && !CapabilitiesSupported {
-		errs = append(errs, &ValidationError{Field: "permissions.db", Reason: "该能力由基座服务提供（M2）"})
+	} else if p.DB == "pgsql" && !pgsqlCapabilitySupported() {
+		errs = append(errs, &ValidationError{Field: "permissions.db", Reason: base.ComponentStateDescription(base.ComponentPostgres)})
 	}
 
-	if p.Cache && !CapabilitiesSupported {
-		errs = append(errs, &ValidationError{Field: "permissions.cache", Reason: "该能力由基座服务提供（M2）"})
+	if p.Cache && !cacheCapabilitySupported() {
+		errs = append(errs, &ValidationError{Field: "permissions.cache", Reason: base.ComponentStateDescription(base.ComponentValkey)})
 	}
 
 	for _, topic := range p.MQTT.Sub {
@@ -209,17 +229,17 @@ func (p *Permissions) validate() ValidationErrors {
 			errs = append(errs, &ValidationError{Field: "permissions.mqtt.pub", Reason: "主题过滤器不得为空字符串"})
 		}
 	}
-	if (len(p.MQTT.Sub) > 0 || len(p.MQTT.Pub) > 0) && !CapabilitiesSupported {
-		errs = append(errs, &ValidationError{Field: "permissions.mqtt", Reason: "该能力由基座服务提供（M2）"})
+	if (len(p.MQTT.Sub) > 0 || len(p.MQTT.Pub) > 0) && !mqttCapabilitySupported() {
+		errs = append(errs, &ValidationError{Field: "permissions.mqtt", Reason: base.ComponentStateDescription(base.ComponentMosquitto)})
 	}
 
-	if p.Notifications && !CapabilitiesSupported {
+	if p.Notifications && !OtherCapabilitiesSupported {
 		errs = append(errs, &ValidationError{Field: "permissions.notifications", Reason: "该能力由基座服务提供（M2）"})
 	}
 
-	// requires：v0.1 仅校验并提示（§9「requires 仅提示不校验」），M1 置 false 时同样
+	// requires：v0.1 仅校验并提示（§9「requires 仅提示不校验」），未实现时同样
 	// 按「该能力由基座服务提供」的口径拒绝，避免应用声明了核心尚未实现的候补能力却被静默放行。
-	if len(p.Requires) > 0 && !CapabilitiesSupported {
+	if len(p.Requires) > 0 && !OtherCapabilitiesSupported {
 		errs = append(errs, &ValidationError{Field: "permissions.requires", Reason: "该能力由基座服务提供（M2）"})
 	}
 

@@ -93,6 +93,7 @@ function appsPanel() {
         // ─── 安装/升级共用：Step 1 上传包（升级无需确认权限，装完即生效） ───
         openInstallDialog() {
             this.appsPkg = { show: true, mode: 'install', step: 'upload', packageFile: null, sigFile: null, submitting: false, pending: null };
+            this.loadBaseServices(); // 确认步骤要展示 db/cache/mqtt 就绪徽标，提前拉一次基座状态
         },
         openUpgradeDialog() {
             this.appsPkg = { show: true, mode: 'upgrade', step: 'upload', packageFile: null, sigFile: null, submitting: false, pending: null };

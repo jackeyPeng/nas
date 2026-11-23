@@ -28,7 +28,7 @@ func TestBuildAppUnit_OverridesMaliciousWeakening(t *testing.T) {
 		"ExecStart=/app/main\n"
 
 	got := buildAppUnit(tpl, 18010, "/var/lib/nas/apps-data/evil", "secret123", "nasapp-evil",
-		[]string{"/var/lib/nas/apps/evil", "/var/lib/nas/apps-data/evil"})
+		[]string{"/var/lib/nas/apps/evil", "/var/lib/nas/apps-data/evil"}, nil)
 
 	if strings.Contains(got, "User=root") {
 		t.Error("模板声明的 User=root 必须被核心覆盖，不应残留")
@@ -72,7 +72,7 @@ func TestBuildAppUnit_OverridesMaliciousWeakening(t *testing.T) {
 
 func TestBuildAppUnit_MissingServiceSectionGetsOneCreated(t *testing.T) {
 	tpl := "[Unit]\nDescription=no-service-section\n"
-	got := buildAppUnit(tpl, 18011, "/var/lib/nas/apps-data/x", "sec", "nasapp-x", []string{"/var/lib/nas/apps/x"})
+	got := buildAppUnit(tpl, 18011, "/var/lib/nas/apps-data/x", "sec", "nasapp-x", []string{"/var/lib/nas/apps/x"}, nil)
 	if !strings.Contains(got, "[Service]") {
 		t.Fatal("缺失 [Service] 段的模板应被补全")
 	}
@@ -83,9 +83,37 @@ func TestBuildAppUnit_MissingServiceSectionGetsOneCreated(t *testing.T) {
 
 func TestBuildAppUnit_EmptyReadWritePathsOmitsDirective(t *testing.T) {
 	tpl := "[Service]\nExecStart=/app/main\n"
-	got := buildAppUnit(tpl, 18012, "", "sec", "nasapp-y", nil)
+	got := buildAppUnit(tpl, 18012, "", "sec", "nasapp-y", nil, nil)
 	if strings.Contains(got, "ReadWritePaths=") {
 		t.Error("readWritePaths 为空时不应出现 ReadWritePaths= 指令")
+	}
+}
+
+func TestBuildAppUnit_ExtraEnvInjectedIntoServiceSection(t *testing.T) {
+	tpl := "[Service]\nExecStart=/app/main\n"
+	got := buildAppUnit(tpl, 18013, "/var/lib/nas/apps-data/z", "sec", "nasapp-z", nil,
+		[]string{"Environment=POSTGRES_DSN=postgres://nasapp_z:pw@127.0.0.1:5432/nasapp_z", "Environment=MQTT_USER=nasapp_z"})
+	for _, want := range []string{
+		"Environment=POSTGRES_DSN=postgres://nasapp_z:pw@127.0.0.1:5432/nasapp_z",
+		"Environment=MQTT_USER=nasapp_z",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("最终 unit 内容缺少 extraEnv 行 %q，got:\n%s", want, got)
+		}
+	}
+	// extraEnv 必须落在 [Service] 段内（ExecStart 之前的插入点）。
+	svcIdx := strings.Index(got, "[Service]")
+	envIdx := strings.Index(got, "Environment=POSTGRES_DSN=")
+	if envIdx < svcIdx {
+		t.Error("extraEnv 应插入在 [Service] 段标题行之后")
+	}
+}
+
+func TestBuildAppUnit_NilExtraEnvOmitsEnvironmentLines(t *testing.T) {
+	tpl := "[Service]\nExecStart=/app/main\n"
+	got := buildAppUnit(tpl, 18014, "/var/lib/nas/apps-data/w", "sec", "nasapp-w", nil, nil)
+	if strings.Contains(got, "Environment=POSTGRES_DSN") || strings.Contains(got, "Environment=VALKEY_URL") || strings.Contains(got, "Environment=MQTT_") {
+		t.Error("extraEnv 为 nil 时不应出现任何基座服务环境变量")
 	}
 }
 

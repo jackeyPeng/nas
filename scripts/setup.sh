@@ -4,8 +4,9 @@
 # 用法: sudo ./setup.sh
 #
 # 包含服务: Samba, NFS, FTP, WebDAV, S3, NAS Web Panel
+# 基座服务 (NAS_EDITION=server 时纳管): PostgreSQL, Valkey, Mosquitto
 # 安全: Fail2ban, UFW 防火墙, unattended-upgrades
-# 10步部署, 自动检测当前用户
+# 11步部署, 自动检测当前用户
 # 开关: --config-only 仅同步配置
 
 set -e
@@ -174,6 +175,21 @@ else
     FRESH_INSTALL=true
 fi
 
+# ==================== 版本形态判定（NAS_EDITION） ====================
+# NAS_EDITION=server 时额外纳管基座服务（PostgreSQL/Valkey/Mosquitto），供
+# 面板"应用平台"里需要数据库/缓存/消息队列的应用使用；默认 home（纯家用
+# NAS，不装这三者，减小攻击面与资源占用）。与 FRESH_INSTALL 同一风格：
+# 调用方（install.sh）可显式传入，未传时回退默认值，不读 .env（基座服务
+# 是否纳管属于部署期决策，不是运行期可改的密码类配置）。
+NAS_EDITION="${NAS_EDITION:-home}"
+case "$NAS_EDITION" in
+    home|server) ;;
+    *)
+        echo "错误: NAS_EDITION 取值非法: $NAS_EDITION（支持: home, server）"
+        exit 1
+        ;;
+esac
+
 if [ ! -f "$ENV_FILE" ]; then
     echo "错误: 未找到 $ENV_FILE"
     echo ""
@@ -301,7 +317,7 @@ migrate_ownership_to_nas_user() {
     # 对 NAS_USER 是 0700 外人不可读，升级路径（含 --config-only）必须幂等补挂
     # 一次，否则升级完当场所有用户的 home 浏览/预览/du 统计 EACCES）。
     # setfacl 来自 acl 包，Debian 最小化安装可能没有，提前装好（独立于下面
-    # [1/10] 的大包列表——那一步在 --config-only 下会被跳过，这里必须始终跑）。
+    # [1/11] 的大包列表——那一步在 --config-only 下会被跳过，这里必须始终跑）。
     if ! command -v setfacl >/dev/null 2>&1; then
         apt_retry apt-get install -y acl >/dev/null 2>&1 || true
     fi
@@ -341,11 +357,11 @@ download_file() {
     return 1
 }
 
-# ==================== [1/10] 安装基础软件包 ====================
+# ==================== [1/11] 安装基础软件包 ====================
 if [ "$CONFIG_ONLY" = true ]; then
-    echo "[1/10] 安装基础软件包...（--config-only 跳过）"
+    echo "[1/11] 安装基础软件包...（--config-only 跳过）"
 else
-    echo "[1/10] 安装基础软件包..."
+    echo "[1/11] 安装基础软件包..."
     apt_retry apt-get update
     DEBIAN_FRONTEND=noninteractive apt_retry apt-get install -y -o DPkg::Lock::Timeout=60 \
         curl samba nfs-kernel-server vsftpd rclone \
@@ -354,12 +370,12 @@ else
     echo "  ✓ 软件包安装完成"
 fi
 
-# ==================== [2/10] 创建数据目录结构 ====================
+# ==================== [2/11] 创建数据目录结构 ====================
 echo ""
 if [ "$CONFIG_ONLY" = true ]; then
-    echo "[2/10] 创建数据目录结构...（--config-only 跳过，避免对已有数据树做递归 chown）"
+    echo "[2/11] 创建数据目录结构...（--config-only 跳过，避免对已有数据树做递归 chown）"
 else
-    echo "[2/10] 创建数据目录结构..."
+    echo "[2/11] 创建数据目录结构..."
     mkdir -p "$DATA_DIR"
     # S1 修复：严禁 chown -R 整个 /data——那会把用户 home(alice:alice)打成
     # NAS_USER 属主(48 强化验收实证:重装一次,全部用户 home 属主被清)。
@@ -399,9 +415,9 @@ else
     echo "  ✓ 目录结构创建完成（存储池挂载 /data/nas1，public 与用户 home 由存储向导创建）"
 fi
 
-# ==================== [3/10] 配置 Samba ====================
+# ==================== [3/11] 配置 Samba ====================
 echo ""
-echo "[3/10] 配置 Samba..."
+echo "[3/11] 配置 Samba..."
 
 # 提取旧的 Z1 托管共享（如果存在）
 Z1_SAMBA_SHARES=""
@@ -431,9 +447,9 @@ systemctl reset-failed smbd nmbd 2>/dev/null
 timeout 60 systemctl restart smbd nmbd || echo "  ⚠ smbd nmbd 重启失败（结尾注册表会标记，可稍后手动 restart）"
 echo "  ✓ Samba 配置完成"
 
-# ==================== [4/10] 配置 NFS ====================
+# ==================== [4/11] 配置 NFS ====================
 echo ""
-echo "[4/10] 配置 NFS..."
+echo "[4/11] 配置 NFS..."
 if [ -f "$NAS_DIR/configs/nfs.conf" ]; then
     cp "$NAS_DIR/configs/nfs.conf" /etc/nfs.conf
 fi
@@ -454,7 +470,7 @@ EXPEOF
 fi
 
 # 追加 Z1 托管 NFS 导出（过滤掉路径已不存在的旧导出：reset/换机后 /data 可能还没建，
-# 留着会让 exportfs -a 非零退出，set -e 下整个安装中断在 [4/10]；
+# 留着会让 exportfs -a 非零退出，set -e 下整个安装中断在 [4/11]；
 # 旧版按网段导出的行统一归一为 *，与面板新生成的托管段一致）
 if [ -n "$Z1_NFS_EXPORTS" ]; then
     KEPT=""
@@ -483,9 +499,9 @@ fi
 exportfs -a 2>/dev/null || echo "  ⚠ exportfs -a 有告警（存储池未建时属正常，建池后面板会重生成导出）"
 enable_optional_service nfs-kernel-server "NFS"
 
-# ==================== [5/10] 配置 FTP ====================
+# ==================== [5/11] 配置 FTP ====================
 echo ""
-echo "[5/10] 配置 FTP (vsftpd)..."
+echo "[5/11] 配置 FTP (vsftpd)..."
 if [ -f "$NAS_DIR/configs/vsftpd.conf" ]; then
     cp "$NAS_DIR/configs/vsftpd.conf" /etc/vsftpd.conf
 else
@@ -517,9 +533,9 @@ touch /var/log/vsftpd.log
 chmod 640 /var/log/vsftpd.log
 enable_optional_service vsftpd "FTP"
 
-# ==================== [6/10] 配置 WebDAV ====================
+# ==================== [6/11] 配置 WebDAV ====================
 echo ""
-echo "[6/10] 配置 WebDAV (rclone)..."
+echo "[6/11] 配置 WebDAV (rclone)..."
 # 安装 htpasswd 工具（用于 WebDAV 认证）
 apt_retry apt-get install -y apache2-utils 2>/dev/null || true
 # 生成 htpasswd 文件（使用 bcrypt 哈希，兼容性好）
@@ -545,9 +561,9 @@ WDEOF
 systemctl daemon-reload
 enable_optional_service rclone-webdav "WebDAV"
 
-# ==================== [7/10] 清理遗留 FileBrowser（升级迁移） ====================
+# ==================== [7/11] 清理遗留 FileBrowser（升级迁移） ====================
 echo ""
-echo "[7/10] 清理遗留 FileBrowser..."
+echo "[7/11] 清理遗留 FileBrowser..."
 if command -v filebrowser &>/dev/null || [ -f /etc/systemd/system/filebrowser.service ]; then
     systemctl stop filebrowser 2>/dev/null || true
     systemctl disable filebrowser 2>/dev/null || true
@@ -568,9 +584,9 @@ else
     echo "  未检测到遗留 FileBrowser，跳过"
 fi
 
-# ==================== [8/10] 配置 S3 对象存储 (rclone serve s3) ====================
+# ==================== [8/11] 配置 S3 对象存储 (rclone serve s3) ====================
 echo ""
-echo "[8/10] 配置 S3 对象存储 (rclone serve s3)..."
+echo "[8/11] 配置 S3 对象存储 (rclone serve s3)..."
 # 安装/升级 rclone（锁定 v1.75.2：低于 1.75 即升级到 pin 版本；serve s3 的功能下限是 1.62）
 RCLONE_VERSION=$(rclone version 2>/dev/null | head -1 | grep -oP 'v\K[0-9]+\.[0-9]+' | head -1)
 # bc 在最小化 Debian 上可能不存在（57 机实测 NO_BC）——版本比较一律走 awk
@@ -653,9 +669,53 @@ enable_optional_service rclone-s3 "S3 对象存储"
 echo "    bucket 列表: public 目录自动成为一个 bucket"
 echo "    访问方式: s3cmd --no-ssl --host=NAS_IP:9000 ls s3://public/"
 
-# ==================== [9/10] 配置防火墙和安全 ====================
+# ==================== [9/11] 基座服务 (PostgreSQL/Valkey/Mosquitto) ====================
+# 仅 NAS_EDITION=server 安装；纯家用版（home，默认）完全跳过本段——不装
+# 这三个包，不碰 sudoers 基座条目之外的任何系统状态。面板侧的"基座服务"
+# 页面与应用安装时的能力校验（web/modules/base）与此脚本是否装了包无关，
+# 面板自己会探测 systemctl/psql 是否存在；装机阶段的职责只是：
+#   1. 装包（apt，不自动 enable——让它们保持 apt 装完的默认态）
+#   2. 写最小绑定本机的配置（Valkey/Mosquitto 只听 127.0.0.1，不对外暴露）
+#   3. 显式 disable --now 三个单元——纳管但默认关闭，用户在面板"基座服务"
+#      页一键启用，与 enable_optional_service 的既有口径（NFS/FTP/WebDAV/S3）
+#      一致，但基座服务默认关闭不区分 FRESH_INSTALL/升级：三者此前从未
+#      存在于机器上，没有"用户已有状态"需要保留，升级路径重跑 setup.sh
+#      也不应把用户已手动启用的基座服务又关掉——因此用 is-enabled 幂等判断
+#      （已 enabled 的不重复 disable），而不是无条件 disable --now。
 echo ""
-echo "[9/10] 配置防火墙和安全..."
+if [ "$NAS_EDITION" != "server" ]; then
+    echo "[9/11] 基座服务 (PostgreSQL/Valkey/Mosquitto)...（NAS_EDITION=$NAS_EDITION，跳过）"
+elif [ "$CONFIG_ONLY" = true ]; then
+    echo "[9/11] 基座服务 (PostgreSQL/Valkey/Mosquitto)...（--config-only 跳过安装，仅刷新配置文件）"
+    mkdir -p /etc/valkey /etc/mosquitto/conf.d
+    printf 'bind 127.0.0.1 -::1\nport 6379\nprotected-mode yes\nsupervised systemd\ndaemonize no\n' > /etc/valkey/valkey.conf
+    printf 'listener 1883 127.0.0.1\nallow_anonymous false\npassword_file /etc/mosquitto/nas-passwd\nacl_file /etc/mosquitto/nas-acl.conf\n' > /etc/mosquitto/conf.d/nas-panel.conf
+    echo "  ✓ 基座服务配置已刷新（未改动安装/启停状态）"
+else
+    echo "[9/11] 基座服务 (PostgreSQL/Valkey/Mosquitto)..."
+    apt_retry apt-get install -y -qq postgresql-16 valkey-server mosquitto mosquitto-clients
+    mkdir -p /etc/valkey /etc/mosquitto/conf.d
+    # Valkey：只听本机，面板/应用经 127.0.0.1 连接，永不对外网暴露。
+    printf 'bind 127.0.0.1 -::1\nport 6379\nprotected-mode yes\nsupervised systemd\ndaemonize no\n' > /etc/valkey/valkey.conf
+    # Mosquitto：同样只听本机；关闭匿名访问，密码/ACL 文件由
+    # nas-base-ops.sh 按需创建（应用申请 mqtt 权限时才建号），此处只落地
+    # 配置片段本身，password_file/acl_file 路径须与该脚本常量逐字一致。
+    printf 'listener 1883 127.0.0.1\nallow_anonymous false\npassword_file /etc/mosquitto/nas-passwd\nacl_file /etc/mosquitto/nas-acl.conf\n' > /etc/mosquitto/conf.d/nas-panel.conf
+    systemctl daemon-reload
+    for unit in postgresql valkey-server mosquitto; do
+        if systemctl is-enabled "$unit" >/dev/null 2>&1; then
+            # 幂等：已 enabled（用户此前手动开启，或脚本重跑）不重复 disable。
+            systemctl restart "$unit" 2>/dev/null || true
+        else
+            systemctl disable --now "$unit" 2>/dev/null || true
+        fi
+    done
+    echo "  ✓ 基座服务已安装并生成配置（默认关闭，可在面板\"基座服务\"一键启用）"
+fi
+
+# ==================== [10/11] 配置防火墙和安全 ====================
+echo ""
+echo "[10/11] 配置防火墙和安全..."
 
 if [ -f "$NAS_DIR/configs/jail.local" ]; then
     cp "$NAS_DIR/configs/jail.local" /etc/fail2ban/jail.local
@@ -708,9 +768,9 @@ ufw allow 8090/tcp               # NAS Web Panel
 ufw --force enable
 echo "  ✓ 安全配置完成"
 
-# ==================== [10/10] 安装 NAS Web 管理面板 ====================
+# ==================== [11/11] 安装 NAS Web 管理面板 ====================
 echo ""
-echo "[10/10] 安装 NAS Web 管理面板..."
+echo "[11/11] 安装 NAS Web 管理面板..."
 if [ "$CONFIG_ONLY" = true ]; then
     echo "  --config-only 模式跳过面板安装（二进制由 upgrade.sh / OTA 负责）"
 elif [ -f "$NAS_DIR/web/nas-panel" ]; then
@@ -802,8 +862,23 @@ timeout 60 systemctl restart nas-panel || echo "  ⚠ nas-panel 重启失败（�
 #   chown 给面板自身的 NAS_USER，不是 root——面板要直接写程序文件进这个
 #   目录；运行时应用用户对程序目录的隔离由 unit 的 ProtectSystem=strict
 #   硬化兜底，不依赖静态目录属主）
+#
+# M2 基座服务（APP-SPEC 基座篇）新增：面板需要以 postgres 系统用户身份跑
+# psql（建库建角色/改密/删库）与改写 /etc/mosquitto/nas-passwd、
+# /etc/mosquitto/nas-acl.conf 两类特权操作。裸 `sudo -u postgres psql -c *`
+# 通配等于任意 SQL（可 DROP TABLE pg_shadow），裸 mosquitto_passwd/改写
+# ACL 文件同理不能无约束通配进白名单。沿用 S1-R3b/nas-app-provision.sh
+# 同一模式，整脚本进白名单、不接受任何参数通配：
+#   /opt/nas/scripts/nas-base-ops.sh （整脚本，无参数通配——dbname/
+#   rolename/username 必须匹配 ^nasapp_[a-z0-9_]{1,32}$，不满足立即
+#   exit 1；拼出的 SQL 只有 CREATE DATABASE/CREATE ROLE/ALTER ROLE
+#   PASSWORD/GRANT/DROP DATABASE/DROP ROLE 六种固定模板，密码经 stdin
+#   传递不经 argv/环境变量，不出现在 ps/日志里。apt-get 装 postgresql-16/
+#   valkey-server/mosquitto 与 enable/disable/start/stop 三个单元均已被
+#   本文件既有的 `apt-get install -y -qq *`/`systemctl {enable,disable,
+#   start,stop} *` 通配条目覆盖，不需要新增）
 SUDOERS_FILE="/etc/sudoers.d/nas-panel"
-echo "${NAS_USER} ALL=(ALL) NOPASSWD: /usr/bin/pdbedit -L, /opt/nas/scripts/add-user.sh, /opt/nas/scripts/remove-user.sh, /opt/nas/scripts/backup-data.sh *, /opt/nas/scripts/set-user-pass.sh, /opt/nas/scripts/nas-group-member.sh, /opt/nas/scripts/nas-home-acl.sh, /opt/nas/scripts/nas-app-provision.sh, /usr/bin/smbpasswd -a * -s, /usr/bin/smbpasswd -e *, /usr/bin/smbpasswd -d *, /usr/bin/htpasswd -b /etc/rclone-htpasswd * *, /usr/bin/htpasswd -cb /etc/rclone-htpasswd * *, /bin/systemctl start *, /bin/systemctl stop *, /bin/systemctl restart *, /bin/systemctl reset-failed *, /bin/systemctl enable *, /bin/systemctl disable *, /bin/systemctl reload *, /bin/systemctl is-active *, /bin/systemctl daemon-reload, /bin/systemctl list-unit-files *, /usr/sbin/ufw status, /usr/sbin/ufw status numbered, /usr/sbin/ufw status verbose, /usr/sbin/ufw allow *, /usr/sbin/ufw deny *, /usr/sbin/ufw --force delete *, /usr/sbin/ufw --force enable, /usr/sbin/ufw disable, /usr/sbin/exportfs, /usr/sbin/smartctl -H /dev/*, /usr/sbin/smartctl -a /dev/*, /usr/sbin/smartctl -A /dev/*, /usr/sbin/smartctl -t short /dev/*, /usr/sbin/smartctl -t long /dev/*, /usr/sbin/smartctl -l selftest /dev/*, /usr/bin/tee /opt/nas/.env, /usr/bin/tee -a /etc/samba/smb.conf, /usr/bin/tee /etc/samba/smb.conf, /usr/bin/tee /etc/vsftpd.userlist, /usr/bin/tee -a /etc/vsftpd.userlist, /usr/bin/tee /etc/exports, /usr/bin/tee /etc/nfs.conf, /usr/bin/tee /etc/fail2ban/jail.local, /usr/bin/tee /etc/rclone-htpasswd, /usr/bin/journalctl -p err -n * --no-pager --since *, /usr/bin/journalctl -u * -n 50 --no-pager, /usr/bin/journalctl -u sshd -n * --no-pager -o short, /usr/bin/journalctl -u nas-panel --no-pager -n * -o short-iso, /usr/sbin/blkid -s UUID -o value /dev/*, /usr/sbin/blkid -s TYPE -o value /dev/*, /usr/sbin/pvs --noheadings *, /usr/sbin/vgs --noheadings *, /usr/sbin/lvs --noheadings *, /usr/sbin/pvs --noheadings, /usr/sbin/vgs --noheadings, /usr/sbin/lvs --noheadings, /usr/sbin/fdisk -l, /usr/sbin/mkfs.ext4 -F /dev/*, /usr/sbin/mkfs.xfs -f /dev/*, /usr/sbin/mkfs.btrfs /dev/*, /bin/mount -t * -o prjquota /dev/* /data/*, /bin/mount -t * /dev/* /data/*, /bin/mount /dev/* /data/*, /bin/mount -o prjquota /dev/* /data/*, /bin/mount -t * -o prjquota /dev/* /mnt/*, /bin/mount -t * /dev/* /mnt/*, /bin/mount /dev/* /mnt/*, /bin/mount -o prjquota /dev/* /mnt/*, /bin/mount -o remount\, prjquota /data/*, /bin/mount -o remount\, prjquota /mnt/*, /bin/umount /data/*, /bin/umount -l /data/*, /bin/umount /mnt/*, /bin/umount -l /mnt/*, /bin/mkdir -p /data/*, /bin/mkdir -p /data, /bin/mkdir -p /etc/nas/*, /bin/mkdir -p /mnt/*, /bin/cat /etc/samba/smb.conf, /bin/cat /etc/vsftpd.userlist, /bin/cat /etc/exports, /bin/cat /etc/nfs.conf, /bin/cat /etc/fail2ban/jail.local, /bin/cat /etc/rclone-htpasswd, /bin/cat /etc/fstab, /bin/cat /etc/mdadm/mdadm.conf, /bin/cat /etc/ssh/sshd_config, /opt/nas/scripts/backup-config.sh, /opt/nas/scripts/restore-config.sh *, /bin/rm -f /opt/nas/backups/*, /usr/bin/findmnt -n -o TARGET --source /dev/*, /usr/bin/findmnt -n -o FSTYPE --source /dev/*, /bin/chown -R *\:* /data, /bin/chown -R *\:* /data/*, /bin/chown *\:* /data/*, /bin/chmod * /data/*, /bin/chmod -R * /data/*, /usr/sbin/pvcreate -f /dev/*, /usr/sbin/vgcreate -f * *, /usr/sbin/lvcreate -y -l * -n * *, /usr/sbin/vgextend * /dev/*, /usr/sbin/lvextend -l * /dev/*, /usr/sbin/resize2fs /dev/*, /usr/sbin/xfs_growfs /data/*, /usr/sbin/pvremove -f /dev/*, /usr/sbin/vgremove -f *, /usr/sbin/lvremove -f /dev/*, /usr/sbin/wipefs -a /dev/*, /usr/sbin/wipefs /dev/*, /usr/sbin/mdadm *, /usr/sbin/parted -s /dev/* mklabel gpt mkpart primary * 0% 100%, /usr/sbin/vgchange -ay *, /bin/ls -1 /data/*, /usr/bin/find /data/* -mindepth 1 -maxdepth 1 -printf *, /usr/bin/smbstatus --json, /usr/sbin/xfs_quota -x -c * /data/*, /usr/sbin/useradd -m -s /bin/bash -G nasusers *, /usr/sbin/useradd -M -s /usr/sbin/nologin -g * *, /usr/sbin/usermod -a -G nasusers *, /usr/sbin/groupadd *, /usr/sbin/groupadd -f *, /usr/sbin/groupdel *, /usr/bin/id, /usr/bin/id *, /usr/bin/passwd -S *, /usr/bin/openssl req -x509 -newkey rsa\:2048 -keyout /etc/nas/certs/server.key -out /etc/nas/certs/server.crt -days 3650 -nodes -subj *, /usr/bin/openssl x509 -in /etc/nas/certs/server.crt -noout -subject -enddate, /usr/bin/openssl x509 -in /etc/nas/certs/server.crt -noout -subject, /usr/bin/openssl x509 -in /etc/nas/certs/server.crt -noout -modulus, /usr/bin/openssl rsa -in /etc/nas/certs/server.key -noout -modulus, /usr/bin/timedatectl set-timezone *, /usr/bin/hostnamectl set-hostname *, /usr/sbin/sysctl -w *, /usr/bin/crontab -u * -l, /usr/bin/apt-get update, /usr/bin/apt-get upgrade *, /usr/bin/apt-get install -y -qq *, /usr/bin/apt update, /usr/bin/apt upgrade *, /usr/sbin/update-initramfs *, /usr/bin/whoami, /usr/bin/systemd-run --unit\=nas-panel-upgrade --collect bash /opt/nas/scripts/apply-upgrade.sh /tmp/nas-panel-upgrade-*, /bin/rm -f /opt/nas/data/*, /bin/rm -f /etc/nas/certs/*, /bin/chmod 600 /etc/nas/certs/server.key, /bin/chmod 644 /etc/nas/certs/server.crt, /bin/chmod 640 /etc/default/nas-panel-tls, /bin/cp /etc/* /opt/nas/backups/*, /bin/cp /tmp/nas-panel-*.tmp /etc/*, /bin/mv /data/* /data/*, /bin/rm -rf /data/*, /usr/bin/test -d /data/*, /usr/bin/test -e /data/*, /usr/bin/stat -c * /data/*, /usr/bin/stat -c * /etc/samba/smb.conf, /usr/bin/tail -n * /var/log/samba/log.smbd, /usr/sbin/useradd -r -s /usr/sbin/nologin *, /usr/sbin/userdel *, /bin/systemctl enable nas-app-*, /bin/systemctl disable nas-app-*, /bin/systemctl start nas-app-*, /bin/systemctl stop nas-app-*, /bin/systemctl restart nas-app-*, /bin/systemctl is-active nas-app-*" > "$SUDOERS_FILE"
+echo "${NAS_USER} ALL=(ALL) NOPASSWD: /usr/bin/pdbedit -L, /opt/nas/scripts/add-user.sh, /opt/nas/scripts/remove-user.sh, /opt/nas/scripts/backup-data.sh *, /opt/nas/scripts/set-user-pass.sh, /opt/nas/scripts/nas-group-member.sh, /opt/nas/scripts/nas-home-acl.sh, /opt/nas/scripts/nas-app-provision.sh, /opt/nas/scripts/nas-base-ops.sh, /usr/bin/smbpasswd -a * -s, /usr/bin/smbpasswd -e *, /usr/bin/smbpasswd -d *, /usr/bin/htpasswd -b /etc/rclone-htpasswd * *, /usr/bin/htpasswd -cb /etc/rclone-htpasswd * *, /bin/systemctl start *, /bin/systemctl stop *, /bin/systemctl restart *, /bin/systemctl reset-failed *, /bin/systemctl enable *, /bin/systemctl disable *, /bin/systemctl reload *, /bin/systemctl is-active *, /bin/systemctl daemon-reload, /bin/systemctl list-unit-files *, /usr/sbin/ufw status, /usr/sbin/ufw status numbered, /usr/sbin/ufw status verbose, /usr/sbin/ufw allow *, /usr/sbin/ufw deny *, /usr/sbin/ufw --force delete *, /usr/sbin/ufw --force enable, /usr/sbin/ufw disable, /usr/sbin/exportfs, /usr/sbin/smartctl -H /dev/*, /usr/sbin/smartctl -a /dev/*, /usr/sbin/smartctl -A /dev/*, /usr/sbin/smartctl -t short /dev/*, /usr/sbin/smartctl -t long /dev/*, /usr/sbin/smartctl -l selftest /dev/*, /usr/bin/tee /opt/nas/.env, /usr/bin/tee -a /etc/samba/smb.conf, /usr/bin/tee /etc/samba/smb.conf, /usr/bin/tee /etc/vsftpd.userlist, /usr/bin/tee -a /etc/vsftpd.userlist, /usr/bin/tee /etc/exports, /usr/bin/tee /etc/nfs.conf, /usr/bin/tee /etc/fail2ban/jail.local, /usr/bin/tee /etc/rclone-htpasswd, /usr/bin/journalctl -p err -n * --no-pager --since *, /usr/bin/journalctl -u * -n 50 --no-pager, /usr/bin/journalctl -u sshd -n * --no-pager -o short, /usr/bin/journalctl -u nas-panel --no-pager -n * -o short-iso, /usr/sbin/blkid -s UUID -o value /dev/*, /usr/sbin/blkid -s TYPE -o value /dev/*, /usr/sbin/pvs --noheadings *, /usr/sbin/vgs --noheadings *, /usr/sbin/lvs --noheadings *, /usr/sbin/pvs --noheadings, /usr/sbin/vgs --noheadings, /usr/sbin/lvs --noheadings, /usr/sbin/fdisk -l, /usr/sbin/mkfs.ext4 -F /dev/*, /usr/sbin/mkfs.xfs -f /dev/*, /usr/sbin/mkfs.btrfs /dev/*, /bin/mount -t * -o prjquota /dev/* /data/*, /bin/mount -t * /dev/* /data/*, /bin/mount /dev/* /data/*, /bin/mount -o prjquota /dev/* /data/*, /bin/mount -t * -o prjquota /dev/* /mnt/*, /bin/mount -t * /dev/* /mnt/*, /bin/mount /dev/* /mnt/*, /bin/mount -o prjquota /dev/* /mnt/*, /bin/mount -o remount\, prjquota /data/*, /bin/mount -o remount\, prjquota /mnt/*, /bin/umount /data/*, /bin/umount -l /data/*, /bin/umount /mnt/*, /bin/umount -l /mnt/*, /bin/mkdir -p /data/*, /bin/mkdir -p /data, /bin/mkdir -p /etc/nas/*, /bin/mkdir -p /mnt/*, /bin/cat /etc/samba/smb.conf, /bin/cat /etc/vsftpd.userlist, /bin/cat /etc/exports, /bin/cat /etc/nfs.conf, /bin/cat /etc/fail2ban/jail.local, /bin/cat /etc/rclone-htpasswd, /bin/cat /etc/fstab, /bin/cat /etc/mdadm/mdadm.conf, /bin/cat /etc/ssh/sshd_config, /opt/nas/scripts/backup-config.sh, /opt/nas/scripts/restore-config.sh *, /bin/rm -f /opt/nas/backups/*, /usr/bin/findmnt -n -o TARGET --source /dev/*, /usr/bin/findmnt -n -o FSTYPE --source /dev/*, /bin/chown -R *\:* /data, /bin/chown -R *\:* /data/*, /bin/chown *\:* /data/*, /bin/chmod * /data/*, /bin/chmod -R * /data/*, /usr/sbin/pvcreate -f /dev/*, /usr/sbin/vgcreate -f * *, /usr/sbin/lvcreate -y -l * -n * *, /usr/sbin/vgextend * /dev/*, /usr/sbin/lvextend -l * /dev/*, /usr/sbin/resize2fs /dev/*, /usr/sbin/xfs_growfs /data/*, /usr/sbin/pvremove -f /dev/*, /usr/sbin/vgremove -f *, /usr/sbin/lvremove -f /dev/*, /usr/sbin/wipefs -a /dev/*, /usr/sbin/wipefs /dev/*, /usr/sbin/mdadm *, /usr/sbin/parted -s /dev/* mklabel gpt mkpart primary * 0% 100%, /usr/sbin/vgchange -ay *, /bin/ls -1 /data/*, /usr/bin/find /data/* -mindepth 1 -maxdepth 1 -printf *, /usr/bin/smbstatus --json, /usr/sbin/xfs_quota -x -c * /data/*, /usr/sbin/useradd -m -s /bin/bash -G nasusers *, /usr/sbin/useradd -M -s /usr/sbin/nologin -g * *, /usr/sbin/usermod -a -G nasusers *, /usr/sbin/groupadd *, /usr/sbin/groupadd -f *, /usr/sbin/groupdel *, /usr/bin/id, /usr/bin/id *, /usr/bin/passwd -S *, /usr/bin/openssl req -x509 -newkey rsa\:2048 -keyout /etc/nas/certs/server.key -out /etc/nas/certs/server.crt -days 3650 -nodes -subj *, /usr/bin/openssl x509 -in /etc/nas/certs/server.crt -noout -subject -enddate, /usr/bin/openssl x509 -in /etc/nas/certs/server.crt -noout -subject, /usr/bin/openssl x509 -in /etc/nas/certs/server.crt -noout -modulus, /usr/bin/openssl rsa -in /etc/nas/certs/server.key -noout -modulus, /usr/bin/timedatectl set-timezone *, /usr/bin/hostnamectl set-hostname *, /usr/sbin/sysctl -w *, /usr/bin/crontab -u * -l, /usr/bin/apt-get update, /usr/bin/apt-get upgrade *, /usr/bin/apt-get install -y -qq *, /usr/bin/apt update, /usr/bin/apt upgrade *, /usr/sbin/update-initramfs *, /usr/bin/whoami, /usr/bin/systemd-run --unit\=nas-panel-upgrade --collect bash /opt/nas/scripts/apply-upgrade.sh /tmp/nas-panel-upgrade-*, /bin/rm -f /opt/nas/data/*, /bin/rm -f /etc/nas/certs/*, /bin/chmod 600 /etc/nas/certs/server.key, /bin/chmod 644 /etc/nas/certs/server.crt, /bin/chmod 640 /etc/default/nas-panel-tls, /bin/cp /etc/* /opt/nas/backups/*, /bin/cp /tmp/nas-panel-*.tmp /etc/*, /bin/mv /data/* /data/*, /bin/rm -rf /data/*, /usr/bin/test -d /data/*, /usr/bin/test -e /data/*, /usr/bin/stat -c * /data/*, /usr/bin/stat -c * /etc/samba/smb.conf, /usr/bin/tail -n * /var/log/samba/log.smbd, /usr/sbin/useradd -r -s /usr/sbin/nologin *, /usr/sbin/userdel *, /bin/systemctl enable nas-app-*, /bin/systemctl disable nas-app-*, /bin/systemctl start nas-app-*, /bin/systemctl stop nas-app-*, /bin/systemctl restart nas-app-*, /bin/systemctl is-active nas-app-*" > "$SUDOERS_FILE"
 chmod 440 "$SUDOERS_FILE"
 visudo -cf "$SUDOERS_FILE" 2>/dev/null || { echo "  错误: sudoers 语法检查失败"; rm -f "$SUDOERS_FILE"; }
 # 追加改密码需要的命令（sed）

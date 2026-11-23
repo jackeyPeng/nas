@@ -34,6 +34,11 @@ type fakeExecutor struct {
 
 	// fsRoot 非空时，sandboxPath 把绝对路径映射到其下再做真实文件系统操作。
 	fsRoot string
+
+	// lastUnitContent 记录最近一次 WriteUnitFile 收到的完整渲染内容，供
+	// 测试断言基座服务凭据（POSTGRES_DSN/VALKEY_URL/MQTT_*）是否正确注入
+	// Environment= 行——calls 只记录命令形状，不含文件内容。
+	lastUnitContent string
 }
 
 func newFakeExecutor() *fakeExecutor {
@@ -202,6 +207,7 @@ func (f *fakeExecutor) WriteUnitFile(unit, content string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.record("write-unit %s", unit)
+	f.lastUnitContent = content
 	return f.failNow("WriteUnitFile")
 }
 
