@@ -1,7 +1,7 @@
 # NAS 项目变更日志
 
 ## [未发布]
-- feat(apps): M1-7 验收脚本 acceptance-apps.sh 入库（真机全链路断言固化）
+- feat(apps): M1-7 验收脚本 acceptance-apps.sh 入库（真机全链路断言固化；数据保留用例先植入标记文件再卸载）
 - feat(apps): M1-7 应用「打开」改一次性票据跳转（window.open 无 Authorization 头的 401 修复）+ mkapp.sh 版本一致性提示
 - fix(apps): M1-6c 安装器保证执行位 — 解包统一 0644 后按 unit Exec* 路径补 0755（真机 203/EXEC 根因），mkapp.sh 打包同步 chmod
 
