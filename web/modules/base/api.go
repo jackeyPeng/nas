@@ -337,19 +337,23 @@ func Ready(c Component) bool {
 	}
 	// 运行时对帐（与 handleComponentInstall/Enable 同口径）：setup.sh 装的
 	// 组件台账未记时按系统实况判定，不因台账滞后拒掉合法的安装请求
-	// （.57 真机实锤：服务 active 但 Ready=false）。
-	installed := found && st.Installed
-	if !installed {
-		installed = reg.executor.PackageInstalled(c)
-	}
-	enabled := found && st.Enabled
-	if !enabled {
-		unit, uerr := unitName(c)
-		if uerr == nil {
-			enabled = strings.EqualFold(strings.TrimSpace(reg.executor.UnitEnabledState(unit)), "enabled")
+	// （.57 真机实锤：服务 active 但 Ready=false）。executor 为 nil 的
+	// 单测场景退回纯台账判定。
+	if reg.executor != nil {
+		installed := found && st.Installed
+		if !installed {
+			installed = reg.executor.PackageInstalled(c)
 		}
+		enabled := found && st.Enabled
+		if !enabled {
+			unit, uerr := unitName(c)
+			if uerr == nil {
+				enabled = strings.EqualFold(strings.TrimSpace(reg.executor.UnitEnabledState(unit)), "enabled")
+			}
+		}
+		return installed && enabled
 	}
-	return installed && enabled
+	return found && st.Installed && st.Enabled
 }
 
 // ComponentStateDescription 返回组件当前状态的人话描述，供 apps 模块拼
