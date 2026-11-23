@@ -176,6 +176,9 @@ func main() {
 	if err := apps.InitApps(dataDir); err != nil {
 		log.Printf("WARNING: apps registry init failed: %v", err)
 	}
+	if err := base.InitBase(dataDir); err != nil {
+		log.Printf("WARNING: base registry init failed: %v", err)
+	}
 	if err := triggers.InitTriggers(dataDir); err != nil {
 		log.Printf("WARNING: triggers init failed: %v", err)
 	} else {
