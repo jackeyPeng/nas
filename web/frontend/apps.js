@@ -69,8 +69,15 @@ function appsPanel() {
         // （以 / 开头，如 "/" 或 "/gallery"），不是完整路径。
         openApp(app) {
             const entry = '/apps/' + app.id + (app.entry || '/');
-            const openUrl = '/apps/' + encodeURIComponent(app.id) + '/open?entry=' + encodeURIComponent(entry);
-            window.open(openUrl, '_blank');
+            // window.open 直开 /open 仍不带 Authorization 头（浏览器导航无自定义
+            // header）——先在面板页内 fetch（带 token，redirect:follow 消费 302
+            // 拿到已含票据的最终 URL），再 window.open 那个 URL；票据一次性，
+            // 新窗口首次加载即消费，浏览器导航无需任何 header。
+            const tok = localStorage.getItem('nas_token') || '';
+            const headers = tok ? { 'Authorization': 'Bearer ' + tok } : {};
+            fetch('/apps/' + encodeURIComponent(app.id) + '/open?entry=' + encodeURIComponent(entry), { headers, redirect: 'follow' })
+                .then(res => { if (res.ok) window.open(res.url, '_blank'); else alert(this.t('apps.open_failed') || '打开失败'); })
+                .catch(() => alert(this.t('apps.open_failed') || '打开失败'));
         },
 
         // ─── 文件 -> base64（签名文件是原始二进制，需 base64 后塞进 multipart 字段） ───

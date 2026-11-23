@@ -1027,7 +1027,8 @@
     "delete_confirm_hint": "此操作不可撤销。请输入应用 ID「{0}」以确认卸载：",
     "err_confirm_text_mismatch": "请输入正确的应用 ID 以确认",
     "confirm_uninstall": "确认卸载",
-    "delete_done": "卸载成功"
+    "delete_done": "卸载成功",
+    "open_failed": "打开失败：无法获取应用访问票据"
   },
   "msg": {
     "login_failed": "登录失败",

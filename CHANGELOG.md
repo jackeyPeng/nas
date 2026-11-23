@@ -2,7 +2,7 @@
 
 ## [未发布]
 - feat(apps): M1-7 验收脚本 acceptance-apps.sh 入库（真机全链路断言固化；数据保留用例先植入标记文件再卸载）
-- feat(apps): M1-7 应用「打开」改一次性票据跳转（window.open 无 Authorization 头的 401 修复）+ mkapp.sh 版本一致性提示
+- feat(apps): M1-7 应用「打开」改一次性票据跳转（页内 fetch 取票据 URL 再 window.open）+ mkapp.sh 版本一致性提示
 - fix(apps): M1-6c 安装器保证执行位 — 解包统一 0644 后按 unit Exec* 路径补 0755（真机 203/EXEC 根因），mkapp.sh 打包同步 chmod
 
 - fix(apps): M1-6b 真机集成修复 — 应用目录供给/chown/清理走 nas-app-provision.sh 收口脚本（S1-R3b 模式，整脚本进 sudoers 白名单，裸 mkdir/chown 不进白名单），修复面板以 fm 非 root 运行时对 /var/lib/nas 无写权导致安装/升级/卸载全部失败的真机缺陷；DELETE /api/apps/<id> 对 pending 态应用（验签/暂存成功但未 confirm）走轻量清理（删台账行+暂存包+放端口），不再卡在从未创建过的用户/目录/unit 上导致无法卸载

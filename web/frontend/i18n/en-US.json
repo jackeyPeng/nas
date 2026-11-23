@@ -1027,7 +1027,8 @@
     "delete_confirm_hint": "This action cannot be undone. Type the app ID \"{0}\" to confirm uninstall:",
     "err_confirm_text_mismatch": "Please type the correct app ID to confirm",
     "confirm_uninstall": "Confirm Uninstall",
-    "delete_done": "Uninstalled successfully"
+    "delete_done": "Uninstalled successfully",
+    "open_failed": "Failed to open: could not obtain app access ticket"
   },
   "msg": {
     "login_failed": "Login failed",
