@@ -27,7 +27,7 @@ const baseOpsScript = "/opt/nas/scripts/nas-base-ops.sh"
 // 方法形状直接对应 scripts/setup.sh 新增的 sudoers 白名单条目；新增/修改
 // 任一方法的参数形状都必须同步检查白名单是否仍覆盖。
 type Executor interface {
-	// AptInstall 安装组件对应的 apt 包（postgresql-16 / valkey-server /
+	// AptInstall 安装组件对应的 apt 包（postgresql 元包 / valkey-server /
 	// mosquitto+mosquitto-clients），幂等（apt-get install 对已安装包是空操作）。
 	AptInstall(component Component) (string, error)
 
@@ -99,7 +99,9 @@ func (defaultExecutor) AptInstall(component Component) (string, error) {
 func aptPackages(component Component) ([]string, error) {
 	switch component {
 	case ComponentPostgres:
-		return []string{"postgresql-16"}, nil
+		// Debian trixie 官方源提供 postgresql-17（16 不在源内）；跟随发行版
+		// 大版本，不硬编码过时包名（设计文档 PG16 → 实际 PG17 同为官方源）。
+		return []string{"postgresql"}, nil
 	case ComponentValkey:
 		return []string{"valkey-server"}, nil
 	case ComponentMosquitto:

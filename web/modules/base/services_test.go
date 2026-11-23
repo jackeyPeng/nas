@@ -8,7 +8,7 @@ import (
 
 func TestAptPackagesFixedShape(t *testing.T) {
 	cases := map[Component][]string{
-		ComponentPostgres:  {"postgresql-16"},
+		ComponentPostgres:  {"postgresql"},
 		ComponentValkey:    {"valkey-server"},
 		ComponentMosquitto: {"mosquitto", "mosquitto-clients"},
 	}

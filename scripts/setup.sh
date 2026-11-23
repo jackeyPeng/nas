@@ -693,7 +693,7 @@ elif [ "$CONFIG_ONLY" = true ]; then
     echo "  ✓ 基座服务配置已刷新（未改动安装/启停状态）"
 else
     echo "[9/11] 基座服务 (PostgreSQL/Valkey/Mosquitto)..."
-    apt_retry apt-get install -y -qq postgresql-16 valkey-server mosquitto mosquitto-clients
+    apt_retry apt-get install -y -qq postgresql valkey-server mosquitto mosquitto-clients
     mkdir -p /etc/valkey /etc/mosquitto/conf.d
     # Valkey：只听本机，面板/应用经 127.0.0.1 连接，永不对外网暴露。
     printf 'bind 127.0.0.1 -::1\nport 6379\nprotected-mode yes\nsupervised systemd\ndaemonize no\n' > /etc/valkey/valkey.conf
@@ -873,7 +873,7 @@ timeout 60 systemctl restart nas-panel || echo "  ⚠ nas-panel 重启失败（�
 #   rolename/username 必须匹配 ^nasapp_[a-z0-9_]{1,32}$，不满足立即
 #   exit 1；拼出的 SQL 只有 CREATE DATABASE/CREATE ROLE/ALTER ROLE
 #   PASSWORD/GRANT/DROP DATABASE/DROP ROLE 六种固定模板，密码经 stdin
-#   传递不经 argv/环境变量，不出现在 ps/日志里。apt-get 装 postgresql-16/
+#   传递不经 argv/环境变量，不出现在 ps/日志里。apt-get 装 postgresql/
 #   valkey-server/mosquitto 与 enable/disable/start/stop 三个单元均已被
 #   本文件既有的 `apt-get install -y -qq *`/`systemctl {enable,disable,
 #   start,stop} *` 通配条目覆盖，不需要新增）
