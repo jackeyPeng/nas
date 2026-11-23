@@ -1,16 +1,27 @@
 # NAS 项目变更日志
 
 ## [未发布]
-- feat(apps): M1-7 验收脚本 acceptance-apps.sh 入库（真机全链路断言固化；数据保留用例先植入标记文件再卸载）
-- feat(apps): M1-7 应用「打开」改一次性票据跳转（页内 fetch 取票据 URL 再 window.open）+ mkapp.sh 版本一致性提示
-- fix(apps): M1-6c 安装器保证执行位 — 解包统一 0644 后按 unit Exec* 路径补 0755（真机 203/EXEC 根因），mkapp.sh 打包同步 chmod
 
-- fix(apps): M1-6b 真机集成修复 — 应用目录供给/chown/清理走 nas-app-provision.sh 收口脚本（S1-R3b 模式，整脚本进 sudoers 白名单，裸 mkdir/chown 不进白名单），修复面板以 fm 非 root 运行时对 /var/lib/nas 无写权导致安装/升级/卸载全部失败的真机缺陷；DELETE /api/apps/<id> 对 pending 态应用（验签/暂存成功但未 confirm）走轻量清理（删台账行+暂存包+放端口），不再卡在从未创建过的用户/目录/unit 上导致无法卸载
-- feat(apps): M1-6 hello-app 演示应用 + mkapp.sh 打包签名工具（APP-SPEC 参考实现）
-- feat(apps): M1-5 前端 — 应用中心/应用详情/两步权限确认（独立 apps.js，单页不膨胀约束）
-- feat(apps): M1-4 健康纳管 — healthz 60s 轮询/状态翻转才发事件/不自动重启/注册表应用健康项（APP-SPEC §6）
-- feat(apps): M1-3 统一入口 — /apps/<id>/ 反代 + 会话门禁 + X-NAS SSO header 注入（伪造剥离）
-- feat(apps): M1-2 应用注册与生命周期（两步安装/启停/升级回滚/卸载，sudo 白名单最小化增量）
+## 2026-11-23 - v1.5.0-beta.1 应用平台 M1（托管应用核心）
+
+首个应用平台版本：面板从「存储设备管理器」升级为「家庭数字化底座」，支持安装/运行/托管第三方应用（APP-SPEC v0.1 契约）。应用中心六切片全部落地并双机真机验收。
+
+- feat(apps): M1-1 契约层 — manifest 校验/包解包/ed25519 验签（APP-SPEC v0.1 §1-2）
+- feat(apps): M1-2 应用注册与生命周期 — 两步安装（验签→权限确认→落地）/端口分配 18000-18999（表+真探测）/nasapp-<id> 专用用户/启停/升级回滚/卸载 keepData（APP-SPEC §3，sudo 白名单最小化增量，无 root-equivalent 通配）
+- feat(apps): M1-3 统一入口与 SSO — /apps/<id>/ 前缀原样透传反代（出站强制 127.0.0.1）/会话门禁 401/X-NAS-User/Roles/Auth(HMAC-SHA256 ±60s)/Time 注入 + 伪造头四种大小写变体剥离（APP-SPEC §4-5）
+- feat(apps): M1-4 健康纳管 — healthz 60s 轮询/连续 3 次失败才翻转/状态翻转才发事件/不自动重启/注册表应用健康项（APP-SPEC §6）
+- feat(apps): M1-5 前端 — 应用中心/应用详情/两步权限确认对话框/本地上传安装/市场占位（独立 apps.js，单页不膨胀约束，i18n 中英）
+- feat(apps): M1-6 hello-app 演示应用 + mkapp.sh 打包签名工具（APP-SPEC 参考实现，独立 Go module，SSO 验签/healthz/DATA_DIR 演示）
+- fix(apps): M1-6b 真机集成修复 — 应用目录供给/chown/清理收口进 nas-app-provision.sh（S1-R3b 模式，整脚本进 sudoers）；pending 态应用可轻量卸载（修真机 mkdir /var/lib/nas permission denied）
+- fix(apps): M1-6c 安装器保证执行位 — 解包统一 0644 后按 unit Exec* 路径补 0755 + mkapp.sh 打包侧 chmod 双保险（真机 203/EXEC 根因修复）
+- feat(apps): M1-7 收尾 — 验收脚本 acceptance-apps.sh 入库（19 项断言固化真机全链路；数据保留用例先植入标记文件再卸载）；应用「打开」改一次性票据跳转（页内 fetch 取票据 URL 后 window.open，30s 一次性防重放，票据 query 转发前剥离）；hello-app 前端 XHR 沿用票据（消费后 401 属预期降级）；mkapp.sh 版本一致性提示
+- docs: 应用平台架构设计（家庭数字化底座：两发行版两分支/基座服务选型 PG16+Valkey8+Mosquitto+ntfy/应用契约/市场 get.z1.sale/apps/index.json）
+- docs: 《NAS 应用开发规范 v0.1》定稿 + M1 实施计划（六切片）
+- docs: 产品双定位拍板 — basic = 家用 NAS 版（文件共享核心，v1.4.x 快修线）/master = 家用服务器版（+应用平台+基座服务，v1.5.0 起）；同名双版本不做单独产品，下载页双按钮
+
+真机验收：两台测试机（LVM/RAID）部署 master 构建后 acceptance-apps.sh 19/19 全过——install 验签→confirm→nas-app-hello active（执行位 0755）→healthz ok→SSO whoami valid→伪造头剥离→未登录 401→停止 503→恢复 200→卸载 keepData 双态→数据保留跨重装；Chrome UI 实测应用中心卡片/详情/启停/安装对话框/「打开」票据全链。
+
+---
 
 ## 2026-11-20 - v1.4.0-beta.42 安装布局与 --version 修复
 
@@ -45,6 +56,7 @@
 
 | 版本 | 日期 | 主要变化 |
 |------|------|---------|
+| v1.5.0-beta.1 | 2026-11-23 | 应用平台 M1 — 面板升级为家庭数字化底座：托管应用全链（ed25519 验签两步安装/nasapp-<id> 专用用户/systemd 硬化 unit/18000-18999 端口池）、/apps/<id>/ 反代 + X-NAS-SSO HMAC 注入与伪造剥离、健康纳管（3 次失败翻转才发事件）、应用中心前端（独立 apps.js）、hello-app 参考实现 + mkapp.sh 打包签名、一次性票据「打开」跳转；basic/master 双定位与同名双版本拍板。真机验收 acceptance-apps 19/19 双机全过 + Chrome UI 全链 |
 | v1.4.0-beta.42 | 2026-11-20 | 安装与版本查询修复 — `nas-panel --version` 此前不解析参数直接启动完整面板（以 root 调用会创建 root 属主数据库毒化面板、面板停止时甚至拉起 root 权限实例），现早退输出版本；root 直跑 install.sh 时仓库正确落到 NAS_USER 家目录（此前落 /root 使降权面板无法穿透 /opt/nas，data/.env/configs 全不可达，.48/.57 双机实锤），已有布局的升级机沿用现路径；backup-config 版本采集加 timeout；架构边界白名单同步。真机验收：root 路径全新安装双机全绿（门禁四件套/建池/注册表 41/41/套件 45/45/Chrome UI） |
 | v1.4.0-beta.41 | 2026-11-19 | 快修轮 — 注册表自动后台刷新（磁盘/共享配置变更后 3s 去抖重算，面板默认读取即最新，不再需要手动 refresh）；流式扩容/RAID 扩容感知客户端断连与 ctx 取消（SSE 断开命令链即时中止，不再后台跑到底）；waitForResyncCore 抽取（resync 轮询断连即时停止，超时/streak 参数化）；beta.37-40 三轮文档同步与 opencode 归档整理。真机验收：两台重置测试机全新安装（LVM merge + RAID1）注册表 41/41 + acceptance-suite 45/45 + RAID 机重启装配 md0/跨重启健康 + Chrome UI 实测全绿 |
 | v1.4.0-beta.40 | 2026-11-16 | 密码策略放宽 — 面板登录/用户/改密/AI 建号的密码长度下限 12 → 8 位，不引入任何大小写/数字/符号复杂度要求（家庭用户高频输入成本）；凭证保险箱主口令同降 8 位（PBKDF2-600k+AES-256-GCM 强度不依赖口令长度单一因子）；`ValidSecret` 仍拒换行/控制字符（chpasswd stdio 注入防护不变）；安装脚本 MIN_PASS_LEN 与全部文档/双语 i18n 文案同步。真机验收：.48 一键安装 exit 0 + 注册表 41/41 + acceptance-suite 45/45 + 首登改密四件套（8 位新密码）+ Chrome 实测（7 位被拒/8 位通过，用户向导与保险箱建库/锁定/解锁全链） |
