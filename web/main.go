@@ -143,6 +143,10 @@ func main() {
 		}
 	}
 	common.InitAuth(secret)
+	// 应用「打开」票据密钥（M1-7）：从面板 JWT secret 派生（HMAC 加标签，
+	// 不直接复用同一把密钥做两种不同用途的签名），避免再单独管理一份密钥
+	// 材料/落盘逻辑。
+	apps.InitTicketSecret(apps.DeriveTicketSecret(secret))
 
 	// Init audit log
 	dataDir := "/opt/nas/data"

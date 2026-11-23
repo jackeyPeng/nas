@@ -31,21 +31,12 @@ func RegisterProxyRoutes(mux *http.ServeMux) {
 
 // handleAppProxy 是 /apps/<id>/... 的统一入口：会话校验 → 查注册表 → 剥离
 // 伪造头 → 注入 SSO 头 → 反代到 127.0.0.1:<port>（路径原样透传）。
+//
+// 会话校验失败时还有第二条放行路径（M1-7「打开」按钮票据引导）：query 带
+// nas_ticket 且验签+一次性消费通过，等价于该票据绑定用户的一次会话校验
+// 通过，换算成同一套 X-NAS-* 注入放行——window.open 新开的页面天然不带
+// Authorization 头，没有这条路径会直接 401（真机实测现象）。
 func handleAppProxy(w http.ResponseWriter, r *http.Request) {
-	// 会话校验（§5.2「核心在转发前校验面板会话；无效会话 → 401」）：复用
-	// 面板现有 JWT Bearer 校验（common.ValidTokenFromRequest/RequestUsername），
-	// 不新造第二套会话机制。401 响应带与 common.AuthMiddleware 一致的 JSON
-	// body（前端 401 拦截逻辑按现有口径识别）。
-	if !common.ValidTokenFromRequest(r) {
-		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
-		return
-	}
-	user := common.RequestUsername(r)
-	if user == "" {
-		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
-		return
-	}
-
 	// 解析 /apps/<id>/... 的 id：剩余路径（含前导 /）原样转发，不剥前缀
 	// （§5.2「路径前缀原样透传，应用自己处理前缀」）。
 	rest := strings.TrimPrefix(r.URL.Path, "/apps/")
@@ -59,6 +50,30 @@ func handleAppProxy(w http.ResponseWriter, r *http.Request) {
 	if id == "" {
 		httpError(w, http.StatusNotFound, "缺少应用 id")
 		return
+	}
+
+	// GET /apps/<id>/open 是票据签发入口，不是反代目标，单独分发
+	// （与反代共用 /apps/ 前缀路由，这里按剩余路径精确匹配 "<id>/open"）。
+	if slash >= 0 && rest[slash+1:] == "open" {
+		handleAppOpen(w, r, id)
+		return
+	}
+
+	// 会话校验（§5.2「核心在转发前校验面板会话；无效会话 → 401」）：复用
+	// 面板现有 JWT Bearer 校验（common.ValidTokenFromRequest/RequestUsername），
+	// 不新造第二套会话机制。401 响应带与 common.AuthMiddleware 一致的 JSON
+	// body（前端 401 拦截逻辑按现有口径识别）。
+	user := common.RequestUsername(r)
+	validSession := common.ValidTokenFromRequest(r) && user != ""
+	if !validSession {
+		// 回退路径：query 带票据且验签+一次性消费通过 → 换算成票据绑定的
+		// 用户身份放行；票据剥离在下面 Rewrite 里统一做，这里只确定身份。
+		ticketUser, ticketOK := ticketFallbackUser(r)
+		if !ticketOK {
+			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+			return
+		}
+		user = ticketUser
 	}
 
 	app, err := getInstalledApp(reg.db, id)
@@ -97,6 +112,14 @@ func handleAppProxy(w http.ResponseWriter, r *http.Request) {
 			pr.Out.URL.Host = target
 			pr.Out.Host = target
 
+			// 票据剥离（任务硬红线：票据放 URL query 时必须剥离后再转发给
+			// 应用，应用不该见到票据）：无论本次请求是走票据回退放行的，
+			// 还是真实会话请求里碰巧带了这个参数，一律从转发 query 中去掉。
+			if q := pr.Out.URL.Query(); q.Has(ticketQueryParam) {
+				q.Del(ticketQueryParam)
+				pr.Out.URL.RawQuery = q.Encode()
+			}
+
 			// 防伪造：转发前先剥离入站请求里的同名头，再注入面板计算出的
 			// 真实值（任务硬红线：伪造头剥离缺失=返工）。
 			pr.Out.Header.Del("X-Nas-User")
@@ -118,6 +141,25 @@ func handleAppProxy(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 	proxy.ServeHTTP(w, r)
+}
+
+// ticketFallbackUser 校验请求 query 里的 nas_ticket：验签通过（未过期、
+// HMAC 匹配）且尚未被消费过，返回票据绑定的用户名。失败（缺票据/签名不对/
+// 过期/重放）统一返回 ok=false，调用方按 401 处理，不区分失败原因（避免
+// 给攻击者可用于调整重试策略的信息）。
+func ticketFallbackUser(r *http.Request) (user string, ok bool) {
+	token := r.URL.Query().Get(ticketQueryParam)
+	if token == "" {
+		return "", false
+	}
+	user, valid := verifyOpenTicket(token, time.Now())
+	if !valid {
+		return "", false
+	}
+	if !consumeTicketOnce(token, ticketExpiryFromToken(token)) {
+		return "", false // 重放：同一票据第二次出现
+	}
+	return user, true
 }
 
 // SignNASAuth 计算 §5.3 的 X-NAS-Auth 签名：

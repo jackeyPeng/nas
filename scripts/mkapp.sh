@@ -8,6 +8,9 @@
 #   <app-dir>   应用源目录（如 examples/hello-app），须含 manifest.json/
 #               icon.png（或 tools/genicon.go 可生成）/main.go/unit.tpl/README.md
 #   <out.tar.gz> 输出的应用包路径，同目录下还会生成 <out.tar.gz>.sha256 和 .sig
+#               建议按 APP-SPEC §1 发布物三件套命名为 <id>-<manifest 里的
+#               version>.tar.gz（如 hello-1.0.0.tar.gz）；文件名与 manifest
+#               version 不一致时脚本只警告不中止，但发布渠道建议统一遵守。
 #   [key-dir]   ed25519 签名私钥所在目录（须含 dev.key），默认
 #               web/modules/apps/testdata/devkey（M1 期开发密钥，§1「验签公钥
 #               编译进核心」——生产签发走正式密钥时覆盖此参数）
@@ -22,9 +25,11 @@ set -euo pipefail
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
+YELLOW='\033[0;33m'
 NC='\033[0m'
 info() { echo -e "${BLUE}[INFO]${NC} $*"; }
 ok() { echo -e "${GREEN}[OK]${NC} $*"; }
+warn() { echo -e "${YELLOW}[WARN]${NC} $*" >&2; }
 error() {
     echo -e "${RED}[ERROR]${NC} $*" >&2
     exit 1
@@ -61,6 +66,19 @@ APP_VERSION="$(python3 -c "import json; print(json.load(open('$MANIFEST'))['vers
 [ -n "$APP_VERSION" ] || error "manifest.json 缺少 version 字段"
 
 info "打包应用: $APP_ID v$APP_VERSION（GOARCH=$GOARCH）"
+
+# ── 输出文件名版本一致性提示（M1-7）：<out.tar.gz> 文件名可能不含版本号
+#    （比如固定叫 release.tar.gz），这不是错误，不abort；但如果文件名里
+#    确实带了一个形如 x.y.z 的版本号，且它和 manifest.json 里的 version
+#    不一致，很可能是改完 manifest 忘了同步改输出路径——只警告，交给人
+#    判断是否有意为之（包本身内容始终以 manifest 为准，不受文件名影响）。
+OUT_BASENAME="$(basename "$OUT_TARBALL")"
+if [[ "$OUT_BASENAME" =~ ([0-9]+\.[0-9]+\.[0-9]+) ]]; then
+    FILENAME_VERSION="${BASH_REMATCH[1]}"
+    if [ "$FILENAME_VERSION" != "$APP_VERSION" ]; then
+        warn "输出文件名中的版本号 ($FILENAME_VERSION) 与 manifest.json 的 version ($APP_VERSION) 不一致，请确认是否有意为之"
+    fi
+fi
 
 WORK_DIR="$(mktemp -d)"
 trap 'rm -rf "$WORK_DIR"' EXIT

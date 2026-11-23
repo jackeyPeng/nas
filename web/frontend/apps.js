@@ -61,8 +61,16 @@ function appsPanel() {
             return { text: this.t('apps.health_stopped'), style: 'background: var(--card-bg-alt);color: var(--text-light)' };
         },
 
+        // 「打开」改走一次性票据跳转入口（M1-7）：window.open 新开页面不带
+        // Authorization 头，直开 /apps/<id>/... 会话校验必 401；改成先打开
+        // /apps/<id>/open?entry=<entry>，由面板校验当前会话后 302 带票据
+        // 落回真实应用页面，浏览器原生导航自动带票据 query，不需要 JS 设头。
+        // entry 拼接保持原逻辑：manifest.entry 是相对 /apps/<id> 的路径
+        // （以 / 开头，如 "/" 或 "/gallery"），不是完整路径。
         openApp(app) {
-            window.open('/apps/' + encodeURIComponent(app.id) + (app.entry || '/'), '_blank');
+            const entry = '/apps/' + app.id + (app.entry || '/');
+            const openUrl = '/apps/' + encodeURIComponent(app.id) + '/open?entry=' + encodeURIComponent(entry);
+            window.open(openUrl, '_blank');
         },
 
         // ─── 文件 -> base64（签名文件是原始二进制，需 base64 后塞进 multipart 字段） ───

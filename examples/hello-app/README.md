@@ -28,6 +28,12 @@ cd examples/hello-app
 go run . # 默认监听 127.0.0.1:8081，裸路径 / 与 /api/whoami 可直接访问
 ```
 
+## 打包发布
+
+用 `scripts/mkapp.sh` 打包签名（见该脚本头部注释的完整用法）。发布文件名建议遵循
+`<id>-<manifest 里的 version>.tar.gz`（本应用即 `hello-1.0.0.tar.gz`），与 APP-SPEC §1
+的三件套命名约定保持一致，方便从文件名直接识别版本。
+
 设置 `NAS_SECRET` 环境变量后可用 `curl` 自己算一次签名验证验签逻辑：
 
 ```bash
