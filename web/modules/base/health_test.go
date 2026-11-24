@@ -73,7 +73,7 @@ func TestProbeComponentHealthFlipsToUnhealthyAfterThreshold(t *testing.T) {
 
 	var flipped bool
 	for i := 0; i < healthFailThreshold; i++ {
-		flipped = probeComponentHealth(ComponentPostgres)
+		_, flipped = probeComponentHealth(ComponentPostgres)
 	}
 	st, ok := getComponentHealthSnapshot(ComponentPostgres)
 	if !ok || st.Status != healthUnhealthy {
@@ -117,7 +117,7 @@ func TestProbeComponentHealthRecoversToRunning(t *testing.T) {
 	}
 
 	fe.pgReady = true
-	flipped := probeComponentHealth(ComponentPostgres)
+	_, flipped := probeComponentHealth(ComponentPostgres)
 	st, _ = getComponentHealthSnapshot(ComponentPostgres)
 	if st.Status != healthRunning {
 		t.Fatalf("恢复成功后应回到 running，实际 %s", st.Status)

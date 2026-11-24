@@ -90,18 +90,18 @@ func pollOnce() {
 			}
 			continue
 		}
-		if probeComponentHealth(c) {
+		ok, flippedProbe := probeComponentHealth(c)
+		if flippedProbe {
 			flipped = true
-			if c == ComponentMosquitto {
-				// Mosquitto 探测成功：确保事件总线→MQTT 桥在跑。
-				// 不只在「翻转」时调——状态机首轮失败会把 status 记成
-				// running（阈值未到不翻 unhealthy），mosquitto 恢复后
-				// running→running 无翻转，靠翻转触发会漏掉桥重试
-				// （真机实锤：停 mosquitto 重启面板再恢复，桥不自愈）。
-				// StartEventsBridgeIfReady 自身幂等（running 检查 + 失败
-				// 重试收口），每轮调用是廉价的。
-				StartEventsBridgeIfReady()
-			}
+		}
+		if c == ComponentMosquitto && ok {
+			// Mosquitto 探测成功：确保事件总线→MQTT 桥在跑。
+			// 看 ok 而不是 flipped——首轮失败 status 从 "" 记成
+			// running（阈值未到不翻 unhealthy），恢复后 running→running
+			// 无翻转，靠翻转触发会漏掉桥重试（真机实锤：停 mosquitto
+			// 重启面板再恢复，桥不自愈）。StartEventsBridgeIfReady 自身
+			// 幂等（running 检查 + 失败重试收口），每轮调用是廉价的。
+			StartEventsBridgeIfReady()
 		}
 	}
 
@@ -125,10 +125,14 @@ func probeHealth(executor Executor, c Component) bool {
 	}
 }
 
-// probeComponentHealth 对单个组件探测一次并更新其状态机；返回是否发生了
-// running<->unhealthy 的状态翻转。
-func probeComponentHealth(c Component) bool {
-	ok := probeHealth(reg.executor, c)
+// probeComponentHealth 对单个组件探测一次并更新其状态机；返回本次探测
+// 是否成功、以及是否发生了 running<->unhealthy 的状态翻转。
+// ok 与 flipped 是两个独立信号：首轮失败会把 status 从 "" 记成 running
+// （阈值未到不翻 unhealthy），此后恢复时 running→running 无翻转——
+// 调用方（pollOnce 的桥启动回调）必须看 ok 而不是 flipped，否则漏掉
+// 「失败后恢复」场景（真机实锤：停 mosquitto 重启面板再恢复，桥不自愈）。
+func probeComponentHealth(c Component) (ok bool, flipped bool) {
+	ok = probeHealth(reg.executor, c)
 	now := time.Now().Format(time.RFC3339)
 
 	poller.mu.Lock()
@@ -152,10 +156,10 @@ func probeComponentHealth(c Component) bool {
 		next.Status = healthRunning
 	}
 	poller.states[c] = next
-	flipped := prev.Status != next.Status
+	flipped = prev.Status != next.Status
 	poller.mu.Unlock()
 
-	return flipped
+	return ok, flipped
 }
 
 // clearComponentHealthState 把组件的健康态设为 stopped（未安装不探测）；
