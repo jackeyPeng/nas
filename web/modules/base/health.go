@@ -81,6 +81,22 @@ func pollOnce() {
 		return
 	}
 
+	// 运行时对帐（与 GET 列表/install/enable 入口同一口径）：setup.sh
+	// 基座段装的组件不经面板 API，台账可能整体缺行或 Installed 落后。
+	// pollOnce 只看台账会把这些组件当未安装直接跳过——探测不跑、健康
+	// 恒 stopped、事件桥永远不启动（全新装机真机实锤：面板跑 40 分钟
+	// 桥零日志）。轮询器启动前先补记，让「台账滞后」最多迟到一个周期。
+	for i := range states {
+		st := &states[i]
+		if !st.Installed && reg.executor != nil && reg.executor.PackageInstalled(Component(st.Name)) {
+			if err := setComponentState(reg.db, Component(st.Name), true, st.Enabled); err != nil {
+				log.Printf("[BASE] 健康轮询补记台账失败（%s）: %v", st.Name, err)
+				continue
+			}
+			st.Installed = true
+		}
+	}
+
 	flipped := false
 	for _, st := range states {
 		c := Component(st.Name)
