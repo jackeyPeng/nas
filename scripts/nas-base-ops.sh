@@ -144,6 +144,13 @@ case "$SUBCOMMAND" in
         else
             mosquitto_passwd -c -b "$MOSQUITTO_PASSWD_FILE" "$USERNAME" "$PASSWORD"
         fi
+        # Mosquitto 不热重载 passwd/acl 文件——写入后必须 SIGHUP 重读，
+        # 否则新凭据在 broker 重启前一直 not authorised（真机实锤：.57
+        # 桥申领成功但连接被拒，直到手工 restart mosquitto 才通）。
+        # broker 未运行时跳过（首次安装场景，启动时自然读到新文件）。
+        if systemctl is-active --quiet mosquitto 2>/dev/null; then
+            systemctl kill -s HUP mosquitto || systemctl restart mosquitto
+        fi
         ;;
 
     mqtt-delete-user)
@@ -179,6 +186,10 @@ case "$SUBCOMMAND" in
             echo "user ${USERNAME}"
             echo "topic readwrite ${TOPIC_PREFIX}#"
         } >> "$MOSQUITTO_ACL_FILE"
+        # 同 mqtt-set-password：acl 文件同样不热重载，SIGHUP 重读。
+        if systemctl is-active --quiet mosquitto 2>/dev/null; then
+            systemctl kill -s HUP mosquitto || systemctl restart mosquitto
+        fi
         ;;
 
     mqtt-acl-remove)
