@@ -773,7 +773,7 @@ function nasPanel() {
                 case 'events': this.loadEvents(); this.loadEventStats(); break;
                 case 'diagnostics': this.loadDiagnostics(); break;
                 case 'health': this.loadHealth(); break;
-                case 'apps': this.loadApps(); break;
+                case 'apps': this.loadApps(); this.loadMarket(); break;
                 case 'base': this.loadBaseServices(); break;
             }
         },

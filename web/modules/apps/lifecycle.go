@@ -73,6 +73,8 @@ func InitApps(dataDir string) error {
 func RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/apps", common.AdminMiddleware(handleAppsList))
 	mux.HandleFunc("/api/apps/install", common.AdminMiddleware(handleInstall))
+	mux.HandleFunc("/api/apps/market", common.AdminMiddleware(handleMarketList))
+	mux.HandleFunc("/api/apps/market/install", common.AdminMiddleware(handleMarketInstall))
 	mux.HandleFunc("/api/apps/", common.AdminMiddleware(handleAppsDispatch))
 	startHealthPoller()
 }
@@ -83,6 +85,8 @@ func RegisterRoutes(mux *http.ServeMux) {
 func RegisterRoutesBare(mux *http.ServeMux) {
 	mux.HandleFunc("/api/apps", handleAppsList)
 	mux.HandleFunc("/api/apps/install", handleInstall)
+	mux.HandleFunc("/api/apps/market", handleMarketList)
+	mux.HandleFunc("/api/apps/market/install", handleMarketInstall)
 	mux.HandleFunc("/api/apps/", handleAppsDispatch)
 }
 
@@ -200,6 +204,32 @@ func handleInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	resp, instErr := installFromTarball(r, tarball, sig, "安装应用")
+	if instErr != nil {
+		httpError(w, instErr.status, instErr.message)
+		return
+	}
+	common.JSONResponse(w, resp)
+}
+
+// httpStatusError 是 installFromTarball 等共享链路函数的错误返回形态：
+// 携带 HTTP 状态码，调用方（手工上传 handler / 市场安装 handler）各自
+// 决定怎么写响应（httpError 的参数形状，便于直接转发）。
+type httpStatusError struct {
+	status  int
+	message string
+}
+
+func (e *httpStatusError) Error() string { return e.message }
+
+// installFromTarball 是 install 第一步"验签→解包→核心版本校验→端口分配
+// →落 pending 台账"的共享实现，供手工上传（handleInstall）与市场一键
+// 安装（market.go 的 handleMarketInstall）两条入口复用——两者唯一差异
+// 只是 tarball/签名的来源（HTTP 表单字段 vs 市场索引下载），验签通过后
+// 的整条链路必须完全一致，不应该为市场来源的包开一条绕过校验的近路。
+// actionCN 用于审计日志动作名（"安装应用" vs "市场安装应用"），便于审计
+// 页区分来源。
+func installFromTarball(r *http.Request, tarball, sig []byte, actionCN string) (*pendingInstallResponse, *httpStatusError) {
 	// TODO(发布前): M1 验签公钥固定用 DevPublicKeyB64（开发密钥对）。正式
 	// 上架前须切换为编译进核心的市场正式公钥（§1「验签公钥编译进核心，
 	// 市场方为 v0.1 唯一签发者」）——届时这里改为引用一个不可由构建参数
@@ -207,26 +237,22 @@ func handleInstall(w http.ResponseWriter, r *http.Request) {
 	// 被生产环境误信任。
 	pubBytes, err := base64.StdEncoding.DecodeString(DevPublicKeyB64)
 	if err != nil {
-		httpError(w, http.StatusInternalServerError, "内部错误：开发公钥解码失败")
-		return
+		return nil, &httpStatusError{http.StatusInternalServerError, "内部错误：开发公钥解码失败"}
 	}
 	if !VerifyAppSignature(tarball, sig, pubBytes) {
-		common.LogAuditRequest(r, auditCategory, "安装应用", "签名校验失败", "失败")
-		httpError(w, http.StatusBadRequest, "签名校验失败，拒绝安装")
-		return
+		common.LogAuditRequest(r, auditCategory, actionCN, "签名校验失败", "失败")
+		return nil, &httpStatusError{http.StatusBadRequest, "签名校验失败，拒绝安装"}
 	}
 
 	pkg, err := UnpackAppPackage(tarball)
 	if err != nil {
-		common.LogAuditRequest(r, auditCategory, "安装应用", "应用包校验失败: "+err.Error(), "失败")
-		httpError(w, http.StatusBadRequest, "应用包校验失败: "+err.Error())
-		return
+		common.LogAuditRequest(r, auditCategory, actionCN, "应用包校验失败: "+err.Error(), "失败")
+		return nil, &httpStatusError{http.StatusBadRequest, "应用包校验失败: " + err.Error()}
 	}
 
 	if err := checkCoreCompat(pkg.Manifest); err != nil {
-		common.LogAuditRequest(r, auditCategory, "安装应用", "核心版本不兼容: "+err.Error(), "失败")
-		httpError(w, http.StatusBadRequest, err.Error())
-		return
+		common.LogAuditRequest(r, auditCategory, actionCN, "核心版本不兼容: "+err.Error(), "失败")
+		return nil, &httpStatusError{http.StatusBadRequest, err.Error()}
 	}
 
 	id := pkg.Manifest.ID
@@ -236,29 +262,24 @@ func handleInstall(w http.ResponseWriter, r *http.Request) {
 
 	existing, err := getInstalledApp(reg.db, id)
 	if err != nil {
-		httpError(w, http.StatusInternalServerError, "查询台账失败: "+err.Error())
-		return
+		return nil, &httpStatusError{http.StatusInternalServerError, "查询台账失败: " + err.Error()}
 	}
 	if existing != nil && existing.Status != statusPending {
 		// 幂等拒绝：已安装（非 pending）的应用重复 install 直接拒绝，
 		// 升级走专门的 /api/apps/<id>/upgrade（§3.3 明确区分两条路径）。
-		httpError(w, http.StatusConflict, fmt.Sprintf("应用 %s 已安装（版本 %s），请使用升级接口", id, existing.Version))
-		return
+		return nil, &httpStatusError{http.StatusConflict, fmt.Sprintf("应用 %s 已安装（版本 %s），请使用升级接口", id, existing.Version)}
 	}
 
 	if err := os.MkdirAll(appsTmpDir(reg.dataDir), 0700); err != nil {
-		httpError(w, http.StatusInternalServerError, "创建临时目录失败: "+err.Error())
-		return
+		return nil, &httpStatusError{http.StatusInternalServerError, "创建临时目录失败: " + err.Error()}
 	}
 	if err := os.WriteFile(stagedTarballPath(reg.dataDir, id), tarball, 0600); err != nil {
-		httpError(w, http.StatusInternalServerError, "暂存应用包失败: "+err.Error())
-		return
+		return nil, &httpStatusError{http.StatusInternalServerError, "暂存应用包失败: " + err.Error()}
 	}
 
 	port, err := allocatePort(reg.db, reg.executor, pkg.Manifest.Port)
 	if err != nil {
-		httpError(w, http.StatusConflict, "端口分配失败: "+err.Error())
-		return
+		return nil, &httpStatusError{http.StatusConflict, "端口分配失败: " + err.Error()}
 	}
 
 	if existing == nil {
@@ -273,8 +294,7 @@ func handleInstall(w http.ResponseWriter, r *http.Request) {
 			Healthz: pkg.Manifest.Healthz,
 			Status:  statusPending,
 		}); err != nil {
-			httpError(w, http.StatusInternalServerError, "写入台账失败: "+err.Error())
-			return
+			return nil, &httpStatusError{http.StatusInternalServerError, "写入台账失败: " + err.Error()}
 		}
 	} else {
 		// 已存在 pending 记录（上次 install 后未 confirm，重新上传覆盖）：
@@ -282,22 +302,20 @@ func handleInstall(w http.ResponseWriter, r *http.Request) {
 		releasePort(reg.db, existing.Port)
 		if _, err := reg.db.Exec(`UPDATE installed SET name=?, version=?, spec=?, port=?, healthz=?, status=?, updated_at=? WHERE id=?`,
 			pkg.Manifest.Name, pkg.Manifest.Version, pkg.Manifest.Spec, port, pkg.Manifest.Healthz, statusPending, time.Now().Format(time.RFC3339), id); err != nil {
-			httpError(w, http.StatusInternalServerError, "更新台账失败: "+err.Error())
-			return
+			return nil, &httpStatusError{http.StatusInternalServerError, "更新台账失败: " + err.Error()}
 		}
 	}
 	if err := reservePort(reg.db, port); err != nil {
-		httpError(w, http.StatusInternalServerError, "端口占位失败: "+err.Error())
-		return
+		return nil, &httpStatusError{http.StatusInternalServerError, "端口占位失败: " + err.Error()}
 	}
 
-	common.LogAuditRequest(r, auditCategory, "安装应用",
+	common.LogAuditRequest(r, auditCategory, actionCN,
 		fmt.Sprintf("%s v%s 验签解包成功，分配端口 %d，待确认", id, pkg.Manifest.Version, port), "成功")
 	common.EmitEvent("apps", common.EventInfo, "apps.install_pending", map[string]interface{}{
 		"id": id, "version": pkg.Manifest.Version, "port": port,
 	}, "")
 
-	common.JSONResponse(w, pendingInstallResponse{
+	return &pendingInstallResponse{
 		ID:           id,
 		Name:         pkg.Manifest.Name,
 		Version:      pkg.Manifest.Version,
@@ -309,7 +327,7 @@ func handleInstall(w http.ResponseWriter, r *http.Request) {
 		Mqtt:         len(pkg.Manifest.Permissions.MQTT.Sub) > 0 || len(pkg.Manifest.Permissions.MQTT.Pub) > 0,
 		DataDir:      pkg.Manifest.DataDir,
 		Status:       statusPending,
-	})
+	}, nil
 }
 
 // checkCoreCompat 校验核心版本是否满足 manifest.minCoreVersion（§2）。

@@ -92,6 +92,13 @@ func pollOnce() {
 		}
 		if probeComponentHealth(c) {
 			flipped = true
+			if c == ComponentMosquitto {
+				// Mosquitto 由不可用翻转为就绪：尝试启动事件总线→MQTT 桥
+				// （M2（二）§需求「health 轮询器的 ready 翻转回调启动桥」；
+				// StartEventsBridgeIfReady 内部用 sync.Once 收口，重复调用
+				// 安全——哪怕后续再探测到翻转也不会重复 Subscribe）。
+				StartEventsBridgeIfReady()
+			}
 		}
 	}
 

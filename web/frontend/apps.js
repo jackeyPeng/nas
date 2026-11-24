@@ -37,6 +37,43 @@ function appsPanel() {
             healthTimer: null,
         },
 
+        // 应用市场（M2（二），APP-SPEC §7）：index.json 一键安装，安装链路
+        // 复用 appsPkg 同一套 confirm 对话框（market/install 返回体与
+        // /apps/install 完全同形，即 pendingInstallResponse）
+        marketApps: [],
+        marketLoading: false,
+        marketStale: false,
+        marketInstalling: '', // 正在安装的 appId，用于按钮 disabled
+
+        // ─── 应用市场 ───
+        async loadMarket() {
+            this.marketLoading = true;
+            const data = await this.api('/apps/market');
+            if (data) {
+                this.marketApps = data.apps || [];
+                this.marketStale = !!data.stale;
+            }
+            this.marketLoading = false;
+        },
+
+        async installFromMarket(app) {
+            if (!app.installable || this.marketInstalling) return;
+            this.marketInstalling = app.id;
+            try {
+                const data = await this.api('/apps/market/install', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: app.id, version: app.latest }),
+                });
+                if (data) {
+                    this.appsPkg = { show: true, mode: 'install', step: 'confirm', packageFile: null, sigFile: null, submitting: false, pending: data };
+                    this.loadBaseServices(); // 确认步骤要展示 db/cache/mqtt 就绪徽标
+                }
+            } finally {
+                this.marketInstalling = '';
+            }
+        },
+
         // ─── 列表 ───
         async loadApps() {
             this.appsLoading = true;

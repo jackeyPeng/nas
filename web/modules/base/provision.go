@@ -167,3 +167,61 @@ func DeprovisionMQTT(appID string) error {
 	}
 	return deleteMQTTAccount(reg.db, appID)
 }
+
+// eventsBridgeAccountKey 是事件总线桥（bridge.go）在 mqtt_account 台账里
+// 占用的保留 key——它不是真实的应用 id，而是面板自身的身份，复用
+// mqtt_account 表只是为了拿现成的「查已存在则复用」持久化逻辑，不想再起
+// 一张专表。必须满足 appIDPattern（[a-z0-9-]{2,24}），且与真实应用 id
+// 命名空间（§需求 apps.idPattern 同形状）不会撞——应用市场/手工安装的
+// id 由用户/manifest 指定，但"nasapp-panel"是面板讳缺的自称，业务应用
+// 不应以此命名（manifest 校验不特别拦，约定层面规避即可）。
+const eventsBridgeAccountKey = "nasapp-panel"
+
+// eventsBridgeMQTTUsername 是事件总线桥专用的 Mosquitto 用户名，与
+// appMQTTUsername 的派生规则保持视觉一致但走独立常量，避免误用
+// appMQTTUsername(eventsBridgeAccountKey) 这种看似合理实则意图不清的写法。
+const eventsBridgeMQTTUsername = "nasapp_panel_events"
+
+// eventsBridgeMQTTTopicPrefix 是事件总线桥发布事件用的主题前缀
+// （docs/APP-SPEC.md §5.6：nas/events/** 为核心系统事件，面板只发布，
+// 应用只可订阅）。与 appMQTTTopicPrefix 的 "nas/apps/<id>/" 命名空间
+// 完全不同，因此不能复用 ProvisionMQTT——那个函数的 username/topicPrefix
+// 派生规则是为"每应用一个账号+前缀"设计的，不适用于面板自身。
+const eventsBridgeMQTTTopicPrefix = "nas/events/"
+
+// ProvisionMQTTEventsBridge 为事件总线→MQTT 桥（bridge.go）创建（或复用
+// 既有）专属 Mosquitto 账号，ACL 限定在 nas/events/ 前缀下（而非某个应用
+// 的 nas/apps/<id>/ 前缀）。复用 mqtt_account 表的持久化/幂等模式，但
+// 绕开 appMQTTUsername/appMQTTTopicPrefix——这两个函数是"每应用"命名空间，
+// 面板自身的事件桥账号不属于任何应用。
+//
+// 调用前应先用 Ready(ComponentMosquitto) 确认基座已就绪；本函数不做该
+// 检查（与 ProvisionPostgres 同样的分工：就络判定是调用方的业务决策）。
+func ProvisionMQTTEventsBridge() (MQTTCredentials, error) {
+	key := eventsBridgeAccountKey
+	if existing, err := getMQTTAccount(reg.db, key); err != nil {
+		return MQTTCredentials{}, fmt.Errorf("查询 mqtt 台账失败: %w", err)
+	} else if existing != nil {
+		return MQTTCredentials{Username: existing.Username, Password: existing.Password, TopicPrefix: existing.TopicPrefix}, nil
+	}
+
+	username := eventsBridgeMQTTUsername
+	topicPrefix := eventsBridgeMQTTTopicPrefix
+	password, err := generateSecret()
+	if err != nil {
+		return MQTTCredentials{}, err
+	}
+
+	if out, err := reg.executor.MqttSetPassword(username, password); err != nil {
+		return MQTTCredentials{}, fmt.Errorf("创建事件桥 mqtt 账号失败: %s: %w", out, err)
+	}
+	if out, err := reg.executor.MqttAclAdd(username, topicPrefix); err != nil {
+		return MQTTCredentials{}, fmt.Errorf("配置事件桥 mqtt acl 失败: %s: %w", out, err)
+	}
+
+	if err := insertMQTTAccount(reg.db, mqttAccountRecord{AppID: key, Username: username, Password: password, TopicPrefix: topicPrefix}); err != nil {
+		return MQTTCredentials{}, fmt.Errorf("落库事件桥 mqtt 台账失败: %w", err)
+	}
+
+	return MQTTCredentials{Username: username, Password: password, TopicPrefix: topicPrefix}, nil
+}

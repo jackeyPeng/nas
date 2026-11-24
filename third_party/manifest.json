@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-20T05:14:32.030002+00:00",
+  "generated_at": "2026-11-24T01:36:49.541154+00:00",
   "project": "Z1 / Abwen NAS (nas-panel)",
   "project_license": "AGPL-3.0-only",
   "components": [
@@ -9,6 +9,13 @@
       "license": "MIT",
       "type": "go-dependency",
       "homepage": "https://pkg.go.dev/github.com/dustin/go-humanize"
+    },
+    {
+      "name": "github.com/eclipse/paho.mqtt.golang",
+      "version": "v1.5.1",
+      "license": "EPL-2.0 OR EDL-1.0",
+      "type": "go-dependency",
+      "homepage": "https://pkg.go.dev/github.com/eclipse/paho.mqtt.golang"
     },
     {
       "name": "github.com/golang-jwt/jwt/v5",
@@ -25,6 +32,13 @@
       "homepage": "https://pkg.go.dev/github.com/google/uuid"
     },
     {
+      "name": "github.com/gorilla/websocket",
+      "version": "v1.5.3",
+      "license": "BSD-2-Clause",
+      "type": "go-dependency",
+      "homepage": "https://pkg.go.dev/github.com/gorilla/websocket"
+    },
+    {
       "name": "github.com/remyoudompheng/bigfft",
       "version": "v0.0.0-20230129092748-24d4a6f8daec",
       "license": "BSD-3-Clause",
@@ -39,8 +53,22 @@
       "homepage": "https://pkg.go.dev/golang.org/x/exp"
     },
     {
+      "name": "golang.org/x/net",
+      "version": "v0.44.0",
+      "license": "BSD-3-Clause",
+      "type": "go-dependency",
+      "homepage": "https://pkg.go.dev/golang.org/x/net"
+    },
+    {
+      "name": "golang.org/x/sync",
+      "version": "v0.17.0",
+      "license": "BSD-3-Clause",
+      "type": "go-dependency",
+      "homepage": "https://pkg.go.dev/golang.org/x/sync"
+    },
+    {
       "name": "golang.org/x/sys",
-      "version": "v0.30.0",
+      "version": "v0.36.0",
       "license": "BSD-3-Clause",
       "type": "go-dependency",
       "homepage": "https://pkg.go.dev/golang.org/x/sys"

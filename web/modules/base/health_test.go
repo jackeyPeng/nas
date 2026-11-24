@@ -9,6 +9,14 @@ import (
 // setupHealthTest 打开全新 base.db，注入 fakeExecutor，重置包级轮询器
 // 状态（poller 是包级单例，测试间必须互相隔离，否则上一个测试留下的
 // ConsecutiveFail/Status 会污染下一个测试的断言）。
+//
+// 同时重置事件总线→MQTT 桥（bridge.go）的包级状态并把其连接器钩子替换
+// 为不连真实网络的 no-op fake——本文件多个测试会让 Mosquitto 从未知
+// 翻转为 running（probeComponentHealth/pollOnce 的正常路径），若不隔离，
+// 会触发桥真的去连 127.0.0.1:1883（本机大概率没有真实 Mosquitto），
+// 虽然 bridge.go 已经改成异步+带超时不会把测试拖死，但仍会产生无意义的
+// 网络尝试和日志噪音，与 bridge_test.go 自己的 setupBridgeTest 同一收口
+// 模式。
 func setupHealthTest(t *testing.T) *fakeExecutor {
 	t.Helper()
 	db, err := openBaseDB(t.TempDir())
@@ -22,8 +30,23 @@ func setupHealthTest(t *testing.T) *fakeExecutor {
 	poller.mu.Lock()
 	poller.states = map[Component]componentHealthState{}
 	poller.mu.Unlock()
+
+	resetEventsBridgeForTest()
+	newConnectorForBridge = func() (mqttConnector, error) {
+		return &noopMQTTConnectorForTest{}, nil
+	}
+	t.Cleanup(resetEventsBridgeForTest)
+
 	return fe
 }
+
+// noopMQTTConnectorForTest 是不连真实网络的 mqttConnector 替身，专供
+// health_test.go 这类"不关心桥本身行为、只是意外触发了 ready 翻转"的
+// 测试场景使用；真正测桥行为的用例在 bridge_test.go 的 fakeMQTTConnector。
+type noopMQTTConnectorForTest struct{}
+
+func (*noopMQTTConnectorForTest) Connect() error                                      { return nil }
+func (*noopMQTTConnectorForTest) Publish(string, byte, bool, []byte) error { return nil }
 
 func TestProbeComponentHealthRunningOnSuccess(t *testing.T) {
 	setupHealthTest(t)

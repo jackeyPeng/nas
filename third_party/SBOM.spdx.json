@@ -3,9 +3,9 @@
   "dataLicense": "CC0-1.0",
   "SPDXID": "SPDXRef-DOCUMENT",
   "name": "Z1-Abwen-NAS",
-  "documentNamespace": "https://z1.sale/spdx/20261020-051432",
+  "documentNamespace": "https://z1.sale/spdx/20261124-013649",
   "creationInfo": {
-    "created": "2026-10-20T05:14:32Z",
+    "created": "2026-11-24T01:36:49Z",
     "creators": [
       "Tool: nas-panel scripts/gen-sbom.py",
       "Organization: Abwen"
@@ -23,8 +23,18 @@
       "copyrightText": "NOASSERTION"
     },
     {
-      "name": "github.com/golang-jwt/jwt/v5",
+      "name": "github.com/eclipse/paho.mqtt.golang",
       "SPDXID": "SPDXRef-Package-1",
+      "versionInfo": "v1.5.1",
+      "downloadLocation": "https://pkg.go.dev/github.com/eclipse/paho.mqtt.golang",
+      "filesAnalyzed": false,
+      "licenseConcluded": "EPL-2.0 OR EDL-1.0",
+      "licenseDeclared": "EPL-2.0 OR EDL-1.0",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "name": "github.com/golang-jwt/jwt/v5",
+      "SPDXID": "SPDXRef-Package-2",
       "versionInfo": "v5.2.1",
       "downloadLocation": "https://pkg.go.dev/github.com/golang-jwt/jwt/v5",
       "filesAnalyzed": false,
@@ -34,7 +44,7 @@
     },
     {
       "name": "github.com/google/uuid",
-      "SPDXID": "SPDXRef-Package-2",
+      "SPDXID": "SPDXRef-Package-3",
       "versionInfo": "v1.6.0",
       "downloadLocation": "https://pkg.go.dev/github.com/google/uuid",
       "filesAnalyzed": false,
@@ -43,8 +53,18 @@
       "copyrightText": "NOASSERTION"
     },
     {
+      "name": "github.com/gorilla/websocket",
+      "SPDXID": "SPDXRef-Package-4",
+      "versionInfo": "v1.5.3",
+      "downloadLocation": "https://pkg.go.dev/github.com/gorilla/websocket",
+      "filesAnalyzed": false,
+      "licenseConcluded": "BSD-2-Clause",
+      "licenseDeclared": "BSD-2-Clause",
+      "copyrightText": "NOASSERTION"
+    },
+    {
       "name": "github.com/remyoudompheng/bigfft",
-      "SPDXID": "SPDXRef-Package-3",
+      "SPDXID": "SPDXRef-Package-5",
       "versionInfo": "v0.0.0-20230129092748-24d4a6f8daec",
       "downloadLocation": "https://pkg.go.dev/github.com/remyoudompheng/bigfft",
       "filesAnalyzed": false,
@@ -54,7 +74,7 @@
     },
     {
       "name": "golang.org/x/exp",
-      "SPDXID": "SPDXRef-Package-4",
+      "SPDXID": "SPDXRef-Package-6",
       "versionInfo": "v0.0.0-20230315142452-642cacee5cc0",
       "downloadLocation": "https://pkg.go.dev/golang.org/x/exp",
       "filesAnalyzed": false,
@@ -63,9 +83,29 @@
       "copyrightText": "NOASSERTION"
     },
     {
+      "name": "golang.org/x/net",
+      "SPDXID": "SPDXRef-Package-7",
+      "versionInfo": "v0.44.0",
+      "downloadLocation": "https://pkg.go.dev/golang.org/x/net",
+      "filesAnalyzed": false,
+      "licenseConcluded": "BSD-3-Clause",
+      "licenseDeclared": "BSD-3-Clause",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "name": "golang.org/x/sync",
+      "SPDXID": "SPDXRef-Package-8",
+      "versionInfo": "v0.17.0",
+      "downloadLocation": "https://pkg.go.dev/golang.org/x/sync",
+      "filesAnalyzed": false,
+      "licenseConcluded": "BSD-3-Clause",
+      "licenseDeclared": "BSD-3-Clause",
+      "copyrightText": "NOASSERTION"
+    },
+    {
       "name": "golang.org/x/sys",
-      "SPDXID": "SPDXRef-Package-5",
-      "versionInfo": "v0.30.0",
+      "SPDXID": "SPDXRef-Package-9",
+      "versionInfo": "v0.36.0",
       "downloadLocation": "https://pkg.go.dev/golang.org/x/sys",
       "filesAnalyzed": false,
       "licenseConcluded": "BSD-3-Clause",
@@ -74,7 +114,7 @@
     },
     {
       "name": "modernc.org/libc",
-      "SPDXID": "SPDXRef-Package-6",
+      "SPDXID": "SPDXRef-Package-10",
       "versionInfo": "v1.61.13",
       "downloadLocation": "https://pkg.go.dev/modernc.org/libc",
       "filesAnalyzed": false,
@@ -84,7 +124,7 @@
     },
     {
       "name": "modernc.org/mathutil",
-      "SPDXID": "SPDXRef-Package-7",
+      "SPDXID": "SPDXRef-Package-11",
       "versionInfo": "v1.7.1",
       "downloadLocation": "https://pkg.go.dev/modernc.org/mathutil",
       "filesAnalyzed": false,
@@ -94,7 +134,7 @@
     },
     {
       "name": "modernc.org/memory",
-      "SPDXID": "SPDXRef-Package-8",
+      "SPDXID": "SPDXRef-Package-12",
       "versionInfo": "v1.8.2",
       "downloadLocation": "https://pkg.go.dev/modernc.org/memory",
       "filesAnalyzed": false,
@@ -104,7 +144,7 @@
     },
     {
       "name": "modernc.org/sqlite",
-      "SPDXID": "SPDXRef-Package-9",
+      "SPDXID": "SPDXRef-Package-13",
       "versionInfo": "v1.36.0",
       "downloadLocation": "https://pkg.go.dev/modernc.org/sqlite",
       "filesAnalyzed": false,
@@ -114,7 +154,7 @@
     },
     {
       "name": "apache2-utils",
-      "SPDXID": "SPDXRef-Package-10",
+      "SPDXID": "SPDXRef-Package-14",
       "versionInfo": "Debian",
       "downloadLocation": "https://httpd.apache.org",
       "filesAnalyzed": false,
@@ -124,7 +164,7 @@
     },
     {
       "name": "fail2ban",
-      "SPDXID": "SPDXRef-Package-11",
+      "SPDXID": "SPDXRef-Package-15",
       "versionInfo": "Debian",
       "downloadLocation": "https://www.fail2ban.org",
       "filesAnalyzed": false,
@@ -134,7 +174,7 @@
     },
     {
       "name": "nfs-kernel-server",
-      "SPDXID": "SPDXRef-Package-12",
+      "SPDXID": "SPDXRef-Package-16",
       "versionInfo": "Debian",
       "downloadLocation": "https://linux-nfs.org",
       "filesAnalyzed": false,
@@ -144,7 +184,7 @@
     },
     {
       "name": "samba",
-      "SPDXID": "SPDXRef-Package-13",
+      "SPDXID": "SPDXRef-Package-17",
       "versionInfo": "4.x",
       "downloadLocation": "https://www.samba.org",
       "filesAnalyzed": false,
@@ -154,7 +194,7 @@
     },
     {
       "name": "smartmontools",
-      "SPDXID": "SPDXRef-Package-14",
+      "SPDXID": "SPDXRef-Package-18",
       "versionInfo": "Debian",
       "downloadLocation": "https://www.smartmontools.org",
       "filesAnalyzed": false,
@@ -164,7 +204,7 @@
     },
     {
       "name": "ufw",
-      "SPDXID": "SPDXRef-Package-15",
+      "SPDXID": "SPDXRef-Package-19",
       "versionInfo": "Debian",
       "downloadLocation": "https://launchpad.net/ufw",
       "filesAnalyzed": false,
@@ -174,7 +214,7 @@
     },
     {
       "name": "unattended-upgrades",
-      "SPDXID": "SPDXRef-Package-16",
+      "SPDXID": "SPDXRef-Package-20",
       "versionInfo": "Debian",
       "downloadLocation": "https://wiki.debian.org/UnattendedUpgrades",
       "filesAnalyzed": false,
@@ -184,7 +224,7 @@
     },
     {
       "name": "vsftpd",
-      "SPDXID": "SPDXRef-Package-17",
+      "SPDXID": "SPDXRef-Package-21",
       "versionInfo": "Debian",
       "downloadLocation": "https://security.appspot.com/vsftpd.html",
       "filesAnalyzed": false,
@@ -194,7 +234,7 @@
     },
     {
       "name": "@noble/ciphers",
-      "SPDXID": "SPDXRef-Package-18",
+      "SPDXID": "SPDXRef-Package-22",
       "versionInfo": "2.4.0",
       "downloadLocation": "https://github.com/paulmillr/noble-ciphers",
       "filesAnalyzed": false,
@@ -204,7 +244,7 @@
     },
     {
       "name": "@noble/hashes",
-      "SPDXID": "SPDXRef-Package-19",
+      "SPDXID": "SPDXRef-Package-23",
       "versionInfo": "2.4.0",
       "downloadLocation": "https://github.com/paulmillr/noble-hashes",
       "filesAnalyzed": false,
@@ -214,7 +254,7 @@
     },
     {
       "name": "Alpine.js",
-      "SPDXID": "SPDXRef-Package-20",
+      "SPDXID": "SPDXRef-Package-24",
       "versionInfo": "3.x",
       "downloadLocation": "https://alpinejs.dev",
       "filesAnalyzed": false,
@@ -224,7 +264,7 @@
     },
     {
       "name": "rclone",
-      "SPDXID": "SPDXRef-Package-21",
+      "SPDXID": "SPDXRef-Package-25",
       "versionInfo": "1.75.2",
       "downloadLocation": "https://rclone.org",
       "filesAnalyzed": false,

@@ -2887,10 +2887,35 @@
                         </div>
                     </div></template>
                 </div>
-                <!-- 应用市场（v1 只读占位，M2 接 index.json） -->
+                <!-- 应用市场（M2（二），APP-SPEC §7：index.json 一键安装） -->
                 <div style="margin-top:var(--sp-6);background: var(--card-bg);border:1px solid var(--border);border-radius:var(--radius-lg);padding:var(--sp-5)">
-                    <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:var(--fs-base);font-weight:600" x-text="$t('apps.market_title')"></span><button class="btn btn-sm" x-text="$t('common.refresh')"></button></div>
-                    <p style="color: var(--text-light);margin:var(--sp-2) 0 0" x-text="$t('apps.market_soon')"></p>
+                    <div style="display:flex;justify-content:space-between;align-items:center">
+                        <span style="font-size:var(--fs-base);font-weight:600" x-text="$t('apps.market_title')"></span>
+                        <button class="btn btn-sm" @click="loadMarket()" :disabled="marketLoading" x-text="$t('common.refresh')"></button>
+                    </div>
+                    <p style="color: var(--warn);font-size:var(--fs-xs);margin:var(--sp-2) 0 0" x-show="marketStale" x-text="$t('apps.market_stale')"></p>
+                    <div class="empty-state empty-state--inline" x-show="!marketLoading && !marketApps.length" style="margin-top:var(--sp-3)">
+                        <span class="empty-state__icon">🛒</span><span class="empty-state__title" x-text="$t('apps.market_empty')"></span>
+                    </div>
+                    <div class="cards" x-show="marketApps.length" style="margin-top:var(--sp-3)">
+                        <template x-for="app in marketApps" :key="app.id"><div class="card">
+                            <div style="display:flex;justify-content:space-between;align-items:start">
+                                <div style="display:flex;gap:var(--sp-2);align-items:center">
+                                    <span style="font-size:var(--fs-lg)" x-text="app.icon || '🧩'"></span>
+                                    <div>
+                                        <div style="font-weight:600;font-size:var(--fs-base)" x-text="app.name"></div>
+                                        <div style="font-size:var(--fs-xs);color: var(--text-light);margin-top:2px" x-text="'v' + app.latest"></div>
+                                    </div>
+                                </div>
+                                <span class="badge-xs" style="background: var(--success-light);color: var(--success)" x-show="app.installed" x-text="$t('apps.market_installed', [app.installedVersion])"></span>
+                            </div>
+                            <p style="color: var(--text-light);font-size:var(--fs-sm);margin:var(--sp-2) 0 0" x-text="app.summary"></p>
+                            <div style="display:flex;gap:var(--sp-2);margin-top:var(--sp-4);align-items:center">
+                                <button class="btn btn-sm btn-primary" @click="installFromMarket(app)" :disabled="!app.installable || marketInstalling || app.installed" x-text="marketInstalling === app.id ? $t('apps.market_installing') : $t('apps.market_install')"></button>
+                                <span style="font-size:var(--fs-xs);color: var(--danger)" x-show="!app.installable" x-text="$t('apps.market_incompatible')"></span>
+                            </div>
+                        </div></template>
+                    </div>
                 </div>
                 <!-- 安装/升级共用：Step1 上传 -> Step2 权限确认（升级一步到位，无需确认） -->
                 <div class="modal" x-show="appsPkg.show" x-cloak @click.self="cancelPkgDialog()"><div class="modal-box" style="max-width:520px">

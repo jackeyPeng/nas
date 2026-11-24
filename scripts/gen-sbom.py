@@ -81,6 +81,13 @@ def find_license_text(path, version, cache):
 
 def detect_license(text):
     t = text.lower()
+    if "eclipse public license" in t:
+        # EPL 项目常见双授权卷帘（如 paho.mqtt.golang），协议全文里会
+        # 提到 "GNU General Public License, Version 2" 作为 Secondary
+        # License 选项，若走下面的通用 GPL 关键字匹配会被误判成纯 GPL。
+        if "eclipse distribution license" in t:
+            return "EPL-2.0 OR EDL-1.0"
+        return "EPL-2.0"
     if "apache license" in t:
         return "Apache-2.0"
     if "mit license" in t or ("permission is hereby granted" in t and "free of charge" in t):
