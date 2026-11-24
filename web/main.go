@@ -150,6 +150,9 @@ func main() {
 	apps.InitTicketSecret(apps.DeriveTicketSecret(secret))
 
 	// Init audit log
+	// 目录分层不变式（APP-SPEC §0）：面板系统数据一律落系统盘
+	// /opt/nas/data——绝不放 /data/*（池/共享目录，用户可见可删）。
+	// NAS_DATA_DIR 仅供测试注入临时目录，生产 unit 不设置该变量。
 	dataDir := "/opt/nas/data"
 	if d := os.Getenv("NAS_DATA_DIR"); d != "" {
 		dataDir = d
