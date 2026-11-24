@@ -688,7 +688,10 @@ if [ "$NAS_EDITION" != "server" ]; then
 elif [ "$CONFIG_ONLY" = true ]; then
     echo "[9/11] 基座服务 (PostgreSQL/Valkey/Mosquitto)...（--config-only 跳过安装，仅刷新配置文件）"
     mkdir -p /etc/valkey /etc/mosquitto/conf.d
-    printf 'bind 127.0.0.1 -::1\nport 6379\nprotected-mode yes\nsupervised systemd\ndaemonize no\n' > /etc/valkey/valkey.conf
+    printf 'bind 127.0.0.1 -::1\nport 6379\nprotected-mode yes\nsupervised systemd\ndaemonize no\ndir /var/lib/valkey\n' > /etc/valkey/valkey.conf
+    # dir 缺失时 valkey 关停要写 RDB 到 server root（/，只读）→ 永久
+    # deactivating 卡死（真机实锤）；数据目录须存在且归 valkey 用户。
+    install -d -m 750 -o valkey -g valkey /var/lib/valkey
     printf 'listener 1883 127.0.0.1\nallow_anonymous false\npassword_file /etc/mosquitto/nas-passwd\nacl_file /etc/mosquitto/nas-acl.conf\n' > /etc/mosquitto/conf.d/nas-panel.conf
     # password_file/acl_file 引用的文件必须存在且 mosquitto 用户可读，
     # 否则 broker 启动即 exit 13（真机实锤）。空文件 = 无应用账号（按需
@@ -721,7 +724,10 @@ else
     apt_retry apt-get install -y -qq "$PG_PKG" valkey-server mosquitto mosquitto-clients
     mkdir -p /etc/valkey /etc/mosquitto/conf.d
     # Valkey：只听本机，面板/应用经 127.0.0.1 连接，永不对外网暴露。
-    printf 'bind 127.0.0.1 -::1\nport 6379\nprotected-mode yes\nsupervised systemd\ndaemonize no\n' > /etc/valkey/valkey.conf
+    printf 'bind 127.0.0.1 -::1\nport 6379\nprotected-mode yes\nsupervised systemd\ndaemonize no\ndir /var/lib/valkey\n' > /etc/valkey/valkey.conf
+    # dir 缺失时 valkey 关停要写 RDB 到 server root（/，只读）→ 永久
+    # deactivating 卡死（真机实锤）；数据目录须存在且归 valkey 用户。
+    install -d -m 750 -o valkey -g valkey /var/lib/valkey
     # Mosquitto：同样只听本机；关闭匿名访问，密码/ACL 文件由
     # nas-base-ops.sh 按需创建（应用申请 mqtt 权限时才建号），此处只落地
     # 配置片段本身，password_file/acl_file 路径须与该脚本常量逐字一致。
