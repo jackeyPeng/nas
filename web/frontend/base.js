@@ -19,7 +19,12 @@ function basePanel() {
         // ─── 状态 ───
         baseComponents: [],
         baseLoading: false,
-        baseActing: {}, // component -> bool，单个卡片按钮的 loading 态，不互相阻塞
+        // component -> bool，单个卡片按钮的 loading 态，不互相阻塞。
+        // 三个 key 必须预声明：Alpine 的 reactive proxy 对「首次赋值的新
+        // key」不触发 :disabled 重算（真机实锤——baseActing[comp]=true 后
+        // 按钮永远 disabled，finally 置 false 也无重渲染），预声明后
+        // 赋值/还原都在被追踪的 key 上，响应式正常。
+        baseActing: { pgsql: false, cache: false, mqtt: false },
 
         // ─── 列表 ───
         async loadBaseServices() {
