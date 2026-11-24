@@ -93,10 +93,13 @@ func pollOnce() {
 		if probeComponentHealth(c) {
 			flipped = true
 			if c == ComponentMosquitto {
-				// Mosquitto 由不可用翻转为就绪：尝试启动事件总线→MQTT 桥
-				// （M2（二）§需求「health 轮询器的 ready 翻转回调启动桥」；
-				// StartEventsBridgeIfReady 内部用 sync.Once 收口，重复调用
-				// 安全——哪怕后续再探测到翻转也不会重复 Subscribe）。
+				// Mosquitto 探测成功：确保事件总线→MQTT 桥在跑。
+				// 不只在「翻转」时调——状态机首轮失败会把 status 记成
+				// running（阈值未到不翻 unhealthy），mosquitto 恢复后
+				// running→running 无翻转，靠翻转触发会漏掉桥重试
+				// （真机实锤：停 mosquitto 重启面板再恢复，桥不自愈）。
+				// StartEventsBridgeIfReady 自身幂等（running 检查 + 失败
+				// 重试收口），每轮调用是廉价的。
 				StartEventsBridgeIfReady()
 			}
 		}
