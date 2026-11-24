@@ -2,6 +2,7 @@ package common
 
 import (
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -113,6 +114,137 @@ func TestEventBusEmitBeforeInitIsNoop(t *testing.T) {
 	// 未 Init 时 Emit 不应 panic
 	CloseEventBusForTest()
 	EmitEvent("x", EventInfo, "x.y", nil, "")
+}
+
+// TestEventBusConcurrentStress 并发压测：多 goroutine 同时 EmitEvent、
+// QueryEvents、Subscribe/Unsubscribe，验证 eventDB/eventChan 包级全局
+// 在 -race 下无数据竞争（M2 二阶段事件桥验收暴露的预存在竞争）。
+// 用 InitEventBus（真正起 eventWriter/eventCleanupLoop 后台 goroutine），
+// 而非 InitEventBusForTest，因为这里要的是异步写路径下的真实并发场景。
+func TestEventBusConcurrentStress(t *testing.T) {
+	dir := t.TempDir()
+	InitEventBus(dir)
+	defer CloseEventBusForTest()
+
+	const (
+		emitters   = 8
+		emitsEach  = 100
+		queriers   = 4
+		queryLoops = 50
+		subFlips   = 20
+	)
+
+	var wg sync.WaitGroup
+
+	// 并发 EmitEvent。
+	for i := 0; i < emitters; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			for j := 0; j < emitsEach; j++ {
+				EmitEvent("stress", EventInfo, "stress.emit",
+					map[string]interface{}{"worker": id, "n": j}, "")
+			}
+		}(i)
+	}
+
+	// 并发 QueryEvents / QueryEventStats（只读路径）。
+	for i := 0; i < queriers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < queryLoops; j++ {
+				if _, _, err := QueryEvents("", "", 0, 20, 0); err != nil {
+					t.Errorf("QueryEvents concurrent: %v", err)
+					return
+				}
+				if _, err := QueryEventStats(1); err != nil {
+					t.Errorf("QueryEventStats concurrent: %v", err)
+					return
+				}
+			}
+		}()
+	}
+
+	// 并发 Subscribe/Unsubscribe（反复开关订阅者，和 eventWriter 的广播竞争）。
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < subFlips; j++ {
+				ch := Subscribe()
+				// 消费几条，避免订阅者 channel 满后一直 select-default 跳过。
+				select {
+				case <-ch:
+				case <-time.After(time.Millisecond):
+				}
+				Unsubscribe(ch)
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	// writer 是异步的，给它一点时间把 channel 里剩余事件写完再查总数。
+	// EmitEvent 的非阻塞语义允许 channel 满时丢事件（见 EmitEvent 文档），
+	// 本测试的目的是验证并发访问无 -race 竞争，不是验证零丢弃；
+	// 因此只断言总数落在 (0, 上限] 区间、且后续查询不再变化（writer 已清空 channel）。
+	const want = emitters * emitsEach
+	deadline := time.Now().Add(2 * time.Second)
+	var total, prev int
+	stable := 0
+	for time.Now().Before(deadline) {
+		_, total, _ = QueryEvents("stress", "", 0, 1, 0)
+		if total == want {
+			break
+		}
+		if total == prev {
+			stable++
+			if stable >= 5 {
+				break // 连续多次读数不再增长，说明 channel 已排空
+			}
+		} else {
+			stable = 0
+		}
+		prev = total
+		time.Sleep(10 * time.Millisecond)
+	}
+	if total <= 0 || total > want {
+		t.Fatalf("persisted events out of range: got %d, want (0, %d]", total, want)
+	}
+	if total < want {
+		t.Logf("persisted %d/%d events, %d dropped by backpressure (expected under 256-buffer burst load)",
+			total, want, want-total)
+	}
+}
+
+// BenchmarkEmitEvent 量化加锁对 EmitEvent 热路径的开销：RWMutex.RLock/RUnlock
+// 各一次 + channel 非阻塞发送，预期在无竞争时近似原子操作量级（ns 级）。
+func BenchmarkEmitEvent(b *testing.B) {
+	dir := b.TempDir()
+	InitEventBusForTest(dir)
+	defer CloseEventBusForTest()
+	params := map[string]interface{}{"disk": "sda"}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		EmitEvent("bench", EventInfo, "bench.emit", params, "")
+	}
+}
+
+// BenchmarkEmitEventParallel 并发场景下的 EmitEvent 开销（多核竞争 RLock）。
+func BenchmarkEmitEventParallel(b *testing.B) {
+	dir := b.TempDir()
+	InitEventBusForTest(dir)
+	defer CloseEventBusForTest()
+	params := map[string]interface{}{"disk": "sda"}
+
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			EmitEvent("bench", EventInfo, "bench.emit", params, "")
+			DrainEventsForTest() // 防止 256 buffer 很快打满导致后续全是 default 分支
+		}
+	})
 }
 
 func TestEventBusQueryParamsJSON(t *testing.T) {

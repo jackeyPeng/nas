@@ -49,6 +49,15 @@ const (
 const eventRetentionDays = 90
 
 var (
+	// eventMu 保护 eventDB/eventChan 这两个包级全局的读写。
+	// 选型：RWMutex 而非 atomic.Pointer ——
+	//   两者要在 Init/Close 时成对原子更新（db 和 chan 同生共死），
+	//   RWMutex 天然支持"锁内同时读两个字段"，atomic.Pointer 做不到
+	//   跨字段的一致性快照（需要额外包一层结构体才能等价），复杂度更高。
+	// EmitEvent 热路径只需 RLock 做一次 nil 检查 + 取 chan 引用，
+	// 锁内不做任何可能阻塞的操作（channel 发送在锁外，用 select-default
+	// 保证非阻塞），RWMutex 的读锁开销（无竞争时近似原子 CAS）可忽略。
+	eventMu   sync.RWMutex
 	eventDB   *sql.DB
 	eventChan chan Event
 
@@ -72,7 +81,10 @@ func InitEventBusForTest(dataDir string) {
 
 // initEventBusCore 打开库建表；返回 true 表示本次调用完成了初始化。
 func initEventBusCore(dataDir string) bool {
-	if eventDB != nil {
+	eventMu.Lock()
+	already := eventDB != nil
+	eventMu.Unlock()
+	if already {
 		return false
 	}
 	os.MkdirAll(dataDir, 0755)
@@ -99,10 +111,20 @@ func initEventBusCore(dataDir string) bool {
 	`)
 	if err != nil {
 		log.Printf("WARNING: cannot create events table: %v", err)
+		db.Close()
+		return false
+	}
+
+	eventMu.Lock()
+	if eventDB != nil {
+		// 并发调用者抢先完成了初始化：放弃本次打开的库，避免泄漏连接。
+		eventMu.Unlock()
+		db.Close()
 		return false
 	}
 	eventDB = db
 	eventChan = make(chan Event, 256)
+	eventMu.Unlock()
 	log.Printf("Event bus initialized: %s", dbPath)
 	return true
 }
@@ -110,7 +132,10 @@ func initEventBusCore(dataDir string) bool {
 // EmitEvent 上报一条系统事件（非阻塞，channel 满则丢弃）。
 // params 会被序列化为 JSON；nil 存 "{}"。
 func EmitEvent(source, typ, code string, params map[string]interface{}, detail string) {
-	if eventChan == nil {
+	eventMu.RLock()
+	ch := eventChan
+	eventMu.RUnlock()
+	if ch == nil {
 		return
 	}
 	if typ != EventInfo && typ != EventSuccess && typ != EventWarn && typ != EventError {
@@ -131,7 +156,7 @@ func EmitEvent(source, typ, code string, params map[string]interface{}, detail s
 		Detail:    detail,
 	}
 	select {
-	case eventChan <- ev:
+	case ch <- ev:
 	default:
 		// 背压：丢弃而不是阻塞业务路径
 	}
@@ -159,22 +184,31 @@ func Unsubscribe(ch chan Event) {
 }
 
 // eventWriter 串行消费 eventChan：广播给订阅者 + 写库。
+// 独占消费端：只在 InitEventBus 成功后由单个 goroutine 调用一次，
+// eventChan 本身创建后不会被重新赋值（除非经过 Close 整体重置），
+// 这里取一次引用供 range 用即可，不需要在循环体内反复加锁读取。
 func eventWriter() {
-	for ev := range eventChan {
+	eventMu.RLock()
+	ch := eventChan
+	eventMu.RUnlock()
+	for ev := range ch {
 		// 1. 广播（非阻塞）
 		eventSubMu.Lock()
-		for ch := range eventSubs {
+		for sub := range eventSubs {
 			select {
-			case ch <- ev:
+			case sub <- ev:
 			default:
 			}
 		}
 		eventSubMu.Unlock()
 		// 2. 持久化
-		if eventDB == nil {
+		eventMu.RLock()
+		db := eventDB
+		eventMu.RUnlock()
+		if db == nil {
 			continue
 		}
-		_, err := eventDB.Exec(
+		_, err := db.Exec(
 			`INSERT INTO events (timestamp, source, type, code, params, detail)
 			 VALUES (?, ?, ?, ?, ?, ?)`,
 			ev.Timestamp, ev.Source, ev.Type, ev.Code, ev.Params, ev.Detail,
@@ -194,11 +228,14 @@ func eventCleanupLoop() {
 }
 
 func cleanupOldEvents() {
-	if eventDB == nil {
+	eventMu.RLock()
+	db := eventDB
+	eventMu.RUnlock()
+	if db == nil {
 		return
 	}
 	cutoff := time.Now().AddDate(0, 0, -eventRetentionDays).Format(time.RFC3339)
-	res, err := eventDB.Exec(`DELETE FROM events WHERE timestamp < ?`, cutoff)
+	res, err := db.Exec(`DELETE FROM events WHERE timestamp < ?`, cutoff)
 	if err != nil {
 		log.Printf("WARNING: event cleanup failed: %v", err)
 		return
@@ -211,7 +248,10 @@ func cleanupOldEvents() {
 // QueryEvents 按条件分页查询事件。source/type 精确匹配，days>0 限定时间窗。
 // 返回 (当页事件, 匹配总数, error)。
 func QueryEvents(source, typ string, days, limit, offset int) ([]Event, int, error) {
-	if eventDB == nil {
+	eventMu.RLock()
+	db := eventDB
+	eventMu.RUnlock()
+	if db == nil {
 		return nil, 0, fmt.Errorf("event db not initialized")
 	}
 	where := []string{"1=1"}
@@ -231,7 +271,7 @@ func QueryEvents(source, typ string, days, limit, offset int) ([]Event, int, err
 	whereClause := strings.Join(where, " AND ")
 
 	var total int
-	if err := eventDB.QueryRow(
+	if err := db.QueryRow(
 		fmt.Sprintf("SELECT COUNT(*) FROM events WHERE %s", whereClause), args...,
 	).Scan(&total); err != nil {
 		return nil, 0, err
@@ -242,7 +282,7 @@ func QueryEvents(source, typ string, days, limit, offset int) ([]Event, int, err
 	if offset < 0 {
 		offset = 0
 	}
-	rows, err := eventDB.Query(
+	rows, err := db.Query(
 		fmt.Sprintf(`SELECT id, timestamp, source, type, code, params, detail
 		           FROM events WHERE %s ORDER BY id DESC LIMIT ? OFFSET ?`, whereClause),
 		append(args, limit, offset)...,
@@ -275,14 +315,17 @@ type EventStats struct {
 // QueryEventStats 统计近 days 天各类型事件数；days<=0 按 7 天。
 func QueryEventStats(days int) (EventStats, error) {
 	var st EventStats
-	if eventDB == nil {
+	eventMu.RLock()
+	db := eventDB
+	eventMu.RUnlock()
+	if db == nil {
 		return st, fmt.Errorf("event db not initialized")
 	}
 	if days <= 0 {
 		days = 7
 	}
 	since := time.Now().AddDate(0, 0, -days).Format(time.RFC3339)
-	rows, err := eventDB.Query(
+	rows, err := db.Query(
 		`SELECT type, COUNT(*) FROM events WHERE timestamp >= ? GROUP BY type`, since)
 	if err != nil {
 		return st, err
@@ -311,19 +354,25 @@ func QueryEventStats(days int) (EventStats, error) {
 
 // DrainEventsForTest 同步排空 eventChan 并写库，仅供单测使用。
 func DrainEventsForTest() {
+	eventMu.RLock()
+	ch, db := eventChan, eventDB
+	eventMu.RUnlock()
+	if ch == nil {
+		return
+	}
 	for {
 		select {
-		case ev := <-eventChan:
+		case ev := <-ch:
 			eventSubMu.Lock()
-			for ch := range eventSubs {
+			for sub := range eventSubs {
 				select {
-				case ch <- ev:
+				case sub <- ev:
 				default:
 				}
 			}
 			eventSubMu.Unlock()
-			if eventDB != nil {
-				eventDB.Exec(
+			if db != nil {
+				db.Exec(
 					`INSERT INTO events (timestamp, source, type, code, params, detail)
 					 VALUES (?, ?, ?, ?, ?, ?)`,
 					ev.Timestamp, ev.Source, ev.Type, ev.Code, ev.Params, ev.Detail)
@@ -336,9 +385,11 @@ func DrainEventsForTest() {
 
 // CloseEventBusForTest 关闭事件库，仅供单测清理。
 func CloseEventBusForTest() {
+	eventMu.Lock()
 	if eventDB != nil {
 		eventDB.Close()
 		eventDB = nil
 	}
 	eventChan = nil
+	eventMu.Unlock()
 }
