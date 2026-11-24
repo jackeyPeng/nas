@@ -300,7 +300,7 @@ if [ "$REPO_ENV_EXISTED" = true ]; then
 else
     SETUP_FRESH=true
 fi
-if $SUDO env NAS_USER="$NAS_USER" FRESH_INSTALL="$SETUP_FRESH" bash "$INSTALL_DIR/scripts/setup.sh" > "$SETUP_LOG" 2>&1; then
+if $SUDO env NAS_USER="$NAS_USER" FRESH_INSTALL="$SETUP_FRESH" NAS_EDITION="${NAS_EDITION:-home}" bash "$INSTALL_DIR/scripts/setup.sh" > "$SETUP_LOG" 2>&1; then
     SETUP_OK=true
 else
     SETUP_OK=false
