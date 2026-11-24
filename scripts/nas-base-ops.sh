@@ -29,7 +29,10 @@
 set -euo pipefail
 
 IDENT_RE='^nasapp_[a-z0-9_]{1,32}$'
-TOPIC_PREFIX_RE='^nas/apps/[a-z0-9-]{1,32}/$'
+# 应用主题前缀：nas/apps/<id>/；面板事件桥专用：nas/events/（APP-SPEC §5.6
+# 核心系统事件命名空间，面板只发布不订阅；桥账号用户名 nasapp_panel_events
+# 由 check_ident 覆盖，前缀白名单在此收紧）。
+TOPIC_PREFIX_RE='^(nas/apps/[a-z0-9-]{1,32}/|nas/events/)$'
 MOSQUITTO_PASSWD_FILE="/etc/mosquitto/nas-passwd"
 MOSQUITTO_ACL_FILE="/etc/mosquitto/nas-acl.conf"
 
