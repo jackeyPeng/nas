@@ -103,6 +103,12 @@ type eventsBridge struct {
 	running     bool
 	dispatched  bool
 	startupDone chan struct{}
+	// failed 记录最近一次启动尝试失败（申领账号/连接 broker）。sync.Once
+	// 只防并发重复启动，不能把「失败」也锁死——broker 晚于面板启动的
+	// 机器上（真机实锤：mosquitto 属主修复前桥 8s 超时，Once 从此不再
+	// 重试，只能重启面板恢复），健康轮询器应能对失败态重试。running=true
+	// 后 Once 语义不变：进程生命周期内成功启动只发生一次。
+	failed bool
 }
 
 var bridge = &eventsBridge{startupDone: make(chan struct{})}
@@ -133,10 +139,30 @@ func StartEventsBridgeIfReady() {
 		return
 	}
 	b := bridge
-	b.started.Do(func() {
-		b.dispatched = true
-		go runEventsBridgeStartup(b)
-	})
+	b.mu.Lock()
+	if b.running {
+		b.mu.Unlock()
+		return
+	}
+	prevFailed := b.failed
+	b.mu.Unlock()
+	// 成功路径走 Once（防并发重复派发）；失败后允许健康轮询重试——
+	// Once.Do 在已 Do 过时直接返回，这里靠 failed 标志在外层放行重试。
+	if !prevFailed {
+		b.started.Do(func() {
+			b.mu.Lock()
+			b.dispatched = true
+			b.mu.Unlock()
+			go runEventsBridgeStartup(b)
+		})
+		return
+	}
+	// 上一轮失败：直接再派发一次（并发调用最多多派发几个 goroutine，
+	// 每个都会在连接成功后竞争 running 标志，先到先得，后到的自行退出）。
+	b.mu.Lock()
+	b.dispatched = true
+	b.mu.Unlock()
+	go runEventsBridgeStartup(b)
 }
 
 // runEventsBridgeStartup 实际执行申领账号→连接 broker→订阅→常驻转发
@@ -149,15 +175,27 @@ func runEventsBridgeStartup(b *eventsBridge) {
 
 	conn, err := newConnectorForBridge()
 	if err != nil {
+		b.mu.Lock()
+		b.failed = true
+		b.mu.Unlock()
 		log.Printf("[BASE] 事件总线→MQTT 桥启动失败（申领账号）: %v", err)
 		return
 	}
 	if err := conn.Connect(); err != nil {
+		b.mu.Lock()
+		b.failed = true
+		b.mu.Unlock()
 		log.Printf("[BASE] 事件总线→MQTT 桥启动失败（连接 broker）: %v", err)
 		return
 	}
 	b.mu.Lock()
+	if b.running {
+		// 并发重试场景下已有实例先连上：本 goroutine 退出，避免双订阅。
+		b.mu.Unlock()
+		return
+	}
 	b.running = true
+	b.failed = false
 	b.mu.Unlock()
 	ch := common.Subscribe()
 	go runEventsBridgeLoop(conn, ch)
