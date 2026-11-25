@@ -78,6 +78,13 @@ func openAppsDB(dataDir string) (*sql.DB, error) {
 	// healthz 是 M1-4 新增：持久化 manifest.Healthz 路径供后台健康轮询器
 	// 使用（轮询器不持有 pkg.Manifest，只能从台账读取）。
 	db.Exec(`ALTER TABLE installed ADD COLUMN healthz TEXT NOT NULL DEFAULT ''`)
+
+	// external_apps 是外部应用注册表（external.go，§10.4「与 managed
+	// installed 表并列」），同一个 apps.db 连接内建表。
+	if err := createExternalAppsTable(db); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return db, nil
 }
 

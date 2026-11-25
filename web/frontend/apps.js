@@ -45,6 +45,20 @@ function appsPanel() {
         marketStale: false,
         marketInstalling: '', // 正在安装的 appId，用于按钮 disabled
 
+        // 外部应用登记（APP-SPEC §10，#37）：机器上已自行部署的服务，登记
+        // 进应用中心统一列表，不走安装/升级/卸载那套签名包流程。
+        externalReg: {
+            show: false,
+            submitting: false,
+            form: { id: '', name: '', url: '', unit: '', healthzUrl: '', icon: '' },
+        },
+        externalUnregister: {
+            show: false,
+            id: '',
+            confirmText: '',
+        },
+        externalActing: {}, // id -> bool，按钮 disabled 用
+
         // ─── 应用市场 ───
         async loadMarket() {
             this.marketLoading = true;
@@ -74,13 +88,15 @@ function appsPanel() {
             }
         },
 
-        // ─── 列表 ───
+        // ─── 列表（统一列表：托管应用 kind:"managed" + 外部应用 kind:"external"，
+        //      §10.3。外部应用的 status 已经在列表响应里，不走 /health 轮询
+        //      接口——那是托管应用专用的） ───
         async loadApps() {
             this.appsLoading = true;
             const data = await this.api('/apps');
             if (data) {
                 this.appsList = data.apps || [];
-                this.appsList.forEach(a => this.refreshAppHealth(a.id));
+                this.appsList.filter(a => a.kind !== 'external').forEach(a => this.refreshAppHealth(a.id));
             }
             this.appsLoading = false;
         },
@@ -115,6 +131,93 @@ function appsPanel() {
             fetch('/apps/' + encodeURIComponent(app.id) + '/open?entry=' + encodeURIComponent(entry), { headers, redirect: 'follow' })
                 .then(res => { if (res.ok) window.open(res.url, '_blank'); else alert(this.t('apps.open_failed') || '打开失败'); })
                 .catch(() => alert(this.t('apps.open_failed') || '打开失败'));
+        },
+
+        // 外部应用「打开」：直连登记时填的 url，新标签页打开，不走票据/反代
+        // 流程（§10.1——核心侧不碰其鉴权，面板只是个门户卡）。
+        openExternalApp(app) {
+            window.open(app.url, '_blank');
+        },
+
+        // unknown/running -> 灰/绿，unhealthy -> 红，stopped -> 灰
+        externalStatusBadge(app) {
+            if (app.status === 'running') return { text: this.t('apps.health_running'), style: 'background: var(--success-light);color: var(--success)' };
+            if (app.status === 'unhealthy') return { text: this.t('apps.health_unhealthy'), style: 'background: var(--danger-light);color: var(--danger)' };
+            return { text: this.t('apps.health_stopped'), style: 'background: var(--card-bg-alt);color: var(--text-light)' };
+        },
+
+        // ─── 外部应用：登记 ───
+        openExternalRegisterDialog() {
+            this.externalReg = {
+                show: true,
+                submitting: false,
+                form: { id: '', name: '', url: '', unit: '', healthzUrl: '', icon: '' },
+            };
+        },
+
+        cancelExternalRegister() { this.externalReg.show = false; },
+
+        async submitExternalRegister() {
+            const f = this.externalReg.form;
+            if (!f.id || !f.name || !f.url) {
+                this.showToast(this.t('apps.err_external_required'), 'error');
+                return;
+            }
+            this.externalReg.submitting = true;
+            try {
+                const data = await this.api('/apps/external', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(f),
+                });
+                if (data) {
+                    this.showToast(this.t('apps.external_register_done'), 'success');
+                    this.externalReg.show = false;
+                    this.loadApps();
+                }
+            } finally {
+                this.externalReg.submitting = false;
+            }
+        },
+
+        // ─── 外部应用：启停/重启（仅登记了 unit 时可用） ───
+        async externalAction(app, action) {
+            if (!app.unit) return;
+            this.externalActing[app.id] = true;
+            try {
+                const data = await this.api('/apps/external/' + encodeURIComponent(app.id) + '/' + action, { method: 'POST' });
+                if (data) {
+                    this.showToast(this.t('apps.action_done_' + action), 'success');
+                    this.loadApps();
+                }
+            } finally {
+                this.externalActing[app.id] = false;
+            }
+        },
+
+        // ─── 外部应用：注销登记（仅删登记行，不动服务/数据，§10.1） ───
+        openExternalUnregisterDialog(app) {
+            this.externalUnregister = { show: true, id: app.id, confirmText: '' };
+        },
+
+        cancelExternalUnregister() { this.externalUnregister.show = false; },
+
+        async confirmExternalUnregister() {
+            const u = this.externalUnregister;
+            if (u.confirmText !== u.id) {
+                this.showToast(this.t('apps.err_external_id_mismatch'), 'error');
+                return;
+            }
+            const data = await this.api('/apps/external/' + encodeURIComponent(u.id), {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ confirm: true }),
+            });
+            if (data) {
+                this.showToast(this.t('apps.external_unregister_done'), 'success');
+                this.externalUnregister.show = false;
+                this.loadApps();
+            }
         },
 
         // ─── 文件 -> base64（签名文件是原始二进制，需 base64 后塞进 multipart 字段） ───

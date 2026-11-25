@@ -107,6 +107,12 @@ func pollOnce() {
 	}
 
 	publishAppHealthRegistry(apps)
+
+	// 外部应用（external.go，§10）健康轮询复用同一 60s tick 节奏，不另
+	// 开一个 ticker goroutine；它有自己独立的状态机与事件语义，不参与
+	// 这里的 flipped/registry 刷新判断。
+	pollExternalAppsOnce()
+
 	if flipped {
 		system.ScheduleRegistryRefresh()
 	}

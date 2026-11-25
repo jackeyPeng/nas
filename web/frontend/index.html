@@ -2872,20 +2872,47 @@
             <div x-show="page === 'apps'" class="page" x-transition.opacity.duration.300ms>
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--sp-4)">
                     <h2 style="margin:0">🧩 <span x-text="$t('apps.title')"></span></h2>
-                    <button class="btn btn-primary" @click="openInstallDialog()" x-text="$t('apps.install_app')"></button>
+                    <div style="display:flex;gap:var(--sp-2)">
+                        <button class="btn" @click="openExternalRegisterDialog()" x-text="$t('apps.register_external')"></button>
+                        <button class="btn btn-primary" @click="openInstallDialog()" x-text="$t('apps.install_app')"></button>
+                    </div>
                 </div>
                 <div class="empty-state" x-show="!appsLoading && !appsList.length"><span class="empty-state__icon">🧩</span><span class="empty-state__title" x-text="$t('apps.no_apps')"></span><span class="empty-state__hint" x-text="$t('apps.no_apps_hint')"></span></div>
                 <div class="cards" x-show="appsList.length">
-                    <template x-for="app in appsList" :key="app.id"><div class="card">
-                        <div style="display:flex;justify-content:space-between;align-items:start">
-                            <div><div style="font-weight:600;font-size:var(--fs-base)" x-text="app.name"></div><div style="font-size:var(--fs-xs);color: var(--text-light);margin-top:2px" x-text="'v' + app.version"></div></div>
-                            <span class="badge-xs" :style="appHealthBadge(app.id).style" x-text="appHealthBadge(app.id).text"></span>
+                    <template x-for="app in appsList" :key="app.id">
+                        <!-- 托管应用卡（kind:"managed"，既有行为不变） -->
+                        <div class="card" x-show="app.kind !== 'external'">
+                            <div style="display:flex;justify-content:space-between;align-items:start">
+                                <div><div style="font-weight:600;font-size:var(--fs-base)" x-text="app.name"></div><div style="font-size:var(--fs-xs);color: var(--text-light);margin-top:2px" x-text="'v' + app.version"></div></div>
+                                <span class="badge-xs" :style="appHealthBadge(app.id).style" x-text="appHealthBadge(app.id).text"></span>
+                            </div>
+                            <div style="display:flex;gap:var(--sp-2);margin-top:var(--sp-4)">
+                                <button class="btn btn-sm btn-primary" @click="openApp(app)" x-text="$t('apps.open')"></button>
+                                <button class="btn btn-sm" @click="openAppDetail(app)" x-text="$t('apps.manage')"></button>
+                            </div>
                         </div>
-                        <div style="display:flex;gap:var(--sp-2);margin-top:var(--sp-4)">
-                            <button class="btn btn-sm btn-primary" @click="openApp(app)" x-text="$t('apps.open')"></button>
-                            <button class="btn btn-sm" @click="openAppDetail(app)" x-text="$t('apps.manage')"></button>
+                        <!-- 外部应用卡（kind:"external"，APP-SPEC §10/#37：门户卡直连，不装不卸） -->
+                        <div class="card" x-show="app.kind === 'external'">
+                            <div style="display:flex;justify-content:space-between;align-items:start">
+                                <div>
+                                    <div style="font-weight:600;font-size:var(--fs-base)" x-text="(app.icon ? app.icon + ' ' : '') + app.name"></div>
+                                    <div style="font-size:var(--fs-xs);color: var(--text-light);margin-top:2px" x-text="$t('apps.external_badge')"></div>
+                                </div>
+                                <span class="badge-xs" :style="externalStatusBadge(app).style" x-text="externalStatusBadge(app).text"></span>
+                            </div>
+                            <div style="display:flex;gap:var(--sp-2);margin-top:var(--sp-4);flex-wrap:wrap">
+                                <button class="btn btn-sm btn-primary" @click="openExternalApp(app)" x-text="$t('apps.open')"></button>
+                                <template x-if="app.unit">
+                                    <span style="display:flex;gap:var(--sp-2)">
+                                        <button class="btn btn-sm btn-success" @click="externalAction(app, 'start')" :disabled="externalActing[app.id]" x-text="$t('apps.start')"></button>
+                                        <button class="btn btn-sm" @click="externalAction(app, 'stop')" :disabled="externalActing[app.id]" x-text="$t('apps.stop')"></button>
+                                        <button class="btn btn-sm" @click="externalAction(app, 'restart')" :disabled="externalActing[app.id]" x-text="$t('apps.restart')"></button>
+                                    </span>
+                                </template>
+                                <button class="btn btn-sm btn-danger" @click="openExternalUnregisterDialog(app)" x-text="$t('apps.external_unregister')"></button>
+                            </div>
                         </div>
-                    </div></template>
+                    </template>
                 </div>
                 <!-- 应用市场（M2（二），APP-SPEC §7：index.json 一键安装） -->
                 <div style="margin-top:var(--sp-6);background: var(--card-bg);border:1px solid var(--border);border-radius:var(--radius-lg);padding:var(--sp-5)">
@@ -2975,6 +3002,37 @@
                         </div></template>
                     </div></template>
                     <div class="modal-actions" x-show="appsDetail.data"><button class="btn" @click="closeAppDetail()" x-text="$t('common.close')"></button></div>
+                </div></div>
+                <!-- 登记外部应用（APP-SPEC §10/#37） -->
+                <div class="modal" x-show="externalReg.show" x-cloak @click.self="cancelExternalRegister()"><div class="modal-box" style="max-width:480px">
+                    <h3 x-text="$t('apps.external_register_title')"></h3>
+                    <p style="color: var(--text-light);font-size:var(--fs-sm)" x-text="$t('apps.external_register_hint')"></p>
+                    <label x-text="$t('apps.external_id')"></label>
+                    <input type="text" x-model="externalReg.form.id" style="width:100%">
+                    <label style="margin-top:var(--sp-3);display:block" x-text="$t('apps.external_name')"></label>
+                    <input type="text" x-model="externalReg.form.name" style="width:100%">
+                    <label style="margin-top:var(--sp-3);display:block" x-text="$t('apps.external_url')"></label>
+                    <input type="text" x-model="externalReg.form.url" placeholder="http://192.168.1.50:8080" style="width:100%">
+                    <label style="margin-top:var(--sp-3);display:block" x-text="$t('apps.external_unit')"></label>
+                    <input type="text" x-model="externalReg.form.unit" placeholder="ankang.service" style="width:100%">
+                    <label style="margin-top:var(--sp-3);display:block" x-text="$t('apps.external_healthz_url')"></label>
+                    <input type="text" x-model="externalReg.form.healthzUrl" placeholder="http://192.168.1.50:8080/healthz" style="width:100%">
+                    <label style="margin-top:var(--sp-3);display:block" x-text="$t('apps.external_icon')"></label>
+                    <input type="text" x-model="externalReg.form.icon" placeholder="🧩" style="width:100%">
+                    <div class="modal-actions">
+                        <button class="btn" @click="cancelExternalRegister()" x-text="$t('common.cancel')"></button>
+                        <button class="btn btn-primary" @click="submitExternalRegister()" :disabled="externalReg.submitting" x-text="$t('apps.external_register_submit')"></button>
+                    </div>
+                </div></div>
+                <!-- 注销外部应用登记：仅删登记行，不动服务/数据 -->
+                <div class="modal" x-show="externalUnregister.show" x-cloak @click.self="cancelExternalUnregister()"><div class="modal-box" style="max-width:480px">
+                    <h3 x-text="$t('apps.external_unregister')"></h3>
+                    <p style="color: var(--danger);font-size:var(--fs-sm)" x-text="$t('apps.external_unregister_hint', [externalUnregister.id])"></p>
+                    <input type="text" x-model="externalUnregister.confirmText" :placeholder="externalUnregister.id" style="width:100%">
+                    <div class="modal-actions">
+                        <button class="btn" @click="cancelExternalUnregister()" x-text="$t('common.cancel')"></button>
+                        <button class="btn btn-danger" @click="confirmExternalUnregister()" x-text="$t('apps.external_unregister_submit')"></button>
+                    </div>
                 </div></div>
             </div>
 

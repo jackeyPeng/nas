@@ -75,6 +75,7 @@ func RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/apps/install", common.AdminMiddleware(handleInstall))
 	mux.HandleFunc("/api/apps/market", common.AdminMiddleware(handleMarketList))
 	mux.HandleFunc("/api/apps/market/install", common.AdminMiddleware(handleMarketInstall))
+	mux.HandleFunc("/api/apps/external", common.AdminMiddleware(handleExternalRegister))
 	mux.HandleFunc("/api/apps/", common.AdminMiddleware(handleAppsDispatch))
 	startHealthPoller()
 }
@@ -87,12 +88,18 @@ func RegisterRoutesBare(mux *http.ServeMux) {
 	mux.HandleFunc("/api/apps/install", handleInstall)
 	mux.HandleFunc("/api/apps/market", handleMarketList)
 	mux.HandleFunc("/api/apps/market/install", handleMarketInstall)
+	mux.HandleFunc("/api/apps/external", handleExternalRegister)
 	mux.HandleFunc("/api/apps/", handleAppsDispatch)
 }
 
 // handleAppsDispatch 分发 /api/apps/<id>[/action] 下的全部路由：
-// confirm 挂在 install 下（/api/apps/install/<id>/confirm），其余
+// confirm 挂在 install 下（/api/apps/install/<id>/confirm），外部应用的
+// 注销/启停挂在 /api/apps/external/<id>[/action]（external.go），其余
 // （详情/start/stop/restart/upgrade/delete）挂在 /api/apps/<id>/<action>。
+// POST /api/apps/external 本身（无 id 段）由 RegisterRoutes(Bare) 单独挂在
+// 更具体的 "/api/apps/external" 前缀上，ServeMux 的最长前缀匹配规则保证
+// 它优先于这里的 "/api/apps/" 通配——这里只需处理带 id 的
+// /api/apps/external/<id>[...] 形态，不需要特判零 id 段的场景。
 func handleAppsDispatch(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/api/apps/")
 	parts := strings.Split(path, "/")
@@ -105,6 +112,25 @@ func handleAppsDispatch(w http.ResponseWriter, r *http.Request) {
 		// /api/apps/install/<id>/confirm
 		if len(parts) == 3 && parts[2] == "confirm" {
 			handleInstallConfirm(w, r, parts[1])
+			return
+		}
+		httpError(w, http.StatusNotFound, "未知路由")
+		return
+	}
+
+	if parts[0] == "external" {
+		// /api/apps/external/<id>[/start|stop|restart]
+		if len(parts) == 2 && parts[1] != "" {
+			handleExternalDelete(w, r, parts[1])
+			return
+		}
+		if len(parts) == 3 {
+			switch parts[2] {
+			case "start", "stop", "restart":
+				handleExternalAction(w, r, parts[1], parts[2])
+			default:
+				httpError(w, http.StatusNotFound, "未知路由")
+			}
 			return
 		}
 		httpError(w, http.StatusNotFound, "未知路由")
@@ -694,21 +720,19 @@ func mustGetInstalledApp(id string) installedApp {
 	return *a
 }
 
+// handleAppsList 返回统一的应用列表：托管应用（kind:"managed"）与外部应用
+// （kind:"external"）合并在同一个 "apps" 数组里（§10.3「统一列表」）。
 func handleAppsList(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		httpError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	apps, err := listInstalledApps(reg.db)
+	apps, err := buildUnifiedAppsList(reg.db, reg.executor)
 	if err != nil {
-		httpError(w, http.StatusInternalServerError, "查询台账失败: "+err.Error())
+		httpError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	summaries := make([]appSummary, 0, len(apps))
-	for _, a := range apps {
-		summaries = append(summaries, buildAppSummary(reg.executor, a))
-	}
-	common.JSONResponse(w, map[string]interface{}{"apps": summaries})
+	common.JSONResponse(w, map[string]interface{}{"apps": apps})
 }
 
 func handleAppDetail(w http.ResponseWriter, r *http.Request, id string) {
