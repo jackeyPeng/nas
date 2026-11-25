@@ -187,7 +187,8 @@
     "ph_no_limit": "0 = no limit",
     "ph_default_4": "default 4",
     "pass": "Pass",
-    "page_num": "Page {0}"
+    "page_num": "Page {0}",
+    "unknown": "Unknown"
   },
   "login": {
     "title": "NAS Management Panel",

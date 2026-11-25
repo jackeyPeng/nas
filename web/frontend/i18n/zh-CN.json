@@ -187,7 +187,8 @@
     "ph_no_limit": "0 = 不限",
     "ph_default_4": "默认 4",
     "pass": "通过",
-    "page_num": "第 {0} 页"
+    "page_num": "第 {0} 页",
+    "unknown": "未知"
   },
   "login": {
     "title": "NAS 管理面板",

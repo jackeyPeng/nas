@@ -143,7 +143,9 @@ function appsPanel() {
         externalStatusBadge(app) {
             if (app.status === 'running') return { text: this.t('apps.health_running'), style: 'background: var(--success-light);color: var(--success)' };
             if (app.status === 'unhealthy') return { text: this.t('apps.health_unhealthy'), style: 'background: var(--danger-light);color: var(--danger)' };
-            return { text: this.t('apps.health_stopped'), style: 'background: var(--card-bg-alt);color: var(--text-light)' };
+            if (app.status === 'stopped') return { text: this.t('apps.health_stopped'), style: 'background: var(--card-bg-alt);color: var(--text-light)' };
+            // unknown（刚登记/尚未轮询）——不与「已停止」混淆
+            return { text: this.t('common.unknown') || '未知', style: 'background: var(--card-bg-alt);color: var(--text-light)' };
         },
 
         // ─── 外部应用：登记 ───
