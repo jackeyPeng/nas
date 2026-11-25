@@ -2879,9 +2879,9 @@
                 </div>
                 <div class="empty-state" x-show="!appsLoading && !appsList.length"><span class="empty-state__icon">🧩</span><span class="empty-state__title" x-text="$t('apps.no_apps')"></span><span class="empty-state__hint" x-text="$t('apps.no_apps_hint')"></span></div>
                 <div class="cards" x-show="appsList.length">
-                    <template x-for="app in appsList" :key="app.id">
+                    <template x-for="app in appsList.filter(a => a.kind !== 'external')" :key="app.id">
                         <!-- 托管应用卡（kind:"managed"，既有行为不变） -->
-                        <div class="card" x-show="app.kind !== 'external'">
+                        <div class="card">
                             <div style="display:flex;justify-content:space-between;align-items:start">
                                 <div><div style="font-weight:600;font-size:var(--fs-base)" x-text="app.name"></div><div style="font-size:var(--fs-xs);color: var(--text-light);margin-top:2px" x-text="'v' + app.version"></div></div>
                                 <span class="badge-xs" :style="appHealthBadge(app.id).style" x-text="appHealthBadge(app.id).text"></span>
@@ -2891,8 +2891,12 @@
                                 <button class="btn btn-sm" @click="openAppDetail(app)" x-text="$t('apps.manage')"></button>
                             </div>
                         </div>
-                        <!-- 外部应用卡（kind:"external"，APP-SPEC §10/#37：门户卡直连，不装不卸） -->
-                        <div class="card" x-show="app.kind === 'external'">
+                    </template>
+                    <!-- 外部应用卡（kind:"external"，APP-SPEC §10/#37：门户卡直连，不装不卸）。
+                         注意：Alpine x-for 模板只渲染第一个根子元素，外部卡必须独立成
+                         单根 x-for（曾与托管卡同模板双根导致外部卡永不渲染）。 -->
+                    <template x-for="app in appsList.filter(a => a.kind === 'external')" :key="app.id">
+                        <div class="card">
                             <div style="display:flex;justify-content:space-between;align-items:start">
                                 <div>
                                     <div style="font-weight:600;font-size:var(--fs-base)" x-text="(app.icon ? app.icon + ' ' : '') + app.name"></div>
