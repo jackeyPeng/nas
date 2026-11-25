@@ -97,7 +97,11 @@
 
 ### 5.2 反代与 SSO
 - 路由：`/apps/<id>/*` → `127.0.0.1:<port>/*`（路径前缀原样透传，应用自己处理前缀）
-- 核心在转发前校验面板会话；无效会话 → 401 + `WWW-Authenticate` 语义（前端跳面板登录）
+- 核心在转发前校验面板会话，判定链三级，任一通过即放行并注入 §5.2 头：
+  1. `Authorization: Bearer <jwt>`（面板前端 fetch 自带）
+  2. `nas_app_sess` Cookie：一次性票据兑换（第 3 级）放行那一刻由反代 Set-Cookie（HMAC-SHA256 签名、Path 限 `/apps/<id>/`、HttpOnly、SameSite=Lax、TTL 8h、绑定 app id）。它解决浏览器场景：票据只覆盖「打开」按钮的首次导航，应用页内后续同源请求（`fetch('./api/…')`、`<img src="./thumb/…">`）无 Bearer 也无票据，靠这枚 Cookie 自动携带。**该 Cookie 是面板↔浏览器的内部机制，反代转发前从 Cookie 头里剥离，应用进程不可见**
+  3. `?nas_ticket=<一次性票据>`（30s 有效、验签、一次性消费防重放；转发 query 剥离，应用不可见）
+- 无效会话（三级全失败）→ 401 + `WWW-Authenticate` 语义（前端跳面板登录）
 - 转发附加请求头：
   - `X-NAS-User: <用户名>`
   - `X-NAS-Auth: <sig>`，`sig = HMAC-SHA256(key, user + "\n" + unix_time)`，容差 ±60s

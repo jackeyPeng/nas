@@ -2,7 +2,15 @@
 
 ## [未发布]
 
+- fix(apps): 升级目录搬移 EPERM — defaultExecutor 的 Rename/RemoveAll 对 `/var/lib/nas/apps/` 直接子项自动路由 sudo `mvapp`/`rmapp`（APPS_BASE 属主 root，面板用户对父目录无 rename/unlink 权限，真机升级实测 rename EPERM 回滚；provision 脚本加 mvapp/rmapp 子命令 + `check_appname` 白名单双侧校验；双机升级 0.1.0→0.2.0 实证）
+- fix(apps): 浏览器应用页后续请求 401 — 一次性票据只覆盖「打开」按钮的首次导航，应用页内自身同源请求（fetch/img）无 Bearer 无票据恒 401（hello-app 被演示语义掩盖）。票据兑换放行时反代 Set-Cookie `nas_app_sess`（HMAC-SHA256 签名、Path 限 `/apps/<id>/`、HttpOnly、SameSite=Lax、TTL 8h、绑定 app id），反代会话判定改三级（Bearer → Cookie → 票据），转发前从 Cookie 头剥离该段（应用进程不可见）；8 个新单测 + 双机 curl + Chrome 端到端实证（画廊渲染 = 页内 fetch 成功）
+- feat(market): scripts/market-upload.py — 市场索引/包手工发布通道（R2 nas bucket `apps/` 前缀；get.z1.sale 绑 nas 桶，www-z1-sale 是官网桶勿传错；Cloudflare 404 负缓存 3 分钟坑写进注释）
+- feat(apps): 外部应用注册（APP-SPEC §10/#37）— 门户卡直连登记（零文件落盘）、可选 unit 启停、healthz 监测与 external.* 事件、应用中心统一列表（托管/外部两循环渲染 + 四态徽章）
+- feat(examples): nas-photos 试点应用 v0.1.0→v0.2.0 — 家庭照片应用（上传/缩略图画廊/lightbox/删除），标准库零依赖，APP-SPEC 标杆实现；v0.2.0 修反代前缀形态 404（LastIndex 定位 marker）并经双机市场下载升级链路实证
 - feat(base): M2 基座服务（一）— PG16/Valkey8/Mosquitto 纳管（安装停用态/一键启用/健康探活/注册表项）+ CapabilitiesSupported 运行时翻转 + 生命周期接线（DSN/db 号/MQTT 凭据注入）
+- fix(base): 健康轮询器补运行时对帐 — pollOnce 只读台账，setup.sh 装的组件被当未安装跳过（fresh install 真机实锤：桥 40 分钟零日志）；事件桥启动回调改探测成功即调（幂等）；probeComponentHealth 拆 ok/flipped 双返回值；eventbus 包级变量加锁（-race 数据竞争）
+- fix(scripts): mosquitto passwd/acl 写入后 SIGHUP 重读（.57 真机实锤：申领成功但连接 not authorised）；install.sh 透传 NAS_EDITION 支持家用服务器版一条命令直装
+- docs(spec): APP-SPEC §10 外部应用契约 + §0 目录分层不变式；§5.2 会话判定三级化（nas_app_sess Cookie）
 
 ## 2026-11-23 - v1.5.0-beta.1 应用平台 M1（托管应用核心）
 
