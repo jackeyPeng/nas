@@ -175,3 +175,41 @@
 - 应用资源限额（MemoryMax 等）暂由核心统一值，未按应用定制
 - 市场索引无渠道/灰度概念
 - 升级数据迁移 DSL 未定义（应用自管，规范只保证 data 目录保留）
+
+## 10. 外部应用（external apps，#37 收编）
+
+### 10.1 定位与边界
+
+- **外部应用 = 机器上已有、自行部署的服务**（如安康），管理员登记注册进应用中心；核心不装不卸、不碰其文件与数据
+- 入口是**门户卡新标签页直连**（`window.open`）：不反代、不 iframe、不做鉴权透传——外部应用保持独立登录与 2FA，核心被攻破不等于外部应用数据泄露（License 与隐私隔离：NAS 与外部应用代码零合并，集成只发生在运行托管层）
+- 生命周期：核心仅做**注册/注销 + （可选）unit 启停 + 健康监测**；掉线只改状态徽章与告警事件（`external.unhealthy`），不自动重启外部应用（重启策略属外部应用自己的 systemd 配置）
+- 外部应用不出现在市场索引里；spec/包格式/SSO/票据协议均不适用于它
+
+### 10.2 注册字段
+
+| 字段 | 必填 | 约束 |
+|---|---|---|
+| `id` | 是 | `^[a-z0-9][a-z0-9-]{0,31}$`，与托管应用共用同一命名空间（撞名拒绝注册） |
+| `name` | 是 | 展示名 1–32 字符 |
+| `url` | 是 | 门户跳转地址，`http(s)://`（含端口），存库与响应原样返回 |
+| `unit` | 否 | systemd unit 名（`[a-zA-Z0-9@:_-]+\.service`）；提供则启用面板启停按钮与 active 状态 |
+| `healthzUrl` | 否 | 健康探测地址 `http(s)://`；提供则纳入健康轮询（200=健康），未提供时状态=unit active 或 unknown |
+| `icon` | 否 | 图标 URL 或空（前端用默认占位图标） |
+
+### 10.3 API（均需管理员会话）
+
+- `POST /api/apps/external`：注册（上表字段）；成功返回注册后的记录
+- `GET /api/apps`：统一列表——托管应用带 `kind:"managed"`，外部应用带 `kind:"external"`（同一页展示；外部应用无 port/version 字段语义）
+- `POST /api/apps/external/<id>/start|stop|restart`：仅注册了 unit 时可用，否则 409
+- `DELETE /api/apps/external/<id>`（body `confirm: true`）：注销登记——只删注册表行，不碰服务与文件（这是与托管应用卸载的本质差异，操作无需二次确认页）
+- 健康状态随 `GET /api/apps` 列表返回；外部应用状态字段：`unknown / running / stopped / unhealthy`
+
+### 10.4 存储
+
+- 注册表落 `apps.db` 独立表 `external_apps`（与 managed `installed` 表并列；「一张注册表」指应用中心的统一视图，不要求同表）
+- 零文件落盘：不建目录、不建用户、不写 unit——注册是纯登记动作
+
+### 10.5 事件
+
+- 注册/注销/启停：`external.registered` / `external.unregistered` / `external.action`（info）
+- 健康翻转：`external.unhealthy` / `external.recovered`（warning/info）——进 eventbus，经既有桥转发 `nas/events/external.*`
