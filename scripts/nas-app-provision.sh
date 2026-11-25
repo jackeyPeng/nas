@@ -45,7 +45,22 @@ usage() {
     echo "用法: sudo $0 provision <id> <nas_user>" >&2
     echo "      sudo $0 chown-app <id> <path>" >&2
     echo "      sudo $0 remove <id> <keepdata true|false>" >&2
+    echo "      sudo $0 mvapp <from> <to>" >&2
+    echo "      sudo $0 rmapp <name>" >&2
     exit 1
+}
+
+# APP_NAME_RE：mvapp/rmapp 的目录名约束。允许 a-z0-9 起头 + 字母数字点下划线
+# 连字符（升级备份目录形如 nas-photos.bak-1732...-ab12）；首字符限 [a-z0-9]
+# 天然排除 "." 与 ".."（穿越），且整名不含斜杠 → 路径恒在 APPS_BASE 内。
+APP_NAME_RE='^[a-z0-9][a-z0-9._-]{0,80}$'
+
+check_appname() {
+    local name="$1"
+    if ! [[ "$name" =~ $APP_NAME_RE ]]; then
+        echo "错误: 应用目录名 \"$name\" 格式非法（必须匹配 $APP_NAME_RE）" >&2
+        exit 1
+    fi
 }
 
 check_id() {
@@ -155,6 +170,37 @@ case "$SUBCOMMAND" in
         if [ "$KEEPDATA" = "false" ]; then
             rm -rf "$DATA_DIR"
         fi
+        ;;
+
+    # mvapp/rmapp：升级流程的程序目录搬移/删除（Go 侧 defaultExecutor.Rename/
+    # RemoveAll 对 /var/lib/nas/apps/ 下路径自动路由到这里——APPS_BASE 属主是
+    # root，面板进程（fm）对其内的目录无 rename/unlink 权限；remove 子命令的
+    # rm -rf 同理只能由 root 做）。名字经 check_appname 白名单校验，路径恒在
+    # APPS_BASE 内，无 root-equivalent 风险（sudoers 白名单形状不变）。
+    mvapp)
+        [ $# -eq 2 ] || usage
+        FROM="$1"; TO="$2"
+        check_appname "$FROM"; check_appname "$TO"
+        if [ "$FROM" = "$TO" ]; then
+            echo "错误: mvapp 源与目标相同" >&2
+            exit 1
+        fi
+        if [ ! -d "$APPS_BASE/$FROM" ]; then
+            echo "错误: 源目录 $APPS_BASE/$FROM 不存在" >&2
+            exit 1
+        fi
+        if [ -e "$APPS_BASE/$TO" ]; then
+            echo "错误: 目标 $APPS_BASE/$TO 已存在" >&2
+            exit 1
+        fi
+        mv "$APPS_BASE/$FROM" "$APPS_BASE/$TO"
+        ;;
+
+    rmapp)
+        [ $# -eq 1 ] || usage
+        NAME="$1"
+        check_appname "$NAME"
+        rm -rf "$APPS_BASE/$NAME"
         ;;
 
     *)

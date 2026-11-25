@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/user"
 	"strconv"
+	"strings"
 	"time"
 
 	"nas-panel/common"
@@ -170,11 +171,53 @@ func (defaultExecutor) MkdirAllChown(path string, mode os.FileMode, uid, gid int
 }
 
 func (defaultExecutor) RemoveAll(path string) error {
+	if name, ok := appDirEntry(path); ok {
+		_, err := common.SudoExec(appProvisionScript, "rmapp", name)
+		return err
+	}
 	return os.RemoveAll(path)
 }
 
 func (defaultExecutor) Rename(oldPath, newPath string) error {
-	return os.Rename(oldPath, newPath)
+	from, fromApp := appDirEntry(oldPath)
+	to, toApp := appDirEntry(newPath)
+	switch {
+	case fromApp && toApp:
+		_, err := common.SudoExec(appProvisionScript, "mvapp", from, to)
+		return err
+	case !fromApp && !toApp:
+		return os.Rename(oldPath, newPath)
+	default:
+		// 一个在 /var/lib/nas/apps/ 内一个在外——混合搬移既无合法调用方，
+		// 也最容易在路径拼接上出错，直接拒绝。
+		return fmt.Errorf("rename 不支持跨 /var/lib/nas/apps 边界: %s -> %s", oldPath, newPath)
+	}
+}
+
+// appProgramBase 是托管应用程序目录的根（与 appProgramDir 的前缀一致，
+// scripts/nas-app-provision.sh 的 APPS_BASE 逐字对应）。
+const appProgramBase = "/var/lib/nas/apps"
+
+// appDirEntry 判断 path 是否是 appProgramBase 下的直接子项（不含更深路径），
+// 是则返回目录名。目录名本身不含斜杠 → 传给 provision 脚本 rmapp/mvapp 后
+// 路径恒在 APPS_BASE 内；脚本侧另有 check_appname 白名单（首字符 [a-z0-9]，
+// 天然排除 ".."）二次校验，双侧防线。
+//
+// 为什么需要它：APPS_BASE 属主是 root（装机 setup.sh 建），应用子目录
+// chown 给面板用户。rename/unlink 一个目录需要对**父目录**有写权限——
+// 面板进程（fm）对 root 属主的 APPS_BASE 无权，os.Rename 直接 EPERM
+// （真机升级实测实锤；单测的 fakeExecutor 不经文件系统所以没暴露）。
+// 卸载路径早有同样问题的解法（remove 子命令 root rm -rf），升级路径
+// 依样路由到 mvapp/rmapp。
+func appDirEntry(path string) (name string, ok bool) {
+	if !strings.HasPrefix(path, appProgramBase+"/") {
+		return "", false
+	}
+	name = path[len(appProgramBase)+1:]
+	if name == "" || strings.ContainsAny(name, "/\\") {
+		return "", false
+	}
+	return name, true
 }
 
 func (defaultExecutor) WriteUnitFile(unit, content string) error {
