@@ -331,7 +331,7 @@ func handleThumb(w http.ResponseWriter, r *http.Request, ctx secretCtx) {
 //   - 再用 idPattern（`^[0-9]+_[0-9a-f]{8}$`）与 allowedExt 白名单校验拆出
 //     的 id/ext——两者均不含 `.`/`/`/`\x00`，即便前两步有疏漏，拼出的文件名
 //     也不可能包含路径分隔符或空字节
-func parsePhotoRequestPath(reqPath, prefix string) (id, ext string, ok bool) {
+func parsePhotoRequestPath(reqPath, marker string) (id, ext string, ok bool) {
 	// 空字节：Go 的 net/http 在解析请求行时已经会拒绝多数控制字符，但这里
 	// 显式再挡一层（任务明确要求覆盖空字节注入场景），不依赖上游行为。
 	if strings.ContainsRune(reqPath, '\x00') {
@@ -339,10 +339,17 @@ func parsePhotoRequestPath(reqPath, prefix string) (id, ext string, ok bool) {
 	}
 
 	cleaned := path.Clean(reqPath)
-	if !strings.HasPrefix(cleaned, prefix) {
+	// 双前缀问题：核心反代原样透传 /apps/nas-photos/photo/<id>.<ext>，本机
+	// 调试走裸路径 /photo/<id>.<ext>（registerRoutes 双挂）。用 LastIndex
+	// 定位 marker（"/photo/" 或 "/thumb/"），两种前缀形态都取 marker 之后
+	// 的文件名段；marker 之前的内容（无论多长）一律忽略，不存在「前缀必须
+	// 等于裸路径」的假设——曾因硬编码 strings.HasPrefix(cleaned, "/photo/")
+	// 导致反代路径 404（真机实锤，测试只覆盖裸路径没抓到）。
+	idx := strings.LastIndex(cleaned, marker)
+	if idx < 0 {
 		return "", "", false
 	}
-	name := strings.TrimPrefix(cleaned, prefix)
+	name := cleaned[idx+len(marker):]
 	if name == "" || strings.ContainsAny(name, "/\\") {
 		return "", "", false
 	}

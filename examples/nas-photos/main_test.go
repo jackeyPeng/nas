@@ -12,6 +12,7 @@ import (
 	"image/gif"
 	"image/jpeg"
 	"image/png"
+	"strings"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -612,3 +613,30 @@ func TestIDPattern(t *testing.T) {
 // handleThumb 覆盖，这里不直接调用避免未使用 import 报错——占位确保编译器
 // 不会因测试文件改动而抱怨未使用的标准库引用）。
 var _ io.Writer = (*bytes.Buffer)(nil)
+
+// TestParsePhotoRequestPathPrefixed 反代前缀形态回归：曾因 parsePhotoRequestPath
+// 硬编码裸前缀导致经核心反代（/apps/nas-photos/photo/...）全部 404（真机实锤）。
+func TestParsePhotoRequestPathPrefixed(t *testing.T) {
+	cases := []struct {
+		path   string
+		wantOK bool
+		wantID string
+	}{
+		{"/photo/123_abcd0123.png", true, "123_abcd0123"},
+		{"/apps/nas-photos/photo/123_abcd0123.png", true, "123_abcd0123"},
+		{"/thumb/123_abcd0123.jpg", true, "123_abcd0123"},
+		{"/apps/nas-photos/thumb/123_abcd0123.jpg", true, "123_abcd0123"},
+		{"/apps/nas-photos/photo/../../etc/passwd.png", false, ""},
+		{"/apps/nas-photos/photo/123_abcd0123.exe", false, ""},
+	}
+	for _, c := range cases {
+		marker := "/photo/"
+		if strings.Contains(c.path, "/thumb/") {
+			marker = "/thumb/"
+		}
+		id, _, ok := parsePhotoRequestPath(c.path, marker)
+		if ok != c.wantOK || (c.wantOK && id != c.wantID) {
+			t.Errorf("parsePhotoRequestPath(%q) = (%q,%v), want (%q,%v)", c.path, id, ok, c.wantID, c.wantOK)
+		}
+	}
+}
