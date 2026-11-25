@@ -1,0 +1,21 @@
+{
+  "id": "nas-photos",
+  "name": "家庭照片",
+  "icon": "icon.png",
+  "version": "0.1.0",
+  "spec": "1.0",
+  "minCoreVersion": "1.5.0",
+  "port": 18002,
+  "entry": "/apps/nas-photos/",
+  "healthz": "/apps/nas-photos/healthz",
+  "permissions": {
+    "storage": ["/data/nas1/photos"],
+    "db": "none",
+    "cache": false,
+    "mqtt": { "sub": [], "pub": [] },
+    "notifications": false,
+    "requires": []
+  },
+  "dataDir": true,
+  "upgrade": { "minUpgradeFrom": "0.1.0" }
+}
