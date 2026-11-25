@@ -148,6 +148,10 @@ func main() {
 	// 不直接复用同一把密钥做两种不同用途的签名），避免再单独管理一份密钥
 	// 材料/落盘逻辑。
 	apps.InitTicketSecret(apps.DeriveTicketSecret(secret))
+	// 应用反代会话 Cookie 密钥（修复浏览器应用页后续请求 401，见
+	// appsess.go）：同一个面板 JWT secret 来源派生，与票据密钥不同标签、
+	// 不同派生密钥，接线时机紧邻 InitTicketSecret。
+	apps.InitAppSessSecret(apps.DeriveAppSessSecret(secret))
 
 	// Init audit log
 	// 目录分层不变式（APP-SPEC §0）：面板系统数据一律落系统盘

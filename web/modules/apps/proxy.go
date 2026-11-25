@@ -59,21 +59,53 @@ func handleAppProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 会话校验（§5.2「核心在转发前校验面板会话；无效会话 → 401」）：复用
-	// 面板现有 JWT Bearer 校验（common.ValidTokenFromRequest/RequestUsername），
-	// 不新造第二套会话机制。401 响应带与 common.AuthMiddleware 一致的 JSON
-	// body（前端 401 拦截逻辑按现有口径识别）。
+	// 会话校验三级判定（§5.2「核心在转发前校验面板会话；无效会话 → 401」，
+	// 加上应用会话 Cookie 这一级修复浏览器应用页后续请求 401）：
+	//   1. Bearer 有效：面板前端 fetch 自带 Authorization，现状不动。
+	//   2. Bearer 失败 → 应用会话 Cookie 有效：票据兑换时种下的 Cookie，
+	//      浏览器对同一应用路径下的后续同源请求（fetch('./api/x')、
+	//      <img src="./thumb/x"> 等）会自动带上，不需要 JS 设 Authorization
+	//      头，也不需要每次都走一次性票据（真机实测缺口：票据只覆盖首次
+	//      导航，消费后应用页内自身请求既无 Bearer 也无票据 → 401）。
+	//   3. 仍失败 → 票据回退（现状逻辑），且票据验证通过时顺手种下第 2
+	//      级用到的 Cookie，让本次放行之后同一应用页面内的后续请求命中
+	//      第 2 级，不必每次都重新走票据。
+	// 401 响应带与 common.AuthMiddleware 一致的 JSON body（前端 401 拦截
+	// 逻辑按现有口径识别）。
 	user := common.RequestUsername(r)
 	validSession := common.ValidTokenFromRequest(r) && user != ""
 	if !validSession {
-		// 回退路径：query 带票据且验签+一次性消费通过 → 换算成票据绑定的
-		// 用户身份放行；票据剥离在下面 Rewrite 里统一做，这里只确定身份。
-		ticketUser, ticketOK := ticketFallbackUser(r)
-		if !ticketOK {
-			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
-			return
+		if cookieUser, cookieOK := appSessCookieUser(r, id); cookieOK {
+			user = cookieUser
+		} else {
+			// 回退路径：query 带票据且验签+一次性消费通过 → 换算成票据
+			// 绑定的用户身份放行；票据剥离在下面 Rewrite 里统一做，这里
+			// 只确定身份。
+			ticketUser, ticketOK := ticketFallbackUser(r)
+			if !ticketOK {
+				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+				return
+			}
+			user = ticketUser
+			// 票据兑换成功这一刻顺手种应用会话 Cookie（方案既定动作）：
+			// Path 限定到本应用前缀，HttpOnly 防 XSS 窃取，SameSite=Lax
+			// 允许顶层导航带上（票据引导本身就是跨页跳转场景）；不设
+			// Secure——面板常年跑在 http 内网环境，设了 Secure 浏览器会
+			// 直接拒收这枚 Cookie（起不到作用，等于没种）。签发失败（密钥
+			// 未初始化等）不影响本次放行，只是退化为"这次之后还是得再走
+			// 一次票据"，不应因为种 Cookie 失败就把已经验证通过的票据请求
+			// 判为 401。
+			if cookieVal, err := IssueAppSessCookie(user, id); err == nil {
+				http.SetCookie(w, &http.Cookie{
+					Name:     appSessCookieName,
+					Value:    cookieVal,
+					Path:     "/apps/" + id + "/",
+					MaxAge:   int(appSessTTL.Seconds()),
+					HttpOnly: true,
+					SameSite: http.SameSiteLaxMode,
+				})
+			}
 		}
-		user = ticketUser
 	}
 
 	app, err := getInstalledApp(reg.db, id)
@@ -120,6 +152,13 @@ func handleAppProxy(w http.ResponseWriter, r *http.Request) {
 				pr.Out.URL.RawQuery = q.Encode()
 			}
 
+			// 应用会话 Cookie 剥离：httputil.ReverseProxy 转发时会原样
+			// 复制入站 Cookie 头，但 nas_app_sess 是面板→浏览器的内部
+			// 机制，应用进程不该见到（浏览器本来就不会把它发给应用
+			// 进程——这里剥的是反代转发环节自己引入的泄露）。精确剔除
+			// 该段，其余 Cookie 段原样保留（见 delAppSessCookie 注释）。
+			delAppSessCookie(pr.Out.Header)
+
 			// 防伪造：转发前先剥离入站请求里的同名头，再注入面板计算出的
 			// 真实值（任务硬红线：伪造头剥离缺失=返工）。
 			pr.Out.Header.Del("X-Nas-User")
@@ -141,6 +180,18 @@ func handleAppProxy(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 	proxy.ServeHTTP(w, r)
+}
+
+// appSessCookieUser 读取请求里名为 appSessCookieName 的 Cookie，验签并
+// 确认其 appID 段与当前路由的 id 完全相等（防 A 应用的 Cookie 被用于
+// 访问 B 应用），返回其绑定的用户名。Cookie 不存在、格式不对、签名不
+// 匹配、appID 不匹配、已过期，统一返回 ok=false，调用方按 401 处理。
+func appSessCookieUser(r *http.Request, id string) (user string, ok bool) {
+	c, err := r.Cookie(appSessCookieName)
+	if err != nil || c.Value == "" {
+		return "", false
+	}
+	return verifyAppSessCookie(c.Value, id, time.Now())
 }
 
 // ticketFallbackUser 校验请求 query 里的 nas_ticket：验签通过（未过期、
