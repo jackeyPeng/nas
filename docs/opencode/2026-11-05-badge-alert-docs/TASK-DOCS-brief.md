@@ -20,7 +20,7 @@ TODO.md 头部写「最后更新: 2026-10-13」，但 CHANGELOG.md 已发到 v1.
 ## 文档整理（第二部分，范围严格受限）
 
 1. `docs/nas-product-manual.md` 有 3 处 FileBrowser 提及（grep -i filebrowser 定位）。逐处判断：若描述的是「升级迁移时自动卸载存量 FileBrowser」「--with-filebrowser 历史开关」等迁移/卸载语境 → 保留；若仍把 FileBrowser 描述为在用组件/安装步骤 → 改为与 beta.24 彻底移除一致的措辞。在报告里列出每处的行号、原文摘句、你的处置和理由。
-2. `README.md`：FileBrowser 提及为 0，不动。只检查一处：若有「部署服务器/服务器」列表提到 192.168.213.85 作为 NAS 部署机，删掉或标注已退役（该机 2026-11-03 起不再做 NAS）；没有就不动。
+2. `README.md`：FileBrowser 提及为 0，不动。只检查一处：若有「部署服务器/服务器」列表提到 192.168.1.100 作为 NAS 部署机，删掉或标注已退役（该机 2026-11-03 起不再做 NAS）；没有就不动。
 3. TODO.md 第 286 行「部署到 3 台 NAS 服务器（213.85 / 10.52 / 10.48）」是 #10 的历史完成记录，**保留原样**（历史事实）。TODO.md 第 685 行「服务器: 192.168.1.100 (nas.abwen.com)」同样不动。
 4. **禁止**改动：CHANGELOG.md（历史记录）、docs/plans/、docs/recent-changes-*、docs/architecture-v1.0.md、任何 .go/.js/.html/.sh 文件。
 

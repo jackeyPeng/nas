@@ -2,6 +2,10 @@
 
 ## [未发布]
 
+（暂无）
+
+## 2026-11-25 - v1.5.0-beta.2 应用平台 M2/M3（市场·升级·外部应用）+ 会话与权限硬修复
+
 - fix(apps): 升级目录搬移 EPERM — defaultExecutor 的 Rename/RemoveAll 对 `/var/lib/nas/apps/` 直接子项自动路由 sudo `mvapp`/`rmapp`（APPS_BASE 属主 root，面板用户对父目录无 rename/unlink 权限，真机升级实测 rename EPERM 回滚；provision 脚本加 mvapp/rmapp 子命令 + `check_appname` 白名单双侧校验；双机升级 0.1.0→0.2.0 实证）
 - fix(apps): 浏览器应用页后续请求 401 — 一次性票据只覆盖「打开」按钮的首次导航，应用页内自身同源请求（fetch/img）无 Bearer 无票据恒 401（hello-app 被演示语义掩盖）。票据兑换放行时反代 Set-Cookie `nas_app_sess`（HMAC-SHA256 签名、Path 限 `/apps/<id>/`、HttpOnly、SameSite=Lax、TTL 8h、绑定 app id），反代会话判定改三级（Bearer → Cookie → 票据），转发前从 Cookie 头剥离该段（应用进程不可见）；8 个新单测 + 双机 curl + Chrome 端到端实证（画廊渲染 = 页内 fetch 成功）
 - feat(market): scripts/market-upload.py — 市场索引/包手工发布通道（R2 nas bucket `apps/` 前缀；get.z1.sale 绑 nas 桶，www-z1-sale 是官网桶勿传错；Cloudflare 404 负缓存 3 分钟坑写进注释）
@@ -11,6 +15,8 @@
 - fix(base): 健康轮询器补运行时对帐 — pollOnce 只读台账，setup.sh 装的组件被当未安装跳过（fresh install 真机实锤：桥 40 分钟零日志）；事件桥启动回调改探测成功即调（幂等）；probeComponentHealth 拆 ok/flipped 双返回值；eventbus 包级变量加锁（-race 数据竞争）
 - fix(scripts): mosquitto passwd/acl 写入后 SIGHUP 重读（.57 真机实锤：申领成功但连接 not authorised）；install.sh 透传 NAS_EDITION 支持家用服务器版一条命令直装
 - docs(spec): APP-SPEC §10 外部应用契约 + §0 目录分层不变式；§5.2 会话判定三级化（nas_app_sess Cookie）
+
+---
 
 ## 2026-11-23 - v1.5.0-beta.1 应用平台 M1（托管应用核心）
 
@@ -66,6 +72,7 @@
 
 | 版本 | 日期 | 主要变化 |
 |------|------|---------|
+| v1.5.0-beta.2 | 2026-11-25 | 应用平台 M2/M3 — 市场一键安装/升级（失败自动回滚）+ 升级目录搬移 root 路由（mvapp/rmapp）、外部应用门户登记（可选 unit 启停/healthz 监测/external.* 事件）、浏览器应用页会话 Cookie（票据兑换种 nas_app_sess，页内 fetch/img 不再 401，反代三级会话判定+转发剥离）、nas-photos 家庭照片试点应用（上传/缩略图画廊/lightbox/删除）与 market-upload.py 发布通道、基座服务 M2 一（PG16/Valkey8/Mosquitto 纳管）、健康轮询运行时对帐/eventbus 加锁/mosquitto SIGHUP 热重载/install.sh NAS_EDITION 透传。双机真机验证（升级链路/cookie E2E/Chrome UI） |
 | v1.5.0-beta.1 | 2026-11-23 | 应用平台 M1 — 面板升级为家庭数字化底座：托管应用全链（ed25519 验签两步安装/nasapp-<id> 专用用户/systemd 硬化 unit/18000-18999 端口池）、/apps/<id>/ 反代 + X-NAS-SSO HMAC 注入与伪造剥离、健康纳管（3 次失败翻转才发事件）、应用中心前端（独立 apps.js）、hello-app 参考实现 + mkapp.sh 打包签名、一次性票据「打开」跳转；basic/master 双定位与同名双版本拍板。真机验收 acceptance-apps 19/19 双机全过 + Chrome UI 全链 |
 | v1.4.0-beta.42 | 2026-11-20 | 安装与版本查询修复 — `nas-panel --version` 此前不解析参数直接启动完整面板（以 root 调用会创建 root 属主数据库毒化面板、面板停止时甚至拉起 root 权限实例），现早退输出版本；root 直跑 install.sh 时仓库正确落到 NAS_USER 家目录（此前落 /root 使降权面板无法穿透 /opt/nas，data/.env/configs 全不可达，.48/.57 双机实锤），已有布局的升级机沿用现路径；backup-config 版本采集加 timeout；架构边界白名单同步。真机验收：root 路径全新安装双机全绿（门禁四件套/建池/注册表 41/41/套件 45/45/Chrome UI） |
 | v1.4.0-beta.41 | 2026-11-19 | 快修轮 — 注册表自动后台刷新（磁盘/共享配置变更后 3s 去抖重算，面板默认读取即最新，不再需要手动 refresh）；流式扩容/RAID 扩容感知客户端断连与 ctx 取消（SSE 断开命令链即时中止，不再后台跑到底）；waitForResyncCore 抽取（resync 轮询断连即时停止，超时/streak 参数化）；beta.37-40 三轮文档同步与 opencode 归档整理。真机验收：两台重置测试机全新安装（LVM merge + RAID1）注册表 41/41 + acceptance-suite 45/45 + RAID 机重启装配 md0/跨重启健康 + Chrome UI 实测全绿 |
