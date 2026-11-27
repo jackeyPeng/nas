@@ -525,8 +525,7 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 	// consensus P0-A1：服务端重解析 —— 不信任表单直接携带的 pool_type/pool_device，
 	// 必须在实时 overview 中精确匹配到同一个池，否则可能对已变化/不存在的池、
 	// 或被篡改的任意设备路径执行 wipefs/vgremove/mdadm --stop 等破坏性操作。
-	overview := buildStorageOverview()
-	livePool, found := findLivePoolByTypeDevice(overview.Pools, poolType, poolDevice)
+	livePool, found := findLivePoolFn(poolType, poolDevice)
 	if !found {
 		common.LogAuditRequest(r, "STORAGE", "删除存储池", fmt.Sprintf("type=%s device=%s name=%s rejected=池不存在或已变化", poolType, poolDevice, poolName), "rejected")
 		jsonError(w, "存储池不存在或状态已变化，请刷新后重试", http.StatusConflict)
@@ -559,7 +558,7 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 		if vgName == "" {
 			vgName = "vg_nas"
 		}
-		vgsOut, vgsErr := common.SudoOutput("/usr/sbin/vgs", "--noheadings", "-o", "vg_name")
+		vgsOut, vgsErr := sudoOutputFn("/usr/sbin/vgs", "--noheadings", "-o", "vg_name")
 		if vgsErr != nil {
 			jsonError(w, fmt.Sprintf("无法确认卷组 %s 是否存在（vgs 执行失败），为安全起见拒绝删除: %s", vgName, vgsErr.Error()), http.StatusInternalServerError)
 			return
@@ -572,7 +571,7 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 		// pvs 失败时不能静默当"无成员"处理——memberPVs 为空、后续破坏照常执行，
 		// 这些 PV 就永远查不出来了，磁盘留着 LVM2_member 签名复现幽灵盘（Minor finding）。
 		// 这里选择"安全拒绝删除"：pvs 报错时中止，不执行任何破坏性操作，让用户重试。
-		pvsOut, pvsErr := common.SudoOutput("/usr/sbin/pvs", "--noheadings", "-o", "pv_name", "-S", "vg_name="+vgName)
+		pvsOut, pvsErr := sudoOutputFn("/usr/sbin/pvs", "--noheadings", "-o", "pv_name", "-S", "vg_name="+vgName)
 		if pvsErr != nil {
 			jsonError(w, fmt.Sprintf("无法确认卷组 %s 的物理卷成员（pvs 执行失败），为安全起见拒绝删除: %s", vgName, pvsErr.Error()), http.StatusInternalServerError)
 			return
@@ -592,38 +591,63 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// 2. Find and unmount all LVs in this VG，然后 lvremove
-		lvsOut, _ := common.SudoOutput("/usr/sbin/lvs", "--noheadings", "-o", "lv_name,lv_path", vgName)
+		// Bug 2 修复：此前 umount/lvremove/vgremove/pvremove/wipefs 全部忽略返回的
+		// error，任一条失败（如设备忙、权限问题）都会被当成功继续执行后续破坏性
+		// 步骤，最终仍统一报告"存储池已删除"——用户以为磁盘已安全释放，实际上
+		// LV/VG/PV 签名可能原样留着，复接后又以旧池身份出现（幽灵池）。现在每条
+		// 破坏性命令都检查 error，失败立即中止并返回明确错误，不再继续执行。
+		lvsOut, lvsErr := sudoOutputFn("/usr/sbin/lvs", "--noheadings", "-o", "lv_name,lv_path", vgName)
+		if lvsErr != nil {
+			jsonError(w, fmt.Sprintf("无法枚举卷组 %s 的逻辑卷（lvs 执行失败），为安全起见中止删除: %s", vgName, lvsErr.Error()), http.StatusInternalServerError)
+			return
+		}
 		for _, line := range strings.Split(lvsOut, "\n") {
 			fields := strings.Fields(strings.TrimSpace(line))
 			if len(fields) >= 2 {
 				lvPath := fields[1]
 				// Find mountpoint — findmnt 对多挂载点（bind mount）LV 会输出多行，
 				// 只取首行，避免脏值破坏判据(a)与 RemoveFolderMetaByMountPrefix（Minor finding）。
-				mntOut, _ := common.ExecOutput("findmnt", "-n", "-o", "TARGET", "--source", lvPath)
+				mntOut, _ := execOutputFn("findmnt", "-n", "-o", "TARGET", "--source", lvPath)
 				mountPoint := firstLine(mntOut)
 				if mountPoint != "" {
-					common.SudoExec("umount", "-l", mountPoint)
+					if _, err := sudoExecFn("umount", "-l", mountPoint); err != nil {
+						jsonError(w, fmt.Sprintf("卸载 %s 失败，为安全起见中止删除（已完成步骤: %s): %s", mountPoint, strings.Join(steps, "; "), err.Error()), http.StatusInternalServerError)
+						return
+					}
 					steps = append(steps, "卸载 "+mountPoint)
 					deletedMountPoints = append(deletedMountPoints, mountPoint)
 				}
 				// 采集 UUID（A3），必须在 lvremove 之前——LV 被删后再读超级块就晚了。
-				if uuidOut, err := common.SudoOutput("lsblk", "-no", "UUID", lvPath); err == nil {
+				// 失败不阻断删除（尽力而为，仅用于事后 fstab 清理判据），但留痕。
+				if uuidOut, err := sudoOutputFn("lsblk", "-no", "UUID", lvPath); err == nil {
 					if uuid := strings.TrimSpace(uuidOut); uuid != "" {
 						deletedUUIDs = append(deletedUUIDs, uuid)
 					}
 				}
-				common.SudoExec("/usr/sbin/lvremove", "-f", lvPath)
+				if _, err := sudoExecFn("/usr/sbin/lvremove", "-f", lvPath); err != nil {
+					jsonError(w, fmt.Sprintf("删除 LV %s 失败，为安全起见中止删除（已完成步骤: %s): %s", lvPath, strings.Join(steps, "; "), err.Error()), http.StatusInternalServerError)
+					return
+				}
 				steps = append(steps, "删除 LV "+lvPath)
 			}
 		}
 		// 3. Remove VG（成员列表已在闸门前存下，不再重新查询）
-		common.SudoExec("/usr/sbin/vgremove", "-f", vgName)
+		if _, err := sudoExecFn("/usr/sbin/vgremove", "-f", vgName); err != nil {
+			jsonError(w, fmt.Sprintf("删除 VG %s 失败，为安全起见中止删除（已完成步骤: %s): %s", vgName, strings.Join(steps, "; "), err.Error()), http.StatusInternalServerError)
+			return
+		}
 		steps = append(steps, "删除 VG "+vgName)
 		// 4. Remove PVs — 用闸门前存下的成员列表
 		for _, pvName := range memberPVs {
 			if strings.HasPrefix(pvName, "/dev/") {
-				common.SudoExec("/usr/sbin/pvremove", "-f", pvName)
-				common.SudoExec("/usr/sbin/wipefs", "-a", pvName)
+				if _, err := sudoExecFn("/usr/sbin/pvremove", "-f", pvName); err != nil {
+					jsonError(w, fmt.Sprintf("释放 PV %s 失败，为安全起见中止删除（已完成步骤: %s): %s", pvName, strings.Join(steps, "; "), err.Error()), http.StatusInternalServerError)
+					return
+				}
+				if _, err := sudoExecFn("/usr/sbin/wipefs", "-a", pvName); err != nil {
+					jsonError(w, fmt.Sprintf("清除 %s 签名失败，为安全起见中止删除（已完成步骤: %s): %s", pvName, strings.Join(steps, "; "), err.Error()), http.StatusInternalServerError)
+					return
+				}
 				steps = append(steps, "释放 "+pvName)
 			}
 		}
@@ -635,7 +659,7 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 		// 系统盘闸门空转通过，umount/--stop 照常执行，而成员盘的 zero-superblock/wipefs
 		// 全被跳过，留下带 RAID 超级块的幽灵成员盘（可能被开机自动重组）。对齐 lvm 分支
 		// 对 pvs 失败的安全拒绝模式：detail 失败或解析结果为空都中止，不执行任何破坏动作。
-		detailOut, detailErr := common.SudoOutput("/usr/sbin/mdadm", "--detail", poolDevice)
+		detailOut, detailErr := sudoOutputFn("/usr/sbin/mdadm", "--detail", poolDevice)
 		if detailErr != nil {
 			common.LogAuditRequest(r, "STORAGE", "删除存储池", fmt.Sprintf("type=%s device=%s name=%s rejected=mdadm --detail执行失败", poolType, poolDevice, poolName), "rejected")
 			jsonError(w, fmt.Sprintf("无法确认阵列 %s 的成员（mdadm --detail 执行失败），为安全起见拒绝删除: %s", poolDevice, detailErr.Error()), http.StatusInternalServerError)
@@ -654,15 +678,21 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// 2. Unmount
-		mntOut, _ := common.ExecOutput("findmnt", "-n", "-o", "TARGET", "--source", poolDevice)
+		// Bug 2 修复：同 lvm 分支，umount/mdadm --stop/--zero-superblock/wipefs 均检查
+		// error，失败立即中止，不再继续执行后续破坏性步骤或虚报删除成功。
+		mntOut, _ := execOutputFn("findmnt", "-n", "-o", "TARGET", "--source", poolDevice)
 		mountPoint := firstLine(mntOut)
 		if mountPoint != "" {
-			common.SudoExec("umount", "-l", mountPoint)
+			if _, err := sudoExecFn("umount", "-l", mountPoint); err != nil {
+				jsonError(w, fmt.Sprintf("卸载 %s 失败，为安全起见中止删除（已完成步骤: %s): %s", mountPoint, strings.Join(steps, "; "), err.Error()), http.StatusInternalServerError)
+				return
+			}
 			steps = append(steps, "卸载 "+mountPoint)
 			deletedMountPoints = append(deletedMountPoints, mountPoint)
 		}
 		// 采集 UUID（A3），必须在 mdadm --stop 之前——阵列停止后设备节点就消失了。
-		if uuidOut, err := common.SudoOutput("blkid", "-s", "UUID", "-o", "value", poolDevice); err == nil {
+		// 失败不阻断删除（尽力而为，仅用于事后 fstab 清理判据），但留痕。
+		if uuidOut, err := sudoOutputFn("blkid", "-s", "UUID", "-o", "value", poolDevice); err == nil {
 			if uuid := strings.TrimSpace(uuidOut); uuid != "" {
 				deletedUUIDs = append(deletedUUIDs, uuid)
 			}
@@ -676,12 +706,21 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 			steps = append(steps, "警告: 未能读取阵列 UUID，mdadm.conf 可能残留 ARRAY 行: "+mdadmConfUUIDErr.Error())
 		}
 		// 3. Stop RAID
-		common.SudoExec("/usr/sbin/mdadm", "--stop", poolDevice)
+		if _, err := sudoExecFn("/usr/sbin/mdadm", "--stop", poolDevice); err != nil {
+			jsonError(w, fmt.Sprintf("停止阵列 %s 失败，为安全起见中止删除（已完成步骤: %s): %s", poolDevice, strings.Join(steps, "; "), err.Error()), http.StatusInternalServerError)
+			return
+		}
 		steps = append(steps, "停止 "+poolDevice)
 		// 4. Zero superblocks only on THIS array's member disks
 		for _, disk := range memberDisks {
-			common.SudoExec("/usr/sbin/mdadm", "--zero-superblock", disk)
-			common.SudoExec("/usr/sbin/wipefs", "-a", disk)
+			if _, err := sudoExecFn("/usr/sbin/mdadm", "--zero-superblock", disk); err != nil {
+				jsonError(w, fmt.Sprintf("清除 %s 的 RAID 超级块失败，为安全起见中止删除（已完成步骤: %s): %s", disk, strings.Join(steps, "; "), err.Error()), http.StatusInternalServerError)
+				return
+			}
+			if _, err := sudoExecFn("/usr/sbin/wipefs", "-a", disk); err != nil {
+				jsonError(w, fmt.Sprintf("清除 %s 签名失败，为安全起见中止删除（已完成步骤: %s): %s", disk, strings.Join(steps, "; "), err.Error()), http.StatusInternalServerError)
+				return
+			}
 			steps = append(steps, "释放 "+disk)
 		}
 		// 5. 清理 mdadm.conf 里该阵列的 ARRAY 行（E8：此前这条分支从不清理，
@@ -708,10 +747,15 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// Independent disk: unmount + wipe
-		mntOut, _ := common.ExecOutput("findmnt", "-n", "-o", "TARGET", "--source", poolDevice)
+		// Bug 2 修复：umount/wipefs 检查 error，失败立即中止，不再继续执行后续
+		// 破坏性步骤或虚报删除成功。
+		mntOut, _ := execOutputFn("findmnt", "-n", "-o", "TARGET", "--source", poolDevice)
 		mountPoint := firstLine(mntOut)
 		if mountPoint != "" {
-			common.SudoExec("umount", "-l", mountPoint)
+			if _, err := sudoExecFn("umount", "-l", mountPoint); err != nil {
+				jsonError(w, fmt.Sprintf("卸载 %s 失败，为安全起见中止删除（已完成步骤: %s): %s", mountPoint, strings.Join(steps, "; "), err.Error()), http.StatusInternalServerError)
+				return
+			}
 			steps = append(steps, "卸载 "+mountPoint)
 			deletedMountPoints = append(deletedMountPoints, mountPoint)
 		}
@@ -719,19 +763,23 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 		// （findmnt 输出为空）——umount -l 是 lazy umount，设备可能仍被某些
 		// 挂载命名空间/bind mount 引用，此时 wipefs 会破坏仍在使用的文件系统。
 		if remaining := strings.TrimSpace(func() string {
-			out, _ := common.ExecOutput("findmnt", "-n", "-o", "TARGET", "--source", poolDevice)
+			out, _ := execOutputFn("findmnt", "-n", "-o", "TARGET", "--source", poolDevice)
 			return out
 		}()); remaining != "" {
 			jsonError(w, fmt.Sprintf("拒绝删除：%s 仍有挂载点 %s 未卸载", poolDevice, remaining), http.StatusConflict)
 			return
 		}
 		// 采集 UUID（A3），必须在 wipefs 之前——wipefs 一跑超级块就被抹了。
-		if uuidOut, err := common.SudoOutput("blkid", "-s", "UUID", "-o", "value", poolDevice); err == nil {
+		// 失败不阻断删除（尽力而为，仅用于事后 fstab 清理判据），但留痕。
+		if uuidOut, err := sudoOutputFn("blkid", "-s", "UUID", "-o", "value", poolDevice); err == nil {
 			if uuid := strings.TrimSpace(uuidOut); uuid != "" {
 				deletedUUIDs = append(deletedUUIDs, uuid)
 			}
 		}
-		common.SudoExec("/usr/sbin/wipefs", "-a", poolDevice)
+		if _, err := sudoExecFn("/usr/sbin/wipefs", "-a", poolDevice); err != nil {
+			jsonError(w, fmt.Sprintf("清除 %s 签名失败，为安全起见中止删除（已完成步骤: %s): %s", poolDevice, strings.Join(steps, "; "), err.Error()), http.StatusInternalServerError)
+			return
+		}
 		steps = append(steps, "释放 "+poolDevice)
 
 	default:
@@ -750,12 +798,28 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 			lvmVgName = "vg_nas"
 		}
 	}
-	fstabData, _ := common.SudoOutput("cat", "/etc/fstab")
-	if fstabData != "" {
+	// Bug 2 修复：磁盘层已全部成功拆除（走到这里说明 switch 分支内的破坏性命令
+	// 都没有报错），但收尾的配置清理（fstab/folders.db/Samba&NFS 托管配置重投影）
+	// 仍可能失败。此前这些失败只是追加一条"失败"文案进 steps，最终响应永远走
+	// 统一的"存储池已删除"成功文案——前端据此直接弹"删除成功"，用户看不出
+	// folders.db 残留、fstab 没清、Samba 共享没重投影这些后续隐患。现在收尾阶段
+	// 统一用 configCleanupFailed 标记是否有任何一步失败，响应文案据此区分
+	// "完全成功" vs "磁盘已拆除但配置清理存在问题"，并把 HTTP 状态码也改为
+	// 207（Multi-Status：部分成功）而不是 200，避免前端把失败当成功处理。
+	var configCleanupFailed bool
+	fstabData, fstabReadErr := sudoOutputFn("cat", "/etc/fstab")
+	if fstabReadErr != nil {
+		steps = append(steps, "读取 fstab 失败，跳过清理: "+fstabReadErr.Error())
+		configCleanupFailed = true
+	} else if fstabData != "" {
 		content := filterFstabForDeletedPool(fstabData, deletedMountPoints, deletedUUIDs, lvmVgName)
 		if content != fstabData {
-			common.SafeWriteFile("/etc/fstab", content)
-			steps = append(steps, "清理 fstab")
+			if err := common.SafeWriteFile("/etc/fstab", content); err != nil {
+				steps = append(steps, "清理 fstab 失败: "+err.Error())
+				configCleanupFailed = true
+			} else {
+				steps = append(steps, "清理 fstab")
+			}
 		}
 	}
 
@@ -765,20 +829,35 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 	for _, mount := range deletedMountPoints {
 		if n, err := RemoveFolderMetaByMountPrefix(mount); err != nil {
 			steps = append(steps, "清理 folders.db 失败("+mount+"): "+err.Error())
+			configCleanupFailed = true
 		} else if n > 0 {
 			steps = append(steps, fmt.Sprintf("清理 folders.db: %s (%d 行)", mount, n))
 		}
 	}
 	if len(deletedMountPoints) > 0 {
-		common.SudoExec("rm", "-f", "/opt/nas/data/.last_reload")
+		if _, err := sudoExecFn("rm", "-f", "/opt/nas/data/.last_reload"); err != nil {
+			steps = append(steps, "清除 .last_reload 缓存失败(不影响数据安全，但托管配置可能不会立即重投影): "+err.Error())
+			configCleanupFailed = true
+		}
 		if err := SyncAllConfigs(); err != nil {
 			steps = append(steps, "重新生成托管配置失败: "+err.Error())
+			configCleanupFailed = true
 		} else {
 			steps = append(steps, "重新生成 Samba/NFS 托管配置")
 		}
 	}
 
 	system.ScheduleRegistryRefresh()
+	if configCleanupFailed {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusMultiStatus)
+		common.JSONResponse(w, map[string]interface{}{
+			"message": fmt.Sprintf("存储池磁盘已拆除，但配置清理存在问题，请检查详情（共 %d 步）", len(steps)),
+			"steps":   steps,
+			"warning": true,
+		})
+		return
+	}
 	common.JSONResponse(w, map[string]interface{}{
 		"message": fmt.Sprintf("存储池已删除，释放 %d 步", len(steps)),
 		"steps":   steps,

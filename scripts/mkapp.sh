@@ -11,9 +11,12 @@
 #               建议按 APP-SPEC §1 发布物三件套命名为 <id>-<manifest 里的
 #               version>.tar.gz（如 hello-1.0.0.tar.gz）；文件名与 manifest
 #               version 不一致时脚本只警告不中止，但发布渠道建议统一遵守。
-#   [key-dir]   ed25519 签名私钥所在目录（须含 dev.key），默认
-#               web/modules/apps/testdata/devkey（M1 期开发密钥，§1「验签公钥
-#               编译进核心」——生产签发走正式密钥时覆盖此参数）
+#   [key-dir]   ed25519 签名私钥所在目录（须含 dev.key）。
+#               不传时需用 --dev-key 显式确认使用入仓开发密钥（私钥已公开
+#               已知，签出的包只在本地/测试用的信任锚下有效，详见
+#               docs/APP-SPEC.md §1）；正式签包必须显式传入 key-dir 指向
+#               市场正式私钥（不在本仓库内，由签发者离线保管），本脚本和
+#               本仓库都不持有、不生成真正的正式私钥。
 #
 # 环境变量:
 #   GOARCH      交叉编译目标架构，默认 amd64（纯 Go 无 CGO，可交叉编译；
@@ -36,14 +39,28 @@ error() {
 }
 
 if [ $# -lt 2 ] || [ $# -gt 3 ]; then
-    echo "用法: bash scripts/mkapp.sh <app-dir> <out.tar.gz> [key-dir]"
+    echo "用法: bash scripts/mkapp.sh <app-dir> <out.tar.gz> [key-dir|--dev-key]"
     exit 1
 fi
 
 APP_DIR="$1"
 OUT_TARBALL="$2"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-KEY_DIR="${3:-$REPO_ROOT/web/modules/apps/testdata/devkey}"
+
+# key-dir 不再有隐式默认值：省略第三个参数即报错，强制调用方做出选择——
+# 本地/测试用途显式传 --dev-key（使用入仓开发密钥，私钥已公开已知，仅限
+# 本地信任锚场景），正式签包必须显式传入市场正式私钥所在目录。防止「忘了
+# 传 key-dir」在正式发布流程里被悄悄当成「我知道我在用开发密钥」。
+KEY_ARG="${3:-}"
+if [ -z "$KEY_ARG" ]; then
+    error "必须显式指定签名密钥来源：本地/测试用 --dev-key；正式签包传 <key-dir>（市场正式私钥目录，不在本仓库内）"
+fi
+if [ "$KEY_ARG" = "--dev-key" ]; then
+    KEY_DIR="$REPO_ROOT/web/modules/apps/testdata/devkey"
+    warn "使用入仓开发密钥签名——其私钥已公开已知，签出的包仅在信任该密钥的本地/测试环境下有效，不能用于正式发布"
+else
+    KEY_DIR="$KEY_ARG"
+fi
 GOARCH="${GOARCH:-amd64}"
 
 [ -d "$APP_DIR" ] || error "应用目录不存在: $APP_DIR"

@@ -86,7 +86,11 @@ GOSUMDB=off go test -race ./... -count=1
 用 `scripts/mkapp.sh` 打包签名（`icon.png` 由 `tools/genicon.go` 自动生成，无需手工准备）：
 
 ```bash
-bash scripts/mkapp.sh examples/nas-photos out/nas-photos-0.1.0.tar.gz
+# 本地/测试用开发密钥（显式 --dev-key，其私钥已公开已知，仅限信任该密钥的本地环境）：
+bash scripts/mkapp.sh examples/nas-photos out/nas-photos-0.1.0.tar.gz --dev-key
+
+# 正式签包须显式指定市场正式私钥目录（不在本仓库内）：
+# bash scripts/mkapp.sh examples/nas-photos out/nas-photos-0.1.0.tar.gz /path/to/formal-key-dir
 ```
 
 产出 `nas-photos-0.1.0.tar.gz` / `.sha256` / `.sig` 三件套，与 APP-SPEC §1 发布物格式一致。

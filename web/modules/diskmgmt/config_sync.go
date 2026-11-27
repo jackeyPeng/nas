@@ -2,10 +2,12 @@ package diskmgmt
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -372,18 +374,58 @@ func buildSambaManagedBlock(metas []FolderMeta, nasUser string) string {
 	return sb.String()
 }
 
+// isCatFileNotExist 判断 `sudo cat <path>` 的失败是否为"文件不存在"这一
+// 合法场景（smb.conf/exports 首次生成、文件被意外删除等），不应当被当作
+// 真实故障拦截；其余失败（权限不够、sudo 鉴权失败、I/O 错误等）必须向上
+// 传播，不能被当成"空文件"静默吞掉继续往下写（Bug 3）。
+// cat 在文件不存在时以 exit 1 退出，stderr 形如：
+//
+//	cat: /etc/samba/smb.conf: No such file or directory   (C/英文 locale)
+//	cat: /etc/samba/smb.conf: 没有那个文件或目录            (zh_CN locale)
+//
+// os/exec 的 *exec.ExitError.Stderr 在用 Output()（非 CombinedOutput()）时
+// 会保留最多 32KB 的 stderr 内容，SudoOutput 正是用 Output()，因此可以在
+// 这里按子串匹配两种 locale 文案，不依赖 errors.Is/Unwrap 到特定错误类型
+// （sudo 包装了一层，底层仍是 *exec.ExitError）。
+func isCatFileNotExist(err error) bool {
+	if err == nil {
+		return false
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		return false
+	}
+	stderr := string(exitErr.Stderr)
+	return strings.Contains(stderr, "No such file or directory") ||
+		strings.Contains(stderr, "没有那个文件或目录")
+}
+
 // GenerateSambaConfig generates the managed section of smb.conf from metadata
 func GenerateSambaConfig() error {
 	metas := GetAllFolderMeta()
 	if metas == nil {
 		return fmt.Errorf("无法读取元数据")
 	}
+	return generateSambaConfigWithMetas(metas)
+}
 
+// generateSambaConfigWithMetas 是 GenerateSambaConfig 的可测核心：接收已加载的
+// metas，不依赖 GetAllFolderMeta()/initConfigDB() 的全局单例 sqlite 连接（该
+// 连接路径受 NAS_DATA_DIR 影响且用 sync.Once 固定，不便在单测中按用例切换）。
+// 行为与 GenerateSambaConfig 剩余部分逐字节一致，仅把"取 metas"这一步剥离出去。
+func generateSambaConfigWithMetas(metas []FolderMeta) error {
 	nasUser := getNASUser()
 	managedBlock := buildSambaManagedBlock(metas, nasUser)
 
-	// Read current smb.conf
-	current, _ := common.SudoOutput("cat", "/etc/samba/smb.conf")
+	// Read current smb.conf — Bug 3 修复：此前 SudoOutput 的 error 被直接丢弃
+	// (current, _ :=)，cat 因权限/sudo 鉴权失败而非"文件不存在"返回空字符串时，
+	// 会被当成"配置文件原本就是空的"，继而用 replaceManagedBlock 在空文本基础上
+	// 拼出的新内容覆盖写回，可能把 smb.conf 里用户手写的非托管配置段整个抹掉。
+	// 现在区分"文件不存在"（合法、按空内容继续）与其他失败（中止并返回错误）。
+	current, readErr := sudoOutputFn("cat", "/etc/samba/smb.conf")
+	if readErr != nil && !isCatFileNotExist(readErr) {
+		return fmt.Errorf("读取 smb.conf 失败: %w", readErr)
+	}
 
 	// Replace or append managed section
 	newConf := replaceManagedBlock(current, managedBlock)
@@ -391,8 +433,14 @@ func GenerateSambaConfig() error {
 		return nil // No change
 	}
 
-	// Write back
-	common.SafeWriteFile("/etc/samba/smb.conf", newConf)
+	// Write back — Bug 3 修复：此前 SafeWriteFile 的 error 被直接丢弃，写失败
+	// （磁盘满/权限问题）时上层 SyncAllConfigs 却认为本次同步成功，folders.db
+	// 元数据与磁盘上实际的 smb.conf 从此不一致，且这种不一致不会被任何后续
+	// 调用重新发现（除非内容恰好再变化一次）。现在失败必须返回错误，由调用方
+	// （SyncAllConfigs）决定如何向用户/日志呈现。
+	if err := safeWriteFileFn("/etc/samba/smb.conf", newConf); err != nil {
+		return fmt.Errorf("写入 smb.conf 失败: %w", err)
+	}
 	log.Printf("[CONFIG_SYNC] Samba 配置已更新 (%d 个共享)", len(metas))
 	return nil
 }
@@ -421,18 +469,42 @@ func GenerateNFSConfig() error {
 	if metas == nil {
 		return fmt.Errorf("无法读取元数据")
 	}
+	return generateNFSConfigWithMetas(metas)
+}
 
+// generateNFSConfigWithMetas 是 GenerateNFSConfig 的可测核心，理由同
+// generateSambaConfigWithMetas。
+func generateNFSConfigWithMetas(metas []FolderMeta) error {
 	managedBlock := buildNFSManagedBlock(metas)
 
-	current, _ := common.SudoOutput("cat", "/etc/exports")
+	// Bug 3 修复：同 GenerateSambaConfig，读取失败区分"文件不存在"（合法，按
+	// 空内容继续）与其他失败（中止返回错误，不拿空内容覆盖手写的 exports）。
+	current, readErr := sudoOutputFn("cat", "/etc/exports")
+	if readErr != nil && !isCatFileNotExist(readErr) {
+		return fmt.Errorf("读取 exports 失败: %w", readErr)
+	}
 	newConf := replaceManagedBlock(current, managedBlock)
-	if newConf == current {
-		return nil
+	if newConf != current {
+		// Bug 3 修复：写入的 error 此前被丢弃——写失败时 exportfs 对着没更新的
+		// 旧文件重新生效，表面"同步成功"实际配置没变，必须向上传播。
+		if err := safeWriteFileFn("/etc/exports", newConf); err != nil {
+			return fmt.Errorf("写入 exports 失败: %w", err)
+		}
+		log.Printf("[CONFIG_SYNC] NFS 配置已更新")
 	}
 
-	common.SafeWriteFile("/etc/exports", newConf)
-	common.SudoExec("exportfs", "-a")
-	log.Printf("[CONFIG_SYNC] NFS 配置已更新")
+	// Bug 2 修复：此前 newConf == current 时整个函数直接 return nil，连
+	// exportfs -a 都不执行。如果上一次调用已经把新内容写进 /etc/exports，
+	// 但那一次的 exportfs -a 失败了（比如内核模块未加载/路径暂时不可导出），
+	// 配置文件内容从此与 current 相同，之后任何一次重试只要 content 没变化
+	// 就会被这个分支短路，exportfs 永远不会被重新执行，用户看到的"重试"
+	// 其实什么都没做却汇报成功。exportfs -a 是幂等的只读式重新装载命令
+	// （不修改 /etc/exports，只是让内核导出表与文件内容重新对齐），即使本次
+	// 内容未变化也无条件执行一次，确保重试场景下内核导出表最终与文件内容
+	// 一致；执行失败必须向上传播，不能被"内容未变化"掩盖。
+	if _, err := sudoExecFn("exportfs", "-a"); err != nil {
+		return fmt.Errorf("exportfs -a 执行失败: %w", err)
+	}
 	return nil
 }
 
@@ -466,7 +538,14 @@ func SyncAllConfigs() error {
 	}
 
 	if changed {
-		reloadServices()
+		// Bug 2 修复：reloadServices 此前返回值是 void，Samba reload 与
+		// fallback restart 两步都失败时只会 log.Printf，SyncAllConfigs 对此
+		// 一无所知——配置文件已经写好但 smbd 进程仍在用旧配置服务，调用方
+		// （pool/import/pending_ops/stream 等）却会认为整次同步成功。现在
+		// 必须捕获并汇入 errs，让"配置写成功但服务没真正生效"也算同步失败。
+		if err := reloadServices(); err != nil {
+			errs = append(errs, "服务重载: "+err.Error())
+		}
 	}
 
 	if len(errs) > 0 {
@@ -479,14 +558,29 @@ func SyncAllConfigs() error {
 	return nil
 }
 
-// reloadServices reloads all services after config changes
-func reloadServices() {
-	// Samba: graceful reload (no disconnect)
-	if out, err := common.SudoOutput("systemctl", "reload", "smbd"); err != nil {
+// reloadServices reloads all services after config changes.
+//
+// Bug 2 修复：此前返回值是 void，smbd reload 与 fallback restart 两步全部
+// 失败时只 log.Printf，调用方 SyncAllConfigs 无从得知"配置文件已更新但
+// smbd 进程仍在跑旧配置"这个不一致状态，永远汇报同步成功。现在 reload 与
+// restart 都失败才算 Samba 重载失败并向上返回错误；reload 失败但 restart
+// 成功仍视为最终达到了目的（服务确实用上了新配置），不报错，只留日志。
+// FTP/WebDAV/S3 三个分支维持原先"尽力而为、只记日志"的次要路径不变——
+// 这几个在 TASK-8 拍板里不是本次 Bug 2 的范围，改动面保持最小。
+func reloadServices() error {
+	// Samba: graceful reload (no disconnect)；两个 seam 调用都改走
+	// sudoOutputFn/sudoExecFn（此前直接调 common.SudoOutput/SudoExec，
+	// 测试无法注入失败场景）。
+	var reloadErr error
+	if out, err := sudoOutputFn("systemctl", "reload", "smbd"); err != nil {
 		log.Printf("[CONFIG_SYNC] smbd reload 失败: %s", out)
 		// Fallback: restart
-		common.SudoExec("systemctl", "restart", "smbd")
-		log.Printf("[CONFIG_SYNC] smbd 已重启")
+		if _, rerr := sudoExecFn("systemctl", "restart", "smbd"); rerr != nil {
+			log.Printf("[CONFIG_SYNC] smbd restart 兜底也失败: %v", rerr)
+			reloadErr = fmt.Errorf("smbd reload 失败(%v)且 restart 兜底也失败(%v)", err, rerr)
+		} else {
+			log.Printf("[CONFIG_SYNC] smbd 已重启")
+		}
 	} else {
 		log.Printf("[CONFIG_SYNC] smbd 已重载配置")
 	}
@@ -511,6 +605,7 @@ func reloadServices() {
 
 	// Record reload timestamp
 	markReloaded()
+	return reloadErr
 }
 
 // restartRcloneDebounced 合并短时间内的多次 rclone restart 请求：
@@ -531,9 +626,15 @@ func restartRcloneDebounced(service string) {
 	})
 }
 
-// isServiceActive checks if a systemd service is active
+// isServiceActive checks if a systemd service is active.
+//
+// 改走 sudoOutputFn seam（此前直接调 common.SudoOutput）：reloadServices 的
+// 单测需要对 vsftpd/rclone-webdav/rclone-s3 这几个 isServiceActive 分支做
+// 确定性控制，否则测试机上恰好真的跑着 vsftpd 时，Bug 2 的 reloadServices
+// 单测会去真实执行 sudo systemctl reload vsftpd（任务书明确禁止测试触达
+// 真实磁盘/服务）。生产路径行为不变，默认仍是 common.SudoOutput。
 func isServiceActive(name string) bool {
-	out, err := common.SudoOutput("systemctl", "is-active", name)
+	out, err := sudoOutputFn("systemctl", "is-active", name)
 	return err == nil && strings.TrimSpace(out) == "active"
 }
 

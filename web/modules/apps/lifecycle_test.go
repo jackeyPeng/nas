@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -13,9 +14,29 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
+
+// testKeypair 是测试专用密钥对：与 DevPublicKeyB64（入仓、私钥公开已知）
+// 和任何真实正式私钥都无关——它只活在测试进程内存里，每次 go test 运行时
+// 随机生成，不落盘、不入仓。测试通过 setTestTrustedPublicKey 把它的公钥
+// 注入 resolveTrustedPublicKey 的测试覆盖位，让 installFromTarball/升级
+// 路径在测试环境下以"确实配置了信任锚"的状态运行，而不是误用开发公钥
+// 或者碰到 fail-closed 拒绝一切安装。
+var testKeypair = sync.OnceValue(func() testKeypairT {
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		panic("生成测试密钥对失败: " + err.Error())
+	}
+	return testKeypairT{pub: pub, priv: priv}
+})
+
+type testKeypairT struct {
+	pub  ed25519.PublicKey
+	priv ed25519.PrivateKey
+}
 
 // setupLifecycleTest 打开一个全新的 apps.db（t.TempDir()），注入 fakeExecutor，
 // 把包级单例 reg 指向它；返回 mux（裸路由，不经 AdminMiddleware）+ fakeExecutor
@@ -36,12 +57,19 @@ func setupLifecycleTest(t *testing.T) (*http.ServeMux, *fakeExecutor) {
 	fe.fsRoot = t.TempDir()
 	reg = &registry{db: db, dataDir: t.TempDir(), executor: fe}
 
+	// 默认把信任锚设为测试密钥对公钥：绝大多数测试断言"合法签名应被接受"，
+	// 需要 resolveTrustedPublicKey 返回一个与 buildSignedPackage 签名用的
+	// 私钥配对的公钥。显式测试 fail-closed/开发密钥被拒的场景会自行调用
+	// setTestTrustedPublicKey(t, nil) 或签别的密钥覆盖这个默认值。
+	setTestTrustedPublicKey(t, testKeypair().pub)
+
 	mux := http.NewServeMux()
 	RegisterRoutesBare(mux)
 	return mux, fe
 }
 
-// devPrivateKey 读取入仓的开发私钥，供测试给包签名。
+// devPrivateKey 读取入仓的开发私钥。仅用于"开发密钥签的包在生产信任锚
+// 配置下必须被拒绝"这一类负向测试，不再是默认签包路径。
 func devPrivateKey(t *testing.T) ed25519.PrivateKey {
 	t.Helper()
 	b, err := os.ReadFile("testdata/devkey/dev.key")
@@ -51,12 +79,21 @@ func devPrivateKey(t *testing.T) ed25519.PrivateKey {
 	return ed25519.PrivateKey(b)
 }
 
-// buildSignedPackage 用给定条目构造 tar.gz 并用开发私钥签名，返回
-// (tarball, base64签名)。
+// buildSignedPackage 用给定条目构造 tar.gz 并用测试专用私钥（testKeypair，
+// 与开发密钥、任何正式私钥都无关）签名，返回 (tarball, base64签名)。
 func buildSignedPackage(t *testing.T, entries []tarEntry) ([]byte, string) {
 	t.Helper()
 	tb := buildTarGz(t, entries)
-	sig := ed25519.Sign(devPrivateKey(t), tb)
+	sig := ed25519.Sign(testKeypair().priv, tb)
+	return tb, base64.StdEncoding.EncodeToString(sig)
+}
+
+// buildSignedPackageWithKey 同 buildSignedPackage，但用调用方指定的私钥签名
+// （负向测试：比如用开发私钥签包，断言在测试密钥信任锚下被拒绝）。
+func buildSignedPackageWithKey(t *testing.T, entries []tarEntry, priv ed25519.PrivateKey) ([]byte, string) {
+	t.Helper()
+	tb := buildTarGz(t, entries)
+	sig := ed25519.Sign(priv, tb)
 	return tb, base64.StdEncoding.EncodeToString(sig)
 }
 
@@ -197,6 +234,46 @@ func TestInstall_RejectsBadSignature(t *testing.T) {
 	}
 	if len(fe.calls) != 0 {
 		t.Fatalf("签名校验失败不应产生任何副作用调用，got: %v", fe.calls)
+	}
+}
+
+// TestInstall_RejectsDevKeySignedPackage 是本次修复的核心回归测试：用入仓
+// 的开发私钥（testdata/devkey/dev.key，私钥已公开已知）签的包，在信任锚
+// 是测试专用公钥（setupLifecycleTest 的默认配置）时必须被拒绝——证明
+// installFromTarball 不会把开发公钥当成隐式默认信任锚。
+func TestInstall_RejectsDevKeySignedPackage(t *testing.T) {
+	mux, fe := setupLifecycleTest(t)
+	tb, sig := buildSignedPackageWithKey(t, appEntriesWithID("photos", "1.0.0"), devPrivateKey(t))
+	body, ct := multipartInstallBody(t, tb, sig)
+
+	rec := doRequest(mux, http.MethodPost, "/api/apps/install", body, ct)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("开发密钥签名的包应被拒绝（400），got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if len(fe.calls) != 0 {
+		t.Fatalf("签名校验失败不应产生任何副作用调用，got: %v", fe.calls)
+	}
+}
+
+// TestInstall_FailClosedWhenNoTrustedKeyConfigured 验证既没有正式注入
+// TrustedPublicKeyB64、也没有测试覆盖时（典型的"忘记配置信任锚"场景），
+// 安装必须 fail-closed 拒绝，而不是放行或 panic。
+func TestInstall_FailClosedWhenNoTrustedKeyConfigured(t *testing.T) {
+	mux, fe := setupLifecycleTest(t)
+	setTestTrustedPublicKey(t, nil) // 清空 setupLifecycleTest 默认注入的测试信任锚
+	prevTrusted := TrustedPublicKeyB64
+	TrustedPublicKeyB64 = ""
+	t.Cleanup(func() { TrustedPublicKeyB64 = prevTrusted })
+
+	tb, sig := buildSignedPackage(t, appEntriesWithID("photos", "1.0.0"))
+	body, ct := multipartInstallBody(t, tb, sig)
+
+	rec := doRequest(mux, http.MethodPost, "/api/apps/install", body, ct)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("未配置信任锚时应 fail-closed 拒绝安装（400），got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if len(fe.calls) != 0 {
+		t.Fatalf("fail-closed 拒绝不应产生任何副作用调用，got: %v", fe.calls)
 	}
 }
 
@@ -397,6 +474,28 @@ func TestUpgrade_SuccessPath(t *testing.T) {
 	}
 	if !backupLeft {
 		t.Errorf("升级成功后应清理 .bak 备份目录，got: %v", fe.calls)
+	}
+}
+
+// TestUpgrade_RejectsDevKeySignedPackage 升级路径的对应回归测试：已安装
+// 应用后，用开发私钥签的"新版本"包升级必须被拒绝（与安装路径共用同一
+// 验签信任锚解析，见 lifecycle.go handleUpgrade 调用 verifyAppSignatureTrusted）。
+func TestUpgrade_RejectsDevKeySignedPackage(t *testing.T) {
+	mux, fe := setupLifecycleTest(t)
+	tb, sig := buildSignedPackage(t, appEntriesWithID("photos", "1.0.0"))
+	body, ct := multipartInstallBody(t, tb, sig)
+	doRequest(mux, http.MethodPost, "/api/apps/install", body, ct)
+	doRequest(mux, http.MethodPost, "/api/apps/install/photos/confirm", nil, "")
+	callsAfterInstall := len(fe.calls)
+
+	tb2, sig2 := buildSignedPackageWithKey(t, appEntriesWithID("photos", "1.1.0"), devPrivateKey(t))
+	body2, ct2 := multipartInstallBody(t, tb2, sig2)
+	rec := doRequest(mux, http.MethodPost, "/api/apps/photos/upgrade", body2, ct2)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("开发密钥签名的升级包应被拒绝（400），got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if len(fe.calls) != callsAfterInstall {
+		t.Fatalf("升级签名校验失败不应产生额外副作用调用，got: %v", fe.calls)
 	}
 }
 

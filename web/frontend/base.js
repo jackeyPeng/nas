@@ -96,6 +96,18 @@ function basePanel() {
             const component = map[key];
             return this.baseComponents.find(c => c.component === component) || null;
         },
+
+        // ─── 使用说明弹窗：纯静态文案（i18n），不调任何接口，不涉及凭据 ───
+        baseHelp: { show: false, component: '' },
+
+        baseOpenHelp(comp) {
+            this.baseHelp.component = comp.component;
+            this.baseHelp.show = true;
+        },
+
+        baseCloseHelp() {
+            this.baseHelp.show = false;
+        },
     };
 }
 

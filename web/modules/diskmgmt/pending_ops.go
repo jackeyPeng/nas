@@ -198,8 +198,16 @@ func ApplyPendingOps(r *http.Request) ([]string, error) {
 	// Clear pending queue
 	db.Exec("DELETE FROM pending_ops")
 
-	// Sync configs and reload services（SyncAllConfigs 内部已含 reloadServices，勿重复调用）
-	SyncAllConfigs()
+	// Sync configs and reload services（SyncAllConfigs 内部已含 reloadServices，勿重复调用）。
+	// Bug 3 修复：此前返回的 error 被直接丢弃，上面每条 op 的创建/更新/删除即使
+	// 全部执行成功，只要 Samba/NFS 托管配置重投影失败，调用方也完全看不出来——
+	// "配置已应用"响应照常返回，用户以为共享已经按新配置生效，实际磁盘上的
+	// smb.conf/exports 可能还是旧内容。现在把这个失败作为 error 向上返回，但
+	// 不丢弃已经执行成功的 results（队列已清空、文件系统变更已落地，不是
+	// "整体失败"，是"操作已执行但收尾同步失败"，调用方需要同时看到两者）。
+	if err := syncAllConfigsFn(); err != nil {
+		return results, fmt.Errorf("待操作已全部执行，但同步 Samba/NFS 托管配置失败: %w", err)
+	}
 
 	return results, nil
 }
@@ -466,8 +474,15 @@ func handlePendingApply(w http.ResponseWriter, r *http.Request) {
 	}
 	results, err := ApplyPendingOps(r)
 	if err != nil {
+		// Bug 3 修复：此前只要 err != nil 就只回 {"error":...}，丢掉了已经
+		// 成功执行的 results——如果失败原因是收尾阶段的 SyncAllConfigs（队列
+		// 已清空、文件系统变更已落地），前端只能看到一句笼统错误，看不出
+		// "操作其实都做完了，只是配置同步这步出问题"这个关键区别（与数据库
+		// 未初始化这种彻底失败、results 恒为 nil 的情况不冲突：那种情况下
+		// results 本来就是 nil，一起返回不影响语义）。
 		common.JSONResponse(w, map[string]interface{}{
-			"error": err.Error(),
+			"error":   err.Error(),
+			"results": results,
 		})
 		return
 	}

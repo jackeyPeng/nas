@@ -1,6 +1,7 @@
 package diskmgmt
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -371,5 +372,240 @@ func TestHandlePoolDeleteRejectsConfirmNameMismatch(t *testing.T) {
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d (400)", w.Code, http.StatusBadRequest)
+	}
+}
+
+// ═══════════════════════════════════════════════════
+// Bug 2 回归测试：handlePoolDelete 此前忽略 umount/lvremove/vgremove/
+// pvremove/wipefs/mdadm --stop 等破坏性命令的返回错误，任一失败都会被当
+// 成功继续执行后续步骤，最终仍统一报告"存储池已删除"。现在每条破坏性命令
+// 失败都必须立即中止，不得继续执行、不得报告虚假成功。
+//
+// 用 withStubExec 注入命令替身 + withFakeLivePool 注入 findLivePoolFn，
+// 绕开真实 overview 探测链，直接驱动 switch 分支内部逻辑。
+// ═══════════════════════════════════════════════════
+
+// withFakeLivePool 把 findLivePoolFn 替换为固定返回 (pool, true)，绕开
+// buildStorageOverview() 的真实 df/lsblk/mdadm 探测链，让 handlePoolDelete
+// 的服务端重解析闸门（consensus P0-A1）直接放行到 switch 分支。t.Cleanup
+// 还原原始值（默认实现，行为与生产一致）。
+func withFakeLivePool(t *testing.T, pool PoolSummary) {
+	t.Helper()
+	orig := findLivePoolFn
+	findLivePoolFn = func(poolType, poolDevice string) (PoolSummary, bool) {
+		if poolType == pool.Type && poolDevice == pool.Device {
+			return pool, true
+		}
+		return PoolSummary{}, false
+	}
+	t.Cleanup(func() { findLivePoolFn = orig })
+}
+
+// deletePoolForm 构造 handlePoolDelete 所需的最小合法表单（通过确认名校验 +
+// 重解析闸门后，实际路由到 switch 分支）。
+func deletePoolForm(poolType, poolDevice, poolName string) url.Values {
+	return url.Values{
+		"pool_type":    {poolType},
+		"pool_device":  {poolDevice},
+		"pool_name":    {poolName},
+		"confirm_name": {poolName},
+		"confirm":      {"yes"},
+	}
+}
+
+// TestHandlePoolDeleteSingleSuccessReportsTrueSuccess 验证 single 分支全程
+// 成功（无挂载点，跳过 folders.db/SyncAllConfigs 阶段）时如实报告成功，且
+// wipefs 确实被调用一次。
+func TestHandlePoolDeleteSingleSuccessReportsTrueSuccess(t *testing.T) {
+	withFakeLivePool(t, PoolSummary{Type: "single", Device: "/dev/sdz"})
+	stub := withStubExec(t, map[string]cmdResponse{
+		// findmnt 对 /dev/sdz 本身与分区查询都返回空（无挂载），wipefs 成功。
+		"findmnt":          {Out: "", Err: nil},
+		"blkid":            {Out: "", Err: nil},
+		"cat":              {Out: "", Err: nil},
+		"/usr/sbin/wipefs": {Out: "", Err: nil},
+	})
+
+	form := deletePoolForm("single", "/dev/sdz", "disk-z")
+	r := httptest.NewRequest(http.MethodPost, "/api/disk/pool/delete", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+
+	handlePoolDelete(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "存储池已删除") {
+		t.Errorf("body = %q, want 成功文案", w.Body.String())
+	}
+	if !stub.wasCalledWith("/usr/sbin/wipefs", "-a", "/dev/sdz") {
+		t.Errorf("calls = %v, want wipefs -a /dev/sdz 被调用", stub.calledNames())
+	}
+}
+
+// TestHandlePoolDeleteSingleWipefsFailureAbortsAndReportsError 核心回归：
+// wipefs 失败必须立即中止并返回明确错误（非 200），不能把失败吞掉继续走到
+// "存储池已删除"的成功响应。
+func TestHandlePoolDeleteSingleWipefsFailureAbortsAndReportsError(t *testing.T) {
+	withFakeLivePool(t, PoolSummary{Type: "single", Device: "/dev/sdz"})
+	stub := withStubExec(t, map[string]cmdResponse{
+		"findmnt":          {Out: "", Err: nil},
+		"blkid":            {Out: "", Err: nil},
+		"/usr/sbin/wipefs": {Out: "", Err: fmt.Errorf("device or resource busy")},
+	})
+
+	form := deletePoolForm("single", "/dev/sdz", "disk-z")
+	r := httptest.NewRequest(http.MethodPost, "/api/disk/pool/delete", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+
+	handlePoolDelete(w, r)
+
+	if w.Code == http.StatusOK {
+		t.Fatalf("status = 200, want non-200（wipefs 失败不应报告成功）; body=%s", w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), "存储池已删除") {
+		t.Errorf("body = %q, 不应包含成功文案", w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "busy") {
+		t.Errorf("body = %q, want 包含底层错误信息 busy", w.Body.String())
+	}
+	// cat /etc/fstab、SyncAllConfigs 等收尾清理步骤不应被执行——wipefs 失败后
+	// 必须直接 return，不能继续往下走。
+	for _, name := range stub.calledNames() {
+		if name == "cat" {
+			t.Errorf("calls = %v, wipefs 失败后不应继续执行 cat /etc/fstab", stub.calledNames())
+		}
+	}
+}
+
+// TestHandlePoolDeleteSingleUmountFailureAbortsBeforeWipefs 验证 umount 失败
+// 同样立即中止，且后续的 wipefs（真正抹除签名的一步）从未被调用——失败后
+// 绝不能继续执行更具破坏性的下一步。
+func TestHandlePoolDeleteSingleUmountFailureAbortsBeforeWipefs(t *testing.T) {
+	withFakeLivePool(t, PoolSummary{Type: "single", Device: "/dev/sdz"})
+	stub := withStubExec(t, map[string]cmdResponse{
+		"findmnt": {Out: "/data/nas1", Err: nil},
+		"umount":  {Out: "", Err: fmt.Errorf("target is busy")},
+	})
+
+	form := deletePoolForm("single", "/dev/sdz", "disk-z")
+	r := httptest.NewRequest(http.MethodPost, "/api/disk/pool/delete", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+
+	handlePoolDelete(w, r)
+
+	if w.Code == http.StatusOK {
+		t.Fatalf("status = 200, want non-200（umount 失败不应报告成功）; body=%s", w.Body.String())
+	}
+	if stub.countCalls("/usr/sbin/wipefs") != 0 {
+		t.Errorf("wipefs 被调用了 %d 次, want 0（umount 失败后不应继续执行 wipefs）", stub.countCalls("/usr/sbin/wipefs"))
+	}
+}
+
+// TestHandlePoolDeleteSingleConfigCleanupFailureReportsDegraded 验证"磁盘已
+// 成功拆除，但收尾配置清理失败"场景：wipefs 成功后，读取 /etc/fstab 失败
+// （cat 返回 error）。此前这种失败只是追加一行文案进 steps，最终响应仍统一
+// 报告"存储池已删除"成功——用户据此以为一切正常，实际上 fstab 清理没做。
+// 现在必须用非 200（207）状态码 + 响应体明确标记问题，不能让前端把这种
+// 情况当完全成功处理。
+func TestHandlePoolDeleteSingleConfigCleanupFailureReportsDegraded(t *testing.T) {
+	withFakeLivePool(t, PoolSummary{Type: "single", Device: "/dev/sdz"})
+	withStubExec(t, map[string]cmdResponse{
+		"findmnt":          {Out: "", Err: nil},
+		"blkid":            {Out: "", Err: nil},
+		"/usr/sbin/wipefs": {Out: "", Err: nil},
+		"cat":              {Out: "", Err: fmt.Errorf("permission denied")},
+	})
+
+	form := deletePoolForm("single", "/dev/sdz", "disk-z")
+	r := httptest.NewRequest(http.MethodPost, "/api/disk/pool/delete", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+
+	handlePoolDelete(w, r)
+
+	if w.Code != http.StatusMultiStatus {
+		t.Fatalf("status = %d, want %d (207，部分成功)；body=%s", w.Code, http.StatusMultiStatus, w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), `"message":"存储池已删除，释放`) {
+		t.Errorf("body = %q, 磁盘拆除成功但配置清理失败时不应报告完全成功文案", w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "permission denied") {
+		t.Errorf("body = %q, want 包含底层错误信息 permission denied", w.Body.String())
+	}
+}
+
+// TestHandlePoolDeleteLVMLvremoveFailureAbortsBeforeVgremove 验证 lvm 分支：
+// lvremove 失败必须中止，不能继续执行 vgremove/pvremove/wipefs（否则会在
+// LV 还没删掉的情况下把 VG/PV 签名抹了，留下无法恢复的中间状态）。
+func TestHandlePoolDeleteLVMLvremoveFailureAbortsBeforeVgremove(t *testing.T) {
+	withFakeLivePool(t, PoolSummary{Type: "lvm", Device: "/dev/vg_nas"})
+	stub := withStubExec(t, map[string]cmdResponse{
+		"/usr/sbin/vgs": {Out: "  vg_nas\n", Err: nil},
+		"/usr/sbin/pvs": {Out: "/dev/sdb /dev/sdc", Err: nil},
+		"/usr/sbin/lvs": {Out: "data /dev/vg_nas/data\n", Err: nil},
+		"findmnt":       {Out: "", Err: nil},
+		"/usr/sbin/lvremove": {Out: "", Err: fmt.Errorf("Logical volume vg_nas/data is used by another device")},
+	})
+
+	form := deletePoolForm("lvm", "/dev/vg_nas", "vg_nas")
+	r := httptest.NewRequest(http.MethodPost, "/api/disk/pool/delete", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+
+	handlePoolDelete(w, r)
+
+	if w.Code == http.StatusOK {
+		t.Fatalf("status = 200, want non-200（lvremove 失败不应报告成功）; body=%s", w.Body.String())
+	}
+	if stub.countCalls("/usr/sbin/vgremove") != 0 {
+		t.Errorf("vgremove 被调用了 %d 次, want 0（lvremove 失败后不应继续执行 vgremove）", stub.countCalls("/usr/sbin/vgremove"))
+	}
+	if stub.countCalls("/usr/sbin/pvremove") != 0 {
+		t.Errorf("pvremove 被调用了 %d 次, want 0", stub.countCalls("/usr/sbin/pvremove"))
+	}
+	if stub.countCalls("/usr/sbin/wipefs") != 0 {
+		t.Errorf("wipefs 被调用了 %d 次, want 0", stub.countCalls("/usr/sbin/wipefs"))
+	}
+}
+
+// TestHandlePoolDeleteLVMFullSuccessCallsAllDestructiveSteps 验证 lvm 分支
+// 全程成功时，确实依次调用了 lvremove/vgremove/pvremove/wipefs，且如实报告
+// 成功（正向用例，防止 Bug 2 修复过度，错误地在成功路径也中止）。
+func TestHandlePoolDeleteLVMFullSuccessCallsAllDestructiveSteps(t *testing.T) {
+	withFakeLivePool(t, PoolSummary{Type: "lvm", Device: "/dev/vg_nas"})
+	stub := withStubExec(t, map[string]cmdResponse{
+		"/usr/sbin/vgs":      {Out: "  vg_nas\n", Err: nil},
+		"/usr/sbin/pvs":      {Out: "/dev/sdb /dev/sdc", Err: nil},
+		"/usr/sbin/lvs":      {Out: "data /dev/vg_nas/data\n", Err: nil},
+		"findmnt":            {Out: "", Err: nil},
+		"/usr/sbin/lvremove": {Out: "", Err: nil},
+		"/usr/sbin/vgremove": {Out: "", Err: nil},
+		"/usr/sbin/pvremove": {Out: "", Err: nil},
+		"/usr/sbin/wipefs":   {Out: "", Err: nil},
+		"cat":                {Out: "", Err: nil},
+	})
+
+	form := deletePoolForm("lvm", "/dev/vg_nas", "vg_nas")
+	r := httptest.NewRequest(http.MethodPost, "/api/disk/pool/delete", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+
+	handlePoolDelete(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200；body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "存储池已删除") {
+		t.Errorf("body = %q, want 成功文案", w.Body.String())
+	}
+	wantCalled := []string{"/usr/sbin/lvremove", "/usr/sbin/vgremove", "/usr/sbin/pvremove", "/usr/sbin/wipefs"}
+	for _, name := range wantCalled {
+		if stub.countCalls(name) == 0 {
+			t.Errorf("命令 %s 未被调用，calls=%v", name, stub.calledNames())
+		}
 	}
 }

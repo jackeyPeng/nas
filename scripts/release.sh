@@ -50,6 +50,13 @@ fi
 # OTA 签名私钥（ed25519 hex，从 ~/.hermes/.env 读取；未配置则跳过签名，面板会拒升级）
 OTA_SIGN_KEY=$(grep '^OTA_SIGN_KEY=' "$R2_ENV" 2>/dev/null | cut -d'=' -f2- || true)
 
+# 应用市场验签公钥（ed25519，base64 标准编码；对应私钥由市场签发者离线保管，
+# 本脚本/本仓库都不持有、不生成）。注入进 modules/apps.TrustedPublicKeyB64，
+# 决定这个正式构建信任谁签的应用包（docs/APP-SPEC.md §1）。
+# 未配置则不注入——面板会在该变量留空的 fail-closed 语义下拒绝一切应用
+# 安装/升级（不会回退到仓库内的开发公钥），发布前必须显式配置。
+APP_TRUSTED_PUBKEY=$(grep '^APP_TRUSTED_PUBKEY=' "$R2_ENV" 2>/dev/null | cut -d'=' -f2- || true)
+
 BUCKET="nas"
 RELEASE_DIR="/tmp/z1-release-$$"
 VERSION_TAG="$VERSION"
@@ -72,6 +79,10 @@ echo ""
 rm -rf "$RELEASE_DIR"
 mkdir -p "$RELEASE_DIR"
 
+if [ -z "$APP_TRUSTED_PUBKEY" ]; then
+    warn "  未配置 APP_TRUSTED_PUBKEY，本次构建的面板将拒绝一切应用安装/升级（fail-closed，详见 docs/APP-SPEC.md §1）"
+fi
+
 # ── 构建所有架构 ─────────────────────────────────────────────────
 for ARCH in $ARCH_LIST; do
     info "Building for linux/${ARCH} ..."
@@ -81,7 +92,8 @@ for ARCH in $ARCH_LIST; do
             -X nas-panel/modules/version.Version=${VERSION_TAG} \
             -X nas-panel/modules/version.DisplayVersion=${VERSION_TAG} \
             -X nas-panel/modules/version.BuildTime=${BUILD_TIME} \
-            -X nas-panel/modules/version.GitCommit=${COMMIT}" \
+            -X nas-panel/modules/version.GitCommit=${COMMIT} \
+            -X nas-panel/modules/apps.TrustedPublicKeyB64=${APP_TRUSTED_PUBKEY}" \
         -o "${RELEASE_DIR}/nas-panel-${ARCH}" \
         .)
 

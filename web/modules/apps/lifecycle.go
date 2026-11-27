@@ -256,17 +256,13 @@ func (e *httpStatusError) Error() string { return e.message }
 // actionCN 用于审计日志动作名（"安装应用" vs "市场安装应用"），便于审计
 // 页区分来源。
 func installFromTarball(r *http.Request, tarball, sig []byte, actionCN string) (*pendingInstallResponse, *httpStatusError) {
-	// TODO(发布前): M1 验签公钥固定用 DevPublicKeyB64（开发密钥对）。正式
-	// 上架前须切换为编译进核心的市场正式公钥（§1「验签公钥编译进核心，
-	// 市场方为 v0.1 唯一签发者」）——届时这里改为引用一个不可由构建参数
-	// 覆盖的正式公钥常量，并移除/隔离开发密钥对，避免开发私钥签出的包
-	// 被生产环境误信任。
-	pubBytes, err := base64.StdEncoding.DecodeString(DevPublicKeyB64)
-	if err != nil {
-		return nil, &httpStatusError{http.StatusInternalServerError, "内部错误：开发公钥解码失败"}
-	}
-	if !VerifyAppSignature(tarball, sig, pubBytes) {
-		common.LogAuditRequest(r, auditCategory, actionCN, "签名校验失败", "失败")
+	// 验签公钥信任锚统一经 resolveTrustedPublicKey 解析（sign.go）：正式
+	// 构建由 ldflags 注入 TrustedPublicKeyB64，未注入时 fail-closed 直接
+	// 拒绝，绝不回退到开发密钥对（DevPublicKeyB64，其私钥已公开入仓，
+	// 不能作为任何环境的信任锚）。手工上传、市场一键安装、升级三条入口
+	// 共用这一个判定，不应该有任何一条路径绕开它。
+	if err := verifyAppSignatureTrusted(tarball, sig); err != nil {
+		common.LogAuditRequest(r, auditCategory, actionCN, "签名校验失败: "+err.Error(), "失败")
 		return nil, &httpStatusError{http.StatusBadRequest, "签名校验失败，拒绝安装"}
 	}
 
@@ -849,14 +845,19 @@ func handleUpgrade(w http.ResponseWriter, r *http.Request, id string) {
 	}
 
 	sigB64 := r.FormValue("signature")
+	if sigB64 == "" {
+		httpError(w, http.StatusBadRequest, "缺少 signature 字段（ed25519 detached 签名，base64）")
+		return
+	}
 	sig, err := base64.StdEncoding.DecodeString(sigB64)
 	if err != nil {
 		httpError(w, http.StatusBadRequest, "signature 不是合法 base64: "+err.Error())
 		return
 	}
-	pubBytes, _ := base64.StdEncoding.DecodeString(DevPublicKeyB64)
-	if !VerifyAppSignature(tarball, sig, pubBytes) {
-		common.LogAuditRequest(r, auditCategory, "升级应用", fmt.Sprintf("%s: 签名校验失败", id), "失败")
+	// 升级与安装（手工/市场）共用同一验签信任锚解析，见
+	// installFromTarball 顶部注释与 sign.go 的 resolveTrustedPublicKey。
+	if err := verifyAppSignatureTrusted(tarball, sig); err != nil {
+		common.LogAuditRequest(r, auditCategory, "升级应用", fmt.Sprintf("%s: 签名校验失败: %v", id, err), "失败")
 		httpError(w, http.StatusBadRequest, "签名校验失败，拒绝升级")
 		return
 	}

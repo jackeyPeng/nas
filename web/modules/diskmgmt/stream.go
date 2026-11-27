@@ -677,7 +677,18 @@ func handleWizardResetStream(w http.ResponseWriter, r *http.Request) {
 		RemoveFolderMetaByMountPrefix(mount)
 	}
 	common.SudoExec("rm", "-f", "/opt/nas/data/.last_reload")
-	SyncAllConfigs()
+	// Bug 3 修复：此前 SyncAllConfigs() 的错误被直接丢弃，无论 Samba/NFS
+	// 配置重投影是否真的成功，SSE 流都会紧接着发一条 "清理共享配置" done 事件，
+	// 前端据此展示整体重置成功——用户看不出 smb.conf/exports 其实没同步成功、
+	// 共享可能残留旧状态。现在失败时先发一条 running 状态的 Detail 事件把
+	// 具体错误带给前端，再继续 stepDone（本步骤本身—— rm .last_reload 与清
+	// folders.db 已经做了，不可逆，不适合把整个重置流程中止在这一步）。
+	if err := syncAllConfigsFn(); err != nil {
+		sendProgress(w, ProgressEvent{
+			Step: "清理共享配置", Status: "running", Index: step + 1, Total: totalSteps,
+			Detail: "重新生成 Samba/NFS 托管配置失败: " + err.Error(),
+		})
+	}
 	stepDone("清理共享配置")
 
 	// 7. Recreate /data

@@ -3060,7 +3060,7 @@
                                 <span class="badge" :class="baseReady(comp) ? 'badge-ok' : 'badge-info'" x-text="baseReady(comp) ? $t('base.ready') : $t('base.not_ready')"></span>
                                 <span x-show="comp.installed" style="font-size:var(--fs-xs);color: var(--text-light)" x-text="comp.unitActive"></span>
                             </div>
-                            <div style="margin-top:var(--sp-4);display:flex;gap:var(--sp-2)">
+                            <div style="margin-top:var(--sp-4);display:flex;gap:var(--sp-2);flex-wrap:wrap">
                                 <template x-if="!comp.installed">
                                     <button class="btn btn-sm btn-primary" @click="baseInstall(comp)" :disabled="baseActing[comp.component]" x-text="$t('base.install')"></button>
                                 </template>
@@ -3073,9 +3073,40 @@
                                 <template x-if="comp.installed">
                                     <button class="btn btn-sm btn-danger" @click="baseUninstall(comp)" :disabled="baseActing[comp.component]" x-text="$t('base.uninstall')"></button>
                                 </template>
+                                <button class="btn btn-sm" @click="baseOpenHelp(comp)" x-text="'ℹ️ ' + $t('base.help_btn')"></button>
                             </div>
                         </div>
                     </template>
+                </div>
+            </div>
+
+            <!-- 基座服务使用说明弹窗：纯静态文案渲染，不发起任何接口请求，不涉及凭据展示 -->
+            <div class="modal" x-show="baseHelp.show" x-cloak @click.self="baseCloseHelp()">
+                <div class="logs-box" style="width:640px;max-width:90vw;max-height:85vh">
+                    <div class="logs-header">
+                        <h3 style="margin:0" x-text="$t('base.help_title') + ' · ' + (baseComponentByKey(baseHelp.component) ? baseComponentByKey(baseHelp.component).name : '')"></h3>
+                        <button class="btn btn-sm" @click="baseCloseHelp()" x-text="$t('common.close')"></button>
+                    </div>
+                    <div style="overflow:auto;padding-right:var(--sp-2)">
+                        <p style="font-size:var(--fs-xs);color: var(--text-light)" x-text="$t('base.help_edition_hint')"></p>
+
+                        <h4 style="margin:var(--sp-4) 0 var(--sp-2)" x-text="$t('base.help_what_title')"></h4>
+                        <p style="font-size:var(--fs-sm)" x-text="$t('base.' + baseHelp.component + '_what')"></p>
+
+                        <h4 style="margin:var(--sp-4) 0 var(--sp-2)" x-text="$t('base.help_impact_title')"></h4>
+                        <p style="font-size:var(--fs-sm)" x-text="$t('base.' + baseHelp.component + '_impact')"></p>
+
+                        <h4 style="margin:var(--sp-4) 0 var(--sp-2)" x-text="$t('base.help_connect_title')"></h4>
+                        <p style="font-size:var(--fs-sm)" x-text="$t('base.' + baseHelp.component + '_connect')"></p>
+
+                        <h4 style="margin:var(--sp-4) 0 var(--sp-2)" x-text="$t('base.help_security_title')"></h4>
+                        <p style="font-size:var(--fs-sm)" x-text="$t('base.help_security_body')"></p>
+
+                        <p style="font-size:var(--fs-xs);color: var(--text-light);margin-top:var(--sp-4)" x-text="$t('base.help_more')"></p>
+                    </div>
+                    <div class="modal-actions">
+                        <button class="btn btn-primary" @click="baseCloseHelp()" x-text="$t('common.close')"></button>
+                    </div>
                 </div>
             </div>
 

@@ -678,6 +678,15 @@ function nasPanel() {
             const ct = res.headers.get('content-type');
             if (ct && ct.includes('application/json')) {
                 const data = await res.json();
+                // Bug 3 修复：HTTP 207（Multi-Status，部分成功，目前仅 /disk/pool/delete
+                // 在配置清理阶段失败时使用）落在 fetch 的 res.ok（2xx）范围内，调用方此前
+                // 拿到的 data 没有任何办法区分"完全成功 200"与"部分成功 207"，只能把两者
+                // 都当成功处理。这里附加一个不影响现有字段读取的 _httpStatus 标记，由具体
+                // 调用方（目前只有 deletePool）按需读取，不改变其余 ~100 个调用点的行为
+                // （它们只读自己关心的具名字段，从不枚举 data 的全部 key）。
+                if (res.status === 207 && data && typeof data === 'object') {
+                    data._httpStatus = 207;
+                }
                 if (!res.ok && data.error) {
                     // 出厂默认密码强制改密：后端门禁（默认密码未改时非白名单 API 一律 403）
                     // 用 error 字段通知前端。前端据此弹改密框——否则刷新页面后前端拿不到
@@ -2696,8 +2705,18 @@ function nasPanel() {
             if (!confirm(this.t('msg.apply_pending_confirm'))) return;
             const data = await this.api('/disk/pending/apply', { method: 'POST' });
             if (data) {
+                // Bug 3 修复：后端 handlePendingApply 在 SyncAllConfigs 收尾失败时
+                // 仍走 200 JSONResponse，响应体带 data.error（同时附带已经执行成功
+                // 的 data.results），这里此前完全不检查 data.error，一律当成功
+                // 处理——队列已清空、文件系统变更确实已落地，但 Samba/NFS 配置
+                // 可能没真正同步，用户却只看到一条"成功" toast。现在先展示各条
+                // 操作结果（如果有），再把 error 作为单独的 error 级提示叠加上去，
+                // 不是互斥关系：操作本身成功与收尾同步失败是两件独立的事。
                 if (data.results) {
                     this.showToast(data.results.join('\n'), 'success');
+                }
+                if (data.error) {
+                    setTimeout(() => this.showToast(data.error, 'error'), 500);
                 }
                 this.pendingCount = 0;
                 this.loadStorageOverview();
@@ -2816,7 +2835,18 @@ function nasPanel() {
                 body: params.toString()
             });
             if (data) {
-                this.showToast(this.t('msg.pool_deleted'), 'success');
+                if (data._httpStatus === 207 || data.warning) {
+                    // 磁盘已拆除（不可逆），但配置清理（Samba/NFS/folders.db）存在问题。
+                    // 不能提示“重试删除”——磁盘层面的操作已经完成且不可重复；
+                    // 这里只能如实告知用户磁盘已拆，并给出人工检查的步骤详情。
+                    const detail = Array.isArray(data.steps) ? data.steps.join('；') : '';
+                    this.showToast(
+                        this.t('msg.pool_delete_partial', [data.message || '', detail]),
+                        'error'
+                    );
+                } else {
+                    this.showToast(this.t('msg.pool_deleted'), 'success');
+                }
                 this.loadStorageOverview();
                 this.loadWizardStatus();
                 this.loadSharedFolders();
@@ -2907,6 +2937,15 @@ function nasPanel() {
             });
             if (data) {
                 this.showToast(this.t('msg.import_pool_success'), 'success');
+                // Bug 3 修复：后端导入成功后如果 Samba/NFS 托管配置同步失败
+                // （或 fstab 持久化失败），会在 data.warning 里带回具体原因；
+                // 此前这里完全没读这个字段，用户只会看到笼统的"导入成功"，
+                // 对共享实际不可见/重启后需重新导入这类隐患一无所知。
+                // 与 createFolder 同款模式：成功 toast 之后延时补一条 error 级
+                // 提示，不打断主流程。
+                if (data.warning) {
+                    setTimeout(() => this.showToast(data.warning, 'error'), 500);
+                }
                 this.loadImportablePools();
                 this.loadStorageOverview();
                 this.loadWizardStatus();

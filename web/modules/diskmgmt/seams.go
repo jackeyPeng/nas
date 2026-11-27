@@ -41,3 +41,30 @@ var sysfsRoot = "/sys/block"
 // mdstatPath 默认指向真实 "/proc/mdstat"；waitForResync 与 isDiskInUse 的
 // cat 回退读取路径均改用此变量。测试指向临时文件。
 var mdstatPath = "/proc/mdstat"
+
+// findLivePoolFn 默认指向 findLivePoolByTypeDevice 搭配 buildStorageOverview()
+// 的生产组合（handlePoolDelete 的服务端重解析闸门,consensus P0-A1）。
+// buildStorageOverview 依赖真实 df/lsblk/mdadm 等一整条只读探测链，在无实际
+// 磁盘的测试环境里必然返回空池列表，导致该闸门恒 409、switch 分支内的破坏性
+// 命令路径根本无法被测试触达。测试注入时直接返回构造好的 (PoolSummary, true)，
+// 绕开 overview 探测链，只验证 handlePoolDelete 在闸门通过后的行为（Bug 2：
+// 各步骤错误处理）。生产路径不变。
+var findLivePoolFn = func(poolType, poolDevice string) (PoolSummary, bool) {
+	overview := buildStorageOverview()
+	return findLivePoolByTypeDevice(overview.Pools, poolType, poolDevice)
+}
+
+// safeWriteFileFn 默认指向 common.SafeWriteFile（Bug 3：GenerateSambaConfig/
+// GenerateNFSConfig 写 smb.conf/exports 失败此前被直接丢弃返回值，现在必须
+// 检查错误并向上传播）；测试注入替身模拟磁盘满/权限问题等写失败场景。
+var safeWriteFileFn = common.SafeWriteFile
+
+// syncAllConfigsFn 默认指向 SyncAllConfigs。SyncAllConfigs 本身依赖
+// GetAllFolderMeta() 背后的真实全局 sqlite 单例连接（initConfigDB()），
+// 无法在单测里构造假数据直接端到端跑通（同 config_sync_mutex_test.go 的
+// 既有说明）。import.go/pending_ops.go/stream.go 三处 Bug 3 修复关心的是
+// "SyncAllConfigs 失败时，调用方是否如实把失败信息传给用户"，不是
+// SyncAllConfigs 内部逻辑本身（已有独立测试覆盖）。只给这三个调用点换成
+// 这个 seam，可以注入一个假失败/假成功，单独验证三处的响应组装逻辑，不碰
+// 真实 DB、不影响 pool.go/folders.go/reset.go 等其它 9 个调用点的生产路径。
+var syncAllConfigsFn = SyncAllConfigs

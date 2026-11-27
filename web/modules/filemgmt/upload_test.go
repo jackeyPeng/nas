@@ -14,6 +14,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"syscall"
 	"testing"
 
@@ -455,6 +456,133 @@ func TestWritePartToFileCopyFailureSelfCleansHalfWritten(t *testing.T) {
 	}
 	if _, serr := os.Stat(target); !os.IsNotExist(serr) {
 		t.Fatalf("copy 失败后半成品应已被 writePartToFile 自清, stat err=%v", serr)
+	}
+}
+
+// TestWritePartToFileOverwriteSuccessReplacesContent 覆盖写成功路径:同目录临时文件
+// + rename 的实现变更后,最终内容、长度与直接 O_TRUNC 写入的可观察结果必须一致。
+func TestWritePartToFileOverwriteSuccessReplacesContent(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "a.txt")
+	if err := os.WriteFile(target, []byte("original content"), 0644); err != nil {
+		t.Fatalf("预置目标文件失败: %v", err)
+	}
+
+	buf := make([]byte, 32*1024)
+	newContent := []byte("brand new data")
+	n, err := writePartToFile(target, bytes.NewReader(newContent), buf, true)
+	if err != nil {
+		t.Fatalf("overwrite 成功路径不应报错: %v", err)
+	}
+	if n != int64(len(newContent)) {
+		t.Fatalf("写入字节数 = %d, want %d", n, len(newContent))
+	}
+	data, rerr := os.ReadFile(target)
+	if rerr != nil {
+		t.Fatalf("目标文件应存在: %v", rerr)
+	}
+	if !bytes.Equal(data, newContent) {
+		t.Fatalf("内容应被覆盖, got %q want %q", data, newContent)
+	}
+	// 覆盖写不应在目标目录残留任何临时文件。
+	entries, derr := os.ReadDir(root)
+	if derr != nil {
+		t.Fatalf("ReadDir 失败: %v", derr)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("覆盖写后目录应只剩目标文件一项, got %d entries: %v", len(entries), entries)
+	}
+}
+
+// TestWritePartToFileOverwriteCopyFailurePreservesOriginal 是本次修复的核心回归测试:
+// overwrite=true 时若 copy 阶段中途失败(模拟磁盘满/网络中断),原文件必须保持
+// 字节级完整,不得被截断、删除或替换成半成品,函数必须返回错误(不得假成功)。
+// 旧实现直接 O_TRUNC 目标文件,copy 失败会先截断再 os.Remove,原文件永久丢失——
+// 这正是本测试要堵死的回归。
+func TestWritePartToFileOverwriteCopyFailurePreservesOriginal(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "half.bin")
+	original := []byte("original content that must survive a failed overwrite attempt")
+	if err := os.WriteFile(target, original, 0644); err != nil {
+		t.Fatalf("预置目标文件失败: %v", err)
+	}
+
+	reader := &failingAfterNReader{data: []byte("0123456789"), failAfter: 5}
+	buf := make([]byte, 2) // 小 buffer 确保多次 Read,制造半成品
+
+	_, err := writePartToFile(target, reader, buf, true)
+	if err == nil {
+		t.Fatalf("overwrite 时 copy 阶段失败必须返回错误(不得假成功)")
+	}
+
+	data, rerr := os.ReadFile(target)
+	if rerr != nil {
+		t.Fatalf("原文件应仍然存在(不得被删除): %v", rerr)
+	}
+	if !bytes.Equal(data, original) {
+		t.Fatalf("原文件内容必须保持字节级完整未变, got %q want %q", data, original)
+	}
+
+	// 临时文件也必须被自清,不留下残留垂死文件。
+	entries, derr := os.ReadDir(root)
+	if derr != nil {
+		t.Fatalf("ReadDir 失败: %v", derr)
+	}
+	if len(entries) != 1 || entries[0].Name() != "half.bin" {
+		t.Fatalf("copy 失败后目录应只剩原文件, got entries: %v", entries)
+	}
+}
+
+// TestHandleUploadOverwriteCopyFailurePreservesOriginalAndReportsError 是 handler 层级
+// 的端到端版本:把请求体大小上限精确设成"headers + 5 字节内容",让 http.MaxBytesReader
+// 在 copy 已读入文件内容的前几字节后中途失败,覆盖 overwrite=yes 的失败路径——
+// 服务端必须报错(非 200),磁盘上的原文件必须保持原样。
+func TestHandleUploadOverwriteCopyFailurePreservesOriginalAndReportsError(t *testing.T) {
+	root := setupFakePool(t)
+	target := filepath.Join(root, "public", "a.txt")
+	original := []byte("original content that must not be lost")
+	if err := os.WriteFile(target, original, 0644); err != nil {
+		t.Fatalf("预置文件失败: %v", err)
+	}
+
+	content := []byte("brand new data far longer than 5 bytes")
+	buf := &bytes.Buffer{}
+	mw := multipart.NewWriter(buf)
+	fw, err := mw.CreateFormFile("file", "a.txt")
+	if err != nil {
+		t.Fatalf("CreateFormFile: %v", err)
+	}
+	if _, err := fw.Write(content); err != nil {
+		t.Fatalf("写入 part 失败: %v", err)
+	}
+	if err := mw.Close(); err != nil {
+		t.Fatalf("关闭 multipart writer 失败: %v", err)
+	}
+	// 尾部是 "\r\n--BOUNDARY--\r\n";去掉内容与尾部即 headers 前缀长度。
+	trailing := len("\r\n--" + mw.Boundary() + "--\r\n")
+	prefixLen := buf.Len() - len(content) - trailing
+	if prefixLen <= 0 || prefixLen+5 >= buf.Len() {
+		t.Fatalf("测试构造异常: prefixLen=%d bodyLen=%d", prefixLen, buf.Len())
+	}
+
+	oldMax := maxUploadBytes
+	maxUploadBytes = int64(prefixLen + 5)
+	t.Cleanup(func() { maxUploadBytes = oldMax })
+
+	req := httptest.NewRequest("POST", "/api/files/upload?path=public&overwrite=yes", buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	rec := httptest.NewRecorder()
+	handleUpload(rec, req)
+
+	if rec.Code == http.StatusOK {
+		t.Fatalf("copy 阶段失败不应报告成功, got 200 body=%s", rec.Body.String())
+	}
+	data, rerr := os.ReadFile(target)
+	if rerr != nil {
+		t.Fatalf("原文件应仍然存在: %v", rerr)
+	}
+	if !bytes.Equal(data, original) {
+		t.Fatalf("原文件内容必须保持未变, got %q want %q", data, original)
 	}
 }
 
@@ -918,5 +1046,223 @@ func TestHandleUploadNestedConflictFullRelPath(t *testing.T) {
 	}
 	if string(data2) != "overwritten content" {
 		t.Fatalf("覆盖后内容不符, got %q", data2)
+	}
+}
+
+// TestWritePartToFileOverwriteAlignPermsFailurePreservesOriginalAndCleansTemp 是
+// Bug 1 修复本身的核心回归测试:当 rename 之前的 alignFilePerms(对临时文件
+// chmod/chown)失败时——
+//  1. 原文件(targetAbs)必须保持完全不变(fail-closed:对齐不了权限就不覆盖);
+//  2. 临时文件必须被清理,不得残留;
+//  3. 函数必须返回错误,调用方据此绝不能走到 os.Rename,更不能误删 targetAbs。
+//
+// 这堵死的正是修复前的回归:旧代码先 rename 后对齐,对齐失败时 handler 会
+// os.Remove(targetAbs)——但此时 targetAbs 已是刚替换上线的新文件,新旧数据
+// 一起丢失。本测试通过让临时文件在 chmod 之前被意外删除,制造一个必然失败
+// 的 chmod(ENOENT),从而验证新实现确实把对齐放在了 rename 之前。
+func TestWritePartToFileOverwriteAlignPermsFailurePreservesOriginalAndCleansTemp(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "half.bin")
+	original := []byte("original content that must survive an alignFilePerms failure")
+	if err := os.WriteFile(target, original, 0644); err != nil {
+		t.Fatalf("预置目标文件失败: %v", err)
+	}
+
+	// 覆盖写在 target 所在目录创建形如 .upload-tmp-* 的临时文件;copy 阶段
+	// 结束(EOF)的同一时刻,我们并不知道临时文件的确切名字,因此改为在
+	// copy 完成后、rename 之前这段窗口里,通过轮询目录找到它并删除——
+	// 但更简单可靠的方式是让 reader 在 EOF 时删除"除 target 外目录中唯一的
+	// 其他文件"。
+	reader := &deleteAfterEOFReaderByScan{dir: root, keep: "half.bin"}
+	buf := make([]byte, 4)
+
+	n, err := writePartToFile(target, reader, buf, true)
+	if err == nil {
+		t.Fatalf("临时文件在 chmod 前被删除,alignFilePerms 必须失败,不得假成功(写入字节数=%d)", n)
+	}
+
+	data, rerr := os.ReadFile(target)
+	if rerr != nil {
+		t.Fatalf("原文件应仍然存在(fail-closed,不得被 rename 覆盖或误删): %v", rerr)
+	}
+	if !bytes.Equal(data, original) {
+		t.Fatalf("原文件内容必须保持字节级完整未变, got %q want %q", data, original)
+	}
+
+	entries, derr := os.ReadDir(root)
+	if derr != nil {
+		t.Fatalf("ReadDir 失败: %v", derr)
+	}
+	if len(entries) != 1 || entries[0].Name() != "half.bin" {
+		t.Fatalf("alignFilePerms 失败后目录应只剩原文件(临时文件已被清理), got entries: %v", entries)
+	}
+}
+
+// deleteAfterEOFReaderByScan 在读完固定内容("ok")返回 io.EOF 之前,扫描 dir
+// 并删除除 keep 以外的第一个文件——用来在不知道 os.CreateTemp 生成的随机
+// 文件名的前提下,定位并删除刚创建的临时文件,制造 alignFilePerms(chmod)
+// 阶段必然失败(ENOENT)的时序。
+type deleteAfterEOFReaderByScan struct {
+	dir     string
+	keep    string
+	pos     int
+	deleted bool
+	content []byte
+}
+
+func (r *deleteAfterEOFReaderByScan) Read(p []byte) (int, error) {
+	if r.content == nil {
+		r.content = []byte("ok")
+	}
+	if r.pos < len(r.content) {
+		n := copy(p, r.content[r.pos:])
+		r.pos += n
+		return n, nil
+	}
+	if !r.deleted {
+		entries, _ := os.ReadDir(r.dir)
+		for _, e := range entries {
+			if e.Name() != r.keep {
+				os.Remove(filepath.Join(r.dir, e.Name()))
+				break
+			}
+		}
+		r.deleted = true
+	}
+	return 0, io.EOF
+}
+
+// TestWritePartToFileOverwriteTempFileNeverLooserThanFinalPolicy 验证临时文件在
+// rename 之前(即 alignFilePerms 对齐完成前)的权限从不比最终落地策略更宽松——
+// 这堵死的是旧实现"先 os.Chmod(tmpPath, 0666) 再 rename"引入的权限过松窗口:
+// 任何本地用户在对齐完成前都能读写 0666 的临时文件内容。
+// os.CreateTemp 默认创建权限是 0600(仅创建者可读写),比本仓库里任何
+// alignPermsDecision 可能算出的最终策略(0644/0664/0600)都不更宽松,
+// 因此不存在旧实现那样的宽权限窗口。
+func TestWritePartToFileOverwriteTempFileNeverLooserThanFinalPolicy(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "a.txt")
+	if err := os.WriteFile(target, []byte("original"), 0644); err != nil {
+		t.Fatalf("预置目标文件失败: %v", err)
+	}
+
+	// 用一个在 Read 期间检查目录里临时文件权限的 reader,确保检查发生在
+	// rename 之前(copy 阶段本身晚于 CreateTemp,早于后续的 chmod/rename)。
+	var observedMode os.FileMode
+	var observed bool
+	reader := &modeObservingReader{
+		data: []byte("new content"),
+		check: func() {
+			if observed {
+				return
+			}
+			entries, err := os.ReadDir(root)
+			if err != nil {
+				return
+			}
+			for _, e := range entries {
+				if e.Name() == "a.txt" {
+					continue
+				}
+				info, ierr := e.Info()
+				if ierr != nil {
+					continue
+				}
+				observedMode = info.Mode().Perm()
+				observed = true
+			}
+		},
+	}
+	buf := make([]byte, 4)
+
+	if _, err := writePartToFile(target, reader, buf, true); err != nil {
+		t.Fatalf("overwrite 成功路径不应报错: %v", err)
+	}
+	if !observed {
+		t.Fatalf("测试未能在 rename 前观察到临时文件,测试构造有误")
+	}
+	// 0600 是 os.CreateTemp 的默认权限;只要不比它更松(不含 group/other 的
+	// 写或读位),即未引入旧实现 0666 那样的宽权限窗口。断言精确等于 0600,
+	// 因为 alignFilePerms 在这之后才执行,此刻临时文件权限应仍是
+	// os.CreateTemp 的默认值,未被任何中间代码放宽过。
+	if observedMode != 0600 {
+		t.Fatalf("rename 前临时文件权限 = %o, want 0600(不得比 os.CreateTemp 默认值更宽松,不得复现旧实现 0666 窗口)", observedMode)
+	}
+}
+
+// modeObservingReader 在每次 Read 时执行 check 回调(用于在 copy 进行中探测
+// 同目录下临时文件的权限),数据读完后返回 io.EOF。
+type modeObservingReader struct {
+	data  []byte
+	pos   int
+	check func()
+}
+
+func (r *modeObservingReader) Read(p []byte) (int, error) {
+	if r.check != nil {
+		r.check()
+	}
+	if r.pos >= len(r.data) {
+		return 0, io.EOF
+	}
+	n := copy(p, r.data[r.pos:])
+	r.pos += n
+	return n, nil
+}
+
+// TestWritePartToFileOverwriteConcurrentOverwritesBothSucceedOrFailCleanly 验证
+// 两个并发的 overwrite 请求不会互相破坏对方的临时文件、不会导致目标文件
+// 出现除两次写入内容之外的第三种(损坏/混合)状态,也不会在目标目录残留
+// 任何一方的临时文件。每个 writePartToFileOverwrite 调用使用
+// os.CreateTemp 生成的唯一随机文件名,因此两次并发调用天然不共享同一个
+// 临时文件;这里验证的是该隔离性在并发下确实成立,且最终目标文件内容
+// 必然是二者之一(不会是拼接/截断的中间态),目录里不残留任何 .upload-tmp-*。
+func TestWritePartToFileOverwriteConcurrentOverwritesBothSucceedOrFailCleanly(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "a.txt")
+	if err := os.WriteFile(target, []byte("original"), 0644); err != nil {
+		t.Fatalf("预置目标文件失败: %v", err)
+	}
+
+	contentA := []byte("content from writer A")
+	contentB := []byte("content from writer B loooonger")
+
+	var wg sync.WaitGroup
+	results := make([]error, 2)
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		buf := make([]byte, 3)
+		_, err := writePartToFile(target, bytes.NewReader(contentA), buf, true)
+		results[0] = err
+	}()
+	go func() {
+		defer wg.Done()
+		buf := make([]byte, 5)
+		_, err := writePartToFile(target, bytes.NewReader(contentB), buf, true)
+		results[1] = err
+	}()
+	wg.Wait()
+
+	for i, err := range results {
+		if err != nil {
+			t.Fatalf("并发 overwrite 写入方 %d 不应报错: %v", i, err)
+		}
+	}
+
+	data, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("目标文件必须存在: %v", err)
+	}
+	if !bytes.Equal(data, contentA) && !bytes.Equal(data, contentB) {
+		t.Fatalf("并发覆盖写后内容必须是二者之一(不得出现拼接/损坏的中间态), got %q", data)
+	}
+
+	entries, derr := os.ReadDir(root)
+	if derr != nil {
+		t.Fatalf("ReadDir 失败: %v", derr)
+	}
+	if len(entries) != 1 || entries[0].Name() != "a.txt" {
+		t.Fatalf("并发覆盖写后目录应只剩目标文件,不得残留任何临时文件, got entries: %v", entries)
 	}
 }

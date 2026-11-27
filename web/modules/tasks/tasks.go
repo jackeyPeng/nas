@@ -371,6 +371,26 @@ func FindPendingJob(kind, scopeRel string) (Job, bool) {
 func UpdateJobStatus(id string, to Status, errText string) error {
 	dbMu.Lock()
 	defer dbMu.Unlock()
+	return updateJobStatusLocked(id, to, errText, nil)
+}
+
+// resultUpdate 携带 FinishJob 要随状态迁移一并落库的 result_json；nil 表示
+// 本次迁移不touch该列（UpdateJobStatus 的既有语义不变）。用指针区分
+// "不写这一列" 和 "写成空字符串"，避免跟 FinishJob 的空 resultJSON 短路
+// 语义混淆。
+type resultUpdate struct {
+	json string
+}
+
+// updateJobStatusLocked 是 UpdateJobStatus/FinishJob 共用的落库实现，必须
+// 在已持有 dbMu 的前提下调用。resultJSON 非 nil 时，status 与
+// result_json 在同一条 UPDATE 语句里原子落库——这是 F1 Task 4
+// Step 1 定位到的 flaky 根因的修复点：旧实现把"迁状态"和"写 result"
+// 拆成两次独立加锁的 db.Exec，两次之间释放了 dbMu，窗口内任何
+// GetJob 都可能读到 status=done 但 result_json="" 的中间态（高负载下
+// 轮询间隔覆盖到该窗口即复现：kinds_dedupe_test.go 的 Result JSON 解析
+// 失败）。合并为单条语句、单次加锁后，这个中间态不再可观察。
+func updateJobStatusLocked(id string, to Status, errText string, result *resultUpdate) error {
 	if db == nil {
 		return fmt.Errorf("tasks: 未初始化")
 	}
@@ -396,6 +416,12 @@ func UpdateJobStatus(id string, to Status, errText string) error {
 		_, err := db.Exec(`UPDATE jobs SET status = ?, error = ? WHERE id = ?`, string(to), errText, id)
 		return err
 	case StatusDone, StatusFailed, StatusCancelled:
+		if result != nil {
+			_, err := db.Exec(
+				`UPDATE jobs SET status = ?, error = ?, finished_at = ?, result_json = ? WHERE id = ?`,
+				string(to), errText, formatTime(now), result.json, id)
+			return err
+		}
 		_, err := db.Exec(`UPDATE jobs SET status = ?, error = ?, finished_at = ? WHERE id = ?`,
 			string(to), errText, formatTime(now), id)
 		return err
@@ -542,24 +568,22 @@ func loadCountersLocked(id string) map[string]int64 {
 }
 
 // FinishJob 落终态（done/failed/cancelled）并记录 result/error，走状态机
-// 校验（非法迁移如 pending_confirm -> done 会被拒绝）。
+// 校验（非法迁移如 pending_confirm -> done 会被拒绝）。resultJSON 非空时
+// 与状态迁移在同一条 UPDATE 语句、同一次加锁内原子落库（见
+// updateJobStatusLocked 注释——旧实现拆成两次独立加锁写入，中间有窗口
+// 让并发读者看到 status=done 但 result_json="" 的中间态，高负载下
+// 轮询能命中该窗口，是 TestPhotoDedupeExecutionChainMovesToRecycleAnd
+// ReportsResult 等用例偶发 flaky 的根因）。
 func FinishJob(id string, resultJSON, errText string, status Status) error {
 	if status != StatusDone && status != StatusFailed && status != StatusCancelled {
 		return fmt.Errorf("FinishJob 只接受终态, got %s", status)
 	}
-	if err := UpdateJobStatus(id, status, errText); err != nil {
-		return err
-	}
-	if resultJSON == "" {
-		return nil
-	}
 	dbMu.Lock()
 	defer dbMu.Unlock()
-	if db == nil {
-		return fmt.Errorf("tasks: 未初始化")
+	if resultJSON == "" {
+		return updateJobStatusLocked(id, status, errText, nil)
 	}
-	_, err := db.Exec(`UPDATE jobs SET result_json = ? WHERE id = ?`, resultJSON, id)
-	return err
+	return updateJobStatusLocked(id, status, errText, &resultUpdate{json: resultJSON})
 }
 
 // RegisterRoutes 注册 tasks 模块的 HTTP 路由。路由细节在 Task 2 的

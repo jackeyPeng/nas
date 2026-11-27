@@ -72,9 +72,35 @@ func alignPermsDecision(meta diskmgmt.FolderMeta, found bool, nasUser string) (f
 // mode/owner/group → chmod(必做) + 按需 chown(ownerName/groupName 非空才做)。
 // chmod 失败是硬错误(调用方需清理半成品并 500);chown 查不到系统用户时跳过,只记日志。
 func alignNewFilePerms(targetAbs string) error {
-	meta, found := ownerShareOfVia(targetAbs)
+	return alignFilePerms(targetAbs, targetAbs)
+}
+
+// alignFilePerms 是 alignNewFilePerms 的通用版本:policyPath 用于判定所属共享
+// (ownerShareOfVia 按路径前缀匹配 folders.db 元数据),inodePath 是实际执行
+// chmod/chown 的文件路径——两者可以不同。
+//
+// Bug 1 修复(覆盖写权限对齐时序):旧代码在 writePartToFileOverwrite 完成
+// os.Rename 之后才调用 alignNewFilePerms(targetAbs),即在"覆盖写已经把新
+// 内容原子替换上线"之后再对齐权限,这里有两个问题:
+//  1. rename 到 chmod/chown 完成之间,文件以 writePartToFileOverwrite 写入时
+//     的临时权限(覆盖写之前是硬编码 0666)对外可见——存在一个权限过松的
+//     时间窗口。
+//  2. 更严重的是,若这步 chmod/chown 失败,handleUpload 会 os.Remove(targetAbs)
+//     "清理"——但此时 targetAbs 已经是 rename 过去的新文件,原文件内容早已
+//     不存在于任何路径下。Remove 直接把刚覆盖进去的新数据也删了,新旧两份
+//     数据全部丢失,且找不回来(修复前的严重数据丢失 bug)。
+//
+// 现在 writePartToFileOverwrite 改为在 rename 之前,对还叫临时文件名的
+// inode 执行本函数(policyPath=targetAbs 做共享判定,inodePath=tmpPath 做
+// chmod/chown),失败时直接返回错误、只清理临时文件,原文件保持完全不动
+// (fail-closed:对齐权限做不到就不覆盖,不是"覆盖了但权限可能不对")。
+// rename 成功之后,新文件在被任何其他请求看到之前权限已经是最终正确值,
+// 不存在中间态窗口;handleUpload 里 rename 之后不再需要、也不再调用
+// alignNewFilePerms,避免重新引入上述删除已替换文件的路径。
+func alignFilePerms(policyPath, inodePath string) error {
+	meta, found := ownerShareOfVia(policyPath)
 	mode, ownerName, groupName := alignPermsDecision(meta, found, common.GetNASUser())
-	if err := os.Chmod(targetAbs, mode); err != nil {
+	if err := os.Chmod(inodePath, mode); err != nil {
 		return err
 	}
 	if ownerName == "" && groupName == "" {
@@ -84,11 +110,11 @@ func alignNewFilePerms(targetAbs string) error {
 	gid, gidOK := lookupGID(groupName)
 	if !uidOK || !gidOK {
 		log.Printf("[FILEMGMT] 上传权限对齐跳过 chown(用户/组不存在): path=%s owner=%s group=%s",
-			targetAbs, ownerName, groupName)
+			inodePath, ownerName, groupName)
 		return nil
 	}
-	if err := os.Chown(targetAbs, uid, gid); err != nil {
-		log.Printf("[FILEMGMT] 上传权限对齐 chown 失败: path=%s err=%v", targetAbs, err)
+	if err := os.Chown(inodePath, uid, gid); err != nil {
+		log.Printf("[FILEMGMT] 上传权限对齐 chown 失败: path=%s err=%v", inodePath, err)
 	}
 	return nil
 }
@@ -336,10 +362,23 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if aerr := alignNewFilePerms(targetAbs); aerr != nil {
-			os.Remove(targetAbs)
-			http.Error(w, aerr.Error(), http.StatusInternalServerError)
-			return
+		// Bug 1 修复:覆盖写(overwrite=true)的权限对齐已经在 writePartToFile→
+		// writePartToFileOverwrite 内部、rename 之前针对临时文件完成——此处
+		// 不再重复对齐,更不能在失败时 os.Remove(targetAbs):rename 已经把
+		// 新内容原子替换上线,targetAbs 此时就是刚写入的新文件,Remove 会把
+		// 覆盖写的成果连同原文件一起删除,新旧数据全部丢失(此前的严重 bug,
+		// 详见 alignFilePerms 注释)。
+		//
+		// 非覆盖写(新建文件,O_EXCL 创建)不受影响:targetAbs 在这里必然是
+		// 本次请求自己创建的新文件(并发碰撞已被 fs.ErrExist 分支拦截并
+		// 提前 return),Remove 清理的是自己刚创建的半成品,不会波及任何
+		// 其他数据,维持原有行为。
+		if !overwrite {
+			if aerr := alignNewFilePerms(targetAbs); aerr != nil {
+				os.Remove(targetAbs)
+				http.Error(w, aerr.Error(), http.StatusInternalServerError)
+				return
+			}
 		}
 
 		written = append(written, cleaned)
@@ -380,24 +419,27 @@ func encodeJSONBody(w http.ResponseWriter, data interface{}) {
 }
 
 // writePartToFile 把 part 流式写入 targetAbs。overwrite=false 时用 O_EXCL 防止并发创建覆盖;
-// overwrite=true 时 O_TRUNC 截断写。返回写入字节数。
+// overwrite=true 时写入同目录临时文件,成功后原子 rename 覆盖目标。返回写入字节数。
 //
-// 清理责任收敛在本函数内部(Task 8 review Important#1 修订):
-//   - OpenFile 失败(含 O_EXCL 碰撞 EEXIST)→ 未落任何字节,直接返回错误,不做任何 Remove。
-//     EEXIST 时目标文件非本函数所建(并发方已创建),调用方(handler)不得 Remove 它。
-//   - OpenFile 成功后 CopyBuffer 失败 → 本函数内部自清半成品:f.Close() 后 os.Remove(targetAbs),
-//     再返回原始 copy 错误(此时文件确为本函数所建,清理是安全的)。
+// 清理责任收敛在本函数内部(Task 8 review Important#1 修订;覆盖写路径修订见下):
+//   - overwrite=false:OpenFile 失败(含 O_EXCL 碰撞 EEXIST)→ 未落任何字节,直接返回错误,
+//     不做任何 Remove。EEXIST 时目标文件非本函数所建(并发方已创建),调用方(handler)
+//     不得 Remove 它。OpenFile 成功后 CopyBuffer/Close 失败 → 本函数内部自清半成品:
+//     os.Remove(targetAbs),此时文件确为本函数所建,清理是安全的。
+//   - overwrite=true:不再直接 O_TRUNC 目标文件——中途失败会截断/删除原文件,造成用户数据
+//     不可恢复丢失。改为在同目录创建临时文件、写满后 Close、再 os.Rename 原子覆盖目标;
+//     rename 前原文件始终完整未动,写入/Close 失败只清理临时文件,原文件保持原样。
+//     同目录是为了保证 rename 在同一文件系统内(POSIX 原子性前提),不能用 os.TempDir()。
 func isMaxBytesError(err error) bool {
 	var maxErr *http.MaxBytesError
 	return errors.As(err, &maxErr)
 }
 
 func writePartToFile(targetAbs string, part io.Reader, buf []byte, overwrite bool) (int64, error) {
-	flags := os.O_WRONLY | os.O_CREATE | os.O_EXCL
 	if overwrite {
-		flags = os.O_WRONLY | os.O_CREATE | os.O_TRUNC
+		return writePartToFileOverwrite(targetAbs, part, buf)
 	}
-	f, err := os.OpenFile(targetAbs, flags, 0666)
+	f, err := os.OpenFile(targetAbs, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0666)
 	if err != nil {
 		return 0, err
 	}
@@ -410,6 +452,48 @@ func writePartToFile(targetAbs string, part io.Reader, buf []byte, overwrite boo
 	if cerr := f.Close(); cerr != nil {
 		os.Remove(targetAbs)
 		return n, cerr
+	}
+	return n, nil
+}
+
+// writePartToFileOverwrite 实现 overwrite=true 路径:同目录临时文件写满 + 原子 rename。
+// 任何失败路径都只清理临时文件,从不触碰/删除 targetAbs 原有内容。
+func writePartToFileOverwrite(targetAbs string, part io.Reader, buf []byte) (int64, error) {
+	dir := filepath.Dir(targetAbs)
+	tmp, err := os.CreateTemp(dir, ".upload-tmp-*")
+	if err != nil {
+		return 0, err
+	}
+	tmpPath := tmp.Name()
+	// cleanup 在成功 rename 后会被跳过(见下方 success 分支显式 return)。
+	cleanup := func() { os.Remove(tmpPath) }
+
+	n, err := io.CopyBuffer(tmp, part, buf)
+	if err != nil {
+		tmp.Close()
+		cleanup()
+		return n, err
+	}
+	if cerr := tmp.Close(); cerr != nil {
+		cleanup()
+		return n, cerr
+	}
+	// Bug 1 修复:权限/属主对齐必须在 rename 之前、针对临时文件执行,原因见
+	// alignFilePerms 的注释——rename 之后再对齐,中间有权限过松的可见窗口,
+	// 且失败时调用方若 Remove(targetAbs) 会删掉刚替换上线的新文件,新旧数据
+	// 一起丢失。os.CreateTemp 创建的临时文件默认 0600 且属主是运行面板的
+	// 进程用户,在对齐完成前既不会比最终策略更松,也不会暴露给其他本地用户,
+	// 不存在旧实现"先 chmod 0666 再 rename"那样的宽权限窗口。
+	// policyPath 传 targetAbs(按最终落地路径判断所属共享/应用策略),
+	// inodePath 传 tmpPath(实际执行 chmod/chown 的文件)。
+	if aerr := alignFilePerms(targetAbs, tmpPath); aerr != nil {
+		cleanup()
+		return n, aerr
+	}
+	if rerr := os.Rename(tmpPath, targetAbs); rerr != nil {
+		// rename 失败:原文件(targetAbs)完全没被触碰,只清理临时文件。
+		cleanup()
+		return n, rerr
 	}
 	return n, nil
 }

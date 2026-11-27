@@ -142,12 +142,22 @@ func handleImportPool(w http.ResponseWriter, r *http.Request) {
 	// 6. 重建共享文件夹元数据（目录扫描，不新建目录）
 	rebuildFoldersFromDisk(mountPoint)
 
-	// 7. 重生成 SMB/NFS 托管配置
-	SyncAllConfigs()
+	// 7. 重生成 SMB/NFS 托管配置——Bug 3 修复：此前返回的 error 被直接丢弃，
+	// 导入响应永远报告"存储池已导入并挂载到..."成功，即便 Samba/NFS 配置
+	// 实际没有同步成功（托管共享对这个新导入的池还是不可见/不可写）。改为
+	// 与上面 fstabWarning 同款模式，汇入响应的 warning 字段，不中止/不回滚
+	// 已完成的挂载（导入本身是非破坏性操作，这点与 fstabWarning 的注释一致）。
+	syncWarning := ""
+	if err := syncAllConfigsFn(); err != nil {
+		syncWarning = "挂载成功，但同步 Samba/NFS 托管配置失败（共享可能暂不可见）: " + err.Error()
+	}
 
 	auditDetail := "vg=" + vgName
 	if fstabWarning != "" {
 		auditDetail += " warning=" + fstabWarning
+	}
+	if syncWarning != "" {
+		auditDetail += " warning=" + syncWarning
 	}
 	common.LogAuditRequest(r, "STORAGE", "导入存储池", auditDetail, "success")
 	common.EmitEvent("storage", common.EventSuccess, "storage.pool_imported",
@@ -158,8 +168,19 @@ func handleImportPool(w http.ResponseWriter, r *http.Request) {
 		"vg_name":    vgName,
 		"mountpoint": mountPoint,
 	}
-	if fstabWarning != "" {
-		resp["warning"] = fstabWarning
+	// 两个 warning 都可能同时存在（fstab 持久化失败 + 配置同步失败互相独立），
+	// 拼成一个字符串字段返回，与既有响应结构（仅一个 warning 键）保持一致，
+	// 前端已有的"存在 warning 字段就弹提示"逻辑不用为新增字段单独改。
+	combinedWarning := fstabWarning
+	if syncWarning != "" {
+		if combinedWarning != "" {
+			combinedWarning += "；" + syncWarning
+		} else {
+			combinedWarning = syncWarning
+		}
+	}
+	if combinedWarning != "" {
+		resp["warning"] = combinedWarning
 	}
 	common.JSONResponse(w, resp)
 }
