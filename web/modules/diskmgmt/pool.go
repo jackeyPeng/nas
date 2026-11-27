@@ -177,7 +177,7 @@ func handlePoolCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// 白名单校验：设备列表逐个过 /dev/ 块设备白名单（加固轮1 #1）
-	devices, err := common.ValidateBlockDeviceList(devicesStr)
+	devices, err := validateBlockDeviceListFn(devicesStr)
 	if err != nil {
 		jsonError(w, err.Error(), http.StatusBadRequest)
 		return
@@ -209,7 +209,7 @@ func handlePoolCreate(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, fmt.Sprintf("不允许使用系统盘 %s", dev), http.StatusBadRequest)
 			return
 		}
-		out, err := common.SudoExec("/usr/sbin/pvcreate", "-f", dev)
+		out, err := sudoExecFn("/usr/sbin/pvcreate", "-f", dev)
 		if err != nil {
 			jsonError(w, fmt.Sprintf("pvcreate 失败: %s", out), http.StatusInternalServerError)
 			return
@@ -219,7 +219,7 @@ func handlePoolCreate(w http.ResponseWriter, r *http.Request) {
 
 	// 2. vgcreate
 	vgArgs := append([]string{"-f", vgName}, devices...)
-	out, err := common.SudoExec("/usr/sbin/vgcreate", vgArgs...)
+	out, err := sudoExecFn("/usr/sbin/vgcreate", vgArgs...)
 	if err != nil {
 		jsonError(w, fmt.Sprintf("vgcreate 失败: %s", out), http.StatusInternalServerError)
 		return
@@ -227,7 +227,7 @@ func handlePoolCreate(w http.ResponseWriter, r *http.Request) {
 	steps = append(steps, "vgcreate "+vgName+" ("+devicesStr+")")
 
 	// 3. lvcreate
-	out, err = common.SudoExec("/usr/sbin/lvcreate", "-y", "-l", "100%FREE", "-n", lvName, vgName)
+	out, err = sudoExecFn("/usr/sbin/lvcreate", "-y", "-l", "100%FREE", "-n", lvName, vgName)
 	if err != nil {
 		jsonError(w, fmt.Sprintf("lvcreate 失败: %s", out), http.StatusInternalServerError)
 		return
@@ -242,7 +242,7 @@ func handlePoolCreate(w http.ResponseWriter, r *http.Request) {
 		mkfsArgs = []string{"-f"}
 	}
 	mkfsArgs = append(mkfsArgs, lvPath)
-	out, err = common.SudoExec(mkfsCmd, mkfsArgs...)
+	out, err = sudoExecFn(mkfsCmd, mkfsArgs...)
 	if err != nil {
 		jsonError(w, fmt.Sprintf("格式化失败: %s", out), http.StatusInternalServerError)
 		return
@@ -250,21 +250,36 @@ func handlePoolCreate(w http.ResponseWriter, r *http.Request) {
 	steps = append(steps, "格式化 "+lvPath+" 为 "+fstype)
 
 	// 5. mkdir
+	// Item 4 修复：此前 mkdir 失败被直接丢弃，挂载点目录可能不存在，但流程
+	// 继续往下走 mount/chown，产生更难定位的失败或者"挂载"到了错误的已有
+	// 目录上。mkdir 失败必须中止，不能带着不确定的目录状态继续。
 	if mountPoint != "/data" {
-		common.SudoExec("mkdir", "-p", mountPoint)
+		if out, err := sudoExecFn("mkdir", "-p", mountPoint); err != nil {
+			jsonError(w, fmt.Sprintf("创建挂载点目录失败: %s: %v", out, err), http.StatusInternalServerError)
+			return
+		}
 		steps = append(steps, "创建目录 "+mountPoint)
 	}
 
 	// 6. mount
+	// Item 4 修复：mount 失败此前同样被丢弃，后续 fstab/chown 会在一个空
+	// 目录（而不是真正挂载的 LV）上操作，之后的权限设置/后续写入实际落在
+	// 底层磁盘而非 LV 上。mount 失败必须中止。
+	var mountOut string
+	var mountErr error
 	if fstype == "xfs" {
-		common.SudoExec("mount", "-o", "prjquota", lvPath, mountPoint)
+		mountOut, mountErr = sudoExecFn("mount", "-o", "prjquota", lvPath, mountPoint)
 	} else {
-		common.SudoExec("mount", lvPath, mountPoint)
+		mountOut, mountErr = sudoExecFn("mount", lvPath, mountPoint)
+	}
+	if mountErr != nil {
+		jsonError(w, fmt.Sprintf("挂载失败: %s: %v", mountOut, mountErr), http.StatusInternalServerError)
+		return
 	}
 	steps = append(steps, "挂载 "+lvPath+" → "+mountPoint)
 
 	// 7. fstab — blkid 读超级块需 root，必须走 sudo；失败显式返回（S1-R3c）
-	uuidOut, _ := common.SudoOutput("blkid", "-s", "UUID", "-o", "value", lvPath)
+	uuidOut, _ := sudoOutputFn("blkid", "-s", "UUID", "-o", "value", lvPath)
 	uuid := strings.TrimSpace(uuidOut)
 	if err := writeFstab(uuid, mountPoint, fstype); err != nil {
 		jsonError(w, fmt.Sprintf("写入 fstab 失败: %s", err.Error()), http.StatusInternalServerError)
@@ -272,12 +287,22 @@ func handlePoolCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	steps = append(steps, "写入 fstab (UUID="+uuid+")")
 
-	// 8. chown
+	// 8. 创建 public/home 结构并设置权限
+	// Item 1/4 修复：此前直接对整个 mountPoint 做 chown -R，mountPoint 可以
+	// 是 /data 本身（上面的校验只要求以 /data 开头，默认值就是 /data）——
+	// 对 /data 做递归 chown 会连带改写该目录下所有已存在、与本次建池无关的
+	// 其他池/文件的属主，波及范围不可控。改用 stream.go 建池流程统一使用的
+	// EnsurePoolStructure：只对它自己创建的 public/、<nasUser>/ 子目录做
+	// 精确的非递归范围 chown -R，不触碰 mountPoint 下任何其他既有内容；同时
+	// 补齐 folders.db 元数据与 Samba/NFS 托管配置，与向导建池路径行为一致。
 	nasUser := common.GetNASUser()
 	if nasUser == "" {
 		nasUser = "root"
 	}
-	common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountPoint)
+	if err := EnsurePoolStructure(mountPoint, nasUser); err != nil {
+		jsonError(w, fmt.Sprintf("创建目录结构失败: %v", err), http.StatusInternalServerError)
+		return
+	}
 	steps = append(steps, "设置权限 "+nasUser)
 
 	system.ScheduleRegistryRefresh()
@@ -540,6 +565,15 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 	// findmnt 查不到挂载点，只有 UUID 行能命中残留的 fstab 条目）。采集失败（空值）
 	// 的条目在 filterFstabForDeletedPool 内部会被跳过，不阻断删除流程。
 	var deletedUUIDs []string
+	// Requirement 2（持久化恢复，验收复查后收紧）：跨 switch 分支共享，
+	// 记录本次删除在 pool_delete_recovery 表中的行 ID，0 表示尚未建立。
+	// 【重要】这个函数自己不再清除该记录——无论最终是完全成功、部分
+	// 失败还是配置清理失败，记录都保留到数据库里，直到管理员通过
+	// /api/disk/pool/delete/recovery/confirm 显式确认之后才会被清除。
+	// 理由：HTTP 响应"已经写出"不等于"客户端已经收到"（连接可能已断、
+	// 代理可能已超时放弃），拿这个信号自动做出不可逆的清除决定本身就是
+	// 不可靠的。参见 pool_delete_recovery.go 顶部注释第 2 点。
+	var recoveryID int64
 
 	switch poolType {
 	case "lvm":
@@ -590,6 +624,19 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// Requirement 2（持久化恢复）：在第一条不可逆命令（lvremove/vgremove）
+		// 之前，把本次删除涉及的全部成员 PV 落盘记录。写入失败说明持久化
+		// 不可靠，必须 fail-closed 拒绝删除——不能在"连恢复记录都保存不了"
+		// 的前提下执行不可逆操作（否则崩溃后没有任何落盘信息可供恢复，
+		// 等同于完全没有实现这个要求）。
+		var recErr error
+		recoveryID, recErr = recordPoolDeleteStart(poolType, poolDevice, poolName, memberPVs)
+		if recErr != nil {
+			common.LogAuditRequest(r, "STORAGE", "删除存储池", fmt.Sprintf("type=%s device=%s name=%s rejected=无法建立持久化恢复记录: %s", poolType, poolDevice, poolName, recErr.Error()), "rejected")
+			jsonError(w, fmt.Sprintf("无法建立持久化恢复记录，为安全起见拒绝删除（避免崩溃后无法识别残留设备): %s", recErr.Error()), http.StatusInternalServerError)
+			return
+		}
+
 		// 2. Find and unmount all LVs in this VG，然后 lvremove
 		// Bug 2 修复：此前 umount/lvremove/vgremove/pvremove/wipefs 全部忽略返回的
 		// error，任一条失败（如设备忙、权限问题）都会被当成功继续执行后续破坏性
@@ -637,19 +684,68 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		steps = append(steps, "删除 VG "+vgName)
+		// vgremove 是本分支的第一条不可逆命令，越过后更新恢复记录阶段。
+		// 【验收复查收紧】此前更新失败只追加一条警告继续往下执行
+		// pvremove/wipefs——但阶段更新失败说明持久化记录已经不可信，
+		// 继续执行更多不可逆命令只会让"记录与实际状态的落差"进一步
+		// 扩大。现在一旦阶段更新失败，立即停止，不再执行任何后续的
+		// pvremove/wipefs；已经执行的 vgremove 不可撤销，但接下来的
+		// 破坏性操作全部停止，恢复记录原样保留供人工核实。
+		if phaseErr := updatePoolDeletePhase(recoveryID, "vg_removed"); phaseErr != nil {
+			common.LogAuditRequest(r, "STORAGE", "删除存储池", fmt.Sprintf("type=%s device=%s name=%s vg_already_removed=true phase_update_failed=%s", poolType, poolDevice, poolName, phaseErr.Error()), "partial_failure")
+			jsonError(w, fmt.Sprintf(
+				"卷组 %s 已删除，但更新持久化恢复记录阶段失败，为安全起见中止后续物理卷清理（已完成步骤: %s）。记录已保留，请人工核实并通过恢复确认接口处理: %s",
+				vgName, strings.Join(steps, "; "), phaseErr.Error(),
+			), http.StatusInternalServerError)
+			return
+		}
 		// 4. Remove PVs — 用闸门前存下的成员列表
+		//
+		// issue #6（部分失败恢复性）：VG 一旦被删，buildStorageOverview 就再也
+		// 看不到这个池了——下面这个循环如果像之前那样"任一 PV 失败就立即中止"，
+		// 后面还没处理的 PV 会被永久放弃：没有池实体可以重试删除，用户也不知道
+		// 具体是哪几块盘残留了 LVM2_member 签名（幽灵盘，裸机复接后以旧池身份
+		// 复现）。这个系统目前没有持久化的池状态（overview 全部来自实时查询），
+		// 在不引入新状态存储的前提下做不到"可恢复的部分失败"，所以改为保守的
+		// 补救策略：VG 已经不可挽回地删除后，继续尝试每一个成员 PV 的
+		// pvremove+wipefs，不因单个失败而放弃其余的，最后把所有失败的设备
+		// 明确列出来，让用户知道具体要去手工处理哪些盘（而不是一句"中止删除"
+		// 让人以为还有池可以重试）。
+		var pvFailures []string
+		var pvCleaned []string
 		for _, pvName := range memberPVs {
-			if strings.HasPrefix(pvName, "/dev/") {
-				if _, err := sudoExecFn("/usr/sbin/pvremove", "-f", pvName); err != nil {
-					jsonError(w, fmt.Sprintf("释放 PV %s 失败，为安全起见中止删除（已完成步骤: %s): %s", pvName, strings.Join(steps, "; "), err.Error()), http.StatusInternalServerError)
-					return
-				}
-				if _, err := sudoExecFn("/usr/sbin/wipefs", "-a", pvName); err != nil {
-					jsonError(w, fmt.Sprintf("清除 %s 签名失败，为安全起见中止删除（已完成步骤: %s): %s", pvName, strings.Join(steps, "; "), err.Error()), http.StatusInternalServerError)
-					return
-				}
-				steps = append(steps, "释放 "+pvName)
+			if !strings.HasPrefix(pvName, "/dev/") {
+				continue
 			}
+			if _, err := sudoExecFn("/usr/sbin/pvremove", "-f", pvName); err != nil {
+				pvFailures = append(pvFailures, fmt.Sprintf("%s(pvremove: %s)", pvName, err.Error()))
+				continue
+			}
+			if _, err := sudoExecFn("/usr/sbin/wipefs", "-a", pvName); err != nil {
+				pvFailures = append(pvFailures, fmt.Sprintf("%s(wipefs: %s)", pvName, err.Error()))
+				continue
+			}
+			pvCleaned = append(pvCleaned, pvName)
+			steps = append(steps, "释放 "+pvName)
+		}
+		if len(pvFailures) > 0 {
+			common.LogAuditRequest(r, "STORAGE", "删除存储池", fmt.Sprintf("type=%s device=%s name=%s vg_already_removed=true pv_failures=%s", poolType, poolDevice, poolName, strings.Join(pvFailures, ", ")), "partial_failure")
+			// 具体残留设备清单经由下面的响应体交付给调用方。【验收复查收紧】
+			// 不再自动清除持久化恢复记录——HTTP 响应"已写出"不等于客户端
+			// 已经收到；记录原样保留，只能由管理员核实磁盘层面状态之后，
+			// 通过 /api/disk/pool/delete/recovery/confirm 显式清除。
+			jsonError(w, fmt.Sprintf(
+				"卷组 %s 已删除，但以下物理卷未能完全释放，请手动处理（否则重新插入/组装时可能以残留 LVM 签名复现）: %s；已成功释放: %s。持久化恢复记录已保留（id=%d），核实处理完毕后请通过恢复确认接口清除",
+				vgName, strings.Join(pvFailures, "; "), strings.Join(pvCleaned, ", "), recoveryID,
+			), http.StatusInternalServerError)
+			return
+		}
+		// 【验收复查收紧】pv_cleaned 是本分支最后一个阶段标记，所有破坏性
+		// 命令在此之前已经全部执行完毕，阶段更新失败不会再引出进一步的
+		// 破坏性操作——但依然不能悄悄吞掉，必须如实计入 steps，让管理员
+		// 知道恢复记录的 Phase 字段可能与实际不一致。
+		if phaseErr := updatePoolDeletePhase(recoveryID, "pv_cleaned"); phaseErr != nil {
+			steps = append(steps, "警告: "+phaseErr.Error())
 		}
 
 	case "raid1", "raid0", "raid5", "raid6":
@@ -674,6 +770,16 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 		if dev, hit := anySystemDisk(memberDisks, isSystemDisk); hit {
 			common.LogAuditRequest(r, "STORAGE", "删除存储池", fmt.Sprintf("type=%s device=%s name=%s rejected=成员盘%s是系统盘", poolType, poolDevice, poolName, dev), "rejected")
 			jsonError(w, fmt.Sprintf("拒绝删除：阵列成员 %s 是系统盘", dev), http.StatusConflict)
+			return
+		}
+
+		// Requirement 2（持久化恢复）：同 lvm 分支，在第一条不可逆命令
+		// （mdadm --stop）之前落盘记录本次删除涉及的全部成员盘。
+		var recErr error
+		recoveryID, recErr = recordPoolDeleteStart(poolType, poolDevice, poolName, memberDisks)
+		if recErr != nil {
+			common.LogAuditRequest(r, "STORAGE", "删除存储池", fmt.Sprintf("type=%s device=%s name=%s rejected=无法建立持久化恢复记录: %s", poolType, poolDevice, poolName, recErr.Error()), "rejected")
+			jsonError(w, fmt.Sprintf("无法建立持久化恢复记录，为安全起见拒绝删除（避免崩溃后无法识别残留设备): %s", recErr.Error()), http.StatusInternalServerError)
 			return
 		}
 
@@ -711,17 +817,57 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		steps = append(steps, "停止 "+poolDevice)
+		// mdadm --stop 是本分支的第一条不可逆命令，越过后更新恢复记录阶段。
+		// 【验收复查收紧】与 lvm 分支的 vg_removed 同理：更新失败说明持久化
+		// 记录已经不可信，必须立即停止，不再执行后续的 zero-superblock/
+		// wipefs（否则记录与实际状态的落差会进一步扩大）。已经执行的
+		// --stop 不可撤销，但接下来的破坏性操作全部停止，记录原样保留。
+		if phaseErr := updatePoolDeletePhase(recoveryID, "array_stopped"); phaseErr != nil {
+			common.LogAuditRequest(r, "STORAGE", "删除存储池", fmt.Sprintf("type=%s device=%s name=%s array_already_stopped=true phase_update_failed=%s", poolType, poolDevice, poolName, phaseErr.Error()), "partial_failure")
+			jsonError(w, fmt.Sprintf(
+				"阵列 %s 已停止，但更新持久化恢复记录阶段失败，为安全起见中止后续成员盘清理（已完成步骤: %s）。记录已保留，请人工核实并通过恢复确认接口处理: %s",
+				poolDevice, strings.Join(steps, "; "), phaseErr.Error(),
+			), http.StatusInternalServerError)
+			return
+		}
 		// 4. Zero superblocks only on THIS array's member disks
+		//
+		// issue #6：同 lvm 分支——mdadm --stop 已经执行且不可逆，阵列设备节点
+		// 已经消失，buildStorageOverview 不会再识别出这个池。下面如果任一成员盘
+		// 失败就中止，后面的盘会被永久放弃且无池实体可重试。改为补救策略：
+		// 继续处理每一块成员盘，收集失败项，最后完整列出哪些盘残留了 RAID
+		// 超级块需要手工处理。
+		var diskFailures []string
+		var diskCleaned []string
 		for _, disk := range memberDisks {
 			if _, err := sudoExecFn("/usr/sbin/mdadm", "--zero-superblock", disk); err != nil {
-				jsonError(w, fmt.Sprintf("清除 %s 的 RAID 超级块失败，为安全起见中止删除（已完成步骤: %s): %s", disk, strings.Join(steps, "; "), err.Error()), http.StatusInternalServerError)
-				return
+				diskFailures = append(diskFailures, fmt.Sprintf("%s(zero-superblock: %s)", disk, err.Error()))
+				continue
 			}
 			if _, err := sudoExecFn("/usr/sbin/wipefs", "-a", disk); err != nil {
-				jsonError(w, fmt.Sprintf("清除 %s 签名失败，为安全起见中止删除（已完成步骤: %s): %s", disk, strings.Join(steps, "; "), err.Error()), http.StatusInternalServerError)
-				return
+				diskFailures = append(diskFailures, fmt.Sprintf("%s(wipefs: %s)", disk, err.Error()))
+				continue
 			}
+			diskCleaned = append(diskCleaned, disk)
 			steps = append(steps, "释放 "+disk)
+		}
+		if len(diskFailures) > 0 {
+			common.LogAuditRequest(r, "STORAGE", "删除存储池", fmt.Sprintf("type=%s device=%s name=%s array_already_stopped=true disk_failures=%s", poolType, poolDevice, poolName, strings.Join(diskFailures, ", ")), "partial_failure")
+			// 具体残留设备清单经由下面的响应体交付给调用方。【验收复查收紧】
+			// 不再自动清除持久化恢复记录——HTTP 响应"已写出"不等于客户端
+			// 已经收到；记录原样保留，只能由管理员核实磁盘层面状态之后，
+			// 通过 /api/disk/pool/delete/recovery/confirm 显式清除。
+			jsonError(w, fmt.Sprintf(
+				"阵列 %s 已停止，但以下成员盘未能完全清除签名，请手动处理（否则重新组装时可能残留 RAID 超级块复现）: %s；已成功释放: %s。持久化恢复记录已保留（id=%d），核实处理完毕后请通过恢复确认接口清除",
+				poolDevice, strings.Join(diskFailures, "; "), strings.Join(diskCleaned, ", "), recoveryID,
+			), http.StatusInternalServerError)
+			return
+		}
+		// disks_cleaned 之后仅剩 mdadm.conf 的 ARRAY 行清理（配置层面，非
+		// 破坏性磁盘命令），阶段更新失败不会再引出进一步的破坏性操作——
+		// 但依然不能悄悄吞掉，如实计入 steps。
+		if phaseErr := updatePoolDeletePhase(recoveryID, "disks_cleaned"); phaseErr != nil {
+			steps = append(steps, "警告: "+phaseErr.Error())
 		}
 		// 5. 清理 mdadm.conf 里该阵列的 ARRAY 行（E8：此前这条分支从不清理，
 		// 删池成功后 conf 仍留被删阵列的行；重建新池后旧 UUID+新 UUID 两条
@@ -776,11 +922,36 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 				deletedUUIDs = append(deletedUUIDs, uuid)
 			}
 		}
+		// Requirement 2（持久化恢复）：wipefs 是本分支唯一且不可逆的命令，
+		// 执行之前落盘记录（此分支只有一个"成员"即 poolDevice 本身）。
+		var recErr error
+		recoveryID, recErr = recordPoolDeleteStart(poolType, poolDevice, poolName, []string{poolDevice})
+		if recErr != nil {
+			common.LogAuditRequest(r, "STORAGE", "删除存储池", fmt.Sprintf("type=%s device=%s name=%s rejected=无法建立持久化恢复记录: %s", poolType, poolDevice, poolName, recErr.Error()), "rejected")
+			jsonError(w, fmt.Sprintf("无法建立持久化恢复记录，为安全起见拒绝删除（避免崩溃后无法识别残留设备): %s", recErr.Error()), http.StatusInternalServerError)
+			return
+		}
 		if _, err := sudoExecFn("/usr/sbin/wipefs", "-a", poolDevice); err != nil {
-			jsonError(w, fmt.Sprintf("清除 %s 签名失败，为安全起见中止删除（已完成步骤: %s): %s", poolDevice, strings.Join(steps, "; "), err.Error()), http.StatusInternalServerError)
+			// wipefs 本身失败：该设备尚未越过任何不可逆步骤。【验收复查收紧】
+			// 此前认为"没有不可逆操作发生，记录可以放心清除"，但这个判断本身
+			// 依赖"wipefs 返回非零就等于设备完全没被动过"——sudoExecFn 失败
+			// 可能发生在 wipefs 已经部分写入之后（例如写到一半被信号中断、
+			// I/O 错误发生在多个签名区域中的某一个之后），不能笼统当作"全无
+			// 影响"处理。为保持行为一致、避免任何需要重新论证的特殊豁免，
+			// 这里同样保留恢复记录，交由管理员核实设备实际状态后通过恢复
+			// 确认接口清除，而不是由本函数自动判定"这次失败无需保留记录"。
+			jsonError(w, fmt.Sprintf(
+				"清除 %s 签名失败，为安全起见中止删除（已完成步骤: %s): %s。持久化恢复记录已保留（id=%d），核实设备实际状态后请通过恢复确认接口处理",
+				poolDevice, strings.Join(steps, "; "), err.Error(), recoveryID,
+			), http.StatusInternalServerError)
 			return
 		}
 		steps = append(steps, "释放 "+poolDevice)
+		// wiped 是本分支唯一且最后的破坏性步骤，阶段更新失败不会再引出
+		// 进一步破坏性操作，但依然不能悄悄吞掉，如实计入 steps。
+		if phaseErr := updatePoolDeletePhase(recoveryID, "wiped"); phaseErr != nil {
+			steps = append(steps, "警告: "+phaseErr.Error())
+		}
 
 	default:
 		jsonError(w, fmt.Sprintf("未知池类型: %s", poolType), http.StatusBadRequest)
@@ -848,19 +1019,39 @@ func handlePoolDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	system.ScheduleRegistryRefresh()
+	// Requirement 2（修正）：写响应 ≠ 调用方收到响应。HTTP 写操作在网络层、
+	// 代理层、浏览器崩溃、人直接关掉终端等场景下都可能让响应体从未被人
+	// 实际看到——而这个函数到这里为止已经执行了不可逆的磁盘擦除/阵列拆除。
+	// 之前"写完响应就清除恢复记录"的逻辑等于假设响应一定送达，一旦假设
+	// 不成立（例如 handler 写完 200 后进程被杀 / 客户端早已断开 / 反代网关
+	// 超时丢弃了响应体），恢复记录被清掉而操作员对本次销毁动作一无所知，
+	// 失去了恢复记录本应提供的兜底。
+	//
+	// 修正后的规则：无论是下面的 207 部分成功还是 200 完全成功，恢复记录都
+	// 不在这里自动清除，而是保留到管理员通过专门的确认接口
+	// POST /api/disk/pool/delete/recovery/confirm（见 pool_delete_recovery.go
+	// 的 confirmPoolDeleteRecovery/handlePoolDeleteRecoveryConfirm）主动确认
+	// 已经核实过本次操作结果为止。该接口不执行任何擦除/阵列操作，只做
+	// 数据库记录的清除，因此让管理员晚一步手动确认不会带来额外的破坏性
+	// 风险，换来的是"记录是否还在"与"操作员是否已经看到并确认结果"严格
+	// 对应，不再依赖"响应写成功=信息已送达"这个不成立的假设。
 	if configCleanupFailed {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusMultiStatus)
 		common.JSONResponse(w, map[string]interface{}{
-			"message": fmt.Sprintf("存储池磁盘已拆除，但配置清理存在问题，请检查详情（共 %d 步）", len(steps)),
-			"steps":   steps,
-			"warning": true,
+			"message":     fmt.Sprintf("存储池磁盘已拆除，但配置清理存在问题，请检查详情（共 %d 步）", len(steps)),
+			"steps":       steps,
+			"warning":     true,
+			"recovery_id": recoveryID,
+			"note":        "恢复记录已保留，请核实本次操作结果后通过 /api/disk/pool/delete/recovery/confirm 手动确认清除",
 		})
 		return
 	}
 	common.JSONResponse(w, map[string]interface{}{
-		"message": fmt.Sprintf("存储池已删除，释放 %d 步", len(steps)),
-		"steps":   steps,
+		"message":     fmt.Sprintf("存储池已删除，释放 %d 步", len(steps)),
+		"steps":       steps,
+		"recovery_id": recoveryID,
+		"note":        "恢复记录已保留，请核实本次操作结果后通过 /api/disk/pool/delete/recovery/confirm 手动确认清除",
 	})
 }
 

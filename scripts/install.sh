@@ -267,7 +267,7 @@ APT_RC=0
 apt_retry $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq -o DPkg::Lock::Timeout=60 \
     curl samba nfs-kernel-server vsftpd rclone fail2ban ufw \
     smartmontools unattended-upgrades smbclient nfs-common \
-    xfsprogs parted mdadm lvm2 apache2-utils \
+    xfsprogs parted mdadm lvm2 apache2-utils acl attr \
     > "$APT_LOG" 2>&1 || APT_RC=$?
 kill $TIMER_PID 2>/dev/null || true; wait $TIMER_PID 2>/dev/null || true
 printf "\r    %-40s\r" ""

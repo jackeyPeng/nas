@@ -10,8 +10,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
+	"time"
 
 	"nas-panel/common"
 	"nas-panel/modules/diskmgmt"
@@ -464,13 +466,19 @@ func TestCopyTreeSymlinkNotFollowed(t *testing.T) {
 		t.Fatalf("建符号链接失败: %v", err)
 	}
 
-	n, err := copyTree(src, dst)
+	records, err := copyTree(src, dst)
 	if err != nil {
 		t.Fatalf("copyTree err=%v", err)
 	}
-	// 只有 real.txt 的字节数被计入,符号链接不计字节。
-	if n != int64(len("real content")) {
-		t.Fatalf("copyTree 返回字节数=%d, want %d", n, len("real content"))
+	// 只有 real.txt 计入清单,符号链接不计入(不算字节、不记录 hash)。
+	if len(records) != 1 {
+		t.Fatalf("copyTree 返回记录数=%d, want 1", len(records))
+	}
+	if records[0].rel != "real.txt" {
+		t.Fatalf("copyTree 记录 rel=%q, want %q", records[0].rel, "real.txt")
+	}
+	if records[0].srcSize != int64(len("real content")) {
+		t.Fatalf("copyTree 记录字节数=%d, want %d", records[0].srcSize, len("real content"))
 	}
 	info, err := os.Lstat(filepath.Join(dst, "link.txt"))
 	if err != nil {
@@ -518,7 +526,10 @@ func TestSameFSStatFailureReturnsFalse(t *testing.T) {
 	}
 }
 
-// Test 9: moveCrossFS 字节校验——正常路径(内容一致 → 源被删、目标完整)。
+// Test 9(Item 1 验收修复后更新): moveCrossFS 字节校验——正常路径(内容一致
+// → 目标完整,且源必须保留,不再断言源被删除)。跨文件系统移动永不自动删源,
+// 校验通过只代表"目标内容已确认与源一致",调用方/用户需要手动核实后自行
+// 删除源——详见 moveCrossFS 函数头部注释。
 func TestMoveCrossFSNormalPath(t *testing.T) {
 	root := t.TempDir()
 	src := filepath.Join(root, "src")
@@ -528,11 +539,20 @@ func TestMoveCrossFSNormalPath(t *testing.T) {
 	os.MkdirAll(filepath.Join(src, "sub"), 0755)
 	os.WriteFile(filepath.Join(src, "sub", "b.txt"), []byte("world"), 0644)
 
-	if err := moveCrossFS(src, dst); err != nil {
+	result, err := moveCrossFS(src, dst)
+	if err != nil {
 		t.Fatalf("moveCrossFS err=%v", err)
 	}
-	if _, err := os.Stat(src); !os.IsNotExist(err) {
-		t.Fatalf("源应已被删除, stat err=%v", err)
+	if !result.SourceRetained {
+		t.Fatalf("moveCrossFS 校验通过时必须报告 SourceRetained=true")
+	}
+	// Item 1 核心断言:源必须原样保留,不能被删除——即使所有校验都通过。
+	if _, err := os.Lstat(src); err != nil {
+		t.Fatalf("源必须保留,不能被删除, stat err=%v", err)
+	}
+	srcA, err := os.ReadFile(filepath.Join(src, "a.txt"))
+	if err != nil || string(srcA) != "hello" {
+		t.Fatalf("源文件内容应保持不变, err=%v data=%q", err, srcA)
 	}
 	a, err := os.ReadFile(filepath.Join(dst, "a.txt"))
 	if err != nil || string(a) != "hello" {
@@ -552,13 +572,393 @@ func TestMoveCrossFSCopyTreeFailureKeepsSource(t *testing.T) {
 	src := filepath.Join(root, "src") // 不存在的源,copyTree 必然失败
 	dst := filepath.Join(root, "dst")
 
-	if err := moveCrossFS(src, dst); err == nil {
+	if _, err := moveCrossFS(src, dst); err == nil {
 		t.Fatalf("copyTree 失败时 moveCrossFS 应返回错误")
 	}
 	// "源保留" 对不存在的源而言即保持不存在、不被意外创建;
 	// 核心断言是 RemoveAll 分支绝不会被触发(err != nil 已覆盖该路径未执行到 RemoveAll)。
 	if _, err := os.Stat(src); !os.IsNotExist(err) {
 		t.Fatalf("源状态应保持原样(不存在), got err=%v", err)
+	}
+}
+
+// Item 6 回归(issue #2 修复后更新):moveCrossFS 并发修改检测——复制期间源被
+// 并发追加写导致事后重新 Lstat 的 mtime/size 与 copyTree 复制前记录的快照不一致
+// 时,必须返回错误、绝不删源(fail-closed)。用真实并发 goroutine 在 copyTree
+// 扫到大文件期间对已拷完的小文件追加内容来构造该窗口:WalkDir 按字典序遍历,
+// "a.txt" 先于 "big.bin" 被拷完,随后在 copyTree 仍在流式拷贝 big.bin 的过程中
+// 对 a.txt 追加字节,使得 a.txt 的 mtime/size 在复制完成后与复制前快照不同,
+// 从而确定性地触发 moveCrossFS 步骤 2 的并发修改检测分支。
+func TestMoveCrossFSConcurrentModificationDuringCopyKeepsSource(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "src")
+	dst := filepath.Join(root, "dst")
+	os.MkdirAll(src, 0755)
+
+	aPath := filepath.Join(src, "a.txt")
+	if err := os.WriteFile(aPath, []byte("original"), 0644); err != nil {
+		t.Fatalf("写 a.txt 失败: %v", err)
+	}
+
+	// big.bin 字典序排在 a.txt 之后,copyTree 复制它时耗时足够长,
+	// 给并发追加 a.txt 留出窗口。
+	bigPath := filepath.Join(src, "big.bin")
+	bigData := bytes.Repeat([]byte("x"), 64*1024*1024) // 64MB
+	if err := os.WriteFile(bigPath, bigData, 0644); err != nil {
+		t.Fatalf("写 big.bin 失败: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	stop := make(chan struct{})
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			f, err := os.OpenFile(aPath, os.O_WRONLY|os.O_APPEND, 0644)
+			if err == nil {
+				f.WriteString("+")
+				f.Close()
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}()
+
+	_, err := moveCrossFS(src, dst)
+	close(stop)
+	wg.Wait()
+
+	if err == nil {
+		t.Fatalf("源在复制期间被并发修改时 moveCrossFS 应返回校验失败错误,实际 err=nil")
+	}
+	if !strings.Contains(err.Error(), "并发修改") {
+		t.Fatalf("错误信息应指明源被并发修改, got: %v", err)
+	}
+	// 核心断言:fail-closed——源必须完整保留,绝不能被删除。
+	if _, serr := os.Stat(src); serr != nil {
+		t.Fatalf("校验失败时源必须保留, stat err=%v", serr)
+	}
+	data, rerr := os.ReadFile(aPath)
+	if rerr != nil {
+		t.Fatalf("源文件 a.txt 应仍可读: %v", rerr)
+	}
+	if !bytes.HasPrefix(data, []byte("original")) {
+		t.Fatalf("源文件内容应保留原始前缀, got %q", data)
+	}
+}
+
+// 本轮修复的核心场景:copyTree 用单次 WalkDir 遍历 src,只能捕获"遍历那
+// 一刻"的目录结构。如果 copyTree 已经遍历完 src(dst 已经是一份完整但
+// "过时"的复制),之后 src 又新增了一个 copyTree 从未见过的文件,旧逻辑
+// 的步骤 2/3 只回看 copyTree 记录过的 records,对这个新文件完全失明,
+// moveCrossFS 会在 dst 明显不完整的情况下返回成功。现在 moveCrossFS 自己
+// 的前置/后置快照比较应该捕获这类"copyTree 遍历窗口之外发生的新增",
+// 而不依赖测试代码外部去跟 copyTree 赛跑。
+//
+// 验证手法:先用 copyTree 模拟"遍历已完成"的状态,再往 src 里加一个
+// copyTree 从未见过的文件,然后调用 moveCrossFS(它会重新内部跑一遍
+// copyTree)。新文件在 moveCrossFS 内部第二次 copyTree 时其实会被复制到
+// dst(因为 b.txt 本来就在 src 里,这次遍历能看到),所以单靠"dst 缺文件"
+// 不能稳定复现洞——真正要验证的是 moveCrossFS 的前置快照(第一次拍照时
+// b.txt 还不存在)和后置快照(copyTree 跑完之后,b.txt 已经存在)之间的
+// 差异必须被捕获为失败,即使 copyTree 本身"碰巧"把它复制过去了。
+func TestDiffDirEntrySnapshotsDetectsNewFile(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "src")
+	os.MkdirAll(src, 0755)
+	if err := os.WriteFile(filepath.Join(src, "a.txt"), []byte("hello"), 0644); err != nil {
+		t.Fatalf("写 a.txt 失败: %v", err)
+	}
+
+	before, err := snapshotDirEntries(src)
+	if err != nil {
+		t.Fatalf("snapshotDirEntries(before) 失败: %v", err)
+	}
+
+	// 模拟 copyTree 遍历窗口之外发生的新增:一个 before 快照里不存在的文件。
+	if err := os.WriteFile(filepath.Join(src, "b.txt"), []byte("sneaky"), 0644); err != nil {
+		t.Fatalf("写 b.txt 失败: %v", err)
+	}
+
+	after, err := snapshotDirEntries(src)
+	if err != nil {
+		t.Fatalf("snapshotDirEntries(after) 失败: %v", err)
+	}
+
+	derr := diffDirEntrySnapshots(before, after)
+	if derr == nil {
+		t.Fatalf("GAP: 新增文件未被 diffDirEntrySnapshots 检测到")
+	}
+	if !strings.Contains(derr.Error(), "b.txt") {
+		t.Fatalf("错误信息应指明具体新增的路径, got: %v", derr)
+	}
+}
+
+// 端到端覆盖:用大文件拖长 copyTree 耗时,在复制窗口内对 src 新增一个
+// copyTree 本次遍历看不到的子目录(目录建在字典序更靠后、copyTree 已经
+// 遍历过的位置之后——用 src 根目录下新建空目录模拟,因为 WalkDir 对根的
+// 遍历发生在最开始,根目录下新增子项的时机天然晚于"根已被遍历"这一刻)。
+func TestMoveCrossFSNewEmptyDirAddedDuringCopyKeepsSource(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "src")
+	dst := filepath.Join(root, "dst")
+	os.MkdirAll(src, 0755)
+
+	// a.txt 先行,字典序排在 newdir 之前,不影响时序构造。
+	if err := os.WriteFile(filepath.Join(src, "a.txt"), []byte("original"), 0644); err != nil {
+		t.Fatalf("写 a.txt 失败: %v", err)
+	}
+	bigPath := filepath.Join(src, "zz_big.bin")
+	bigData := bytes.Repeat([]byte("x"), 64*1024*1024) // 64MB,拖长 copyTree 耗时
+	if err := os.WriteFile(bigPath, bigData, 0644); err != nil {
+		t.Fatalf("写 zz_big.bin 失败: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	stop := make(chan struct{})
+	added := make(chan struct{})
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		select {
+		case <-stop:
+			return
+		case <-time.After(5 * time.Millisecond):
+		}
+		os.MkdirAll(filepath.Join(src, "newdir"), 0755)
+		close(added)
+	}()
+
+	_, err := moveCrossFS(src, dst)
+	close(stop)
+	wg.Wait()
+	<-added // 确保目录确实已经建出,排除"根本没来得及加"的假阴性
+
+	if err == nil {
+		t.Fatalf("复制期间 src 新增空目录时 moveCrossFS 应返回失败,实际 err=nil")
+	}
+	// 核心断言:fail-closed——源必须完整保留(新目录也还在)。
+	if _, serr := os.Stat(filepath.Join(src, "newdir")); serr != nil {
+		t.Fatalf("源新增的目录应仍然保留: %v", serr)
+	}
+	if _, serr := os.Stat(filepath.Join(src, "a.txt")); serr != nil {
+		t.Fatalf("源原有文件应仍然保留: %v", serr)
+	}
+}
+
+// 覆盖符号链接目标在复制窗口内被篡改的场景:before 快照记的是旧目标,
+// after 快照记的是新目标,diffDirEntrySnapshots 必须能识别"同一相对路径,
+// 类型都是符号链接,但目标变了"这种情况(纯判断是否存在不够)。
+func TestDiffDirEntrySnapshotsDetectsSymlinkTargetChange(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "src")
+	os.MkdirAll(src, 0755)
+	os.WriteFile(filepath.Join(src, "real-a.txt"), []byte("a"), 0644)
+	os.WriteFile(filepath.Join(src, "real-b.txt"), []byte("b"), 0644)
+	linkPath := filepath.Join(src, "link.txt")
+	if err := os.Symlink("real-a.txt", linkPath); err != nil {
+		t.Fatalf("建符号链接失败: %v", err)
+	}
+
+	before, err := snapshotDirEntries(src)
+	if err != nil {
+		t.Fatalf("snapshotDirEntries(before) 失败: %v", err)
+	}
+
+	if err := os.Remove(linkPath); err != nil {
+		t.Fatalf("删旧链接失败: %v", err)
+	}
+	if err := os.Symlink("real-b.txt", linkPath); err != nil {
+		t.Fatalf("重建链接失败: %v", err)
+	}
+
+	after, err := snapshotDirEntries(src)
+	if err != nil {
+		t.Fatalf("snapshotDirEntries(after) 失败: %v", err)
+	}
+
+	derr := diffDirEntrySnapshots(before, after)
+	if derr == nil {
+		t.Fatalf("符号链接目标变化未被检测到")
+	}
+	if !strings.Contains(derr.Error(), "link.txt") {
+		t.Fatalf("错误信息应指明具体符号链接路径, got: %v", derr)
+	}
+}
+
+// 覆盖条目在复制窗口内被删除的场景(与"新增"对称的另一半)。
+func TestDiffDirEntrySnapshotsDetectsRemoval(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "src")
+	os.MkdirAll(src, 0755)
+	os.WriteFile(filepath.Join(src, "a.txt"), []byte("a"), 0644)
+	os.WriteFile(filepath.Join(src, "b.txt"), []byte("b"), 0644)
+
+	before, err := snapshotDirEntries(src)
+	if err != nil {
+		t.Fatalf("snapshotDirEntries(before) 失败: %v", err)
+	}
+	if err := os.Remove(filepath.Join(src, "b.txt")); err != nil {
+		t.Fatalf("删 b.txt 失败: %v", err)
+	}
+	after, err := snapshotDirEntries(src)
+	if err != nil {
+		t.Fatalf("snapshotDirEntries(after) 失败: %v", err)
+	}
+
+	derr := diffDirEntrySnapshots(before, after)
+	if derr == nil {
+		t.Fatalf("条目被删除未被检测到")
+	}
+	if !strings.Contains(derr.Error(), "b.txt") {
+		t.Fatalf("错误信息应指明具体被删除的路径, got: %v", derr)
+	}
+}
+
+// 端到端覆盖:moveCrossFS 校验通过的正常路径下,快照比较不应误报——
+// 确保本轮修复没有引入假阳性(例如误把"非空目录"当成需要独立记录的条目,
+// 导致目录本身的存在/不存在被错误地纳入 diff)。
+func TestMoveCrossFSNormalPathUnaffectedBySnapshotCheck(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "src")
+	dst := filepath.Join(root, "dst")
+	os.MkdirAll(filepath.Join(src, "sub", "empty"), 0755)
+	os.WriteFile(filepath.Join(src, "a.txt"), []byte("hello"), 0644)
+	os.WriteFile(filepath.Join(src, "sub", "b.txt"), []byte("world"), 0644)
+	if err := os.Symlink("a.txt", filepath.Join(src, "link.txt")); err != nil {
+		t.Fatalf("建符号链接失败: %v", err)
+	}
+
+	result, err := moveCrossFS(src, dst)
+	if err != nil {
+		t.Fatalf("正常路径不应失败: %v", err)
+	}
+	if !result.SourceRetained {
+		t.Fatalf("SourceRetained 应为 true")
+	}
+	if _, serr := os.Stat(filepath.Join(src, "a.txt")); serr != nil {
+		t.Fatalf("源应保留: %v", serr)
+	}
+	if _, derr := os.Stat(filepath.Join(dst, "sub", "empty")); derr != nil {
+		t.Fatalf("目标应复制出空目录: %v", derr)
+	}
+}
+
+// issue #2 核心场景(单元层面):目标文件内容与源不一致,但字节数相同、源
+// mtime/size 完全没变——纯字节数比较(治理前的旧逻辑)对这种情况完全失明,
+// 只有内容哈希校验能区分。这里直接验证 copyTree 记录的源哈希与目标文件
+// 落盘后复算的哈希在该场景下确实不相等,证明 moveCrossFS 步骤 3 使用的
+// 判据(内容哈希)具备纯字节数比较没有的鉴别力。完整的端到端删源拒绝行为
+// 由下面的 TestMoveCrossFSEndToEndDetectsCorruptedDestinationContent 覆盖。
+func TestMoveCrossFSSameLengthDifferentContentDetected(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "src")
+	dst := filepath.Join(root, "dst")
+	os.MkdirAll(src, 0755)
+
+	original := []byte("same-length-content-A")
+	if err := os.WriteFile(filepath.Join(src, "a.txt"), original, 0644); err != nil {
+		t.Fatalf("写 a.txt 失败: %v", err)
+	}
+
+	records, err := copyTree(src, dst)
+	if err != nil {
+		t.Fatalf("copyTree err=%v", err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("copyTree 记录数=%d, want 1", len(records))
+	}
+
+	// 模拟目标写入过程中发生的静默损坏:同字节数、不同内容覆盖目标文件。
+	// 源文件本身完全没有被触碰,mtime/size 快照依然和复制前一致——这正是
+	// 纯字节数比较及 mtime/size 比较都无法识别、只有内容哈希能识别的场景。
+	corrupted := []byte("same-length-content-B")
+	if len(corrupted) != len(original) {
+		t.Fatalf("测试构造错误:两段内容长度必须相等, got %d vs %d", len(corrupted), len(original))
+	}
+	dstPath := filepath.Join(dst, "a.txt")
+	if err := os.WriteFile(dstPath, corrupted, 0644); err != nil {
+		t.Fatalf("模拟目标损坏失败: %v", err)
+	}
+
+	// 复算目标内容哈希,确认与 copyTree 记录的源内容哈希不一致——
+	// 这正是 moveCrossFS 步骤 3 用来拒绝删源的判据。
+	dstSum, err := fileSHA256(dstPath)
+	if err != nil {
+		t.Fatalf("fileSHA256 失败: %v", err)
+	}
+	if dstSum == records[0].srcSHA256 {
+		t.Fatalf("测试构造错误:损坏后哈希不应与源哈希相同")
+	}
+}
+
+// 上面的测试验证了哈希比对本身的鉴别力;这里补一个端到端调用 moveCrossFS
+// 的场景,证明当目标文件在复制完成后被篡改(同字节数、不同内容)时,
+// moveCrossFS 会拒绝删源。手法:copyTree 复制 big.bin 耗时较长,利用这段
+// 时间窗口对已经拷贝完成的 a.txt 的目标端(而非源端)做同长度覆盖——源端
+// 完全不受影响,只有目标端内容变了,确保触发的是步骤 3(内容哈希校验)
+// 而不是步骤 2(源 mtime/size 漂移检测)。
+func TestMoveCrossFSEndToEndDetectsCorruptedDestinationContent(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "src")
+	dst := filepath.Join(root, "dst")
+	os.MkdirAll(src, 0755)
+
+	if err := os.WriteFile(filepath.Join(src, "a.txt"), []byte("same-length-content-A"), 0644); err != nil {
+		t.Fatalf("写 a.txt 失败: %v", err)
+	}
+	// big.bin 排在 a.txt 之后(字典序),copyTree 复制它耗时较长,给篡改
+	// a.txt 的目标端留出窗口,而不触碰 a.txt 的源端(源 mtime/size 不变)。
+	bigData := bytes.Repeat([]byte("x"), 32*1024*1024)
+	if err := os.WriteFile(filepath.Join(src, "big.bin"), bigData, 0644); err != nil {
+		t.Fatalf("写 big.bin 失败: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	stop := make(chan struct{})
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		dstAPath := filepath.Join(dst, "a.txt")
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			// 目标文件一旦落盘(copyTree 写完 a.txt 后关闭了文件),用同
+			// 长度、不同内容覆盖它,模拟"写入过程本身出错/被篡改"。
+			if data, err := os.ReadFile(dstAPath); err == nil && len(data) == len("same-length-content-A") {
+				os.WriteFile(dstAPath, []byte("same-length-content-B"), 0644)
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}()
+
+	_, err := moveCrossFS(src, dst)
+	close(stop)
+	wg.Wait()
+
+	if err == nil {
+		t.Fatalf("目标内容被篡改(同字节数不同内容)时 moveCrossFS 应返回错误,实际 err=nil")
+	}
+	if !strings.Contains(err.Error(), "内容校验失败") {
+		t.Fatalf("错误信息应指明内容校验失败, got: %v", err)
+	}
+	// fail-closed 核心断言:源必须完整保留。
+	if _, serr := os.Stat(filepath.Join(src, "a.txt")); serr != nil {
+		t.Fatalf("校验失败时源 a.txt 必须保留, stat err=%v", serr)
+	}
+	data, rerr := os.ReadFile(filepath.Join(src, "a.txt"))
+	if rerr != nil {
+		t.Fatalf("源文件 a.txt 应仍可读: %v", rerr)
+	}
+	if string(data) != "same-length-content-A" {
+		t.Fatalf("源文件内容应完全未被触碰, got %q", data)
 	}
 }
 
@@ -745,9 +1145,13 @@ func TestCopyTreeExistingTargetReturnsErrExist(t *testing.T) {
 	}
 }
 
-// Task 9 review Important#3:跨 fs move 必须在删源前对新落盘文件做权限对齐
+// Task 9 review Important#3:跨 fs move 必须对新落盘文件做权限对齐
 // (alignCopiedTreePerms → alignNewFilePerms,权限跟目标共享)。注入 public meta,
-// 断言移动后文件 mode==0664 且源已被删。
+// 断言移动后文件 mode==0664。
+//
+// Item 1 验收修复后更新:moveCrossFS 不再删源,函数名里的"BeforeSourceRemoval"
+// 现在描述的是历史上下文(权限对齐这一步原本必须在删源前完成),断言本身
+// 改为"源必须保留"——不再有"删源"这个动作可供验证顺序。
 func TestMoveCrossFSAlignsPermsBeforeSourceRemoval(t *testing.T) {
 	root := setupFakePool(t)
 	old := getFolderMetaFn
@@ -762,11 +1166,18 @@ func TestMoveCrossFSAlignsPermsBeforeSourceRemoval(t *testing.T) {
 	os.WriteFile(srcFile, []byte("data"), 0600)
 	dst := filepath.Join(root, "public", "d")
 
-	if err := moveCrossFS(srcDir, dst); err != nil {
+	result, err := moveCrossFS(srcDir, dst)
+	if err != nil {
 		t.Fatalf("moveCrossFS 应成功: %v", err)
 	}
-	if _, err := os.Lstat(srcDir); err == nil {
-		t.Fatalf("校验通过后源应被删除")
+	if !result.SourceRetained {
+		t.Fatalf("moveCrossFS 校验通过时必须报告 SourceRetained=true")
+	}
+	if _, err := os.Lstat(srcDir); err != nil {
+		t.Fatalf("Item 1:源必须保留,不能被删除, stat err=%v", err)
+	}
+	if _, err := os.Lstat(srcFile); err != nil {
+		t.Fatalf("Item 1:源文件必须保留,不能被删除, stat err=%v", err)
 	}
 	info, err := os.Stat(filepath.Join(dst, "f.txt"))
 	if err != nil {

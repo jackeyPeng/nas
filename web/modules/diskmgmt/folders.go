@@ -264,6 +264,10 @@ func handleCreateFolder(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if err := validateValidUsersField(validUsers); err != nil {
+		jsonError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	if permission == "" {
 		permission = "readwrite"
 	}
@@ -375,6 +379,10 @@ func handleFolderPermission(w http.ResponseWriter, r *http.Request) {
 		return
 	} else {
 		path = cleanedPath
+	}
+	if err := validateValidUsersField(validUsers); err != nil {
+		jsonError(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 	if permission == "" {
 		permission = "readwrite"
@@ -504,4 +512,50 @@ func isValidFolderName(name string) bool {
 		}
 	}
 	return true
+}
+
+// isValidSambaUsernameEntry 校验 valid_users 字段中单个用户名条目。
+// 与 users.isValidUsername 的白名单语义保持一致（字母开头，字母/数字/
+// 下划线/短横线，2-32 位），但本地复制一份：diskmgmt 被 users 包反向
+// import（matrix.go/create.go/users.go），不能反过来 import users，
+// 否则产生 import cycle。
+func isValidSambaUsernameEntry(name string) bool {
+	if len(name) < 2 || len(name) > 32 {
+		return false
+	}
+	for i, r := range name {
+		if i == 0 {
+			if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')) {
+				return false
+			}
+			continue
+		}
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') || r == '_' || r == '-') {
+			return false
+		}
+	}
+	return true
+}
+
+// validateValidUsersField 校验 valid_users 表单字段（逗号分隔的用户名列表）。
+// 该值最终被 smbManagedLines 原样拼进 smb.conf 的 "valid users =" 行
+// （config_sync.go），不先校验的话，含换行/等号/方括号等字符的值可逃出
+// 该行注入任意 smb.conf 指令或新增 share 段（对应 matrix.go #41 同类问题，
+// 这里是 create_folder/folder_permission 表单路径的同一个洞）。
+// 空字符串合法（表示开放共享，不限制用户），逐条按用户名白名单校验。
+func validateValidUsersField(raw string) error {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	for _, u := range strings.Split(raw, ",") {
+		u = strings.TrimSpace(u)
+		if u == "" {
+			continue
+		}
+		if !isValidSambaUsernameEntry(u) {
+			return fmt.Errorf("valid_users 包含非法用户名: %q", u)
+		}
+	}
+	return nil
 }

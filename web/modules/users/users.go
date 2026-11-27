@@ -287,6 +287,15 @@ func handleUserAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	username := parts[0]
+	// username 来自 URL path，最终流入 changePassword/updateUserServices
+	// 等函数，再写进 /etc/vsftpd.userlist、/etc/rclone-htpasswd 等文本文件
+	// （见 create.go enableFTPUser 的 appendLine）。含换行的 username 可在
+	// 这些白名单文件里注入额外整行，等价于越权授予任意用户名 FTP/WebDAV
+	// 访问权限，故在分发到任何子路由前先做白名单校验（fail closed）。
+	if !isValidUsername(username) {
+		http.Error(w, `{"error":"非法用户名"}`, http.StatusBadRequest)
+		return
+	}
 
 	// PUT /api/users/{name}/password — self-or-admin：管理员可改任意人，
 	// 其他已登录用户只能改自己。

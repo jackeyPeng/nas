@@ -94,6 +94,19 @@ func (s *stubExec) wasCalledWith(name string, args ...string) bool {
 	return false
 }
 
+// wasCalledWithPrefix 判断是否存在一次调用命令名为 name（不关心具体参数），
+// 用于断言"某条中止逻辑生效后，这个命令完全没被再调用过一次"，比逐一列举
+// wasCalledWith(name, 具体参数...) 更不容易漏判（中止态下调用方根本不该知道
+// 具体会传什么参数）。
+func (s *stubExec) wasCalledWithPrefix(name string) bool {
+	for _, c := range s.calls {
+		if c.name == name {
+			return true
+		}
+	}
+	return false
+}
+
 // countCalls 返回命令名为 name 的调用次数。
 func (s *stubExec) countCalls(name string) int {
 	n := 0

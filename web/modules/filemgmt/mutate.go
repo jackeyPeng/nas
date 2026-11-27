@@ -1,6 +1,8 @@
 package filemgmt
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -209,18 +211,32 @@ func sameFS(a, b string) bool {
 	return sa.Dev == sb.Dev
 }
 
-// copyTree 把 src 整树流式复制到 dst,返回写入的普通文件总字节数。
+// copiedFileRecord 记录 copyTree 复制过的单个普通文件:相对路径、复制时读到的
+// 源 mtime/size(复制开始前取,用于事后判断复制期间源是否被并发改动)、以及
+// 复制期间流式计算的源内容 SHA-256(与目标文件落盘后的 SHA-256 比对,能发现
+// "字节数不变但内容变了"的篡改/损坏——纯字节数比较对这种情况完全失明,
+// 这正是 issue #2 要修的洞:之前 moveCrossFS 只比 treeByteSize,同长度不同
+// 内容的变化永远比不出来)。
+type copiedFileRecord struct {
+	rel        string
+	srcSize    int64
+	srcModTime time.Time
+	srcSHA256  string
+}
+
+// copyTree 把 src 整树流式复制到 dst,返回复制的普通文件清单(含校验用的
+// 源 mtime/size/SHA-256,参见 copiedFileRecord)。
 //
 // 规则:
 //   - 目录:os.MkdirAll 建出,mode 取源目录 mode(显式 chmod,消解进程 umask 影响)。
-//   - 普通文件:os.OpenFile(O_WRONLY|O_CREATE|O_EXCL, 0666) + io.Copy,写完后
-//     chmod 为源文件 mode(先按源 mode 落地,调用方可再用 alignNewFilePerms 覆盖
-//     为目标共享语义——copy 两段式对齐与上传一致)。
-//   - 符号链接:只拷链接本身(os.Readlink + os.Symlink),不跟随、不计入返回字节数。
+//   - 普通文件:os.OpenFile(O_WRONLY|O_CREATE|O_EXCL, 0666) + 流式复制并同时
+//     计算源内容 SHA-256,写完后 chmod 为源文件 mode(先按源 mode 落地,调用方
+//     可再用 alignNewFilePerms 覆盖为目标共享语义——copy 两段式对齐与上传一致)。
+//   - 符号链接:只拷链接本身(os.Readlink + os.Symlink),不跟随、不计入清单。
 //
 // 任何一步失败立即返回错误;半成品清理由调用方负责(copyTree 本身不做自清)。
-func copyTree(src, dst string) (int64, error) {
-	var total int64
+func copyTree(src, dst string) ([]copiedFileRecord, error) {
+	var records []copiedFileRecord
 	err := filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -252,98 +268,302 @@ func copyTree(src, dst string) (int64, error) {
 			}
 			return os.Chmod(target, info.Mode().Perm())
 		default:
-			n, cerr := copyFile(path, target, info.Mode().Perm())
+			// 复制开始前先取一次源 mtime/size——如果复制完之后重新 Stat 源
+			// 发现这两个值变了,说明复制期间源被并发写过,内容可能已经和
+			// 刚才拷出去的字节不一致(TOCTOU 窗口),调用方据此拒绝删源。
+			preModTime := info.ModTime()
+			sum, n, cerr := copyFile(path, target, info.Mode().Perm())
 			if cerr != nil {
 				return cerr
 			}
-			total += n
+			records = append(records, copiedFileRecord{
+				rel:        rel,
+				srcSize:    n,
+				srcModTime: preModTime,
+				srcSHA256:  sum,
+			})
 			return nil
 		}
 	})
 	if err != nil {
-		return total, err
+		return records, err
 	}
-	return total, nil
+	return records, nil
 }
 
-// copyFile 流式复制单个普通文件 src → dst,写完后 chmod 为 mode。返回写入字节数。
-func copyFile(src, dst string, mode os.FileMode) (int64, error) {
+// copyFile 流式复制单个普通文件 src → dst,边读边算源内容 SHA-256,写完后
+// chmod 为 mode。返回源内容的十六进制 SHA-256、写入字节数。
+func copyFile(src, dst string, mode os.FileMode) (string, int64, error) {
 	in, err := os.Open(src)
 	if err != nil {
-		return 0, err
+		return "", 0, err
 	}
 	defer in.Close()
 
 	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0666)
 	if err != nil {
-		return 0, err
+		return "", 0, err
 	}
-	n, cerr := io.Copy(out, in)
+	h := sha256.New()
+	n, cerr := io.Copy(out, io.TeeReader(in, h))
 	if cerr != nil {
 		out.Close()
-		return n, cerr
+		return "", n, cerr
 	}
 	if cerr := out.Close(); cerr != nil {
-		return n, cerr
+		return "", n, cerr
 	}
 	if cerr := os.Chmod(dst, mode); cerr != nil {
-		return n, cerr
+		return "", n, cerr
 	}
-	return n, nil
+	return hex.EncodeToString(h.Sum(nil)), n, nil
 }
 
-// treeByteSize 统计 root 整树下普通文件的总字节数(符号链接不计,与 copyTree 的
-// 字节统计口径对齐,供 moveCrossFS 做复制后校验)。
-func treeByteSize(root string) (int64, error) {
-	var total int64
+// fileSHA256 计算 path 的 SHA-256(十六进制),用于比对目标文件落盘后的内容
+// 与 copyTree 复制期间记录的源内容哈希是否一致。
+func fileSHA256(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// dirEntryKind 标识 dirEntrySnapshot 中一个条目的类型,用于前后快照比较时
+// 区分"同名但类型变了"(例如文件被换成了目录)与"类型未变"的情况。
+type dirEntryKind int
+
+const (
+	dirEntryKindFile dirEntryKind = iota
+	dirEntryKindEmptyDir
+	dirEntryKindSymlink
+)
+
+// dirEntrySnapshot 是 src 整树在某一时刻的条目清单:key 为相对 src 的路径,
+// value 描述该条目的类型(普通文件/空目录/符号链接)及符号链接的目标。
+//
+// 非空目录不单独记一条"目录"条目——它的存在完全由其子项的相对路径前缀
+// 体现(子项路径里天然包含了父目录名),额外记一条反而在"目录下新增/删除
+// 子项"时产生冗余的虚假差异。只有空目录才需要单独记录,因为空目录没有
+// 任何子项路径能替它证明自己存在。
+type dirEntrySnapshot struct {
+	kind       dirEntryKind
+	linkTarget string // 仅 dirEntryKindSymlink 有效
+}
+
+// snapshotDirEntries 走一遍 root 整树,返回"相对路径 → 条目描述"的快照,
+// 用于 moveCrossFS 在 copyTree 前后各拍一次照、比较两次快照是否完全相同
+// (regular files、empty dirs、symlink 的类型+目标)。
+//
+// 这是本函数要解决的洞的核心:copyTree 用 filepath.WalkDir 做单次遍历,
+// 只能看到"遍历那一刻"src 的样子——如果某个已经遍历过的目录在遍历完成
+// 之后又被塞进新文件/新目录/新符号链接,copyTree 根本不知道这些条目
+// 存在,dst 里永远不会有它们,而 moveCrossFS 原来的校验只回看 copyTree
+// 记录过的 records,对"records 之外凭空出现的条目"是瞎的。前后快照直接
+// 对比 src 的完整目录结构(而不是只回看已记录的文件),才能捕获这整类
+// "遍历窗口之外发生的变化"——不管是新增、删除,还是条目类型被替换。
+func snapshotDirEntries(root string) (map[string]dirEntrySnapshot, error) {
+	snap := make(map[string]dirEntrySnapshot)
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		info, ierr := d.Info()
+		if path == root {
+			return nil // 根自身不记录,只记录相对路径非空的子项
+		}
+		rel, rerr := filepath.Rel(root, path)
+		if rerr != nil {
+			return rerr
+		}
+		info, ierr := d.Info() // Lstat 语义,不跟随符号链接
 		if ierr != nil {
 			return ierr
 		}
-		if info.Mode()&os.ModeSymlink != 0 || d.IsDir() {
-			return nil
+		switch {
+		case info.Mode()&os.ModeSymlink != 0:
+			target, lerr := os.Readlink(path)
+			if lerr != nil {
+				return lerr
+			}
+			snap[rel] = dirEntrySnapshot{kind: dirEntryKindSymlink, linkTarget: target}
+		case d.IsDir():
+			entries, derr := os.ReadDir(path)
+			if derr != nil {
+				return derr
+			}
+			if len(entries) == 0 {
+				snap[rel] = dirEntrySnapshot{kind: dirEntryKindEmptyDir}
+			}
+			// 非空目录不记录(见类型注释:由子项相对路径前缀隐含表达)。
+		default:
+			snap[rel] = dirEntrySnapshot{kind: dirEntryKindFile}
 		}
-		total += info.Size()
 		return nil
 	})
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	return total, nil
+	return snap, nil
 }
 
-// moveCrossFS 是跨文件系统移动的纯编排函数:copyTree(src,dst) → 统计源树总字节 →
-// 与 copyTree 返回的写入字节数比对 → 不一致立即返回错误(绝不删源)→ 一致才
-// os.RemoveAll(src)。单测直接调用,不经过 HTTP 层。
-func moveCrossFS(srcAbs, dstAbs string) error {
-	written, err := copyTree(srcAbs, dstAbs)
-	if err != nil {
-		return fmt.Errorf("跨文件系统复制失败: %w", err)
+// diffDirEntrySnapshots 比较 copyTree 前后两次 src 快照,返回描述首个差异
+// 的错误;两次快照完全相同时返回 nil。能捕获:
+//   - 新增条目(前没有、后有):文件、空目录、符号链接均覆盖;
+//   - 删除条目(前有、后没有);
+//   - 类型变化(同一相对路径,前后 kind 不同,例如文件被替换成目录);
+//   - 符号链接目标变化(kind 相同均为 symlink,但 linkTarget 不同)。
+//
+// 不比较 before 快照里已经记录的普通文件此后内容/mtime 是否变化——那部分
+// 由 moveCrossFS 步骤 2(mtime/size)和步骤 3(内容 SHA-256)负责,职责不重叠。
+func diffDirEntrySnapshots(before, after map[string]dirEntrySnapshot) error {
+	for rel, b := range before {
+		a, ok := after[rel]
+		if !ok {
+			return fmt.Errorf("源目录项 %s 在复制期间被删除", rel)
+		}
+		if a.kind != b.kind {
+			return fmt.Errorf("源目录项 %s 在复制期间类型发生变化", rel)
+		}
+		if b.kind == dirEntryKindSymlink && a.linkTarget != b.linkTarget {
+			return fmt.Errorf("源符号链接 %s 在复制期间指向目标发生变化", rel)
+		}
 	}
-	// 竞态说明(Task 9 review Minor#2):treeByteSize 在 copyTree 之后统计,
-	// 复制期间源被并发修改会导致字节比对不一致——失败方向安全(保留源),接受该竞态。
-	srcBytes, err := treeByteSize(srcAbs)
-	if err != nil {
-		return fmt.Errorf("源树字节统计失败,已保留源: %w", err)
-	}
-	if written != srcBytes {
-		return fmt.Errorf("跨文件系统移动字节校验失败(写入=%d 源=%d),已保留源,请检查目标磁盘空间", written, srcBytes)
-	}
-	// 权限对齐(Task 9 review Important#3):拍板「copy 与跨 fs move 新落盘文件
-	// 逐个走 alignNewFilePerms」。必须在 RemoveAll(src) 之前——对齐失败则清理
-	// 目标、保留源,任何失败点源都还在。
-	if err := alignCopiedTreePerms(dstAbs); err != nil {
-		os.RemoveAll(dstAbs)
-		return fmt.Errorf("跨文件系统移动权限对齐失败,已保留源并清理目标: %w", err)
-	}
-	if err := os.RemoveAll(srcAbs); err != nil {
-		return fmt.Errorf("校验通过但删除源失败: %w", err)
+	for rel := range after {
+		if _, ok := before[rel]; !ok {
+			return fmt.Errorf("源目录项 %s 在复制期间被新增,未被纳入本次复制", rel)
+		}
 	}
 	return nil
+}
+
+// moveCrossFSResult 是 moveCrossFS 校验全部通过后的返回值。跨文件系统
+// 移动不再有"真正意义上的移动完成"这一状态——源永远不会被自动删除
+// (见下方 Item 1 说明),所以调用方(handleMove)必须把这个结果当作
+// "已复制,源仍保留,需要人工核实后自行删除源"来展示,不能等同于同文件系统
+// rename 的那种"移动已完成"。
+type moveCrossFSResult struct {
+	// SourceRetained 恒为 true——保留字段是为了让调用方/测试在读代码时
+	// 不必去翻注释确认语义,一眼能看到"源保留"这个事实在类型里有名字。
+	SourceRetained bool
+}
+
+// moveCrossFS 是跨文件系统移动的纯编排函数。流程:
+//
+//  1. copyTree(src, dst) 流式复制整树,边拷边记录每个文件的源内容 SHA-256、
+//     写入字节数、复制前观察到的源 mtime。
+//  2. 对每个文件重新 Lstat 源:若 mtime 或 size 与复制前观察到的不同,说明
+//     复制期间源被并发改写过——刚才拷出去的内容可能已经和"现在的源"不是
+//     同一份数据了(TOCTOU 窗口,见下方竞态说明)。
+//  3. 对每个文件重新计算目标文件的 SHA-256,与 copyTree 记录的源内容哈希
+//     比对——这一步捕获"写入过程本身出错但字节数碰巧没变"或"同长度不同
+//     内容"的情况,纯字节数比较对这种情况是瞎的(issue #2 要修的洞)。
+//  4. 对齐权限。
+//
+// Item 1(本轮验收修复,取代此前"校验通过就 os.RemoveAll(src)"的设计):
+// 跨文件系统这一侧永远不自动删除源,不区分成功/失败——校验通过只代表
+// "目标内容已确认与源一致",不代表"删源是安全的"。原因:
+//   - stdlib 没有跨文件系统的原子 rename,copy+delete 之间必然存在一个
+//     "目标已写完但源还没删"的窗口,这个窗口本身不可消除;
+//   - 真正的风险不是这个窗口会不会被看到,而是"自动删源"这个动作本身
+//     一旦执行就不可逆——任何校验逻辑的疏漏(本次修复前就有过een"同长度
+//     不同内容"检测不到的洞)都会直接表现为用户数据被删除且无法恢复。
+//   - 保留源、交给用户确认后自行删除,把"数据是否可以安全删除"这个判断
+//     从程序交还给人,是本系统能做到的最强保证。
+//
+// 因此 moveCrossFS 的返回语义变成:err == nil 时,目标已创建且内容/权限
+// 均已确认,但源文件树原样保留在原地,调用方(handleMove)必须把这个结果
+// 展示为"已复制到目标,源已保留,请手动核对后自行删除源",不能展示为与
+// 同文件系统 rename 等价的"移动成功"。
+//
+// 竞态说明(仍然存在,且是设计上无法完全消除的):mtime 在 ext4/xfs 上是
+// 纳秒级粒度,但如果源在"copyTree 读完最后一个字节"和"步骤 2 重新 Lstat"
+// 之间的极短窗口内被再次写入、且写入后的 mtime/size 恰好与复制前完全相同
+// (理论可构造,真实误操作/并发写入概率极低),本方案无法检测到。这是在不
+// 引入文件锁或写时复制快照(本系统没有这类机制)前提下能做到的最强保证:
+// 任何可观察的变化都会导致保守失败;唯一漏网的是人为构造的"改了又在极窄
+// 窗口内改回同样 mtime+size+内容"场景——但无论是否漏网,源都不会被删除。
+//
+// 步骤 0(本轮修复,补上 copyTree 单次遍历看不见的洞):copyTree 用
+// filepath.WalkDir 对 src 做单次遍历,只能捕获"遍历那一刻"的目录结构——
+// 如果某个已遍历过的目录之后又新增/删除/替换了子项(文件、空目录或符号
+// 链接),copyTree 根本不知道,dst 永远不会体现这些变化,而原来的校验
+// (步骤 2/3)只回看 copyTree 实际记录过的 records,对"records 之外凭空
+// 出现或消失的条目"是瞎的。因此在 copyTree 前后各对 src 拍一次完整目录
+// 结构快照(snapshotDirEntries),两次快照只要有任何差异(新增/删除/
+// 类型变化/符号链接目标变化),就视为与步骤 2 同等级的"复制期间被并发
+// 修改",走相同的保留源、拒绝成功的 fail-closed 路径。
+//
+// 单测直接调用,不经过 HTTP 层。
+func moveCrossFS(srcAbs, dstAbs string) (moveCrossFSResult, error) {
+	before, err := snapshotDirEntries(srcAbs)
+	if err != nil {
+		return moveCrossFSResult{}, fmt.Errorf("跨文件系统移动前置快照失败: %w", err)
+	}
+
+	records, err := copyTree(srcAbs, dstAbs)
+	if err != nil {
+		return moveCrossFSResult{}, fmt.Errorf("跨文件系统复制失败: %w", err)
+	}
+
+	after, err := snapshotDirEntries(srcAbs)
+	if err != nil {
+		return moveCrossFSResult{}, fmt.Errorf("跨文件系统移动校验失败:复制后无法重新确认源目录结构,已复制到目标但保留源,请手动核对后自行删除/复制: %w", err)
+	}
+	if derr := diffDirEntrySnapshots(before, after); derr != nil {
+		return moveCrossFSResult{}, fmt.Errorf(
+			"跨文件系统移动校验失败:%w,为安全起见不会自动删除源,已复制到目标(可能不完整),请手动核对内容后自行删除源",
+			derr,
+		)
+	}
+
+	// 步骤 2:逐文件重新 Lstat 源,检测复制期间是否被并发改写。
+	for _, rec := range records {
+		srcPath := filepath.Join(srcAbs, rec.rel)
+		var st syscall.Stat_t
+		if err := syscall.Lstat(srcPath, &st); err != nil {
+			return moveCrossFSResult{}, fmt.Errorf("跨文件系统移动校验失败:复制后无法重新确认源文件 %s 状态,已复制到目标但保留源,请手动核对后自行删除/复制: %w", rec.rel, err)
+		}
+		curSize := st.Size
+		curModTime := time.Unix(st.Mtim.Sec, st.Mtim.Nsec)
+		if curSize != rec.srcSize || !curModTime.Equal(rec.srcModTime) {
+			return moveCrossFSResult{}, fmt.Errorf(
+				"跨文件系统移动校验失败:源文件 %s 在复制期间被并发修改(内容可能已与已复制内容不一致),为安全起见不会自动删除源,已复制到目标,请手动核对内容后自行删除源",
+				rec.rel,
+			)
+		}
+	}
+
+	// 步骤 3:逐文件比对目标内容 SHA-256 与复制期间记录的源内容 SHA-256——
+	// 这是本次修复的核心:纯字节数比较(治理前的旧逻辑)对"同长度不同内容"
+	// 完全失明,改用内容哈希后能可靠识别写入过程中的任何数据差异。
+	for _, rec := range records {
+		dstPath := filepath.Join(dstAbs, rec.rel)
+		dstSum, err := fileSHA256(dstPath)
+		if err != nil {
+			return moveCrossFSResult{}, fmt.Errorf("跨文件系统移动校验失败:无法读取目标文件 %s 校验内容,已保留源: %w", rec.rel, err)
+		}
+		if dstSum != rec.srcSHA256 {
+			return moveCrossFSResult{}, fmt.Errorf(
+				"跨文件系统移动内容校验失败:文件 %s 复制后内容哈希与源不一致,已保留源,请检查目标磁盘空间/完整性后重试",
+				rec.rel,
+			)
+		}
+	}
+
+	// 权限对齐(Task 9 review Important#3)。对齐失败则清理目标、保留源。
+	if err := alignCopiedTreePerms(dstAbs); err != nil {
+		os.RemoveAll(dstAbs)
+		return moveCrossFSResult{}, fmt.Errorf("跨文件系统移动权限对齐失败,已保留源并清理目标: %w", err)
+	}
+	// Item 1(验收修复):校验/权限对齐全部通过后,不再 os.RemoveAll(srcAbs)。
+	// 源永久保留在原地,由调用方(handleMove)明确告知用户"已复制,源已保留,
+	// 需要人工核对后自行删除源"——理由见函数头部注释。
+	return moveCrossFSResult{SourceRetained: true}, nil
 }
 
 // resolveMoveCopyTarget 承载 handleMove/handleCopy 共同的前置校验链:
@@ -462,24 +682,39 @@ func handleMove(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-	} else {
-		if err := moveCrossFS(srcAbs, dstAbs); err != nil {
-			// 半成品清理(Task 9 review Important#4):失败后不清目标会被 409 卡死重试。
-			// EEXIST 例外(Task 9 review Important#2 同款):目标树内有并发方创建的内容
-			// 时不得 RemoveAll 误删。
-			if errors.Is(err, fs.ErrExist) {
-				http.Error(w, "目标已存在", http.StatusConflict)
-				return
-			}
-			os.RemoveAll(dstAbs)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
+		common.LogAuditRequest(r, "files", "move",
+			fmt.Sprintf("src=%s dst_dir=%s", req.Src, req.DstDir), "success")
+		common.JSONResponse(w, map[string]interface{}{"ok": true})
+		return
 	}
 
+	result, err := moveCrossFS(srcAbs, dstAbs)
+	if err != nil {
+		// 半成品清理(Task 9 review Important#4):失败后不清目标会被 409 卡死重试。
+		// EEXIST 例外(Task 9 review Important#2 同款):目标树内有并发方创建的内容
+		// 时不得 RemoveAll 误删。
+		if errors.Is(err, fs.ErrExist) {
+			http.Error(w, "目标已存在", http.StatusConflict)
+			return
+		}
+		os.RemoveAll(dstAbs)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Item 1(验收修复):跨文件系统移动永不删源,响应必须明确区分于同文件
+	// 系统的"移动成功"——前端据此展示"源已保留,需人工核实后自行删除",
+	// 不能展示为与 rename 等价的"移动成功"(ok:true 会被前端当作已完成
+	// 处理)。status="copied_source_retained" 是本次新增的、调用方和前端
+	// 都应据此分支渲染的信号值。
 	common.LogAuditRequest(r, "files", "move",
-		fmt.Sprintf("src=%s dst_dir=%s", req.Src, req.DstDir), "success")
-	common.JSONResponse(w, map[string]interface{}{"ok": true})
+		fmt.Sprintf("src=%s dst_dir=%s cross_fs=true source_retained=%v", req.Src, req.DstDir, result.SourceRetained), "success")
+	common.JSONResponse(w, map[string]interface{}{
+		"ok":              true,
+		"status":          "copied_source_retained",
+		"source_retained": result.SourceRetained,
+		"message":         "已复制到目标，源文件已保留，请手动核对内容后自行删除源",
+	})
 }
 
 // handleCopy — POST /api/files/copy,JSON body {src, dst_dir}。

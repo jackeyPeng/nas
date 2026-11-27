@@ -11,10 +11,12 @@ import (
 	"mime/multipart"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/user"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"nas-panel/common"
 	"nas-panel/modules/diskmgmt"
@@ -97,6 +99,16 @@ func alignNewFilePerms(targetAbs string) error {
 // rename 成功之后,新文件在被任何其他请求看到之前权限已经是最终正确值,
 // 不存在中间态窗口;handleUpload 里 rename 之后不再需要、也不再调用
 // alignNewFilePerms,避免重新引入上述删除已替换文件的路径。
+//
+// Point 3 补充说明(本轮修订,见 captureOrigOwnership/restoreOrigOwnership):
+// 上述"rename 前对临时文件对齐权限"的机制本身继续保留(避免宽权限窗口、
+// 避免误删已替换文件两个问题依然存在),但 writePartToFileOverwrite 现在
+// 只在"原文件确实不存在"(本次其实是新建,hasOwnership=false)时才调用
+// alignFilePerms 走本函数的策略对齐;只要原文件存在,就改为调用
+// restoreOrigOwnership 恢复原文件自己的 mode/uid/gid,不再套用池策略——
+// 覆盖写时原文件的有效权限是权威值,不应该因为内容被换了一次就被重置
+// 成策略默认值(推翻 TASK-8 的旧结论)。alignFilePerms 对"新建文件"场景
+// (alignNewFilePerms 调用方、以及覆盖写摁到了"原文件不存在"分支)行为不变。
 func alignFilePerms(policyPath, inodePath string) error {
 	meta, found := ownerShareOfVia(policyPath)
 	mode, ownerName, groupName := alignPermsDecision(meta, found, common.GetNASUser())
@@ -115,6 +127,261 @@ func alignFilePerms(policyPath, inodePath string) error {
 	}
 	if err := os.Chown(inodePath, uid, gid); err != nil {
 		log.Printf("[FILEMGMT] 上传权限对齐 chown 失败: path=%s err=%v", inodePath, err)
+	}
+	return nil
+}
+
+// --- Item 5 修复: 覆盖写必须保留原文件的 ACL/xattr --------------------------
+//
+// 问题:writePartToFileOverwrite 原实现只对齐 owner/mode(alignFilePerms 按
+// 目标目录所属共享的策略重新计算 owner/mode,与原文件实际 owner/mode 无关),
+// 完全没有处理 POSIX ACL(setfacl 设置的扩展权限)和 xattr(如 user.* 命名空间
+// 下应用自定义的元数据、SELinux label 等)。覆盖写走"同目录临时文件 + rename"
+// 路径,新 inode 默认没有这些扩展属性,rename 后原文件的 ACL/xattr 全部丢失,
+// 即使权限位本身对齐正确。
+//
+// 修复:rename 之前,把原文件(targetAbs,覆盖写发生前的旧内容)的 ACL 与
+// xattr dump 下来,应用到临时文件(tmpPath)上,再 rename。capture/restore
+// 任一步失败都是硬错误,整个覆盖写失败,只清理临时文件,原文件保持完全不动
+// (与 alignFilePerms 失败路径一致的 fail-closed 语义:宁可不覆盖,不可覆盖
+// 后属性对不上)。
+//
+// 原文件不存在(本次上传实际是新建,不是真正覆盖)时 capture 直接返回空
+// dump、无错误,restore 收到空 dump 时跳过(nil 操作),不报错。
+
+// getfaclFn/setfaclFn/getfattrFn/setfattrFn 默认指向下面的"先尝试无 sudo 直接
+// 执行,EPERM/EACCES 才回退 sudo"包装函数,对照 perms.go 的 chmodOne/chownOne
+// 同款降级策略。测试注入替身以验证 capture/restore 失败时覆盖写整体失败、
+// 原文件不受影响,不依赖真机是否装有 acl/attr 工具包。
+var (
+	getfaclFn  = runGetfacl
+	setfaclFn  = runSetfacl
+	getfattrFn = runGetfattr
+	setfattrFn = runSetfattr
+)
+
+// runWithSudoFallback 先尝试 common.ExecOutput(无 sudo,面板进程对自己属主的
+// 文件足够),失败再回退 common.SudoOutput——与 perms.go 的 isPermissionDenied
+// 判定不同,这里是外部命令而非系统调用,exec.Error 不直接满足 os.ErrPermission,
+// 保守地对任何失败都回退一次 sudo 再报错(sudo 对不需要提权的场景只是多一次
+// 无害调用,换来对"面板进程非文件属主"场景的覆盖,与 ApplyHomeACL 的
+// "失败只影响便利层"定位不同,这里 ACL/xattr 丢失是数据完整性问题,必须确认
+// 两次尝试都失败才放弃)。
+func runWithSudoFallback(name string, args ...string) (string, error) {
+	out, err := common.ExecOutput(name, args...)
+	if err == nil {
+		return out, nil
+	}
+	sudoOut, sudoErr := common.SudoOutput(name, args...)
+	if sudoErr == nil {
+		return sudoOut, nil
+	}
+	return "", fmt.Errorf("%s %v 失败(直接执行: %v; sudo: %v)", name, args, err, sudoErr)
+}
+
+func runGetfacl(path string) (string, error) {
+	return runWithSudoFallback("getfacl", "--absolute-names", "-p", path)
+}
+
+func runSetfacl(path, dump string) error {
+	cmd := exec.Command("setfacl", "--set-file=-", path)
+	cmd.Stdin = strings.NewReader(dump)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		sudoCmd := exec.Command("sudo", "setfacl", "--set-file=-", path)
+		sudoCmd.Stdin = strings.NewReader(dump)
+		if sudoOut, sudoErr := sudoCmd.CombinedOutput(); sudoErr != nil {
+			return fmt.Errorf("setfacl 恢复失败: %s (sudo 回退: %s: %v)", out, sudoOut, sudoErr)
+		}
+	}
+	return nil
+}
+
+// runGetfattr 读取 path 的 user.* 命名空间 xattr,返回本包内部可解析的
+// "name=0x<hex>\n" 逐行格式(非 getfattr --dump 原生格式——原生 dump 带
+// `# file: <path>` 头,setfattr --restore=- 会把它当成恢复目标路径,见下方
+// runSetfattr 注释)。只枚举 user.*,不碰 security.selinux/system.posix_acl_*
+// (SELinux label 与 POSIX ACL 各有专门子系统管理,这里不越界接管)。
+func runGetfattr(path string) (string, error) {
+	// -m '^user\.' 只枚举 user.* 的属性名(无 -d 时 getfattr 只打印名字,不含值)。
+	names, err := runWithSudoFallback("getfattr", "--absolute-names", "-m", `^user\.`, path)
+	if err != nil {
+		return "", err
+	}
+	var lines []string
+	for _, line := range strings.Split(names, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") || !strings.HasPrefix(line, "user.") {
+			continue
+		}
+		name := line
+		// 单独取值,-e hex 输出 "name=0x<hex>" 一行,二进制值 round-trip 安全
+		// (--only-values 会忽略 -e 编码直出原始字节,不适合拼进本包内部文本格式)。
+		valLine, verr := runWithSudoFallback("getfattr", "--absolute-names", "-n", name, "-e", "hex", path)
+		if verr != nil {
+			return "", fmt.Errorf("读取 xattr %s 失败: %w", name, verr)
+		}
+		for _, vl := range strings.Split(valLine, "\n") {
+			vl = strings.TrimSpace(vl)
+			if strings.HasPrefix(vl, name+"=") {
+				lines = append(lines, vl)
+				break
+			}
+		}
+	}
+	return strings.Join(lines, "\n"), nil
+}
+
+// runSetfattr 把 runGetfattr 产出的 "name=0x<hex>\n" 逐行格式应用到 path。
+//
+// 历史 bug:原实现用 `setfattr --restore=-` 消费 getfattr --dump 的原生格式,
+// 该格式自带 `# file: <path>` 头,--restore=- 实际写入目标是 dump 里这个
+// 嵌入路径,而不是调用方传入的 path 参数(命令行里根本没有传 path)——
+// 覆盖写场景下 dump 来自原文件(targetAbs),调用方想要写入的却是临时文件
+// (tmpPath),二者路径不同时,属性会被错误地写回原文件路径,而不是临时文件,
+// 且 runSetfattr 的 path 形参被静默忽略。
+//
+// 修复:改为逐属性 `setfattr -n NAME -v 0xHEX <path>`,path 由本函数显式
+// 传给 exec.Command 的参数列表,不依赖 dump 内容里的任何路径字符串——
+// 恢复目标恒等于调用方传入的 path,无论 dump 来自哪个原文件。
+// 任一属性恢复失败按 fail-closed 处理,整体返回错误(调用方据此中止覆盖写,
+// 不得假成功)。
+func runSetfattr(path, dump string) error {
+	dump = strings.TrimSpace(dump)
+	if dump == "" {
+		return nil
+	}
+	for _, line := range strings.Split(dump, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		eq := strings.Index(line, "=0x")
+		if eq < 0 {
+			return fmt.Errorf("setfattr 恢复失败: 无法解析属性行 %q", line)
+		}
+		name := line[:eq]
+		hexVal := line[eq+1:] // 含 "0x" 前缀,setfattr -v 原生支持
+		cmd := exec.Command("setfattr", "-n", name, "-v", hexVal, path)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			sudoCmd := exec.Command("sudo", "setfattr", "-n", name, "-v", hexVal, path)
+			if sudoOut, sudoErr := sudoCmd.CombinedOutput(); sudoErr != nil {
+				return fmt.Errorf("setfattr 恢复属性 %s 失败: %s (sudo 回退: %s: %v)", name, out, sudoOut, sudoErr)
+			}
+		}
+	}
+	return nil
+}
+
+// origOwnership 是覆盖写之前对原文件(targetAbs)拍下的"权威快照":mode 位 +
+// uid/gid。见 Point 3 拍板决策(本轮修订,推翻 TASK-8 的旧结论):覆盖写时,
+// 原文件实际的 mode/ACL/uid/gid 对"覆盖写"这个操作而言是权威值,池策略
+// (alignFilePerms/alignPermsDecision 算出的 0644/0664/0600 等)只对"新建
+// 文件"生效——覆盖写不是新建,不应该让一个已经存在、可能被管理员/用户用
+// setfacl/chown 手工调整过权限的文件,因为内容被换了一次就被重置回策略默认值。
+//
+// hasOwnership=false 表示原文件不存在(本次其实是新建),调用方应落回
+// alignNewFilePerms 的策略对齐路径,而不是"恢复"一个不存在的权威值。
+type origOwnership struct {
+	mode         os.FileMode
+	uid, gid     int
+	hasOwnership bool
+}
+
+// statOrigFn 仅供测试注入,默认指向真实 os.Lstat 的瘦包装。
+var statOrigFn = func(path string) (os.FileMode, int, int, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	st, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return 0, 0, 0, fmt.Errorf("无法读取原文件 uid/gid(平台不支持 syscall.Stat_t): %s", path)
+	}
+	return info.Mode(), int(st.Uid), int(st.Gid), nil
+}
+
+// chownFn/chmodFn 仅供测试注入,默认指向真实系统调用,与 getfaclFn 等同款
+// seam 模式——测试断言"恢复原 uid/gid/mode 失败 → 整个覆盖写失败,原文件
+// 不受影响",不依赖真机是否能真的 chown 到任意 uid(非 root 测试进程下
+// chown 到别的 uid 必然失败,用这个性质反过来触发失败路径断言)。
+var (
+	chownFn = os.Chown
+	chmodFn = os.Chmod
+)
+
+// captureOrigOwnership 在覆盖写之前读取原文件(targetAbs)的 mode/uid/gid。
+// 原文件不存在(本次其实是新建)时返回 hasOwnership=false、无错误——没有
+// 原值需要保留,调用方应走新建文件的策略对齐路径(alignNewFilePerms)。
+// 原文件存在但读取失败(真正的 I/O/权限错误)则是硬错误,调用方必须中止覆盖写。
+func captureOrigOwnership(targetAbs string) (origOwnership, error) {
+	mode, uid, gid, err := statOrigFn(targetAbs)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return origOwnership{}, nil
+		}
+		return origOwnership{}, fmt.Errorf("检查原文件 mode/uid/gid 失败: %w", err)
+	}
+	return origOwnership{mode: mode.Perm(), uid: uid, gid: gid, hasOwnership: true}, nil
+}
+
+// restoreOrigOwnership 把 captureOrigOwnership 读到的原 mode/uid/gid 恢复到
+// 临时文件(inodePath)上,必须在 rename 之前调用,且必须在 restoreACLXattr
+// 之后、不再有任何后续 chmod 调用——顺序原因与 restoreACLXattr 必须排在
+// alignFilePerms 之前完全相同(chmod 对带 ACL 的文件会按 POSIX 语义重算
+// mask,这里 chmod 回原 mode 必须是覆盖写流程里最后一次改权限的调用,否则
+// 恢复的 mask 又会被后续动作覆盖)。
+//
+// Point 3 拍板决策:原 mode/ACL/uid/gid 对覆盖写是权威值,不可恢复
+// (chmod/chown 失败)是硬错误,调用方必须中止整个覆盖写、不得 rename——
+// 不存在"恢复不了就退回策略值"的降级路径,那等于默默丢弃用户此前设置的
+// 权限,与"必须保留原有效权限"的要求直接矛盾。
+func restoreOrigOwnership(inodePath string, orig origOwnership) error {
+	if !orig.hasOwnership {
+		return nil
+	}
+	if err := chownFn(inodePath, orig.uid, orig.gid); err != nil {
+		return fmt.Errorf("恢复原文件 uid/gid 失败: %w", err)
+	}
+	if err := chmodFn(inodePath, orig.mode); err != nil {
+		return fmt.Errorf("恢复原文件 mode 失败: %w", err)
+	}
+	return nil
+}
+
+// captureACLXattr 在覆盖写之前读取原文件(targetAbs)的 ACL 与 xattr dump。
+// 原文件不存在(本次其实是新建)时返回空 dump、无错误——没有旧属性需要保留。
+// 原文件存在但读取失败(真正的 I/O/权限错误)则是硬错误,调用方必须中止覆盖写。
+func captureACLXattr(targetAbs string) (aclDump, xattrDump string, err error) {
+	if _, statErr := os.Lstat(targetAbs); statErr != nil {
+		if os.IsNotExist(statErr) {
+			return "", "", nil
+		}
+		return "", "", fmt.Errorf("检查原文件失败: %w", statErr)
+	}
+	aclDump, err = getfaclFn(targetAbs)
+	if err != nil {
+		return "", "", fmt.Errorf("读取原文件 ACL 失败: %w", err)
+	}
+	xattrDump, err = getfattrFn(targetAbs)
+	if err != nil {
+		return "", "", fmt.Errorf("读取原文件 xattr 失败: %w", err)
+	}
+	return aclDump, xattrDump, nil
+}
+
+// restoreACLXattr 把 captureACLXattr 读到的 dump 应用到临时文件(inodePath)上,
+// 必须在 rename 之前调用。aclDump 为空(如原文件不存在/本次是新建)时跳过,
+// 不报错——没有旧属性需要恢复不是失败。
+func restoreACLXattr(inodePath, aclDump, xattrDump string) error {
+	if aclDump != "" {
+		if err := setfaclFn(inodePath, aclDump); err != nil {
+			return fmt.Errorf("恢复 ACL 失败: %w", err)
+		}
+	}
+	if xattrDump != "" {
+		if err := setfattrFn(inodePath, xattrDump); err != nil {
+			return fmt.Errorf("恢复 xattr 失败: %w", err)
+		}
 	}
 	return nil
 }
@@ -459,6 +726,24 @@ func writePartToFile(targetAbs string, part io.Reader, buf []byte, overwrite boo
 // writePartToFileOverwrite 实现 overwrite=true 路径:同目录临时文件写满 + 原子 rename。
 // 任何失败路径都只清理临时文件,从不触碰/删除 targetAbs 原有内容。
 func writePartToFileOverwrite(targetAbs string, part io.Reader, buf []byte) (int64, error) {
+	// Item 5 修复:rename 之前先把原文件(覆盖写发生前的旧内容)的 ACL/xattr
+	// dump 下来,留着写完、对齐权限之后恢复到临时文件上。capture 必须在这里
+	// (临时文件创建/写入之前)做,此时 targetAbs 还是原文件,内容未被触碰。
+	aclDump, xattrDump, cerr := captureACLXattr(targetAbs)
+	if cerr != nil {
+		return 0, cerr
+	}
+	// Point 3 拍板决策(本轮修订,推翻 TASK-8):同样在这里把原文件的
+	// mode/uid/gid 拍下来——覆盖写必须让原文件的有效权限(mode/ACL/mask/
+	// uid/gid)保持权威,不能被池策略(alignFilePerms)重新计算覆盖掉。
+	// 原文件不存在(本次其实是新建)时 hasOwnership=false,下面会退回
+	// alignFilePerms 的策略对齐路径(与"新建文件按策略定权限"的既有语义
+	// 一致,不受本次修订影响)。
+	origOwner, oerr := captureOrigOwnership(targetAbs)
+	if oerr != nil {
+		return 0, oerr
+	}
+
 	dir := filepath.Dir(targetAbs)
 	tmp, err := os.CreateTemp(dir, ".upload-tmp-*")
 	if err != nil {
@@ -478,17 +763,62 @@ func writePartToFileOverwrite(targetAbs string, part io.Reader, buf []byte) (int
 		cleanup()
 		return n, cerr
 	}
-	// Bug 1 修复:权限/属主对齐必须在 rename 之前、针对临时文件执行,原因见
+	// Item 5 修复(回归修复:ACL 恢复会反过来冲掉 mode 对齐结果):在 rename
+	// 之前把 capture 到的原文件 ACL/xattr 恢复到临时文件上。任一步失败都是
+	// 硬错误,只清理临时文件,原文件(targetAbs)此时还是旧内容,完全不受
+	// 影响(fail-closed:宁可不覆盖,不可覆盖后属性对不上)。
+	//
+	// 顺序 bug:这一步必须在 alignFilePerms(chmod)之前执行,不能在之后。
+	// getfacl -p 的 dump 总是带显式 mask:: 条目,setfacl --set-file=- 的
+	// 默认行为是"dump 里显式给了 mask 就不重新计算"(man setfacl:
+	// "unless a mask entry was explicitly given"),于是 restore 会把
+	// mask 直接设成 dump 里的旧值——而 Linux 对外展示的"group"权限位
+	// (ls -l / stat 看到的 mode 第二组 rwx)在文件带 ACL 时实际读的就是
+	// mask 条目,不是 group:: 条目本身。如果先 chmod 再 setfacl 恢复,
+	// setfacl 会用旧 mask 把刚 chmod 好的权限位覆盖回去,出现"chmod 显示
+	// 成功但最终 stat 出来的 mode 和策略值不一致"的静默错误(已通过真实
+	// t.TempDir() 文件 + 真实 getfacl/setfacl 复现:覆盖写前文件是
+	// 0640+ACL mask=rwx,alignFilePerms 想把它改成 0644,但如果在它之后
+	// 才 restoreACLXattr,最终 stat 出来是 0670,不是 0644)。
+	//
+	// 反过来,先恢复 ACL/xattr、再 chmod,就没有这个问题:chmod 在文件带
+	// ACL 时会根据新的 group 权限位重新计算 mask(这是 chmod(2) 对带 ACL
+	// 文件的标准 POSIX 语义,非本包行为),二者天然保持一致,chmod 的
+	// 最终结果不会被后续步骤篡改。
+	if rerr := restoreACLXattr(tmpPath, aclDump, xattrDump); rerr != nil {
+		cleanup()
+		return n, rerr
+	}
+	// 权限/属主对齐必须在 rename 之前、针对临时文件执行,原因见
 	// alignFilePerms 的注释——rename 之后再对齐,中间有权限过松的可见窗口,
 	// 且失败时调用方若 Remove(targetAbs) 会删掉刚替换上线的新文件,新旧数据
 	// 一起丢失。os.CreateTemp 创建的临时文件默认 0600 且属主是运行面板的
 	// 进程用户,在对齐完成前既不会比最终策略更松,也不会暴露给其他本地用户,
 	// 不存在旧实现"先 chmod 0666 再 rename"那样的宽权限窗口。
-	// policyPath 传 targetAbs(按最终落地路径判断所属共享/应用策略),
-	// inodePath 传 tmpPath(实际执行 chmod/chown 的文件)。
-	if aerr := alignFilePerms(targetAbs, tmpPath); aerr != nil {
-		cleanup()
-		return n, aerr
+	//
+	// Point 3 拍板决策(本轮修订,推翻 TASK-8 旧结论):覆盖写(本次确有
+	// 原文件,origOwner.hasOwnership=true)时,原文件的 mode/uid/gid 是
+	// 权威值,恢复它而不是套用池策略——池策略只对"新建文件"(hasOwnership
+	// =false)生效。restoreOrigOwnership 内部 chown 在 chmod 之前执行,
+	// 原因与"restoreACLXattr 必须排在 alignFilePerms 之前"完全相同:它是
+	// 覆盖写流程里最后一次改 mode 的动作,产出的 mask 才不会被后续步骤
+	// 重新计算掉。任一步失败都是硬错误——不存在"恢复不了就退回策略值"的
+	// 降级路径,那等于默默丢弃用户此前设置的权限,直接违反"必须保留原有效
+	// 权限"的要求。
+	if origOwner.hasOwnership {
+		if rerr := restoreOrigOwnership(tmpPath, origOwner); rerr != nil {
+			cleanup()
+			return n, rerr
+		}
+	} else {
+		// 本次其实是新建(原文件不存在,比如并发删除后又被覆盖写请求命中):
+		// 没有原权威值可恢复,退回既有的"新建文件按池策略定权限"语义。
+		// policyPath 传 targetAbs(按最终落地路径判断所属共享/应用策略),
+		// inodePath 传 tmpPath(实际执行 chmod/chown 的文件)。
+		if aerr := alignFilePerms(targetAbs, tmpPath); aerr != nil {
+			cleanup()
+			return n, aerr
+		}
 	}
 	if rerr := os.Rename(tmpPath, targetAbs); rerr != nil {
 		// rename 失败:原文件(targetAbs)完全没被触碰,只清理临时文件。

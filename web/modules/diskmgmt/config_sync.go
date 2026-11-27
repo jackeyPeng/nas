@@ -211,10 +211,16 @@ func folderColumnExists(db *sql.DB, column string) bool {
 // SyncFolderMeta upserts a folder's metadata (folders.db 是共享文件夹唯一权威源)。
 // 传整个 FolderMeta 而非散列参数：给表加新字段时所有调用点编译期强制携带，
 // 杜绝某条写入路径漏字段把其他路径的配置抹掉（write_users 事故的结构性修复）。
-func SyncFolderMeta(m FolderMeta) {
+//
+// Item 3 修复：返回 error 而非仅 log.Printf。此前调用方（尤其 pending_ops.go
+// 的 executeCreateFolder/executeUpdateFolder）完全看不到这里的失败，DB 写入
+// 失败时队列仍把该条操作标记"✓"并清出队列——元数据与磁盘/用户预期三者可能
+// 已经不一致，却没有任何可恢复的信号。大多数既有调用点（import.go、
+// pool bootstrap 等 best-effort 场景）按语句丢弃返回值即可，不受影响。
+func SyncFolderMeta(m FolderMeta) error {
 	db := initConfigDB()
 	if db == nil {
-		return
+		return fmt.Errorf("元数据库未初始化")
 	}
 
 	// Upsert: insert or update
@@ -232,16 +238,22 @@ func SyncFolderMeta(m FolderMeta) {
 		boolToInt(m.RecycleBin), m.QuotaGB)
 	if err != nil {
 		log.Printf("[CONFIG_SYNC] 同步元数据失败: %v", err)
+		return fmt.Errorf("同步元数据失败: %w", err)
 	}
+	return nil
 }
 
-// RemoveFolderMeta removes a folder from metadata
-func RemoveFolderMeta(folderPath string) {
+// RemoveFolderMeta removes a folder from metadata.
+// Item 3 修复：返回 error，理由同 SyncFolderMeta。
+func RemoveFolderMeta(folderPath string) error {
 	db := initConfigDB()
 	if db == nil {
-		return
+		return fmt.Errorf("元数据库未初始化")
 	}
-	db.Exec("DELETE FROM folders WHERE path = ?", folderPath)
+	if _, err := db.Exec("DELETE FROM folders WHERE path = ?", folderPath); err != nil {
+		return fmt.Errorf("删除元数据失败: %w", err)
+	}
+	return nil
 }
 
 // RemoveFolderMetaByMountPrefix 删除被拆池/重置的挂载点下的所有 folders.db 元数据行
@@ -979,43 +991,81 @@ func handleConfigSync(w http.ResponseWriter, r *http.Request) {
 
 // EnsurePoolStructure 在存储池挂载完成后创建 public + 用户 home，写入 folders.db，并重生成托管配置。
 // 幂等：目录已存在则跳过创建，元数据用 upsert。由存储向导（wizard.go / stream.go）在池创建后调用。
+//
+// 要求 3 修复：此前 groupadd/usermod/chmod/chown/SyncFolderMeta 的返回值全部被丢弃——
+// 任一步真实失败（如 sudo 不可用、chown 目标不存在、folders.db 写入失败），函数依旧
+// 走到最后返回 SyncAllConfigs() 的结果，调用方会看到"创建完成"，但 public/home 的
+// 属主、组、权限或元数据可能与期望不一致。现在每一步失败都终止并返回明确错误，调用方
+// （pool.go handlePoolCreate / stream.go 建池流程）已经把本函数的 error 当真失败处理，
+// 不需要改调用点。
 func EnsurePoolStructure(mountPoint, nasUser string) error {
-	// 公共组 nasusers：setup.sh [2/9] 已创建并加入 nasUser，这里兜底确保存在
-	common.SudoExec("groupadd", "-f", "nasusers")
-	common.SudoExec("usermod", "-a", "-G", "nasusers", nasUser)
+	// 公共组 nasusers：setup.sh [2/9] 已创建并加入 nasUser，这里兜底确保存在。
+	// groupadd -f：组已存在时返回码仍是 0，这里的失败代表 sudo/系统层面出了问题。
+	if out, err := sudoExecFn("groupadd", "-f", "nasusers"); err != nil {
+		return fmt.Errorf("创建组 nasusers 失败: %s: %w", out, err)
+	}
+	if out, err := sudoExecFn("usermod", "-a", "-G", "nasusers", nasUser); err != nil {
+		return fmt.Errorf("将用户 %s 加入组 nasusers 失败: %s: %w", nasUser, out, err)
+	}
 
 	// 1. public（2775 nasusers，setgid 组级读写）
 	pubPath := filepath.Join(mountPoint, "public")
 	if err := os.MkdirAll(pubPath, 0775); err != nil {
 		return fmt.Errorf("创建 public 失败: %v", err)
 	}
-	os.Chmod(pubPath, 02775)
+	if err := os.Chmod(pubPath, 02775); err != nil {
+		return fmt.Errorf("设置 public 权限失败: %w", err)
+	}
 	for _, sub := range []string{"media", "photos", "documents", "downloads"} {
 		p := filepath.Join(pubPath, sub)
-		os.MkdirAll(p, 0775)
-		os.Chmod(p, 02775)
+		if err := os.MkdirAll(p, 0775); err != nil {
+			return fmt.Errorf("创建 public/%s 失败: %w", sub, err)
+		}
+		if err := os.Chmod(p, 02775); err != nil {
+			return fmt.Errorf("设置 public/%s 权限失败: %w", sub, err)
+		}
 	}
-	common.SudoExec("chown", "-R", nasUser+":nasusers", pubPath)
+	if out, err := sudoExecFn("chown", "-R", nasUser+":nasusers", pubPath); err != nil {
+		return fmt.Errorf("设置 public 属主失败: %s: %w", out, err)
+	}
 
 	// 2. nasUser home（0700 owner）
 	homePath := filepath.Join(mountPoint, nasUser)
 	if err := os.MkdirAll(homePath, 0700); err != nil {
 		return fmt.Errorf("创建 home 失败: %v", err)
 	}
-	os.Chmod(homePath, 0700)
+	if err := os.Chmod(homePath, 0700); err != nil {
+		return fmt.Errorf("设置 home 权限失败: %w", err)
+	}
 	for _, sub := range []string{"media", "photos", "documents", "downloads"} {
 		p := filepath.Join(homePath, sub)
-		os.MkdirAll(p, 0700)
-		os.Chmod(p, 0700)
+		if err := os.MkdirAll(p, 0700); err != nil {
+			return fmt.Errorf("创建 home/%s 失败: %w", sub, err)
+		}
+		if err := os.Chmod(p, 0700); err != nil {
+			return fmt.Errorf("设置 home/%s 权限失败: %w", sub, err)
+		}
 	}
-	common.SudoExec("chown", "-R", nasUser+":"+nasUser, homePath)
+	// chown home 必须精确限定在 homePath 这个本函数自己创建的子目录范围内
+	// （不能对 mountPoint 做递归 chown，见上面调用点的说明），失败必须终止，
+	// 否则 home 可能仍归之前的属主/组，与声称的"已创建"不符。
+	if out, err := sudoExecFn("chown", "-R", nasUser+":"+nasUser, homePath); err != nil {
+		return fmt.Errorf("设置 home 属主失败: %s: %w", out, err)
+	}
 	// S1-R3c：挂管理员 ACL（幂等），让 fm 面板能浏览该 home；默认 ACL 保证
-	// 后续新建文件也继承。失败只记日志不阻断建池主流程。
+	// 后续新建文件也继承。失败只记日志不阻断建池主流程——这是有意的降级
+	// （ApplyHomeACL 自身文档注明的"管理员便利层"），不属于本次修复范围。
 	common.ApplyHomeACL(homePath, nasUser)
 
-	// 3. 写入 folders.db（upsert）：public = samba+nfs；home = 仅 samba
-	SyncFolderMeta(FolderMeta{Name: "public", Path: pubPath, Pool: mountPoint, Permission: "readwrite", SambaShare: true, NFSExport: true})
-	SyncFolderMeta(FolderMeta{Name: nasUser, Path: homePath, Pool: mountPoint, Permission: "readwrite", ValidUsers: nasUser, SambaShare: true})
+	// 3. 写入 folders.db（upsert）：public = samba+nfs；home = 仅 samba。
+	// 失败必须终止：元数据写不进去，SyncAllConfigs 生成的 smb.conf/exports
+	// 就不会包含刚创建的共享，调用方却会以为整条链路已经成功。
+	if err := SyncFolderMeta(FolderMeta{Name: "public", Path: pubPath, Pool: mountPoint, Permission: "readwrite", SambaShare: true, NFSExport: true}); err != nil {
+		return fmt.Errorf("写入 public 元数据失败: %w", err)
+	}
+	if err := SyncFolderMeta(FolderMeta{Name: nasUser, Path: homePath, Pool: mountPoint, Permission: "readwrite", ValidUsers: nasUser, SambaShare: true}); err != nil {
+		return fmt.Errorf("写入 home 元数据失败: %w", err)
+	}
 
 	// 4. 重生成 SMB + NFS 托管配置
 	return SyncAllConfigs()
@@ -1023,25 +1073,40 @@ func EnsurePoolStructure(mountPoint, nasUser string) error {
 
 // EnsureUserHome 创建用户主目录 /data/nas1/<username> + 默认子目录，写入 folders.db，并重生成托管配置。
 // 供用户创建（users/create.go）复用。
+//
+// 要求 3 修复：与 EnsurePoolStructure 同样的问题——chmod/chown/SyncFolderMeta 的返回值
+// 此前全部被丢弃。调用方 users/create.go 已经在检查本函数返回的 error，这里改为真实
+// 传播失败，不需要改调用点。
 func EnsureUserHome(username string) error {
 	const pool = "/data/nas1"
 	homePath := filepath.Join(pool, username)
 	if err := os.MkdirAll(homePath, 0700); err != nil {
 		return fmt.Errorf("创建 home 失败: %v", err)
 	}
-	os.Chmod(homePath, 0700)
+	if err := os.Chmod(homePath, 0700); err != nil {
+		return fmt.Errorf("设置 home 权限失败: %w", err)
+	}
 	for _, sub := range []string{"media", "photos", "documents", "downloads"} {
 		p := filepath.Join(homePath, sub)
-		os.MkdirAll(p, 0700)
-		os.Chmod(p, 0700)
+		if err := os.MkdirAll(p, 0700); err != nil {
+			return fmt.Errorf("创建 home/%s 失败: %w", sub, err)
+		}
+		if err := os.Chmod(p, 0700); err != nil {
+			return fmt.Errorf("设置 home/%s 权限失败: %w", sub, err)
+		}
 	}
-	common.SudoExec("chown", "-R", username+":"+username, homePath)
+	if out, err := sudoExecFn("chown", "-R", username+":"+username, homePath); err != nil {
+		return fmt.Errorf("设置 home 属主失败: %s: %w", out, err)
+	}
 	// S1-R3c：挂管理员 ACL（幂等）——home 是 0700 username:username，fm 面板
 	// 降权运行后天然读不了，ACL 恢复管理员浏览/预览/du 能力，不影响用户互相
-	// 隔离（其他用户没有 ACL 授权，仍被 unix 权限位挡住）。
+	// 隔离（其他用户没有 ACL 授权，仍被 unix 权限位挡住）。失败只记日志，
+	// 原因同 EnsurePoolStructure（ACL 是"管理员便利层"，非本次修复范围）。
 	common.ApplyHomeACL(homePath, common.GetNASUser())
 
 	// valid_users=username，write_users 留空（owner 默认 writable，后续授权走 write list）
-	SyncFolderMeta(FolderMeta{Name: username, Path: homePath, Pool: pool, Permission: "readwrite", ValidUsers: username, SambaShare: true})
+	if err := SyncFolderMeta(FolderMeta{Name: username, Path: homePath, Pool: pool, Permission: "readwrite", ValidUsers: username, SambaShare: true}); err != nil {
+		return fmt.Errorf("写入 home 元数据失败: %w", err)
+	}
 	return SyncAllConfigs()
 }

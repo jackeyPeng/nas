@@ -160,7 +160,14 @@ func ApplyPendingOps(r *http.Request) ([]string, error) {
 		return nil, nil
 	}
 
+	// 问题 5 修复：此前循环结束后无条件 `DELETE FROM pending_ops` 清空整张表——
+	// 哪怕某条 op 执行失败（results 里标了 "✗"、operation_logs 也记了 "error"），
+	// 它在 pending_ops 表里的那一行照样被删掉，等于这条失败的操作永久从队列
+	// 消失、永远无法重试，用户只能回到 UI 手动重新填一遍。现在按 ID 精确删除：
+	// 只清掉本次真正执行成功的 op，失败的保留在表里，下次 ApplyPendingOps
+	// 会再次尝试（且不会重新执行已经成功过的那些）。
 	var results []string
+	var succeededIDs []int
 	for _, op := range ops {
 		var err error
 		switch op.Action {
@@ -179,6 +186,7 @@ func ApplyPendingOps(r *http.Request) ([]string, error) {
 		} else {
 			logOp(op.Action, op.FolderName, detail, "success", "")
 			results = append(results, fmt.Sprintf("✓ %s %s", op.Action, op.FolderName))
+			succeededIDs = append(succeededIDs, op.ID)
 		}
 		// Audit log entry for the actual filesystem change
 		result := "success"
@@ -195,8 +203,10 @@ func ApplyPendingOps(r *http.Request) ([]string, error) {
 		}
 	}
 
-	// Clear pending queue
-	db.Exec("DELETE FROM pending_ops")
+	// 只删除本轮成功的 op，失败的留在队列里等待重试
+	for _, id := range succeededIDs {
+		db.Exec("DELETE FROM pending_ops WHERE id = ?", id)
+	}
 
 	// Sync configs and reload services（SyncAllConfigs 内部已含 reloadServices，勿重复调用）。
 	// Bug 3 修复：此前返回的 error 被直接丢弃，上面每条 op 的创建/更新/删除即使
@@ -223,6 +233,13 @@ func DiscardPendingOps() {
 }
 
 // executeCreateFolder actually creates a folder
+//
+// Item 3 修复：此前 mkdir/chown/SyncFolderMeta 的返回值被整条丢弃——mkdir
+// 失败时 chown 会对不存在的路径报错（同样被丢弃），SyncFolderMeta 仍把该
+// 文件夹写成"已存在"的元数据，函数最终返回 nil，ApplyPendingOps 据此打
+// "✓ create"并把队列项清除。结果是元数据声称文件夹存在、磁盘上其实没有，
+// 且操作已从队列消失、不可重试。现在任何一步失败都如实返回 error，
+// 该队列项保留在队列里（ApplyPendingOps 只在全部成功后才清空队列）。
 func executeCreateFolder(op PendingOp) error {
 	folderPath := op.FolderPath
 	if folderPath == "" {
@@ -230,31 +247,41 @@ func executeCreateFolder(op PendingOp) error {
 	}
 
 	// Create directory
-	common.SudoExec("mkdir", "-p", folderPath)
+	if out, err := sudoExecFn("mkdir", "-p", folderPath); err != nil {
+		return fmt.Errorf("创建目录失败: %s: %v", out, err)
+	}
 
 	// 非 public 文件夹：GenerateSambaConfig 用 force user=<文件夹名> 做文件级隔离，
 	// 必须存在同名系统用户/组。public（由 EnsurePoolStructure 创建）走 nasUser。
 	if op.FolderName != "public" {
 		ensureFolderUser(op.FolderName)
-		common.SudoExec("chown", "-R", op.FolderName+":"+op.FolderName, folderPath)
+		if out, err := sudoExecFn("chown", "-R", op.FolderName+":"+op.FolderName, folderPath); err != nil {
+			return fmt.Errorf("目录已创建，但设置属主失败: %s: %v", out, err)
+		}
 		// S1: 共享目录属主是专属隔离用户(755)，fm 面板进去建不了 share 级
 		// .recycle(48 强化验收实证:share级回收站 missing)。挂管理 ACL(与用户
 		// home 同一机制,路径形状校验天然覆盖共享目录),默认 ACL 让后续新建
 		// 文件自动带 fm 管理权。public 属主本就是 NAS_USER,无需 ACL。
+		// ApplyHomeACL 按设计失败只记日志（见 common.ApplyHomeACL 注释：
+		// ACL 是管理员便利层，用户本身仍可通过 SMB 正常访问），不在此中止。
 		common.ApplyHomeACL(folderPath, getNASUser())
 	} else {
 		nasUser := getNASUser()
-		common.SudoExec("chown", "-R", nasUser+":"+nasUser, folderPath)
+		if out, err := sudoExecFn("chown", "-R", nasUser+":"+nasUser, folderPath); err != nil {
+			return fmt.Errorf("目录已创建，但设置属主失败: %s: %v", out, err)
+		}
 	}
 
 	// Sync metadata（新文件夹默认 root_squash；no_root_squash 由 op 显式携带）
-	SyncFolderMeta(FolderMeta{
+	if err := SyncFolderMeta(FolderMeta{
 		Name: op.FolderName, Path: folderPath, Pool: op.Pool,
 		Permission: op.Permission, ValidUsers: op.ValidUsers,
 		SambaShare: op.SambaShare, NFSExport: op.NFSExport,
 		NFSNoRootSquash: op.NFSNoRootSquash,
 		RecycleBin:      op.RecycleBin, QuotaGB: op.QuotaGB,
-	})
+	}); err != nil {
+		return fmt.Errorf("目录已创建，但元数据写入失败: %v", err)
+	}
 
 	// quota_gb>0 时落地 XFS project 配额。此前只把 quota_gb 存进 folders.db
 	// 元数据，setFolderQuota 仅在专用配额 API 里被调用，创建时带的配额从未生效
@@ -290,7 +317,11 @@ func executeUpdateFolder(op PendingOp) error {
 	}
 	// nfs_no_root_squash 三态解析（纯函数，见 resolveNFSNoRootSquash）
 	m.NFSNoRootSquash = resolveNFSNoRootSquash(existing, op)
-	SyncFolderMeta(m)
+	// Item 3 修复：SyncFolderMeta 失败时必须如实返回，否则 ApplyPendingOps
+	// 会把"权限其实没改成功"报告为"✓ update"。
+	if err := SyncFolderMeta(m); err != nil {
+		return fmt.Errorf("更新元数据失败: %v", err)
+	}
 	return nil
 }
 
@@ -407,10 +438,21 @@ func executeDeleteFolder(op PendingOp) error {
 	}
 
 	// Delete directory
-	common.SudoExec("rm", "-rf", path)
+	// Item 3 修复：rm -rf 失败（如设备忙/权限问题）此前被静默丢弃，紧接着
+	// RemoveFolderMeta 照常执行——元数据被删，但目录和数据其实还在磁盘上，
+	// 从此变成不再被任何地方追踪的孤儿目录。ApplyPendingOps 仍会把该队列项
+	// 从 pending_ops 表清出（既有设计：队列项"已处理"，成败走 results/
+	// operation_logs 如实报告，不是"重试队列"），但现在 rm 失败会让这条
+	// 结果明确标 "✗ delete ...: 删除目录失败: ..."，而不是静默清掉元数据
+	// 后仍报 "✓"——用户至少能看到失败、知道目录和元数据都还需要人工处理。
+	if out, err := sudoExecFn("rm", "-rf", path); err != nil {
+		return fmt.Errorf("删除目录失败: %s: %v", out, err)
+	}
 
 	// Remove metadata
-	RemoveFolderMeta(path)
+	if err := RemoveFolderMeta(path); err != nil {
+		return fmt.Errorf("目录已删除，但元数据清理失败: %v", err)
+	}
 
 	return nil
 }

@@ -417,6 +417,7 @@ func deletePoolForm(poolType, poolDevice, poolName string) url.Values {
 // 成功（无挂载点，跳过 folders.db/SyncAllConfigs 阶段）时如实报告成功，且
 // wipefs 确实被调用一次。
 func TestHandlePoolDeleteSingleSuccessReportsTrueSuccess(t *testing.T) {
+	withFakeDeviceIdentity(t)
 	withFakeLivePool(t, PoolSummary{Type: "single", Device: "/dev/sdz"})
 	stub := withStubExec(t, map[string]cmdResponse{
 		// findmnt 对 /dev/sdz 本身与分区查询都返回空（无挂载），wipefs 成功。
@@ -448,6 +449,7 @@ func TestHandlePoolDeleteSingleSuccessReportsTrueSuccess(t *testing.T) {
 // wipefs 失败必须立即中止并返回明确错误（非 200），不能把失败吞掉继续走到
 // "存储池已删除"的成功响应。
 func TestHandlePoolDeleteSingleWipefsFailureAbortsAndReportsError(t *testing.T) {
+	withFakeDeviceIdentity(t)
 	withFakeLivePool(t, PoolSummary{Type: "single", Device: "/dev/sdz"})
 	stub := withStubExec(t, map[string]cmdResponse{
 		"findmnt":          {Out: "", Err: nil},
@@ -512,6 +514,7 @@ func TestHandlePoolDeleteSingleUmountFailureAbortsBeforeWipefs(t *testing.T) {
 // 现在必须用非 200（207）状态码 + 响应体明确标记问题，不能让前端把这种
 // 情况当完全成功处理。
 func TestHandlePoolDeleteSingleConfigCleanupFailureReportsDegraded(t *testing.T) {
+	withFakeDeviceIdentity(t)
 	withFakeLivePool(t, PoolSummary{Type: "single", Device: "/dev/sdz"})
 	withStubExec(t, map[string]cmdResponse{
 		"findmnt":          {Out: "", Err: nil},
@@ -542,6 +545,7 @@ func TestHandlePoolDeleteSingleConfigCleanupFailureReportsDegraded(t *testing.T)
 // lvremove 失败必须中止，不能继续执行 vgremove/pvremove/wipefs（否则会在
 // LV 还没删掉的情况下把 VG/PV 签名抹了，留下无法恢复的中间状态）。
 func TestHandlePoolDeleteLVMLvremoveFailureAbortsBeforeVgremove(t *testing.T) {
+	withFakeDeviceIdentity(t)
 	withFakeLivePool(t, PoolSummary{Type: "lvm", Device: "/dev/vg_nas"})
 	stub := withStubExec(t, map[string]cmdResponse{
 		"/usr/sbin/vgs": {Out: "  vg_nas\n", Err: nil},
@@ -576,6 +580,7 @@ func TestHandlePoolDeleteLVMLvremoveFailureAbortsBeforeVgremove(t *testing.T) {
 // 全程成功时，确实依次调用了 lvremove/vgremove/pvremove/wipefs，且如实报告
 // 成功（正向用例，防止 Bug 2 修复过度，错误地在成功路径也中止）。
 func TestHandlePoolDeleteLVMFullSuccessCallsAllDestructiveSteps(t *testing.T) {
+	withFakeDeviceIdentity(t)
 	withFakeLivePool(t, PoolSummary{Type: "lvm", Device: "/dev/vg_nas"})
 	stub := withStubExec(t, map[string]cmdResponse{
 		"/usr/sbin/vgs":      {Out: "  vg_nas\n", Err: nil},
@@ -607,5 +612,123 @@ func TestHandlePoolDeleteLVMFullSuccessCallsAllDestructiveSteps(t *testing.T) {
 		if stub.countCalls(name) == 0 {
 			t.Errorf("命令 %s 未被调用，calls=%v", name, stub.calledNames())
 		}
+	}
+}
+
+// TestHandlePoolDeleteLVMPvremoveFailureContinuesToRemainingPVs 覆盖 issue #6：
+// vgremove 已经成功（不可逆，VG 从 buildStorageOverview 视角已经消失，没有池
+// 实体可以重试删除），接下来两个成员 PV 中 /dev/sdb 的 pvremove 失败、
+// /dev/sdc 应该仍然被尝试并成功清理——不能像之前那样第一个失败就中止循环，
+// 把 /dev/sdc 永久放弃（既不释放也不提示用户）。响应必须明确列出失败的
+// /dev/sdb 需要手工处理，同时如实报告 /dev/sdc 已经清理成功。
+func TestHandlePoolDeleteLVMPvremoveFailureContinuesToRemainingPVs(t *testing.T) {
+	withFakeDeviceIdentity(t)
+	withFakeLivePool(t, PoolSummary{Type: "lvm", Device: "/dev/vg_nas"})
+	stub := withStubExec(t, map[string]cmdResponse{
+		"/usr/sbin/vgs":      {Out: "  vg_nas\n", Err: nil},
+		"/usr/sbin/pvs":      {Out: "/dev/sdb /dev/sdc", Err: nil},
+		"/usr/sbin/lvs":      {Out: "data /dev/vg_nas/data\n", Err: nil},
+		"findmnt":            {Out: "", Err: nil},
+		"/usr/sbin/lvremove": {Out: "", Err: nil},
+		"/usr/sbin/vgremove": {Out: "", Err: nil},
+		"/usr/sbin/pvremove": {Fn: func(args []string) (string, error) {
+			for _, a := range args {
+				if a == "/dev/sdb" {
+					return "", fmt.Errorf("device or resource busy")
+				}
+			}
+			return "", nil
+		}},
+		"/usr/sbin/wipefs": {Out: "", Err: nil},
+	})
+
+	form := deletePoolForm("lvm", "/dev/vg_nas", "vg_nas")
+	r := httptest.NewRequest(http.MethodPost, "/api/disk/pool/delete", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+
+	handlePoolDelete(w, r)
+
+	if w.Code == http.StatusOK {
+		t.Fatalf("status = 200, want non-200（有 PV 残留必须明确报告，不能说成功）; body=%s", w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "/dev/sdb") {
+		t.Errorf("body = %q, want 包含失败的 /dev/sdb", body)
+	}
+	if !strings.Contains(body, "/dev/sdc") {
+		t.Errorf("body = %q, want 包含已成功释放的 /dev/sdc", body)
+	}
+	// /dev/sdc 的 pvremove 和 wipefs 都应该被尝试，不能因 /dev/sdb 失败而放弃它。
+	if !stub.wasCalledWith("/usr/sbin/pvremove", "-f", "/dev/sdc") {
+		t.Errorf("calls = %v, want pvremove -f /dev/sdc 被调用（不应因 sdb 失败而放弃 sdc）", stub.calledNames())
+	}
+	if !stub.wasCalledWith("/usr/sbin/wipefs", "-a", "/dev/sdc") {
+		t.Errorf("calls = %v, want wipefs -a /dev/sdc 被调用", stub.calledNames())
+	}
+	// /dev/sdb 的 pvremove 失败后，不应该再对它执行 wipefs（签名清不掉，继续
+	// wipefs 没有意义，且 pvremove 失败时设备可能仍带 VG 关联，wipefs 行为未定义）。
+	if stub.wasCalledWith("/usr/sbin/wipefs", "-a", "/dev/sdb") {
+		t.Errorf("calls = %v, 不应对 pvremove 失败的 /dev/sdb 执行 wipefs", stub.calledNames())
+	}
+	// vgremove 本身必须已经执行（这是不可逆点，之后才进入补救策略）。
+	if stub.countCalls("/usr/sbin/vgremove") != 1 {
+		t.Errorf("vgremove 被调用 %d 次, want 1", stub.countCalls("/usr/sbin/vgremove"))
+	}
+}
+
+// TestHandlePoolDeleteRAIDZeroSuperblockFailureContinuesToRemainingDisks 覆盖
+// issue #6 的 RAID 分支：mdadm --stop 已经成功（阵列设备节点已消失，不可逆），
+// 两个成员盘中 sdb 的 --zero-superblock 失败，sdc 应该仍被尝试并成功清理。
+func TestHandlePoolDeleteRAIDZeroSuperblockFailureContinuesToRemainingDisks(t *testing.T) {
+	withFakeDeviceIdentity(t)
+	withFakeLivePool(t, PoolSummary{Type: "raid1", Device: "/dev/md0"})
+	stub := withStubExec(t, map[string]cmdResponse{
+		"/usr/sbin/mdadm": {Fn: func(args []string) (string, error) {
+			for _, a := range args {
+				if a == "--detail" {
+					return "   Number   Major   Minor   RaidDevice State\n      0       8       16        0      active sync   /dev/sdb\n      1       8       32        1      active sync   /dev/sdc\n", nil
+				}
+				if a == "--zero-superblock" {
+					for _, a2 := range args {
+						if a2 == "/dev/sdb" {
+							return "", fmt.Errorf("device or resource busy")
+						}
+					}
+					return "", nil
+				}
+			}
+			return "", nil
+		}},
+		"findmnt":          {Out: "", Err: nil},
+		"blkid":            {Out: "", Err: fmt.Errorf("no uuid")},
+		"/usr/sbin/wipefs": {Out: "", Err: nil},
+	})
+
+	form := deletePoolForm("raid1", "/dev/md0", "md0")
+	r := httptest.NewRequest(http.MethodPost, "/api/disk/pool/delete", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+
+	handlePoolDelete(w, r)
+
+	if w.Code == http.StatusOK {
+		t.Fatalf("status = 200, want non-200（有成员盘残留签名必须明确报告); body=%s", w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "/dev/sdb") {
+		t.Errorf("body = %q, want 包含失败的 /dev/sdb", body)
+	}
+	if !strings.Contains(body, "/dev/sdc") {
+		t.Errorf("body = %q, want 包含已成功释放的 /dev/sdc", body)
+	}
+	if !stub.wasCalledWith("/usr/sbin/wipefs", "-a", "/dev/sdc") {
+		t.Errorf("calls = %v, want wipefs -a /dev/sdc 被调用（不应因 sdb 失败而放弃 sdc）", stub.calledNames())
+	}
+	if stub.wasCalledWith("/usr/sbin/wipefs", "-a", "/dev/sdb") {
+		t.Errorf("calls = %v, 不应对 zero-superblock 失败的 /dev/sdb 执行 wipefs", stub.calledNames())
+	}
+	if !stub.wasCalledWith("/usr/sbin/mdadm", "--stop", "/dev/md0") {
+		t.Errorf("calls = %v, want mdadm --stop 已经执行（不可逆点）", stub.calledNames())
 	}
 }

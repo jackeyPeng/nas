@@ -1375,7 +1375,7 @@
                 <nav style="display:flex;gap:var(--sp-1);border-bottom:1px solid var(--border);margin-bottom:var(--sp-5);padding-bottom:0">
                     <button class="tab-btn" :class="{'tab-active':diskmgmtTab==='overview'}" @click="diskmgmtTab='overview'">📊 <span x-text="$t('storage.total')"></span></button>
                     <button class="tab-btn" :class="{'tab-active':diskmgmtTab==='disks'}" @click="diskmgmtTab='disks'">💾 <span x-text="$t('storage.disks')"></span></button>
-                    <button class="tab-btn" :class="{'tab-active':diskmgmtTab==='pools'}" @click="diskmgmtTab='pools'">🗄️ <span x-text="$t('storage.pools')"></span></button>
+                    <button class="tab-btn" :class="{'tab-active':diskmgmtTab==='pools'}" @click="diskmgmtTab='pools';loadPoolDeleteRecoveries()">🗄️ <span x-text="$t('storage.pools')"></span></button>
                     <button class="tab-btn" :class="{'tab-active':diskmgmtTab==='wizard'}" @click="diskmgmtTab='wizard';loadWizardStatus()">🧙 <span x-text="$t('storage.wizard')"></span></button>
                     <button class="tab-btn" :class="{'tab-active':diskmgmtTab==='maintenance'}" @click="diskmgmtTab='maintenance';loadOperationsLog()"><span x-text="$t('nav.maintenance')"></span></button>
                     <button class="tab-btn" :class="{'tab-active':diskmgmtTab==='recycle'}" @click="diskmgmtTab='recycle';loadRecycleBin()">🗑️ <span x-text="$t('storage.recycle_tab')"></span></button>
@@ -1690,7 +1690,30 @@
                 </div>
 
                 <!-- ═══════════════ Tab 3: 存储池 ═══════════════ -->
-                <div x-show="diskmgmtTab==='pools'" x-transition.opacity.duration.250ms>
+                <div x-show="diskmgmtTab==='pools'" x-transition.opacity.duration.250ms x-init="if(page==='diskmgmt'&&diskmgmtTab==='pools') loadPoolDeleteRecoveries()">
+                    <!-- 池删除持久化恢复记录（Requirement 5）：无论删除响应是 200/207 结构化
+                         字段还是 500 文本嵌入 id，都统一从这个后端权威只读接口展示，不依赖
+                         deletePool() 单次响应的具体形状。只要列表非空就必须展示——这些记录
+                         代表已经越过不可逆磁盘操作但尚未被管理员核实确认的删除。 -->
+                    <div x-show="poolDeleteRecoveriesError" style="background: var(--danger-light);color: var(--danger);border-radius:var(--radius-md);padding:var(--sp-3);margin-bottom:var(--sp-4);font-size:var(--fs-sm)" x-text="poolDeleteRecoveriesError"></div>
+                    <div x-show="(poolDeleteRecoveries||[]).length" style="background: var(--warn-light);border:1px solid var(--warn);border-radius:var(--radius-lg);padding:var(--sp-4);margin-bottom:var(--sp-4)">
+                        <div style="font-size:var(--fs-sm);font-weight:600;color: var(--warn);margin-bottom:var(--sp-2)">⚠️ <span x-text="$t('storage.pool_recovery_title')"></span></div>
+                        <div style="font-size:var(--fs-xs);color: var(--text-light);margin-bottom:var(--sp-3)" x-text="$t('storage.pool_recovery_hint')"></div>
+                        <template x-for="rec in (poolDeleteRecoveries||[])" :key="rec.id">
+                            <div style="background: var(--card-bg);border:1px solid var(--border);border-radius:var(--radius-md);padding:var(--sp-3);margin-bottom:var(--sp-2);font-size:var(--fs-xs)">
+                                <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:var(--sp-2)">
+                                    <div>
+                                        <div><strong x-text="rec.pool_name"></strong> <span class="badge" style="background: var(--border)" x-text="rec.pool_type"></span></div>
+                                        <div style="font-family:monospace;color: var(--text-light);margin-top:4px" x-text="rec.pool_device"></div>
+                                        <div style="color: var(--text-light);margin-top:4px"><span x-text="$t('storage.pool_recovery_phase')"></span>: <span x-text="rec.phase||'-'"></span></div>
+                                        <div style="color: var(--text-light);margin-top:4px" x-text="$t('storage.pool_recovery_created_at')+': '+rec.created_at"></div>
+                                        <div x-show="rec.phase_update_warning" style="color: var(--danger);margin-top:4px" x-text="rec.phase_update_warning"></div>
+                                    </div>
+                                    <button class="btn btn-secondary btn-sm" style="font-size:var(--fs-xs);flex-shrink:0" @click="confirmPoolDeleteRecovery(rec)" x-text="$t('storage.pool_recovery_confirm_btn')"></button>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--sp-4)">
                         <span style="font-size:var(--fs-base);font-weight:600;color: var(--text-secondary)"><span x-text="$t('storage.pool_list')"></span></span>
                         <button class="btn btn-primary btn-sm" @click="diskmgmtTab='wizard'" style="font-size:var(--fs-xs)">+ <span x-text="$t('storage.create_pool_btn')"></span></button>
@@ -1838,8 +1861,8 @@
                                 <template x-for="step in progressSteps" :key="step.name">
                                     <div style="padding:3px 0">
                                         <div style="display:flex;align-items:center;gap:var(--sp-2);font-size:var(--fs-xs)">
-                                            <span x-text="step.status==='done'?'✅':step.status==='running'?'🔄':step.status==='error'?'❌':step.status==='complete'?'✅':'⏳'"></span>
-                                            <span :style="step.status==='error'?'color: var(--danger)':'color: var(--text-secondary)'" x-text="step.name"></span>
+                                            <span x-text="step.status==='done'?'✅':step.status==='running'?'🔄':step.status==='error'?'❌':step.status==='warning'?'⚠️':step.status==='complete'?'✅':'⏳'"></span>
+                                            <span :style="step.status==='error'?'color: var(--danger)':step.status==='warning'?'color: var(--warn)':'color: var(--text-secondary)'" x-text="step.name"></span>
                                         </div>
                                         <div x-show="step.detail" style="margin-left:calc(1em + var(--sp-2));font-size:var(--fs-xs);color: var(--warn);white-space:normal" x-text="step.detail"></div>
                                     </div>
