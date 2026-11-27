@@ -1009,20 +1009,24 @@ func EnsurePoolStructure(mountPoint, nasUser string) error {
 	}
 
 	// 1. public（2775 nasusers，setgid 组级读写）
+	// 面板进程以降权用户 fm 运行，对 /data/nas* 这类刚挂载的池（属主通常是
+	// mkfs 留下的 root:root 0755）没有写权限，os.MkdirAll/os.Chmod 会直接
+	// permission denied。必须走 sudoExecFn（sudoers 已放行 mkdir -p/chmod
+	// [-R] 对 /data/* 的操作），而不是本进程的 unprivileged syscall。
 	pubPath := filepath.Join(mountPoint, "public")
-	if err := os.MkdirAll(pubPath, 0775); err != nil {
-		return fmt.Errorf("创建 public 失败: %v", err)
+	if out, err := sudoExecFn("mkdir", "-p", pubPath); err != nil {
+		return fmt.Errorf("创建 public 失败: %s: %w", out, err)
 	}
-	if err := os.Chmod(pubPath, 02775); err != nil {
-		return fmt.Errorf("设置 public 权限失败: %w", err)
+	if out, err := sudoExecFn("chmod", "2775", pubPath); err != nil {
+		return fmt.Errorf("设置 public 权限失败: %s: %w", out, err)
 	}
 	for _, sub := range []string{"media", "photos", "documents", "downloads"} {
 		p := filepath.Join(pubPath, sub)
-		if err := os.MkdirAll(p, 0775); err != nil {
-			return fmt.Errorf("创建 public/%s 失败: %w", sub, err)
+		if out, err := sudoExecFn("mkdir", "-p", p); err != nil {
+			return fmt.Errorf("创建 public/%s 失败: %s: %w", sub, out, err)
 		}
-		if err := os.Chmod(p, 02775); err != nil {
-			return fmt.Errorf("设置 public/%s 权限失败: %w", sub, err)
+		if out, err := sudoExecFn("chmod", "2775", p); err != nil {
+			return fmt.Errorf("设置 public/%s 权限失败: %s: %w", sub, out, err)
 		}
 	}
 	if out, err := sudoExecFn("chown", "-R", nasUser+":nasusers", pubPath); err != nil {
@@ -1031,19 +1035,19 @@ func EnsurePoolStructure(mountPoint, nasUser string) error {
 
 	// 2. nasUser home（0700 owner）
 	homePath := filepath.Join(mountPoint, nasUser)
-	if err := os.MkdirAll(homePath, 0700); err != nil {
-		return fmt.Errorf("创建 home 失败: %v", err)
+	if out, err := sudoExecFn("mkdir", "-p", homePath); err != nil {
+		return fmt.Errorf("创建 home 失败: %s: %w", out, err)
 	}
-	if err := os.Chmod(homePath, 0700); err != nil {
-		return fmt.Errorf("设置 home 权限失败: %w", err)
+	if out, err := sudoExecFn("chmod", "700", homePath); err != nil {
+		return fmt.Errorf("设置 home 权限失败: %s: %w", out, err)
 	}
 	for _, sub := range []string{"media", "photos", "documents", "downloads"} {
 		p := filepath.Join(homePath, sub)
-		if err := os.MkdirAll(p, 0700); err != nil {
-			return fmt.Errorf("创建 home/%s 失败: %w", sub, err)
+		if out, err := sudoExecFn("mkdir", "-p", p); err != nil {
+			return fmt.Errorf("创建 home/%s 失败: %s: %w", sub, out, err)
 		}
-		if err := os.Chmod(p, 0700); err != nil {
-			return fmt.Errorf("设置 home/%s 权限失败: %w", sub, err)
+		if out, err := sudoExecFn("chmod", "700", p); err != nil {
+			return fmt.Errorf("设置 home/%s 权限失败: %s: %w", sub, out, err)
 		}
 	}
 	// chown home 必须精确限定在 homePath 这个本函数自己创建的子目录范围内
@@ -1080,19 +1084,21 @@ func EnsurePoolStructure(mountPoint, nasUser string) error {
 func EnsureUserHome(username string) error {
 	const pool = "/data/nas1"
 	homePath := filepath.Join(pool, username)
-	if err := os.MkdirAll(homePath, 0700); err != nil {
-		return fmt.Errorf("创建 home 失败: %v", err)
+	// 与 EnsurePoolStructure 同样的原因：fm 对池根目录通常没有写权限，
+	// 必须走 sudoExecFn 而不是 os.MkdirAll/os.Chmod。
+	if out, err := sudoExecFn("mkdir", "-p", homePath); err != nil {
+		return fmt.Errorf("创建 home 失败: %s: %w", out, err)
 	}
-	if err := os.Chmod(homePath, 0700); err != nil {
-		return fmt.Errorf("设置 home 权限失败: %w", err)
+	if out, err := sudoExecFn("chmod", "700", homePath); err != nil {
+		return fmt.Errorf("设置 home 权限失败: %s: %w", out, err)
 	}
 	for _, sub := range []string{"media", "photos", "documents", "downloads"} {
 		p := filepath.Join(homePath, sub)
-		if err := os.MkdirAll(p, 0700); err != nil {
-			return fmt.Errorf("创建 home/%s 失败: %w", sub, err)
+		if out, err := sudoExecFn("mkdir", "-p", p); err != nil {
+			return fmt.Errorf("创建 home/%s 失败: %s: %w", sub, out, err)
 		}
-		if err := os.Chmod(p, 0700); err != nil {
-			return fmt.Errorf("设置 home/%s 权限失败: %w", sub, err)
+		if out, err := sudoExecFn("chmod", "700", p); err != nil {
+			return fmt.Errorf("设置 home/%s 权限失败: %s: %w", sub, out, err)
 		}
 	}
 	if out, err := sudoExecFn("chown", "-R", username+":"+username, homePath); err != nil {
