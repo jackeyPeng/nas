@@ -4,6 +4,16 @@
 
 （暂无）
 
+## 2026-11-27 - v1.5.0-beta.3 存储安全与降权建池修复
+
+- fix(storage): 存储池、目录、权限、配额、上传覆盖和跨文件系统复制失败路径加固；不安全重置入口 fail-closed，避免无法证明纳管范围时执行磁盘破坏操作
+- fix(storage): 删池恢复记录持久化、设备身份核验、失败步骤保留与手工确认；共享配置和 pending 操作错误正确传播
+- fix(storage): 降权面板通过 sudo 仅管理明确的 public/home 等目录，修复新挂载 XFS 池无法创建共享目录的问题
+- fix(security): Samba/rclone/FTP 用户输入校验、ACL/xattr 覆盖保留、attr 安装依赖和中英文前端提示同步
+- test: Debian 13 测试机完成 LVM merge 与 RAID1 建池验收，重置接口验证为 fail-closed
+
+---
+
 ## 2026-11-25 - v1.5.0-beta.2 应用平台 M2/M3（市场·升级·外部应用）+ 会话与权限硬修复
 
 - fix(apps): 升级目录搬移 EPERM — defaultExecutor 的 Rename/RemoveAll 对 `/var/lib/nas/apps/` 直接子项自动路由 sudo `mvapp`/`rmapp`（APPS_BASE 属主 root，面板用户对父目录无 rename/unlink 权限，真机升级实测 rename EPERM 回滚；provision 脚本加 mvapp/rmapp 子命令 + `check_appname` 白名单双侧校验；双机升级 0.1.0→0.2.0 实证）
