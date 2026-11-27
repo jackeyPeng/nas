@@ -28,13 +28,20 @@ func TestRemoveUser_RejectsInvalidUsername(t *testing.T) {
 // 级"DELETE 成功后触发 SyncAllConfigs"这条路径因此不能在单测里用合法用户名
 // 完整跑通——会变成真实系统调用。
 //
-// 这里退而测可行的一层：用非法用户名让 removeUser 在到达 SudoExec 之前短路
-// 失败，断言 syncConfigsAfterUserDelete 替换点在"删除未成功"时不会被调用
-// （即 sync 调用确实挂在 removeUser 成功之后，不是无条件触发），同时验证替
-// 换点本身可被测试替身接管而不触发真实系统调用。sync 失败不阻断删除成功
-// 语义的断言见 TestHandleUserAction_Delete_ConfigSyncFailure_DoesNotFailDelete；
-// 两者合起来覆盖"接入点存在 + 接入点行为正确"，但不覆盖 removeUser 真实成功
+// 这里退而测可行的一层：用非法用户名让请求在到达 SudoExec 之前短路失败，
+// 断言 syncConfigsAfterUserDelete 替换点在"删除未成功"时不会被调用（即
+// sync 调用确实挂在删除成功之后，不是无条件触发），同时验证替换点本身可
+// 被测试替身接管而不触发真实系统调用。sync 失败不阻断删除成功语义的断言
+// 见 TestHandleUserAction_Delete_ConfigSyncFailure_DoesNotFailDelete；两者
+// 合起来覆盖"接入点存在 + 接入点行为正确"，但不覆盖 removeUser 真实成功
 // 后的端到端效果（该效果只能在 Debian 真机验证，见 remove-user.sh）。
+//
+// 状态码说明（加固轮2 item E）：handleUserAction 现在在分发到任何子路由
+// （password/services/quota/delete）之前就对 username 做 isValidUsername
+// 校验并返回 400——比 removeUser 内部的校验（返回 500）更早短路，是纵深
+// 防御的第三层（Go handler 入口 / removeUser 内部 / remove-user.sh 脚本内
+// 部），因此本测试断言从 500 改为 400；"失败时不触发 SyncAllConfigs"这条
+// 核心断言不受影响。
 func TestHandleUserAction_Delete_InvalidUsername_SkipsConfigSync(t *testing.T) {
 	calls := 0
 	orig := syncConfigsAfterUserDelete
@@ -52,8 +59,8 @@ func TestHandleUserAction_Delete_InvalidUsername_SkipsConfigSync(t *testing.T) {
 	w := httptest.NewRecorder()
 	handleUserAction(w, r)
 
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("非法用户名删除应返回 500（removeUser 短路错误），got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("非法用户名删除应在 handler 入口被短路拒绝（400），got %d: %s", w.Code, w.Body.String())
 	}
 	if calls != 0 {
 		t.Errorf("removeUser 失败时不应调用 syncConfigsAfterUserDelete，got %d 次调用", calls)

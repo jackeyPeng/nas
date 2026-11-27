@@ -1,10 +1,52 @@
 package users
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 
 	"nas-panel/modules/diskmgmt"
 )
+
+// Item 8 修复：handleMatrix 写路径此前直接把 r.FormValue("username") 传给
+// setSharePermission，未过 isValidUsername，可令含换行等字符的值经
+// listAdd → FolderMeta.ValidUsers/WriteUsers 写入 smb.conf 的
+// "valid users ="/"write list =" 行，构成配置注入。必须在进入
+// setSharePermission 之前拒绝非法用户名。
+func TestHandleMatrixRejectsInvalidUsername(t *testing.T) {
+	cases := []struct {
+		name     string
+		username string
+	}{
+		{"换行注入", "alice\nvalid users = everyone"},
+		{"空格", "ali ce"},
+		{"等号", "alice=admin"},
+		{"分号", "alice;rm"},
+		{"空用户名因长度被拒", "a"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			form := url.Values{}
+			form.Set("username", tc.username)
+			form.Set("folder", "share")
+			form.Set("permission", "readonly")
+			req := httptest.NewRequest(http.MethodPut, "/api/users/matrix", strings.NewReader(form.Encode()))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			rec := httptest.NewRecorder()
+
+			handleMatrix(rec, req)
+
+			if rec.Code == http.StatusOK {
+				t.Fatalf("非法用户名 %q 应被拒绝，实际返回 200", tc.username)
+			}
+			if rec.Code != http.StatusBadRequest {
+				t.Errorf("username=%q: code = %d, want 400", tc.username, rec.Code)
+			}
+		})
+	}
+}
 
 // 从 folders.db 元数据回显单用户权限（替代旧的 smb.conf 解析路径）。
 // 场景与旧 TestGetUserFolderPermissionOpenShare 等价，外加按用户粒度用例。

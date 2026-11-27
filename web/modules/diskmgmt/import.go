@@ -116,7 +116,10 @@ func handleImportPool(w http.ResponseWriter, r *http.Request) {
 
 	// 3. 挂载到 /data/nas1
 	mountPoint := "/data/nas1"
-	common.SudoExec("mkdir", "-p", mountPoint)
+	if out, err := common.SudoExec("mkdir", "-p", mountPoint); err != nil {
+		jsonError(w, fmt.Sprintf("创建挂载点失败: %s", strings.TrimSpace(out)), http.StatusInternalServerError)
+		return
+	}
 	if out, err := common.SudoExec("mount", lvPath, mountPoint); err != nil {
 		jsonError(w, fmt.Sprintf("挂载失败: %s", strings.TrimSpace(out)), http.StatusInternalServerError)
 		return

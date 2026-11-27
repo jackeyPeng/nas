@@ -339,7 +339,16 @@ func setupLVMSingleStream(w http.ResponseWriter, dev, mountPoint, nasUser string
 	stepDone("格式化 xfs")
 
 	stepRunning("挂载并配置")
-	common.SudoExec("mkdir", "-p", mountPoint)
+	// Item 1 修复：mkdir 失败（权限/只读父目录/路径冲突等）此前被忽略，紧接着
+	// 的 mount 会打在一个可能不存在或状态异常的目录上——mount 本身的 error
+	// 虽然会被下面 checkExecError 捕获并中止，但 mkdir 失败的真实原因会丢失，
+	// 且不排除 mount 在某些边界情况下"看似成功"（如 mountPoint 恰好已存在）
+	// 掩盖掉 mkdir 曾经失败的事实。现在显式检查并在失败时中止，不再往下执行
+	// mount/chown/EnsurePoolStructure。
+	out, err = common.SudoExec("mkdir", "-p", mountPoint)
+	if checkExecError(w, "创建挂载点目录", out, err) {
+		return fmt.Errorf("创建挂载点目录: %s: %w", out, err)
+	}
 	// prjquota：与 writeFstab 的 defaults,prjquota 一致，建池后配额立即可用
 	out, err = common.SudoExec("mount", "-o", "prjquota", lvPath, mountPoint)
 	if checkExecError(w, "挂载", out, err) {
@@ -348,8 +357,15 @@ func setupLVMSingleStream(w http.ResponseWriter, dev, mountPoint, nasUser string
 	if mountAndWriteFstab(w, "挂载并配置", lvPath, mountPoint) {
 		return fmt.Errorf("挂载并配置: 写入 fstab 失败")
 	}
-	common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountPoint)
-	EnsurePoolStructure(mountPoint, nasUser)
+	// Item 1 修复：移除此前的 `chown -R nasUser mountPoint`——这是对整个挂载点
+	// 根目录的递归 chown，范围过大（万一 mountPoint 下已有非预期内容，会被
+	// 一起改写属主）且是冗余操作：下面的 EnsurePoolStructure 已经对它创建的
+	// public/ 和 home/ 子目录分别执行精确的（非递归扩散到 mountPoint 本身的）
+	// chown，mountPoint 根目录本身不需要属于 nasUser（内容都在其受控子目录里）。
+	if err := EnsurePoolStructure(mountPoint, nasUser); err != nil {
+		stepError(w, "挂载并配置", err.Error())
+		return fmt.Errorf("配置池目录结构: %w", err)
+	}
 	stepDone("挂载并配置 Samba 共享")
 	return nil
 }
@@ -398,7 +414,11 @@ func setupLVMMergeStream(w http.ResponseWriter, devs []string, mountPoint, nasUs
 	stepDone("格式化 xfs")
 
 	stepRunning("挂载并配置")
-	common.SudoExec("mkdir", "-p", mountPoint)
+	// Item 1 修复：mkdir 失败检查，理由同 setupLVMSingleStream 顶部注释。
+	out, err = common.SudoExec("mkdir", "-p", mountPoint)
+	if checkExecError(w, "创建挂载点目录", out, err) {
+		return fmt.Errorf("创建挂载点目录: %s: %w", out, err)
+	}
 	// prjquota：与 writeFstab 的 defaults,prjquota 一致，建池后配额立即可用
 	out, err = common.SudoExec("mount", "-o", "prjquota", lvPath, mountPoint)
 	if checkExecError(w, "挂载", out, err) {
@@ -407,8 +427,11 @@ func setupLVMMergeStream(w http.ResponseWriter, devs []string, mountPoint, nasUs
 	if mountAndWriteFstab(w, "挂载并配置", lvPath, mountPoint) {
 		return fmt.Errorf("挂载并配置: 写入 fstab 失败")
 	}
-	common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountPoint)
-	EnsurePoolStructure(mountPoint, nasUser)
+	// Item 1 修复：移除 `chown -R mountPoint`，理由同 setupLVMSingleStream 顶部注释。
+	if err := EnsurePoolStructure(mountPoint, nasUser); err != nil {
+		stepError(w, "挂载并配置", err.Error())
+		return fmt.Errorf("配置池目录结构: %w", err)
+	}
 	stepDone("挂载并配置 Samba 共享")
 	return nil
 }
@@ -454,7 +477,11 @@ func setupRAIDStream(w http.ResponseWriter, devs []string, level int, mountPoint
 
 	// 5. Mount + fstab
 	stepRunning("挂载并配置")
-	common.SudoExec("mkdir", "-p", mountPoint)
+	// Item 1 修复：mkdir 失败检查，理由同 setupLVMSingleStream 顶部注释。
+	out, err = common.SudoExec("mkdir", "-p", mountPoint)
+	if checkExecError(w, "创建挂载点目录", out, err) {
+		return fmt.Errorf("创建挂载点目录: %s: %w", out, err)
+	}
 	out, err = common.SudoExec("mount", "-o", "prjquota", mdDev, mountPoint)
 	if checkExecError(w, "挂载", out, err) {
 		return fmt.Errorf("挂载: %s: %w", out, err)
@@ -462,7 +489,8 @@ func setupRAIDStream(w http.ResponseWriter, devs []string, level int, mountPoint
 	if mountAndWriteFstab(w, "挂载并配置", mdDev, mountPoint) {
 		return fmt.Errorf("挂载并配置: 写入 fstab 失败")
 	}
-	common.SudoExec("chown", "-R", nasUser+":"+nasUser, mountPoint)
+	// Item 1 修复：移除 `chown -R mountPoint`，理由同 setupLVMSingleStream 顶部
+	// 注释——下面第 7 步 EnsurePoolStructure 已对其创建的子目录做精确 chown。
 	stepDone("挂载并写入 fstab")
 
 	// 6. Save RAID config —— E7：改调 persistRAIDConfig，灭掉此前 scan/cat
@@ -485,8 +513,14 @@ func setupRAIDStream(w http.ResponseWriter, devs []string, level int, mountPoint
 	stepDone("保存 RAID 配置")
 
 	// 7. Add Samba share
+	// Item 1 修复：EnsurePoolStructure 的 error 此前被丢弃——public/home 目录
+	// 创建失败、chown 失败或 SyncAllConfigs 失败都会被 stepDone 无条件报成
+	// "配置 Samba 共享"成功，用户看不出整个池其实没有可用共享。
 	stepRunning("配置 Samba 共享")
-	EnsurePoolStructure(mountPoint, nasUser)
+	if err := EnsurePoolStructure(mountPoint, nasUser); err != nil {
+		stepError(w, "配置 Samba 共享", err.Error())
+		return fmt.Errorf("配置池目录结构: %w", err)
+	}
 	stepDone("配置 Samba 共享")
 	return nil
 }
@@ -514,7 +548,13 @@ func getNextMDDevice() string {
 	return "/dev/md127"
 }
 
-// handleWizardResetStream does storage reset with real-time progress
+// handleWizardResetStream: fail-closed stub. The reset feature is
+// temporarily disabled because the current implementation cannot prove
+// that the devices it would touch belong exclusively to this panel's
+// managed pool (see resetDisabledMessage in reset.go). This handler sends
+// a single SSE error event and returns, before touching confirm/
+// confirm_token, before any sudoOutputFn/sudoExecFn call, and before any
+// filesystem/LVM/RAID/disk operation.
 func handleWizardResetStream(w http.ResponseWriter, r *http.Request) {
 	common.LockDiskOp()
 	defer common.UnlockDiskOp()
@@ -523,186 +563,8 @@ func handleWizardResetStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
-	confirm := r.URL.Query().Get("confirm")
-	confirmToken := r.URL.Query().Get("confirm_token")
-	if confirm != "yes" || confirmToken != "DELETE" {
-		sendProgress(w, ProgressEvent{Step: "需要确认", Status: "error", Detail: "请输入 DELETE 确认（不可恢复）"})
-		return
-	}
-
 	// SSE 由前端 GET 触发，全局中间件不审计 GET——这里显式补记
-	common.LogAuditRequest(r, "STORAGE", "存储重置(流式)", "清空所有存储池配置（不可恢复）", "pending")
+	common.LogAuditRequest(r, "STORAGE", "存储重置(流式)", "重置功能已禁用，请求被拒绝", "rejected")
 
-	totalSteps := 7
-	step := 0
-	stepDone := func(name string) {
-		step++
-		sendProgress(w, ProgressEvent{Step: name, Status: "done", Index: step, Total: totalSteps})
-		time.Sleep(100 * time.Millisecond)
-	}
-	stepRunning := func(name string) {
-		sendProgress(w, ProgressEvent{Step: name, Status: "running", Index: step + 1, Total: totalSteps})
-		time.Sleep(100 * time.Millisecond)
-	}
-
-	nasUser := common.GetNASUser()
-	if nasUser == "" {
-		nasUser = "root"
-	}
-
-	// consensus P0-A2：在任何拆除动作之前（LVM/PV/RAID 都还活着）收集纳管擦盘
-	// 目标集合——pvs/mdstat 一旦等 LVM/PV 被拆了再查就是空的，必须在最前面采集。
-	mounts := getExistingDataMounts()
-	pvsOutPre, pvsErrPre := common.SudoOutput("/usr/sbin/pvs", "--noheadings", "-o", "pv_name,vg_name")
-	mdstatPre, mdstatErrPre := common.SudoOutput("cat", "/proc/mdstat")
-	// consensus R1 Fix 4：采集失败不中止重置（无 LVM 的机器上 pvs 缺失是合法
-	// 状态），但不能静默吞错——发一条 running 状态的 SSE 事件把警告带给前端/
-	// 审计，不新增 step、不改 totalSteps。
-	if pvsErrPre != nil || mdstatErrPre != nil {
-		sendProgress(w, ProgressEvent{
-			Step: "采集纳管盘", Status: "running", Index: step + 1, Total: totalSteps,
-			Detail: fmt.Sprintf("无法枚举纳管盘（pvs/mdstat 失败）: pvs=%v mdstat=%v，擦除集合可能不完整", pvsErrPre, mdstatErrPre),
-		})
-	}
-	managedTargets := collectManagedWipeTargets(pvsOutPre, mdstatPre, mounts)
-
-	// 1. Unmount
-	stepRunning("卸载数据目录")
-	var resetMountPoints []string
-	for _, m := range mounts {
-		mount := m["mount"]
-		if mount == "/data" || isDataNasMount(mount) {
-			common.SudoExec("umount", "-l", mount)
-			resetMountPoints = append(resetMountPoints, mount)
-		}
-	}
-	stepDone("卸载数据目录")
-
-	// 2. Clean fstab — precise match, only /data and /data/nasN entries
-	stepRunning("清理 fstab")
-	fstabData, _ := common.SudoOutput("cat", "/etc/fstab")
-	if fstabData != "" {
-		lines := strings.Split(fstabData, "\n")
-		var newLines []string
-		for _, line := range lines {
-			trimmed := strings.TrimSpace(line)
-			if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-				newLines = append(newLines, line)
-				continue
-			}
-			fields := strings.Fields(trimmed)
-			if len(fields) >= 2 {
-				mountPoint := fields[1]
-				if mountPoint == "/data" || isDataNasMount(mountPoint) {
-					continue
-				}
-			}
-			newLines = append(newLines, line)
-		}
-		content := strings.Join(newLines, "\n")
-		if content != fstabData {
-			common.SafeWriteFile("/etc/fstab", content)
-		}
-	}
-	stepDone("清理 fstab")
-
-	// 3. Remove LVM
-	stepRunning("删除 LVM 卷")
-	vgsOut, _ := common.SudoOutput("/usr/sbin/vgs", "--noheadings", "-o", "vg_name")
-	if strings.TrimSpace(vgsOut) != "" {
-		for _, vgName := range strings.Fields(vgsOut) {
-			lvsOut, _ := common.SudoOutput("/usr/sbin/lvs", "--noheadings", "-o", "lv_name", vgName)
-			for _, lvName := range strings.Fields(lvsOut) {
-				common.SudoExec("/usr/sbin/lvremove", "-f", "/dev/"+vgName+"/"+lvName)
-			}
-			common.SudoExec("/usr/sbin/vgremove", "-f", vgName)
-		}
-	}
-	pvsOut, _ := common.SudoOutput("/usr/sbin/pvs", "--noheadings", "-o", "pv_name")
-	for _, pvName := range strings.Fields(pvsOut) {
-		if strings.HasPrefix(pvName, "/dev/") {
-			common.SudoExec("/usr/sbin/pvremove", "-f", pvName)
-		}
-	}
-	stepDone("删除 LVM 卷")
-
-	// 4. Stop RAID — only /dev/mdN devices, not --scan
-	stepRunning("停止 RAID")
-	stopRAIDArrays()
-	// E7：改调 resetRAIDConfig —— 只删 ARRAY 行，保留 Debian 默认的
-	// HOMEHOST/MAILADDR 等其余内容，并在有变化时跟进 update-initramfs -u
-	// （失败只留警告、随 Detail 带给前端，不阻断重置流程）。
-	if warning, err := resetRAIDConfig(nil); err != nil {
-		sendProgress(w, ProgressEvent{
-			Step: "停止 RAID", Status: "running", Index: step + 1, Total: totalSteps,
-			Detail: "清除 RAID 配置失败: " + err.Error(),
-		})
-	} else if warning != "" {
-		sendProgress(w, ProgressEvent{
-			Step: "停止 RAID", Status: "running", Index: step + 1, Total: totalSteps,
-			Detail: warning,
-		})
-	}
-	stepDone("停止 RAID")
-
-	// 5. Wipe disks — consensus P0-A2：擦盘集合收敛为面板纳管盘，不再对
-	// getDataDisks()（全部非系统整盘）无差别 zero-superblock + wipefs，只对
-	// 最前面采集到的 managedTargets 执行擦除；外来 USB 备份盘等从未纳管的盘
-	// 完全不碰。
-	// consensus R1 Fix 3：改为复用 reset.go 同款 wipeManagedTargets（原来这里
-	// 内联复制了一份擦盘循环，与 wipeManagedTargets 平行实现，且跳过系统盘时
-	// 没有日志）。wipeManagedTargets 返回的 steps（含「跳过系统盘 X」条目）
-	// 通过 sendProgress 的 Detail 呈现，SSE 事件结构与 step 计数不变。
-	stepRunning("清除磁盘签名")
-	wipeSteps := wipeManagedTargets(managedTargets)
-	if len(wipeSteps) > 0 {
-		sendProgress(w, ProgressEvent{
-			Step: "清除磁盘签名", Status: "running", Index: step + 1, Total: totalSteps,
-			Detail: strings.Join(wipeSteps, "; "),
-		})
-	}
-	dataDisks := getDataDisks()
-	if unmanaged := skipUnmanagedDisks(dataDisks, managedTargets); len(unmanaged) > 0 {
-		sendProgress(w, ProgressEvent{
-			Step: "清除磁盘签名", Status: "running", Index: step + 1, Total: totalSteps,
-			Detail: "跳过未纳管盘: " + strings.Join(unmanaged, ", "),
-		})
-	}
-	stepDone("清除磁盘签名")
-
-	// 6. 清理 folders.db 元数据 + 重投影托管配置（权威源模式，替代旧的手工 removeSambaSharesByPrefix：
-	// 那个调用只改 smb.conf 不碰 folders.db，残留元数据会在下次 SyncAllConfigs 时把共享重新生成回来）
-	stepRunning("清理共享配置")
-	for _, mount := range resetMountPoints {
-		RemoveFolderMetaByMountPrefix(mount)
-	}
-	common.SudoExec("rm", "-f", "/opt/nas/data/.last_reload")
-	// Bug 3 修复：此前 SyncAllConfigs() 的错误被直接丢弃，无论 Samba/NFS
-	// 配置重投影是否真的成功，SSE 流都会紧接着发一条 "清理共享配置" done 事件，
-	// 前端据此展示整体重置成功——用户看不出 smb.conf/exports 其实没同步成功、
-	// 共享可能残留旧状态。现在失败时先发一条 running 状态的 Detail 事件把
-	// 具体错误带给前端，再继续 stepDone（本步骤本身—— rm .last_reload 与清
-	// folders.db 已经做了，不可逆，不适合把整个重置流程中止在这一步）。
-	if err := syncAllConfigsFn(); err != nil {
-		sendProgress(w, ProgressEvent{
-			Step: "清理共享配置", Status: "running", Index: step + 1, Total: totalSteps,
-			Detail: "重新生成 Samba/NFS 托管配置失败: " + err.Error(),
-		})
-	}
-	stepDone("清理共享配置")
-
-	// 7. Recreate /data
-	stepRunning("重建 /data 目录")
-	common.SudoExec("mkdir", "-p", "/data")
-	common.SudoExec("chown", "-R", nasUser+":"+nasUser, "/data")
-	stepDone("重建 /data 目录")
-
-	sendProgress(w, ProgressEvent{
-		Step:   "完成",
-		Status: "complete",
-		Index:  totalSteps,
-		Total:  totalSteps,
-		Detail: "存储已重置，磁盘已释放",
-	})
-	system.ScheduleRegistryRefresh()
+	sendProgress(w, ProgressEvent{Step: "重置功能已禁用", Status: "error", Detail: resetDisabledMessage})
 }

@@ -139,22 +139,17 @@ func getSmartStatus(devName string) string {
 	return "unknown"
 }
 
-// getDiskSerial reads disk serial number
+// getDiskSerial reads disk serial number. 仅用于 overview/status 等只读
+// 展示路径（经 cachedSmartctl 节流）——池删除前的身份采集走的是
+// captureDeviceIdentity 里未缓存的 smartctl 调用，不复用这个函数（见
+// pool_delete_recovery.go 顶部注释：展示类缓存不能用在安全关键的身份
+// 采集路径上）。
 func getDiskSerial(devName string) string {
 	out, err := cachedSmartctl(smartctlCacheTTL, "-i", "/dev/"+devName)
 	if err != nil {
 		return ""
 	}
-	for _, line := range strings.Split(out, "\n") {
-		lower := strings.ToLower(line)
-		if strings.Contains(lower, "serial number:") {
-			fields := strings.SplitN(line, ":", 2)
-			if len(fields) == 2 {
-				return strings.TrimSpace(fields[1])
-			}
-		}
-	}
-	return ""
+	return parseSmartctlSerial(out)
 }
 
 // classifyChildPartition 推导子分区类型，并返回联动后的父盘类型（Fix 1a）。

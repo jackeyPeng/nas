@@ -103,6 +103,8 @@ lint-all: lint
 	else \
 		echo "  shellcheck 未安装，跳过 (apt-get install shellcheck)"; \
 	fi
+	@echo "apt 依赖静态断言检查 (attr/acl)..."
+	@python3 scripts/check-apt-deps.py
 
 ## shellcheck: 仅检查 Shell 脚本
 shellcheck:

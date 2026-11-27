@@ -56,6 +56,13 @@ func RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/disk/pool/extend", common.AuthMiddleware(handlePoolExtend))
 	mux.HandleFunc("/api/disk/pool/extend-stream", common.AuthMiddleware(handlePoolExtendStream))
 	mux.HandleFunc("/api/disk/pool/delete", common.AuthMiddleware(handlePoolDelete))
+	// Requirement 2：池删除持久化恢复状态查询——完全成功、部分失败或
+	// 进程崩溃的删除操作都会在此列出（不再因为"HTTP 响应已写出"就自动
+	// 清除），供管理员人工核实。该接口严格只读，不执行任何操作。
+	mux.HandleFunc("/api/disk/pool/delete/recovery", common.AuthMiddleware(handlePoolDeleteRecoveryStatus))
+	// 清除恢复记录的唯一入口：POST + 显式 id，必须是管理员核实磁盘层面
+	// 状态之后的主动确认动作，本身不执行任何破坏性/wipe 相关操作。
+	mux.HandleFunc("/api/disk/pool/delete/recovery/confirm", common.AuthMiddleware(handlePoolDeleteRecoveryConfirm))
 	// Import existing pool (换机恢复)
 	mux.HandleFunc("/api/disk/import", common.AuthMiddleware(handleImportList))
 	mux.HandleFunc("/api/disk/import/pool", common.AuthMiddleware(handleImportPool))
@@ -91,7 +98,8 @@ func RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/disk/oplogs/clear", common.AuthMiddleware(handleOperationLogsClear))
 	// Wizard (simple storage setup)
 	mux.HandleFunc("/api/disk/wizard/status", common.AuthMiddleware(handleWizardStatus))
-	// Wizard setup (non-stream) deprecated — use setup-stream instead
+	// Wizard setup (non-stream) 已下线（Item 2）：保留路由明确返回 410 Gone，
+	// 不执行任何磁盘/LVM/RAID 命令 — 使用 setup-stream 代替
 	mux.HandleFunc("/api/disk/wizard/setup", common.AuthMiddleware(handleWizardSetup))
 	mux.HandleFunc("/api/disk/wizard/reset", common.AuthMiddleware(handleWizardReset))
 	// Stream (progressive setup/reset)

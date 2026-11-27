@@ -321,6 +321,14 @@ migrate_ownership_to_nas_user() {
     if ! command -v setfacl >/dev/null 2>&1; then
         apt_retry apt-get install -y acl >/dev/null 2>&1 || true
     fi
+    # getfattr/setfattr 来自 attr 包：filemgmt 覆盖写保留 user.* xattr
+    # (web/modules/filemgmt/upload.go captureACLXattr/restoreACLXattr)依赖它，
+    # 缺失时覆盖写会直接报错中止（fail-closed，不会静默丢属性），但老机器
+    # 升级必须在这里补装，否则覆盖写功能在升级后不可用。同样独立于
+    # [1/11]，--config-only 升级路径也要跑到。
+    if ! command -v setfattr >/dev/null 2>&1; then
+        apt_retry apt-get install -y attr >/dev/null 2>&1 || true
+    fi
     if [ -n "$repo_real" ] && command -v setfacl >/dev/null 2>&1; then
         for pool_dir in /data/nas*; do
             [ -d "$pool_dir" ] || continue
@@ -366,7 +374,7 @@ else
     DEBIAN_FRONTEND=noninteractive apt_retry apt-get install -y -o DPkg::Lock::Timeout=60 \
         curl samba nfs-kernel-server vsftpd rclone \
         fail2ban ufw smartmontools unattended-upgrades \
-        smbclient nfs-common xfsprogs parted mdadm lvm2 rsync acl
+        smbclient nfs-common xfsprogs parted mdadm lvm2 rsync acl attr
     echo "  ✓ 软件包安装完成"
 fi
 

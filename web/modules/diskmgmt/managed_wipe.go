@@ -1,9 +1,8 @@
 package diskmgmt
 
 import (
+	"fmt"
 	"strings"
-
-	"nas-panel/common"
 )
 
 // ═══════════════════════════════════════════════════
@@ -54,11 +53,29 @@ func mdstatMemberDisks(mdstatContent string) []string {
 	return result
 }
 
-// pvsListAll 从 `pvs --noheadings -o pv_name` 输出解析全部 PV 设备路径。纯函数。
+// pvsListAll 解析 `pvs --noheadings -o pv_name,vg_name` 输出，取第一列（PV
+// 设备路径）。纯函数。
+//
+// 本轮修复（issue #1）：所有实际调用方（reset.go、stream.go）传入的都是
+// `pv_name,vg_name` 两列输出，但此函数此前按"整行就是一个设备路径"处理
+// （只做 TrimSpace + HasPrefix("/dev/") 判断），对形如
+// "  /dev/sda1   vg_nas" 的真实两列行会把整行（含 VG 名）当成一个设备
+// 字符串塞进结果——既产出了形如 "/dev/sda1   vg_nas" 的非法设备名，又遗漏了
+// 把该 PV 正确纳入 managedTargets 集合，污染 collectManagedWipeTargets 的
+// 输出（被 reset.go/stream.go 用于"只擦纳管盘"的判定依据）。
+//
+// 修法：改用 strings.Fields 按空白切分取 fields[0]，与 pvsPVToVGMap /
+// getCachedPVMappings（overview.go）保持同一套解析逻辑，避免同一份 pvs
+// 输出在不同函数里被用不同方式误解析。只有空行、无法整行解析出字段的
+// 行会被跳过（不会把半行垃圾当设备名）。
 func pvsListAll(pvsOut string) []string {
 	var result []string
 	for _, line := range strings.Split(pvsOut, "\n") {
-		dev := strings.TrimSpace(line)
+		fields := strings.Fields(strings.TrimSpace(line))
+		if len(fields) == 0 {
+			continue
+		}
+		dev := fields[0]
 		if strings.HasPrefix(dev, "/dev/") {
 			result = append(result, dev)
 		}
@@ -222,6 +239,17 @@ func mdstatMembersByDevice(mdstatContent string) map[string][]string {
 // wipeManagedTargets 对纳管目标集合逐个执行 zero-superblock + wipefs，命中
 // 系统盘则跳过该盘并记日志（不中止整个 reset —— 与 handlePoolDelete 的"拒绝
 // 整个操作"语义不同，这里是尽力拆除，其余目标仍应继续清除）。返回 step 日志。
+//
+// 问题 1 补充修复：此前 mdadm --zero-superblock / wipefs -a 的返回值被
+// common.SudoExec 原地丢弃——走到这一步时 pvremove/vgremove/mdadm --stop
+// 等不可逆步骤已经成功（reset.go/stream.go 在调用本函数前已经让这些失败
+// 立即 return），所以不适合让单个盘的擦除失败中止整个循环（其它盘的签名
+// 该清的还是要清，否则更糟：LVM/RAID 元数据已经拆了，磁盘签名却没擦，
+// 残留的旧文件系统签名反而可能让下次扫盘误把这块盘识别成"仍属于旧池"）。
+// 但失败不能再悄无声息——现在每个失败的命令都如实写进 step 文案
+// ("✗ 清除磁盘签名失败" + 具体 stderr/err)，调用方（reset.go 的 steps、
+// stream.go 的 SSE Detail）会原样呈现给用户，不再假装"清除磁盘签名"
+// 对这块盘也成功了。
 func wipeManagedTargets(targets []string) []string {
 	var steps []string
 	for _, dev := range targets {
@@ -229,11 +257,40 @@ func wipeManagedTargets(targets []string) []string {
 			steps = append(steps, "跳过系统盘 "+dev)
 			continue
 		}
-		common.SudoExec("/usr/sbin/mdadm", "--zero-superblock", dev)
-		common.SudoExec("/usr/sbin/wipefs", "-a", dev)
-		steps = append(steps, "清除磁盘签名 "+dev)
+		var failures []string
+		if out, err := sudoExecFn("/usr/sbin/mdadm", "--zero-superblock", dev); err != nil {
+			failures = append(failures, fmt.Sprintf("mdadm --zero-superblock 失败: %v（输出: %s）", err, out))
+		}
+		if out, err := sudoExecFn("/usr/sbin/wipefs", "-a", dev); err != nil {
+			failures = append(failures, fmt.Sprintf("wipefs -a 失败: %v（输出: %s）", err, out))
+		}
+		if len(failures) > 0 {
+			steps = append(steps, fmt.Sprintf("✗ 清除磁盘签名 %s 失败，请人工检查: %s", dev, strings.Join(failures, "; ")))
+		} else {
+			steps = append(steps, "清除磁盘签名 "+dev)
+		}
 	}
 	return steps
+}
+
+// intersectDevices 返回同时出现在 targets 和 allowed 中的设备路径（去重，
+// 按 targets 的原始顺序），供"只对纳管集合里确实是 PV 的那些设备执行
+// pvremove"场景使用——reset.go/stream.go 在 LVM 拆除步骤里用它把
+// managedTargets（PV + RAID 成员盘 + 挂载点解析出的底层盘的并集）收窄到
+// pvsListAll(pvsOutPre) 报告的真实 PV 子集，避免把纯 RAID 成员盘误当 PV
+// 调用 pvremove。纯函数。
+func intersectDevices(targets, allowed []string) []string {
+	allowedSet := map[string]bool{}
+	for _, a := range allowed {
+		allowedSet[strings.TrimSpace(a)] = true
+	}
+	var result []string
+	for _, t := range targets {
+		if allowedSet[strings.TrimSpace(t)] {
+			result = append(result, t)
+		}
+	}
+	return result
 }
 
 // skipUnmanagedDisks 返回 getDataDisks() 中不在纳管目标集合内的盘，供日志记录
@@ -250,4 +307,83 @@ func skipUnmanagedDisks(dataDisks, managedTargets []string) []string {
 		}
 	}
 	return unmanaged
+}
+
+// ═══════════════════════════════════════════════════
+// Item 1 修复：VG/LV/PV 删除与 RAID 停止收敛到纳管集合
+// ═══════════════════════════════════════════════════
+//
+// 根因：handleWizardReset(reset.go)/handleWizardResetStream(stream.go) 在
+// collectManagedWipeTargets 采集出 managedTargets 之后，第 3/4 步（删除
+// VG/LV/PV）和第 5 步（停止 RAID）却完全不看这个集合——直接 `vgs`/`pvs`
+// 枚举宿主机上*全部* VG/PV 执行 vgremove/lvremove/pvremove，`stopRAIDArrays`
+// 对 /dev/md[0-9]* glob 全部停止。专用整机场景下这碰巧等于"全部"，但一旦
+// 面板之外还有未纳管的 VG/PV/RAID（比如同机跑着另一套未被面板接管的 LVM，
+// 或者外插了一块带 RAID 签名的 USB 盘），会被这两步无差别拆除/停止——
+// 与 wipeManagedTargets 已经做到的"只擦纳管盘"精度不一致，是同一类 bug
+// 在不同步骤里的另一个实例。
+//
+// 修法：managedVGNames 从 pvMappings（pvsPVToVGMap 的结果）里筛出"至少有
+// 一个 PV 在 managedTargets 集合内"的 VG 名；managedMDDevices 从
+// mdstatMembersByDevice 的结果里筛出"至少有一个成员盘在 managedTargets
+// 集合内"的 md 设备路径。两者都是纯函数，输入是已经查询好的文本/映射，
+// 不发起任何系统命令，便于单测注入 fixture 验证"未纳管的 VG/PV/md 不受影响"。
+
+// managedVGNames 从 pvsOut（pvs --noheadings -o pv_name,vg_name 的原始输出）
+// 解析出的 PV→VG 映射中，筛出至少有一个 PV 属于 managedTargets 集合的 VG
+// 名称集合（去重，保持首次出现顺序）。
+func managedVGNames(pvsOut string, managedTargets []string) []string {
+	managedSet := map[string]bool{}
+	for _, t := range managedTargets {
+		managedSet[strings.TrimSpace(t)] = true
+	}
+	seen := map[string]bool{}
+	var result []string
+	// 按 pvsOut 原始行序遍历（而不是先转 map 再遍历 map），保证确定性输出
+	// 顺序——map 遍历顺序随机，会让日志/测试输出不稳定。
+	for _, line := range strings.Split(pvsOut, "\n") {
+		fields := strings.Fields(strings.TrimSpace(line))
+		if len(fields) < 2 {
+			continue
+		}
+		pv, vg := fields[0], fields[1]
+		if !managedSet[pv] {
+			continue
+		}
+		if vg == "" || seen[vg] {
+			continue
+		}
+		seen[vg] = true
+		result = append(result, vg)
+	}
+	return result
+}
+
+// managedMDDevices 从 mdstatContent 解析出的 md设备→成员盘映射中，筛出至少
+// 有一个成员盘属于 managedTargets 集合的 md 设备路径集合（去重，按
+// parseMdstatBlocks 的块序）。
+func managedMDDevices(mdstatContent string, managedTargets []string) []string {
+	managedSet := map[string]bool{}
+	for _, t := range managedTargets {
+		managedSet[strings.TrimSpace(t)] = true
+	}
+	var result []string
+	for _, block := range parseMdstatBlocks(mdstatContent) {
+		mdDev := "/dev/" + block.MdName
+		hit := false
+		for _, tok := range block.MemberTokens {
+			idx := strings.Index(tok, "[")
+			if idx <= 0 {
+				continue
+			}
+			if managedSet["/dev/"+tok[:idx]] {
+				hit = true
+				break
+			}
+		}
+		if hit {
+			result = append(result, mdDev)
+		}
+	}
+	return result
 }

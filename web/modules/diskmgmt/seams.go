@@ -59,6 +59,18 @@ var findLivePoolFn = func(poolType, poolDevice string) (PoolSummary, bool) {
 // 检查错误并向上传播）；测试注入替身模拟磁盘满/权限问题等写失败场景。
 var safeWriteFileFn = common.SafeWriteFile
 
+// mountQuotaSupportFn 默认指向 common.MountQuotaSupport（真实 findmnt 探测）；
+// 测试注入替身避免依赖真实挂载点（Item 7 修复：quota_test.go 并发测试用
+// /mnt/pool1 这样的假路径，真实 findmnt 会探测失败）。
+var mountQuotaSupportFn = common.MountQuotaSupport
+
+// validateBlockDeviceListFn 默认指向 common.ValidateBlockDeviceList；该函数
+// 对每个设备路径做 os.Stat + ModeDevice 检查，要求是真实存在的块设备节点，
+// 单测环境没有（也不应该创建）真实 /dev/sdX 节点。测试注入替身跳过存在性
+// 检查，只用于验证 handlePoolCreate 在 mkdir/mount 等后续步骤失败时是否
+// 正确中止（Item 1/4 测试覆盖）；生产路径仍是真实校验，不放宽任何检查。
+var validateBlockDeviceListFn = common.ValidateBlockDeviceList
+
 // syncAllConfigsFn 默认指向 SyncAllConfigs。SyncAllConfigs 本身依赖
 // GetAllFolderMeta() 背后的真实全局 sqlite 单例连接（initConfigDB()），
 // 无法在单测里构造假数据直接端到端跑通（同 config_sync_mutex_test.go 的

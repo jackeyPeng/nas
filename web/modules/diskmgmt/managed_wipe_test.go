@@ -1,8 +1,10 @@
 package diskmgmt
 
 import (
+	"fmt"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -95,7 +97,7 @@ func TestMdstatMemberDisks_FailedAndSpareFlags(t *testing.T) {
 	}
 }
 
-// TestPvsListAll 验证 PV 设备列表解析。
+// TestPvsListAll 验证 PV 设备列表解析——单列输入（兜底，非实际调用形态）。
 func TestPvsListAll(t *testing.T) {
 	out := "  /dev/sda1\n  /dev/sdb1\n"
 	got := sortedCopy(pvsListAll(out))
@@ -108,6 +110,36 @@ func TestPvsListAll(t *testing.T) {
 func TestPvsListAll_Empty(t *testing.T) {
 	if got := pvsListAll(""); len(got) != 0 {
 		t.Errorf("got %v, want empty", got)
+	}
+}
+
+// TestPvsListAll_TwoColumnRealistic 回归测试（issue #1）：所有实际调用方
+// （reset.go、stream.go）传入的都是 `pvs --noheadings -o pv_name,vg_name`
+// 两列输出。修复前此函数把整行当成一个设备字符串，会产出
+// "/dev/sda1   vg_nas" 这种非法条目，同时真正的 PV 名称不会被正确识别为
+// "已纳管"——污染 collectManagedWipeTargets 的判定依据。
+func TestPvsListAll_TwoColumnRealistic(t *testing.T) {
+	out := "  /dev/sda1   vg_nas\n  /dev/sdb1   vg_nas\n  /dev/sdc1   vg_other\n"
+	got := sortedCopy(pvsListAll(out))
+	want := []string{"/dev/sda1", "/dev/sdb1", "/dev/sdc1"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v（两列 pvs 输出必须只取 PV 列，不能把整行当设备名）", got, want)
+	}
+	for _, dev := range got {
+		if strings.Contains(dev, " ") {
+			t.Errorf("设备名 %q 包含空格，说明把 VG 名也拼进了设备字符串", dev)
+		}
+	}
+}
+
+// TestPvsListAll_MixedVG 验证混合多个 VG、含不规则空白（tab/多空格）的真实
+// pvs 输出仍能正确解析出全部 PV，且不会产生跨 VG 串污。
+func TestPvsListAll_MixedVG(t *testing.T) {
+	out := "  /dev/sda1\tvg_nas\n  /dev/nvme0n1p1   vg_fast\n  /dev/sdd1  vg_backup\n\n"
+	got := sortedCopy(pvsListAll(out))
+	want := []string{"/dev/nvme0n1p1", "/dev/sda1", "/dev/sdd1"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
 	}
 }
 
@@ -199,6 +231,50 @@ func TestCollectManagedWipeTargets_ForeignUSBDiskNeverManaged(t *testing.T) {
 	if gotSet["/dev/sdc"] {
 		t.Error("外来 USB 盘 /dev/sdc 从未纳管，不应出现在擦盘目标集合中")
 	}
+	// issue #1 回归：pvsOut 是真实的两列 pvs 输出，修复前 pvsListAll 会把
+	// "/dev/sda1   vg_nas" 整行当成一个设备名塞进集合，产出带空格的非法条目。
+	for _, d := range got {
+		if strings.Contains(d, " ") {
+			t.Errorf("纳管集合包含非法设备名 %q（疑似把 pvs 整行当成了设备名）", d)
+		}
+	}
+	if gotSet["/dev/sda1   vg_nas"] || gotSet["/dev/sdb1   vg_nas"] {
+		t.Errorf("纳管集合混入了未切分的 pvs 整行，got %v", got)
+	}
+}
+
+// TestCollectManagedWipeTargets_MixedVGAndPartitions 覆盖 issue #1 要求的
+// 混合场景：多个 VG（各自的 PV 来自不同分区/整盘）同时存在，且其中一个 VG
+// 通过 /data/nas* 挂载点引用、另一个 VG 只出现在 pvs 输出里（未挂载也必须
+// 纳管，因为它是面板可见的 PV），验证两者都被正确识别为独立设备、不互相
+// 污染，且不产生跨行拼接的垃圾条目。
+func TestCollectManagedWipeTargets_MixedVGAndPartitions(t *testing.T) {
+	pvsOut := strings.Join([]string{
+		"  /dev/sda1   vg_nas",
+		"  /dev/sdb1   vg_nas",
+		"  /dev/nvme0n1p1   vg_fast",
+		"  /dev/sdd1   vg_backup",
+	}, "\n") + "\n"
+	mdstat := ""
+	dataMounts := []map[string]string{
+		{"device": "/dev/mapper/vg_nas-data", "mount": "/data/nas1"},
+	}
+	got := collectManagedWipeTargets(pvsOut, mdstat, dataMounts)
+	gotSet := map[string]bool{}
+	for _, d := range got {
+		gotSet[d] = true
+	}
+	want := []string{"/dev/sda1", "/dev/sdb1", "/dev/nvme0n1p1", "/dev/sdd1"}
+	for _, w := range want {
+		if !gotSet[w] {
+			t.Errorf("设备 %s 应在纳管集合内（来自 pvs 列出的 PV），got %v", w, got)
+		}
+	}
+	for _, d := range got {
+		if strings.Contains(d, " ") {
+			t.Errorf("纳管集合包含非法设备名 %q", d)
+		}
+	}
 }
 
 // TestCollectManagedWipeTargets_UnionDedup 验证三路来源的并集去重：同一设备
@@ -277,6 +353,52 @@ func TestCollectManagedWipeTargets_IgnoresNonDataMounts(t *testing.T) {
 	}
 }
 
+// TestIntersectDevices_OnlyRealPVsKept 是本轮独立复核修复的核心用例：
+// managedTargets 混有真实 PV 与纯 RAID 成员盘（纯 RAID 场景下 RAID 成员盘
+// 根本不是 PV），intersectDevices 与 pvsListAll 的结果取交集后，必须只保留
+// 真正的 PV，RAID 成员盘一个都不应出现——否则 reset.go/stream.go 会对
+// RAID 成员盘误调用 pvremove。
+func TestIntersectDevices_OnlyRealPVsKept(t *testing.T) {
+	// 纯 RAID、未叠 LVM：managedTargets 里全是 RAID 成员盘，pvsOut 为空
+	// （主机上没有任何 PV）。
+	managedTargets := []string{"/dev/sda", "/dev/sdb"}
+	realPVs := pvsListAll("") // 空 pvs 输出 → 没有真实 PV
+	got := intersectDevices(managedTargets, realPVs)
+	if len(got) != 0 {
+		t.Errorf("纯 RAID 场景下交集应为空（没有真实 PV），got %v", got)
+	}
+}
+
+// TestIntersectDevices_MixedPVAndRAIDMembers 验证混合场景：managedTargets
+// 同时包含 LVM 的真实 PV（/dev/sdc1、/dev/sdd1）与另一套纯 RAID 的成员盘
+// （/dev/sda、/dev/sdb，不叠 LVM）——交集必须只保留 PV，RAID 成员盘必须
+// 被排除在 pvremove 目标之外。
+func TestIntersectDevices_MixedPVAndRAIDMembers(t *testing.T) {
+	managedTargets := []string{"/dev/sda", "/dev/sdb", "/dev/sdc1", "/dev/sdd1"}
+	pvsOut := "  /dev/sdc1   vg_nas\n  /dev/sdd1   vg_nas\n"
+	got := sortedCopy(intersectDevices(managedTargets, pvsListAll(pvsOut)))
+	want := []string{"/dev/sdc1", "/dev/sdd1"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v（RAID 成员盘 /dev/sda、/dev/sdb 不是 PV，不应进入 pvremove 目标）", got, want)
+	}
+}
+
+func TestIntersectDevices_EmptyTargets(t *testing.T) {
+	if got := intersectDevices(nil, []string{"/dev/sda1"}); len(got) != 0 {
+		t.Errorf("got %v, want empty", got)
+	}
+}
+
+func TestIntersectDevices_PreservesTargetsOrder(t *testing.T) {
+	managedTargets := []string{"/dev/sdd1", "/dev/sdc1", "/dev/sda1"}
+	allowed := []string{"/dev/sda1", "/dev/sdc1", "/dev/sdd1"}
+	got := intersectDevices(managedTargets, allowed)
+	want := []string{"/dev/sdd1", "/dev/sdc1", "/dev/sda1"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v（应保持 targets 原始顺序，不是 allowed 的顺序）", got, want)
+	}
+}
+
 // TestSkipUnmanagedDisks 验证 getDataDisks() 中不在纳管集合内的盘被正确识别。
 func TestSkipUnmanagedDisks(t *testing.T) {
 	dataDisks := []string{"/dev/sda", "/dev/sdb", "/dev/sdc"}
@@ -314,6 +436,65 @@ func TestWipeManagedTargets_EmptyInput(t *testing.T) {
 	}
 }
 
+// 问题 1 补充回归：此前 mdadm --zero-superblock / wipefs -a 的错误被
+// common.SudoExec 直接丢弃，不管命令实际成功与否，step 文案永远是
+// "清除磁盘签名 <dev>"——用户完全看不出某块盘的签名其实没擦掉。现在任一
+// 命令失败都必须让该盘对应的 step 文案带上 "✗" 和真实错误，不能假装成功。
+func TestWipeManagedTargets_WipefsFailure_ReportsFailureNotFakeSuccess(t *testing.T) {
+	orig := sudoExecFn
+	sudoExecFn = func(name string, args ...string) (string, error) {
+		if name == "/usr/sbin/wipefs" {
+			return "", fmt.Errorf("wipefs: 设备忙")
+		}
+		return "", nil
+	}
+	t.Cleanup(func() { sudoExecFn = orig })
+
+	steps := wipeManagedTargets([]string{"/dev/zz_not_exist"})
+	if len(steps) != 1 {
+		t.Fatalf("got %d steps, want 1", len(steps))
+	}
+	if !strings.Contains(steps[0], "✗") || !strings.Contains(steps[0], "设备忙") {
+		t.Errorf("wipefs 失败应在 step 中如实体现，got: %q", steps[0])
+	}
+}
+
+// mdadm --zero-superblock 失败同理，且与 wipefs 失败互不掩盖——两个都失败时
+// 两条失败原因都应出现在同一条 step 文案里。
+func TestWipeManagedTargets_MdadmAndWipefsBothFail_ReportsBothReasons(t *testing.T) {
+	orig := sudoExecFn
+	sudoExecFn = func(name string, args ...string) (string, error) {
+		switch name {
+		case "/usr/sbin/mdadm":
+			return "", fmt.Errorf("mdadm: 找不到超级块")
+		case "/usr/sbin/wipefs":
+			return "", fmt.Errorf("wipefs: 设备忙")
+		}
+		return "", nil
+	}
+	t.Cleanup(func() { sudoExecFn = orig })
+
+	steps := wipeManagedTargets([]string{"/dev/zz_not_exist"})
+	if len(steps) != 1 {
+		t.Fatalf("got %d steps, want 1", len(steps))
+	}
+	if !strings.Contains(steps[0], "找不到超级块") || !strings.Contains(steps[0], "设备忙") {
+		t.Errorf("两个命令的失败原因都应出现在 step 中，got: %q", steps[0])
+	}
+}
+
+// 全部成功时 step 文案应保持原有的简洁正常路径格式，不受本次修复影响。
+func TestWipeManagedTargets_Success_NormalStepFormat(t *testing.T) {
+	orig := sudoExecFn
+	sudoExecFn = func(name string, args ...string) (string, error) { return "", nil }
+	t.Cleanup(func() { sudoExecFn = orig })
+
+	steps := wipeManagedTargets([]string{"/dev/zz_not_exist"})
+	if len(steps) != 1 || steps[0] != "清除磁盘签名 /dev/zz_not_exist" {
+		t.Errorf("成功路径 step 文案不应变化，got: %v", steps)
+	}
+}
+
 // TestPvsPVToVGMap 验证 PV→VG 映射解析。
 func TestPvsPVToVGMap(t *testing.T) {
 	out := "  /dev/sda1   vg_nas\n  /dev/sdb1   vg_nas\n  /dev/sdc1   vg_other\n"
@@ -345,6 +526,91 @@ md0 : active raid5 sdb[2] sda[0] sde[1]
 	}
 	if !reflect.DeepEqual(sortedCopy(got["/dev/md0"]), []string{"/dev/sda", "/dev/sdb", "/dev/sde"}) {
 		t.Errorf("md0 members = %v", got["/dev/md0"])
+	}
+}
+
+// TestManagedVGNames_OnlyManagedVGIncluded 是 Item 1 的核心用例：宿主机上
+// 既有面板纳管的 vg_nas（成员盘在 managedTargets 内），又有一个完全不相关的
+// vg_other（比如同机另一套未被面板接管的 LVM）——managedVGNames 必须只返回
+// vg_nas，vg_other 绝不能出现（否则会被外层 vgremove 无差别删除）。
+func TestManagedVGNames_OnlyManagedVGIncluded(t *testing.T) {
+	pvsOut := "  /dev/sda1   vg_nas\n  /dev/sdb1   vg_nas\n  /dev/sdc1   vg_other\n"
+	managedTargets := []string{"/dev/sda1", "/dev/sdb1"}
+	got := managedVGNames(pvsOut, managedTargets)
+	want := []string{"vg_nas"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v（vg_other 未纳管，不应出现）", got, want)
+	}
+}
+
+func TestManagedVGNames_NoManagedTargets(t *testing.T) {
+	pvsOut := "  /dev/sda1   vg_nas\n"
+	got := managedVGNames(pvsOut, nil)
+	if len(got) != 0 {
+		t.Errorf("got %v, want empty（managedTargets 为空时不应返回任何 VG）", got)
+	}
+}
+
+func TestManagedVGNames_Dedup(t *testing.T) {
+	pvsOut := "  /dev/sda1   vg_nas\n  /dev/sdb1   vg_nas\n"
+	managedTargets := []string{"/dev/sda1", "/dev/sdb1"}
+	got := managedVGNames(pvsOut, managedTargets)
+	want := []string{"vg_nas"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v（同一 VG 两个 PV 都纳管时只应出现一次）", got, want)
+	}
+}
+
+func TestManagedVGNames_MalformedLinesIgnored(t *testing.T) {
+	pvsOut := "garbage line\n  /dev/sda1   vg_nas\n\n"
+	managedTargets := []string{"/dev/sda1"}
+	got := managedVGNames(pvsOut, managedTargets)
+	want := []string{"vg_nas"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+// TestManagedMDDevices_OnlyManagedArrayIncluded 验证宿主机上既有纳管阵列
+// （成员盘在 managedTargets 内）又有一个完全不相关的外来 md 阵列时，只返回
+// 纳管的那个——外来阵列绝不能被 stopRAIDArrays 一起停掉。
+func TestManagedMDDevices_OnlyManagedArrayIncluded(t *testing.T) {
+	mdstat := `md0 : active raid1 sdb[1] sda[0]
+      1953511424 blocks super 1.2 [2/2] [UU]
+
+md1 : active raid1 sdd[1] sdc[0]
+      976630464 blocks super 1.2 [2/2] [UU]
+`
+	managedTargets := []string{"/dev/sda", "/dev/sdb"}
+	got := managedMDDevices(mdstat, managedTargets)
+	want := []string{"/dev/md0"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v（md1 未纳管，不应出现）", got, want)
+	}
+}
+
+func TestManagedMDDevices_NoManagedTargets(t *testing.T) {
+	mdstat := "md0 : active raid1 sdb[1] sda[0]\n      1953511424 blocks super 1.2 [2/2] [UU]\n"
+	got := managedMDDevices(mdstat, nil)
+	if len(got) != 0 {
+		t.Errorf("got %v, want empty", got)
+	}
+}
+
+func TestManagedMDDevices_InactiveArrayStillMatched(t *testing.T) {
+	mdstat := "md0 : inactive sdb[1](S) sda[0](S)\n      104792064 blocks super 1.2\n"
+	managedTargets := []string{"/dev/sda"}
+	got := managedMDDevices(mdstat, managedTargets)
+	want := []string{"/dev/md0"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v（inactive 阵列只要有一个成员纳管也要命中）", got, want)
+	}
+}
+
+func TestManagedMDDevices_EmptyMdstat(t *testing.T) {
+	got := managedMDDevices("", []string{"/dev/sda"})
+	if len(got) != 0 {
+		t.Errorf("got %v, want empty", got)
 	}
 }
 

@@ -290,6 +290,32 @@ var validRemoteName = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 // localRemotePrefix 是 alias backend 指向本地路径的前缀（:local:<绝对路径>）。
 const localRemotePrefix = ":local:"
 
+// containsControlChar 检测字符串是否含控制字符（含 \n \r \t \0 等，0x00-0x1F
+// 及 0x7F）。rc_ 字段的 key/value 最终以 "key=value" 文本行原样写入
+// rclone.conf（INI 文件），value 含换行可在该行之后注入任意新行/新 section
+// （例如伪造出一个指向任意路径的新 remote），key 含等号/换行同理。
+func containsControlChar(s string) bool {
+	for _, r := range s {
+		if r == '\n' || r == '\r' || (r >= 0x00 && r <= 0x1f) || r == 0x7f {
+			return true
+		}
+	}
+	return false
+}
+
+// validateRcloneConfigField 校验单个 rc_ 配置字段的 key/value，拒绝控制字符
+// 和会提前结束/篡改 INI "key=value" 行语义的字符（换行见上；key 中的 "="
+// 和 "[" 同样可让 rclone 把后续内容解析成新字段或新 section）。
+func validateRcloneConfigField(key, value string) error {
+	if containsControlChar(key) || containsControlChar(value) {
+		return fmt.Errorf("配置字段 %q 包含非法控制字符", key)
+	}
+	if strings.ContainsAny(key, "=[]") {
+		return fmt.Errorf("配置字段名 %q 包含非法字符", key)
+	}
+	return nil
+}
+
 // toBackendRemote 将前端类型+配置转换为 rclone 实际 backend。
 // rclone 的 local backend 不支持 root/local_path 配置项（其根路径由路径本身表达，
 // config create 传入的路径参数会被静默忽略，导致 remote 指向 $HOME）。
@@ -364,7 +390,13 @@ func handleCreateRemote(w http.ResponseWriter, r *http.Request) {
 	config := map[string]string{}
 	for key, vals := range r.Form {
 		if strings.HasPrefix(key, "rc_") && len(vals) > 0 {
-			config[strings.TrimPrefix(key, "rc_")] = vals[0]
+			k := strings.TrimPrefix(key, "rc_")
+			v := vals[0]
+			if err := validateRcloneConfigField(k, v); err != nil {
+				http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
+				return
+			}
+			config[k] = v
 		}
 	}
 
@@ -480,6 +512,10 @@ func handleUpdateRemote(w http.ResponseWriter, r *http.Request) {
 		// 留空或占位符 = 不修改该字段
 		if v == "" || v == "********" {
 			continue
+		}
+		if err := validateRcloneConfigField(k, v); err != nil {
+			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
+			return
 		}
 		// local 类型：local_path 转成 alias backend 的 remote 字段
 		if k == "local_path" {

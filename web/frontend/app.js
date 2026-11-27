@@ -86,6 +86,16 @@ function nasPanel() {
         // Storage overview
         storageOverview: {},
         diskmgmtTab: 'overview',
+        // 池删除持久化恢复记录（issue #6/Requirement 5）：无论删除响应是
+        // 200/207（结构化 recovery_id 字段）还是 500（pvFailures/diskFailures
+        // 分支，id 只是文本嵌在 error 消息里，api() 遇到 !res.ok 会直接弹
+        // toast 并把 data 返回 null，deletePool 那层根本拿不到这个 id）——
+        // 都统一改为：删除请求结束后一律重新拉取后端权威列表
+        // GET /api/disk/pool/delete/recovery，而不是依赖某一种响应体形状
+        // 去解析展示。这样三种响应形状都能被这个列表覆盖到，不用在
+        // deletePool 里分别处理。
+        poolDeleteRecoveries: [],
+        poolDeleteRecoveriesError: '',
         showDiskDetail: false,
         selectedDisk: null,
         selectedDiskDevice: '',
@@ -1597,12 +1607,29 @@ function nasPanel() {
             const dstDir = this.filesPage.transferPath;
             const entries = this.filesPage.transferEntries;
             let successCount = 0;
+            let sourceRetainedCount = 0;
+            const succeededNames = [];
             for (const entry of entries) {
                 try {
-                    await this.fileWrite('/' + mode, { src: this.filesPage.relJoin(entry.name), dst_dir: dstDir });
+                    const res = await this.fileWrite('/' + mode, { src: this.filesPage.relJoin(entry.name), dst_dir: dstDir });
                     successCount++;
+                    succeededNames.push(entry.name);
+                    // 跨文件系统移动:源文件不会被自动删除,需要提示用户手动核对后自行清理(对应 status=copied_source_retained)
+                    try {
+                        const data = await res.json();
+                        if (data && data.status === 'copied_source_retained') sourceRetainedCount++;
+                    } catch (_) { /* 非 JSON 响应(如同盘重命名的旧格式)忽略 */ }
                 } catch (err) {
-                    this.showToast(this.t('files.batch_partial_fail', [successCount, entries.length, String(err.message || err)]), 'error');
+                    // 中途失败:必须明确列出已成功的具体文件名,并单独提示其中有多少项是跨盘移动(源文件被保留、未被删除),
+                    // 避免用户误以为失败后已成功部分是"已清理干净的移动",实际上源和目标两处都存在该文件(对应任务点③要求)
+                    if (succeededNames.length > 0) {
+                        this.showToast(this.t('files.batch_partial_fail_names', [successCount, entries.length, String(err.message || err), succeededNames.join(', ')]), 'error');
+                    } else {
+                        this.showToast(this.t('files.batch_partial_fail', [successCount, entries.length, String(err.message || err)]), 'error');
+                    }
+                    if (sourceRetainedCount > 0) {
+                        this.showToast(this.t('files.batch_partial_fail_source_retained', [sourceRetainedCount]), 'warning');
+                    }
                     this.filesPage.showTransfer = false;
                     this.filesPage.selected = [];
                     await this.loadFiles(this.filesPage.path);
@@ -1611,7 +1638,11 @@ function nasPanel() {
             }
             this.filesPage.showTransfer = false;
             this.filesPage.selected = [];
-            this.showToast(this.t('msg.op_success'), 'success');
+            if (sourceRetainedCount > 0) {
+                this.showToast(this.t('files.move_source_retained', [sourceRetainedCount]), 'warning');
+            } else {
+                this.showToast(this.t('msg.op_success'), 'success');
+            }
             await this.loadFiles(this.filesPage.path);
         },
         // ═══ 删除确认(type-to-confirm 对齐危险操作模式) ═══
@@ -2331,6 +2362,39 @@ function nasPanel() {
             if (data && data.overview) this.storageOverview = data.overview;
         },
 
+        // 池删除持久化恢复记录：GET 接口严格只读（见后端 handlePoolDeleteRecoveryStatus
+        // 注释），本函数本身不执行任何磁盘操作。查询失败必须 fail-closed 地展示出来——
+        // 不能把"查不到"悄悄当成"没有残留记录"，否则用户会误以为核实已经完成。
+        async loadPoolDeleteRecoveries() {
+            const data = await this.api('/disk/pool/delete/recovery');
+            if (data && Array.isArray(data.recoveries)) {
+                this.poolDeleteRecoveries = data.recoveries;
+                this.poolDeleteRecoveriesError = '';
+            } else {
+                // api() 在 !res.ok 时已经弹过 toast 并返回 null——这里再额外记一条
+                // 面板内常驻提示，避免用户错过那条一次性 toast 之后以为列表是空的。
+                this.poolDeleteRecoveriesError = this.t('storage.pool_recovery_load_failed');
+            }
+        },
+
+        // 管理员核实磁盘层面状态后主动确认清除一条恢复记录。该接口只删数据库记录，
+        // 不执行任何擦除/阵列操作（见后端 confirmPoolDeleteRecovery 注释）——这里必须
+        // 先弹二次确认，措辞明确告知"这不是重试删除，只是清除提示"，避免用户把
+        // 确认按钮误当成修复/重试动作点掉，从而放弃了核实的机会。
+        async confirmPoolDeleteRecovery(rec) {
+            if (!rec || !rec.id) return;
+            if (!confirm(this.t('storage.pool_recovery_confirm_prompt', [rec.pool_name || rec.pool_device || rec.id]))) return;
+            const data = await this.api('/disk/pool/delete/recovery/confirm', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'id=' + encodeURIComponent(rec.id)
+            });
+            if (data && data.ok) {
+                this.showToast(this.t('storage.pool_recovery_confirmed'), 'success');
+                this.loadPoolDeleteRecoveries();
+            }
+        },
+
         scrollToWizard() {
             const el = document.getElementById('wizard-section');
             if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -2604,6 +2668,11 @@ function nasPanel() {
                                     }
                                 } else if (ev.status === 'complete') {
                                     this.progressSteps.push({ name: ev.detail || this.t('msg.done'), status: 'complete' });
+                                } else if (ev.status === 'warning') {
+                                    // 磁盘层已不可逆拆除，但共享配置清理/同步失败——不能展示为完全成功，
+                                    // 用独立的 warning 状态呈现，附带后端给出的具体问题细节。
+                                    this.progressSteps.push({ name: ev.detail || this.t('msg.reset_warning'), status: 'warning' });
+                                    this.showToast(ev.detail || this.t('msg.reset_warning'), 'warning');
                                 }
                             } catch(e) {}
                         }
@@ -2834,6 +2903,13 @@ function nasPanel() {
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: params.toString()
             });
+            // 恢复记录面板统一在这里刷新，不区分 data 是否为 null——
+            // pvFailures/diskFailures 分支返回 500，api() 的 !res.ok 分支已经
+            // 弹过 toast 并把 data 置为 null，这里仍然可能已经越过了不可逆
+            // 的 VG 删除/mdadm --stop，对应的恢复记录需要被看到。三种响应
+            // 形状（200 结构化字段 / 207 结构化字段 / 500 文本嵌入 id）都靠
+            // 重新拉取后端权威列表统一呈现，而不是在这里解析某一种形状。
+            this.loadPoolDeleteRecoveries();
             if (data) {
                 if (data._httpStatus === 207 || data.warning) {
                     // 磁盘已拆除（不可逆），但配置清理（Samba/NFS/folders.db）存在问题。

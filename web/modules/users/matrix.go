@@ -34,6 +34,15 @@ func handleMatrix(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// Item 8 修复：username 最终会经 listAdd/listRemove 写入
+		// FolderMeta.ValidUsers/WriteUsers，再被 smbManagedLines 原样拼进
+		// smb.conf 的 "valid users ="/"write list =" 行。不先过白名单校验，
+		// 含换行/等号等字符的值可逃出该行注入任意 smb.conf 指令。
+		if !isValidUsername(username) {
+			http.Error(w, `{"error":"非法用户名"}`, http.StatusBadRequest)
+			return
+		}
+
 		if perm != "readwrite" && perm != "readonly" && perm != "noaccess" {
 			http.Error(w, `{"error":"permission must be readwrite/readonly/noaccess"}`, http.StatusBadRequest)
 			return
